@@ -1,0 +1,275 @@
+// Multi-Tenant CRM Integrator Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enable Row Level Security (RLS) for all tables
+// Run: ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+// Then create policies for each table
+
+// ============================================
+// TENANT & USER MANAGEMENT
+// ============================================
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  subdomain String?  @unique
+  plan      String   @default("free") // free, pro, enterprise
+  settings  Json?    // tenant-specific settings
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users            User[]
+  integrations    Integration[]
+  leads           Lead[]
+  contacts        Contact[]
+  calls           Call[]
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+  webhookEvents   WebhookEvent[]
+
+  @@index([subdomain])
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String
+  email        String?
+  phone        String?
+  name         String?
+  roles        String[] @default(["Agent"]) // Admin, Manager, Agent
+  authProvider String   // phone, google, telegram, email
+  providerId   String?  // external provider ID
+  telegramId   String?  @unique
+  googleId     String?  @unique
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  auditLogs    AuditLog[]
+  linkedAccounts UserAuthLink[]
+
+  @@unique([tenantId, email])
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+  @@index([email])
+  @@index([phone])
+  @@index([telegramId])
+  @@index([googleId])
+  @@map("users")
+}
+
+// Account linking: allow users to link multiple auth methods
+model UserAuthLink {
+  id        String   @id @default(uuid())
+  userId    String
+  provider  String   // phone, google, telegram
+  providerId String
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@index([userId])
+  @@map("user_auth_links")
+}
+
+// ============================================
+// INTEGRATIONS
+// ============================================
+
+model Integration {
+  id              String   @id @default(uuid())
+  tenantId        String
+  type            String   // amocrm, telegram, google_sheets, voip_utel
+  status          String   @default("pending") // pending, active, error, disconnected
+  config          Json?    // integration-specific config
+  tokensEncrypted String?  // encrypted tokens (access_token, refresh_token)
+  refreshToken    String?  // encrypted refresh token
+  expiresAt       DateTime?
+  lastSyncAt      DateTime?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, type])
+  @@index([tenantId])
+  @@index([type, status])
+  @@map("integrations")
+}
+
+// ============================================
+// CRM DATA (LEADS & CONTACTS)
+// ============================================
+
+model Lead {
+  id          String   @id @default(uuid())
+  tenantId    String
+  amocrmId    String?  @unique
+  title       String
+  contactId   String?
+  status      String?  // lead status from AmoCRM
+  pipelineId  String?
+  responsibleUserId String?
+  metadata    Json?    // additional lead data
+  source      String?  // where lead came from
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id])
+  calls   Call[]
+
+  @@index([tenantId])
+  @@index([amocrmId])
+  @@index([contactId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("leads")
+}
+
+model Contact {
+  id         String   @id @default(uuid())
+  tenantId   String
+  name       String?
+  phone      String?
+  email      String?
+  externalIds Json?   // { amocrm_id: "...", telegram_id: "..." }
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads  Lead[]
+
+  @@index([tenantId])
+  @@index([tenantId, phone])
+  @@index([tenantId, email])
+  @@index([phone])
+  @@index([email])
+  @@map("contacts")
+}
+
+// ============================================
+// VOIP / CALLS
+// ============================================
+
+model Call {
+  id            String   @id @default(uuid())
+  tenantId      String
+  callIdExternal String  @unique // external call ID from VoIP provider
+  from          String   // caller number
+  to            String   // called number
+  direction     String   // inbound, outbound
+  duration      Int?     // seconds
+  status        String   // completed, failed, missed, busy
+  recordingUrl  String?
+  recordingId   String?
+  metadata      Json?    // call quality metrics, etc.
+  leadId        String?
+  contactId     String?
+  startedAt     DateTime
+  endedAt       DateTime?
+  createdAt     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead   Lead?  @relation(fields: [leadId], references: [id])
+
+  @@index([tenantId])
+  @@index([callIdExternal])
+  @@index([from])
+  @@index([to])
+  @@index([leadId])
+  @@index([startedAt])
+  @@map("calls")
+}
+
+// ============================================
+// NOTIFICATIONS & QUEUE
+// ============================================
+
+model Notification {
+  id          String   @id @default(uuid())
+  tenantId    String
+  type        String   // telegram, email, sms
+  channel     String?  // specific channel identifier
+  payload     Json     // message content, recipient, etc.
+  status      String   @default("pending") // pending, sent, failed, retrying
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3)
+  nextRetryAt DateTime?
+  sentAt      DateTime?
+  errorMessage String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([status, nextRetryAt])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================
+// WEBHOOKS
+// ============================================
+
+model WebhookEvent {
+  id          String   @id @default(uuid())
+  tenantId    String?
+  source      String   // amocrm, utel, telegram, etc.
+  eventType   String
+  rawPayload  Json     // original webhook payload
+  signature   String?  // webhook signature for verification
+  processed   Boolean  @default(false)
+  processedAt DateTime?
+  errorMessage String?
+  retryCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([source, processed])
+  @@index([createdAt])
+  @@map("webhook_events")
+}
+
+// ============================================
+// AUDIT & SECURITY
+// ============================================
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String?
+  action    String   // create, update, delete, login, etc.
+  resource  String?  // lead, contact, integration, etc.
+  resourceId String?
+  ip        String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
