@@ -5,9 +5,16 @@ import { log, LogLevel } from './services/observability';
 dotenv.config();
 
 const PORT = process.env.PORT || 3001;
+const HOST = '0.0.0.0';
 
-app.listen(PORT, () => {
+app.listen(Number(PORT), HOST, () => {
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  const publicUrl = railwayDomain ? `https://${railwayDomain}` : process.env.PUBLIC_API_URL;
+
   log(LogLevel.INFO, 'API server started', { port: PORT });
-  console.log(`API server running on http://localhost:${PORT}`);
-  console.log(`tRPC endpoint: http://localhost:${PORT}/api/trpc`);
+  console.log(`API server running on ${HOST}:${PORT}`);
+  if (publicUrl) {
+    console.log(`Public API URL: ${publicUrl}`);
+    console.log(`Public tRPC endpoint: ${publicUrl}/api/trpc`);
+  }
 });
