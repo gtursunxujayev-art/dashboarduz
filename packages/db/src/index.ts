@@ -18,5 +18,5 @@ export async function setTenantContext(tenantId: string) {
   await prisma.$executeRawUnsafe(`SET app.current_tenant = '${tenantId}'`);
 }
 
-// Export types
-export type { Tenant, User, Integration, Lead, Contact, Call, Notification, WebhookEvent, AuditLog } from '@prisma/client';
+// Export Prisma namespace types for downstream typing helpers.
+export type { Prisma } from '@prisma/client';
