@@ -118,7 +118,7 @@ export const authRouter = router({
         const jwtPayload = {
           userId: user.id,
           tenantId,
-          roles: user.roles.filter((role): role is UserRole => ['Admin', 'Manager', 'Agent'].includes(role)),
+          roles: user.roles.filter((role: string): role is UserRole => ['Admin', 'Manager', 'Agent'].includes(role)),
           ...(user.phone ? { phone: user.phone } : {}),
         };
 
@@ -216,7 +216,7 @@ export const authRouter = router({
         const jwtPayload = {
           userId: user.id,
           tenantId,
-          roles: user.roles.filter((role): role is UserRole => ['Admin', 'Manager', 'Agent'].includes(role)),
+          roles: user.roles.filter((role: string): role is UserRole => ['Admin', 'Manager', 'Agent'].includes(role)),
         };
 
         const token = signJWT(jwtPayload);
