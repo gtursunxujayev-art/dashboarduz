@@ -1,0 +1,22 @@
+{
+  "name": "dashboarduz",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "scripts": {
+    "dev:web": "npm run dev --workspace @dashboarduz/web",
+    "dev:api": "npm run dev --workspace @dashboarduz/api",
+    "dev:worker": "npm run dev:worker --workspace @dashboarduz/api",
+    "build": "npm run build --workspace @dashboarduz/shared && npm run build --workspace @dashboarduz/db && npm run build --workspace @dashboarduz/api && npm run build --workspace @dashboarduz/web",
+    "type-check": "npm run build --workspace @dashboarduz/shared && npm run build --workspace @dashboarduz/db && npm run type-check --workspace @dashboarduz/api && npm run type-check --workspace @dashboarduz/web",
+    "lint": "npm run lint --workspace @dashboarduz/api && npm run lint --workspace @dashboarduz/web",
+    "db:generate": "npm run generate --workspace @dashboarduz/db",
+    "db:migrate": "npm run migrate --workspace @dashboarduz/db",
+    "db:migrate:deploy": "npm run migrate:deploy --workspace @dashboarduz/db"
+  }
+}
