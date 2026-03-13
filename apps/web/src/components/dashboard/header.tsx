@@ -84,7 +84,7 @@ export default function Header() {
                   {user?.email?.split('@')[0] || user?.phone || 'User'}
                 </div>
                 <div className="text-xs text-gray-500">
-                  {user?.roles?.map(role => role.charAt(0).toUpperCase() + role.slice(1)).join(', ')}
+                  {user?.roles?.map((role: string) => role.charAt(0).toUpperCase() + role.slice(1)).join(', ')}
                 </div>
               </div>
             </div>
