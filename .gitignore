@@ -1,0 +1,34 @@
+﻿# dependencies
+node_modules/
+
+# build outputs
+.next/
+dist/
+coverage/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# app artifacts
+apps/*/node_modules/
+apps/*/.next/
+apps/*/dist/
+apps/*/.swc/
+
+# package artifacts
+packages/*/node_modules/
+packages/*/dist/
+packages/*/*.tsbuildinfo
