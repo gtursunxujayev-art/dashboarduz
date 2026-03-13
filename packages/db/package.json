@@ -1,0 +1,31 @@
+{
+    "name":  "@dashboarduz/db",
+    "version":  "1.0.0",
+    "private":  true,
+    "main":  "./dist/index.js",
+    "types":  "./dist/index.d.ts",
+    "scripts":  {
+                    "generate":  "prisma generate",
+                    "migrate":  "prisma migrate dev",
+                    "migrate:deploy":  "prisma migrate deploy",
+                    "migrate:status":  "tsx scripts/migrate.ts status",
+                    "migrate:rls":  "tsx scripts/enable-rls.ts",
+                    "backup":  "tsx scripts/backup.ts create",
+                    "backup:s3":  "tsx scripts/backup.ts create --s3",
+                    "restore":  "tsx scripts/restore.ts restore",
+                    "restore:list":  "tsx scripts/restore.ts list",
+                    "studio":  "prisma studio",
+                    "db:push":  "prisma db push",
+                    "type-check":  "tsc --noEmit",
+                    "build":  "tsc --project tsconfig.json"
+                },
+    "dependencies":  {
+                         "@prisma/client":  "^5.9.1",
+                         "@aws-sdk/client-s3":  "^3.490.0"
+                     },
+    "devDependencies":  {
+                            "prisma":  "^5.9.1",
+                            "tsx":  "^4.7.0",
+                            "typescript":  "^5.3.3"
+                        }
+}
