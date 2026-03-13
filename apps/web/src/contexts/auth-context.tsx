@@ -1,9 +1,18 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
-import type { JWTPayload } from '@dashboarduz/shared';
+
+type UserRole = 'Admin' | 'Manager' | 'Agent';
+
+interface JWTPayload {
+  userId: string;
+  tenantId: string;
+  roles: UserRole[];
+  email?: string;
+  phone?: string;
+}
 
 interface AuthContextType {
   user: JWTPayload | null;
@@ -25,23 +34,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     retry: false,
   });
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      refreshUser();
-    } else {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     try {
       const data = await meQuery.refetch();
       if (data.data) {
         setUser({
           userId: data.data.id,
           tenantId: data.data.tenantId,
-          roles: data.data.roles as any,
+          roles: data.data.roles as UserRole[],
           email: data.data.email || undefined,
           phone: data.data.phone || undefined,
         });
@@ -55,7 +55,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [meQuery, router]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      void refreshUser();
+    } else {
+      setIsLoading(false);
+    }
+  }, [refreshUser]);
 
   const login = (token: string, userData: JWTPayload) => {
     localStorage.setItem('token', token);
