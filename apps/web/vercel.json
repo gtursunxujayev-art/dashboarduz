@@ -2,7 +2,7 @@
 {
   "buildCommand": "npm run vercel-build",
   "devCommand": "npm run dev",
-  "installCommand": "npm install",
+  "installCommand": "npm install --include=dev",
   "regions": ["iad1"],
   "outputDirectory": ".next",
   "env": {
