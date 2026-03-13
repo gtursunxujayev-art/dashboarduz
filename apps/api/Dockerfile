@@ -14,6 +14,9 @@ RUN npm ci
 # Copy source
 COPY . .
 
+# Generate Prisma client for runtime
+RUN npm run generate --workspace @dashboarduz/db
+
 # Build workspace dependencies and API
 RUN npm run build --workspace @dashboarduz/shared \
   && npm run build --workspace @dashboarduz/db \
