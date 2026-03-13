@@ -18,9 +18,8 @@
                     "cypress:run":  "cypress run",
                     "e2e":  "cypress run",
                     "vercel-build":  "next build"
-                },
+    },
     "dependencies":  {
-                         "@dashboarduz/shared":  "file:../../packages/shared",
                          "@tanstack/react-query":  "^4.42.2",
                          "@tanstack/react-query-devtools":  "^4.42.0",
                          "@trpc/client":  "^10.45.4",
