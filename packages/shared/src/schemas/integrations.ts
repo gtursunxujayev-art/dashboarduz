@@ -1,10 +1,7 @@
 import { z } from 'zod';
 
 // AmoCRM integration
-export const amocrmConnectSchema = z.object({
-  code: z.string(),
-  state: z.string().optional(),
-});
+export const amocrmConnectSchema = z.object({}).optional();
 
 export const amocrmWebhookSchema = z.object({
   account: z.object({
