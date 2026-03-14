@@ -1,21 +1,44 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
-import { trpc } from '@/lib/trpc';
 
 export default function Header() {
   const { user } = useAuth();
   const [tenantMenuOpen, setTenantMenuOpen] = useState(false);
-  
-  // TODO: Fetch tenants for the user
-  const tenantsQuery = trpc.integrations.list.useQuery();
+  const tenantMenuRef = useRef<HTMLDivElement | null>(null);
 
   const currentTenant = {
     id: user?.tenantId || '',
     name: 'My Workspace', // TODO: Fetch actual tenant name
     plan: 'Free',
   };
+
+  useEffect(() => {
+    if (!tenantMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!tenantMenuRef.current?.contains(event.target as Node)) {
+        setTenantMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setTenantMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [tenantMenuOpen]);
 
   return (
     <header className="relative z-30 bg-white shadow">
@@ -29,11 +52,14 @@ export default function Header() {
           
           <div className="flex items-center">
             {/* Tenant Switcher */}
-            <div className="relative ml-3 z-40">
+            <div ref={tenantMenuRef} className="relative ml-3 z-40">
               <div>
                 <button
-                  onClick={() => setTenantMenuOpen(!tenantMenuOpen)}
+                  type="button"
+                  onClick={() => setTenantMenuOpen((open) => !open)}
                   className="max-w-xs bg-white flex items-center text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  aria-expanded={tenantMenuOpen}
+                  aria-haspopup="menu"
                 >
                   <div className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">
                     <div className="flex items-center">
@@ -50,18 +76,24 @@ export default function Header() {
               </div>
               
               {tenantMenuOpen && (
-                <div className="origin-top-right absolute right-0 z-50 mt-2 w-56 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
-                  <div className="px-4 py-2 border-b border-gray-100">
+                <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl">
+                  <div className="px-3 py-2 border-b border-gray-100">
                     <p className="text-xs font-medium text-gray-500">Your Workspaces</p>
                   </div>
-                  <div className="py-1">
-                    <div className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer">
+                  <div className="py-2">
+                    <button
+                      type="button"
+                      className="w-full rounded-lg px-3 py-3 text-left text-sm text-gray-700 transition hover:bg-gray-100"
+                    >
                       <div className="font-medium">My Workspace</div>
                       <div className="text-xs text-gray-500">Free Plan</div>
-                    </div>
+                    </button>
                   </div>
-                  <div className="border-t border-gray-100 py-1">
-                    <button className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-gray-100">
+                  <div className="border-t border-gray-100 pt-2">
+                    <button
+                      type="button"
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 transition hover:bg-blue-50"
+                    >
                       + Create new workspace
                     </button>
                   </div>
@@ -81,7 +113,7 @@ export default function Header() {
             <div className="ml-4 flex items-center">
               <div className="ml-3">
                 <div className="text-sm font-medium text-gray-700">
-                  {user?.email?.split('@')[0] || user?.phone || 'User'}
+                  {user?.email?.split('@')[0] || user?.phone || 'Account'}
                 </div>
                 <div className="text-xs text-gray-500">
                   {user?.roles?.map((role: string) => role.charAt(0).toUpperCase() + role.slice(1)).join(', ')}
