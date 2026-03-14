@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 
 export default function Header() {
   const { user } = useAuth();
   const [tenantMenuOpen, setTenantMenuOpen] = useState(false);
-  const tenantMenuRef = useRef<HTMLDivElement | null>(null);
 
   const currentTenant = {
     id: user?.tenantId || '',
@@ -14,36 +13,10 @@ export default function Header() {
     plan: 'Free',
   };
 
-  useEffect(() => {
-    if (!tenantMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!tenantMenuRef.current?.contains(event.target as Node)) {
-        setTenantMenuOpen(false);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setTenantMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [tenantMenuOpen]);
-
   return (
-    <header className="relative z-30 bg-white shadow">
+    <header className="bg-white shadow">
       <div className="px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
+        <div className="flex min-h-16 items-center justify-between py-3">
           <div className="flex">
             <div className="flex-shrink-0 flex items-center">
               <h2 className="text-lg font-semibold text-gray-900">Dashboard</h2>
@@ -52,53 +25,26 @@ export default function Header() {
           
           <div className="flex items-center">
             {/* Tenant Switcher */}
-            <div ref={tenantMenuRef} className="relative ml-3 z-40">
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setTenantMenuOpen((open) => !open)}
-                  className="max-w-xs bg-white flex items-center text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                  aria-expanded={tenantMenuOpen}
-                  aria-haspopup="menu"
-                >
-                  <div className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">
-                    <div className="flex items-center">
-                      <div className="ml-3">
-                        <p className="text-sm font-medium text-gray-700">{currentTenant.name}</p>
-                        <p className="text-xs text-gray-500">{currentTenant.plan} Plan</p>
-                      </div>
-                      <svg className="ml-2 h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
+            <div className="ml-3">
+              <button
+                type="button"
+                onClick={() => setTenantMenuOpen((open) => !open)}
+                className="max-w-xs bg-white flex items-center text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                aria-expanded={tenantMenuOpen}
+                aria-controls="workspace-panel"
+              >
+                <div className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">
+                  <div className="flex items-center">
+                    <div className="ml-3">
+                      <p className="text-sm font-medium text-gray-700">{currentTenant.name}</p>
+                      <p className="text-xs text-gray-500">{currentTenant.plan} Plan</p>
                     </div>
-                  </div>
-                </button>
-              </div>
-              
-              {tenantMenuOpen && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl">
-                  <div className="px-3 py-2 border-b border-gray-100">
-                    <p className="text-xs font-medium text-gray-500">Your Workspaces</p>
-                  </div>
-                  <div className="py-2">
-                    <button
-                      type="button"
-                      className="w-full rounded-lg px-3 py-3 text-left text-sm text-gray-700 transition hover:bg-gray-100"
-                    >
-                      <div className="font-medium">My Workspace</div>
-                      <div className="text-xs text-gray-500">Free Plan</div>
-                    </button>
-                  </div>
-                  <div className="border-t border-gray-100 pt-2">
-                    <button
-                      type="button"
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 transition hover:bg-blue-50"
-                    >
-                      + Create new workspace
-                    </button>
+                    <svg className={`ml-2 h-5 w-5 text-gray-400 transition-transform ${tenantMenuOpen ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
                   </div>
                 </div>
-              )}
+              </button>
             </div>
 
             {/* Notifications */}
@@ -122,6 +68,26 @@ export default function Header() {
             </div>
           </div>
         </div>
+        {tenantMenuOpen && (
+          <div id="workspace-panel" className="border-t border-gray-100 py-3">
+            <div className="mx-auto max-w-sm rounded-xl border border-gray-200 bg-gray-50 p-3 shadow-sm">
+              <p className="px-2 text-xs font-medium text-gray-500">Your Workspaces</p>
+              <button
+                type="button"
+                className="mt-2 w-full rounded-lg bg-white px-3 py-3 text-left text-sm text-gray-700 transition hover:bg-gray-100"
+              >
+                <div className="font-medium">My Workspace</div>
+                <div className="text-xs text-gray-500">Free Plan</div>
+              </button>
+              <button
+                type="button"
+                className="mt-2 w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 transition hover:bg-blue-50"
+              >
+                + Create new workspace
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </header>
   );
