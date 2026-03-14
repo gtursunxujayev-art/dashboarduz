@@ -18,7 +18,8 @@ export const authRouter = router({
   registerWithPassword: publicProcedure
     .input(registerWithPasswordSchema)
     .mutation(async ({ input }) => {
-      const rateLimit = await rateLimiter.isAllowed(input.phone, 'auth:register-password', {
+      const normalizedLogin = input.login.trim().toLowerCase();
+      const rateLimit = await rateLimiter.isAllowed(normalizedLogin, 'auth:register-password', {
         maxRequests: 5,
         windowMs: 15 * 60 * 1000,
         keyPrefix: 'password-register',
@@ -27,8 +28,12 @@ export const authRouter = router({
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Too many attempts. Try again later.' });
       }
 
+      if (input.password !== input.confirmPassword) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Passwords do not match' });
+      }
+
       const existingUser = await prisma.user.findFirst({
-        where: { phone: input.phone },
+        where: { username: normalizedLogin },
       });
 
       if (existingUser?.passwordHash) {
@@ -45,9 +50,8 @@ export const authRouter = router({
         const updatedUser = await prisma.user.update({
           where: { id: existingUser.id },
           data: {
+            username: normalizedLogin,
             passwordHash,
-            email: input.email ?? existingUser.email,
-            name: input.name ?? existingUser.name,
             lastLoginAt: new Date(),
           },
         });
@@ -57,7 +61,7 @@ export const authRouter = router({
       } else {
         const tenant = await prisma.tenant.create({
           data: {
-            name: input.tenantName,
+            name: normalizedLogin,
             plan: 'free',
           },
         });
@@ -65,12 +69,10 @@ export const authRouter = router({
         const createdUser = await prisma.user.create({
           data: {
             tenantId: tenant.id,
-            phone: input.phone,
-            email: input.email,
-            name: input.name,
+            username: normalizedLogin,
             passwordHash,
             roles: ['Admin'],
-            authProvider: 'phone',
+            authProvider: 'email',
             lastLoginAt: new Date(),
           },
         });
@@ -84,8 +86,6 @@ export const authRouter = router({
         userId,
         tenantId,
         roles: roles.filter((role: string): role is UserRole => ['Admin', 'Manager', 'Agent'].includes(role)),
-        phone: input.phone,
-        ...(input.email ? { email: input.email } : {}),
       };
 
       const token = signJWT(jwtPayload);
@@ -96,7 +96,7 @@ export const authRouter = router({
           userId,
           action: 'register_password',
           resource: 'auth',
-          metadata: { phone: input.phone },
+          metadata: { login: normalizedLogin },
         },
       });
 
@@ -116,9 +116,14 @@ export const authRouter = router({
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Too many login attempts. Try again later.' });
       }
 
-      const isPhoneLogin = /^\+?[1-9]\d{1,14}$/.test(normalizedLogin);
       const user = await prisma.user.findFirst({
-        where: isPhoneLogin ? { phone: normalizedLogin } : { email: normalizedLogin.toLowerCase() },
+        where: {
+          OR: [
+            { username: normalizedLogin },
+            { email: normalizedLogin },
+            { phone: normalizedLogin },
+          ],
+        },
       });
 
       if (!user || !user.passwordHash) {
