@@ -14,7 +14,7 @@ export default function Header() {
   };
 
   return (
-    <header className="bg-white shadow">
+    <header className="relative z-20 bg-white shadow">
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex min-h-16 items-center justify-between py-3">
           <div className="flex">
@@ -25,7 +25,7 @@ export default function Header() {
           
           <div className="flex items-center">
             {/* Tenant Switcher */}
-            <div className="ml-3">
+            <div className="relative ml-3">
               <button
                 type="button"
                 onClick={() => setTenantMenuOpen((open) => !open)}
@@ -45,6 +45,28 @@ export default function Header() {
                   </div>
                 </div>
               </button>
+
+              {tenantMenuOpen && (
+                <div
+                  id="workspace-panel"
+                  className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-gray-200 bg-white p-2 shadow-xl"
+                >
+                  <p className="px-2 py-1 text-xs font-medium text-gray-500">Your Workspaces</p>
+                  <button
+                    type="button"
+                    className="mt-1 w-full rounded-lg px-3 py-3 text-left text-sm text-gray-700 transition hover:bg-gray-100"
+                  >
+                    <div className="font-medium">My Workspace</div>
+                    <div className="text-xs text-gray-500">Free Plan</div>
+                  </button>
+                  <button
+                    type="button"
+                    className="mt-2 w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 transition hover:bg-blue-50"
+                  >
+                    + Create new workspace
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Notifications */}
@@ -68,26 +90,6 @@ export default function Header() {
             </div>
           </div>
         </div>
-        {tenantMenuOpen && (
-          <div id="workspace-panel" className="border-t border-gray-100 py-3">
-            <div className="mx-auto max-w-sm rounded-xl border border-gray-200 bg-gray-50 p-3 shadow-sm">
-              <p className="px-2 text-xs font-medium text-gray-500">Your Workspaces</p>
-              <button
-                type="button"
-                className="mt-2 w-full rounded-lg bg-white px-3 py-3 text-left text-sm text-gray-700 transition hover:bg-gray-100"
-              >
-                <div className="font-medium">My Workspace</div>
-                <div className="text-xs text-gray-500">Free Plan</div>
-              </button>
-              <button
-                type="button"
-                className="mt-2 w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 transition hover:bg-blue-50"
-              >
-                + Create new workspace
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </header>
   );
