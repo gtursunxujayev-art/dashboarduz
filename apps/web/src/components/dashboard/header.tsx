@@ -18,7 +18,7 @@ export default function Header() {
   };
 
   return (
-    <header className="bg-white shadow">
+    <header className="relative z-30 bg-white shadow">
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex">
@@ -29,7 +29,7 @@ export default function Header() {
           
           <div className="flex items-center">
             {/* Tenant Switcher */}
-            <div className="relative ml-3">
+            <div className="relative ml-3 z-40">
               <div>
                 <button
                   onClick={() => setTenantMenuOpen(!tenantMenuOpen)}
@@ -50,7 +50,7 @@ export default function Header() {
               </div>
               
               {tenantMenuOpen && (
-                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
+                <div className="origin-top-right absolute right-0 z-50 mt-2 w-56 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
                   <div className="px-4 py-2 border-b border-gray-100">
                     <p className="text-xs font-medium text-gray-500">Your Workspaces</p>
                   </div>
