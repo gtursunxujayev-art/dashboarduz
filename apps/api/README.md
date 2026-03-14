@@ -30,17 +30,20 @@ Required for MVP:
 - `JWT_SECRET`
 - `ENCRYPTION_KEY`
 - `FRONTEND_URL` and/or `CORS_ORIGIN`
+- `PUBLIC_API_URL` (recommended for integration webhook URL generation)
 - `AMOCRM_CLIENT_ID`, `AMOCRM_CLIENT_SECRET`, `AMOCRM_REDIRECT_URI`
 - `AMOCRM_WEBHOOK_SECRET`
+- `UTEL_API_URL`, `UTEL_API_TOKEN`
+- `TELEGRAM_BOT_TOKEN` (required for Telegram integration and outbound notifications)
 
 Optional:
 - Twilio OTP vars (if using Twilio provider)
-- Telegram/UTeL vars
+- `UTEL_WEBHOOK_SECRET`
 - Sentry vars
 
 ## MVP scope
 
-- Auth: Phone OTP primary
+- Auth: Phone OTP + Login/Password
 - Google Sign-In: removed
 - Google Sheets: deferred/disabled
 - Integrations: AmoCRM, Telegram, VoIP (UTeL)
