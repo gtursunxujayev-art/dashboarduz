@@ -43,6 +43,7 @@ model User {
   tenantId     String
   email        String?
   phone        String?
+  passwordHash String?
   name         String?
   roles        String[] @default(["Agent"]) // Admin, Manager, Agent
   authProvider String   // phone, google, telegram, email
