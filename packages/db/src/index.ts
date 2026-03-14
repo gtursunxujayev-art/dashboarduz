@@ -15,7 +15,7 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 // Helper to set tenant context for RLS
 export async function setTenantContext(tenantId: string) {
-  await prisma.$executeRawUnsafe(`SET app.current_tenant = '${tenantId}'`);
+  await prisma.$executeRaw`SELECT app.set_tenant_context(${tenantId}::uuid)`;
 }
 
 // Export Prisma namespace types for downstream typing helpers.
