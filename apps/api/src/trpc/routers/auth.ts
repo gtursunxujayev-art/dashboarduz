@@ -106,7 +106,7 @@ export const authRouter = router({
   loginWithPassword: publicProcedure
     .input(loginWithPasswordSchema)
     .mutation(async ({ input }) => {
-      const normalizedLogin = input.login.trim();
+      const normalizedLogin = input.login.trim().toLowerCase();
       const rateLimit = await rateLimiter.isAllowed(normalizedLogin, 'auth:login-password', {
         maxRequests: 10,
         windowMs: 15 * 60 * 1000,
