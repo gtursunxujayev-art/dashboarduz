@@ -1,11 +1,163 @@
 import { router, publicProcedure, protectedProcedure } from '../trpc';
 import { z } from 'zod';
-import { phoneOtpRequestSchema, phoneOtpVerifySchema, telegramLoginSchema, type UserRole } from '@dashboarduz/shared';
+import {
+  phoneOtpRequestSchema,
+  phoneOtpVerifySchema,
+  registerWithPasswordSchema,
+  loginWithPasswordSchema,
+  telegramLoginSchema,
+  type UserRole,
+} from '@dashboarduz/shared';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { rateLimiter } from '../../services/security/rate-limiter';
+import { hashPassword, verifyPassword } from '../../services/auth/password';
+import { signJWT } from '../../services/auth/jwt';
 
 export const authRouter = router({
+  registerWithPassword: publicProcedure
+    .input(registerWithPasswordSchema)
+    .mutation(async ({ input }) => {
+      const rateLimit = await rateLimiter.isAllowed(input.phone, 'auth:register-password', {
+        maxRequests: 5,
+        windowMs: 15 * 60 * 1000,
+        keyPrefix: 'password-register',
+      });
+      if (!rateLimit.allowed) {
+        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Too many attempts. Try again later.' });
+      }
+
+      const existingUser = await prisma.user.findFirst({
+        where: { phone: input.phone },
+      });
+
+      if (existingUser?.passwordHash) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists. Please sign in.' });
+      }
+
+      const passwordHash = await hashPassword(input.password);
+
+      let userId: string;
+      let tenantId: string;
+      let roles: string[];
+
+      if (existingUser) {
+        const updatedUser = await prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            passwordHash,
+            email: input.email ?? existingUser.email,
+            name: input.name ?? existingUser.name,
+            lastLoginAt: new Date(),
+          },
+        });
+        userId = updatedUser.id;
+        tenantId = updatedUser.tenantId;
+        roles = updatedUser.roles;
+      } else {
+        const tenant = await prisma.tenant.create({
+          data: {
+            name: input.tenantName,
+            plan: 'free',
+          },
+        });
+
+        const createdUser = await prisma.user.create({
+          data: {
+            tenantId: tenant.id,
+            phone: input.phone,
+            email: input.email,
+            name: input.name,
+            passwordHash,
+            roles: ['Admin'],
+            authProvider: 'phone',
+            lastLoginAt: new Date(),
+          },
+        });
+
+        userId = createdUser.id;
+        tenantId = tenant.id;
+        roles = createdUser.roles;
+      }
+
+      const jwtPayload = {
+        userId,
+        tenantId,
+        roles: roles.filter((role: string): role is UserRole => ['Admin', 'Manager', 'Agent'].includes(role)),
+        phone: input.phone,
+        ...(input.email ? { email: input.email } : {}),
+      };
+
+      const token = signJWT(jwtPayload);
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId,
+          userId,
+          action: 'register_password',
+          resource: 'auth',
+          metadata: { phone: input.phone },
+        },
+      });
+
+      return { success: true, token, user: jwtPayload };
+    }),
+
+  loginWithPassword: publicProcedure
+    .input(loginWithPasswordSchema)
+    .mutation(async ({ input }) => {
+      const normalizedLogin = input.login.trim();
+      const rateLimit = await rateLimiter.isAllowed(normalizedLogin, 'auth:login-password', {
+        maxRequests: 10,
+        windowMs: 15 * 60 * 1000,
+        keyPrefix: 'password-login',
+      });
+      if (!rateLimit.allowed) {
+        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Too many login attempts. Try again later.' });
+      }
+
+      const isPhoneLogin = /^\+?[1-9]\d{1,14}$/.test(normalizedLogin);
+      const user = await prisma.user.findFirst({
+        where: isPhoneLogin ? { phone: normalizedLogin } : { email: normalizedLogin.toLowerCase() },
+      });
+
+      if (!user || !user.passwordHash) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid credentials' });
+      }
+
+      const passwordOk = await verifyPassword(input.password, user.passwordHash);
+      if (!passwordOk) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid credentials' });
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+
+      const jwtPayload = {
+        userId: updatedUser.id,
+        tenantId: updatedUser.tenantId,
+        roles: updatedUser.roles.filter((role: string): role is UserRole => ['Admin', 'Manager', 'Agent'].includes(role)),
+        ...(updatedUser.phone ? { phone: updatedUser.phone } : {}),
+        ...(updatedUser.email ? { email: updatedUser.email } : {}),
+      };
+
+      const token = signJWT(jwtPayload);
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: updatedUser.tenantId,
+          userId: updatedUser.id,
+          action: 'login_password',
+          resource: 'auth',
+          metadata: { login: normalizedLogin },
+        },
+      });
+
+      return { success: true, token, user: jwtPayload };
+    }),
+
   // Phone OTP: Request code
   requestOtp: publicProcedure
     .input(phoneOtpRequestSchema)
@@ -60,8 +212,7 @@ export const authRouter = router({
 
         // Verify OTP with provider
         const { otpService } = await import('../../services/auth/otp');
-        const { signJWT } = await import('../../services/auth/jwt');
-        
+
         const verification = await otpService.verifyOTP(input.phone, input.code);
         
         if (!verification.success) {
