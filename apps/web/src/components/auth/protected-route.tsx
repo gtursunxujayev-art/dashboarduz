@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/auth-context';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredRoles?: string[];
+  requiredRoles?: Array<'Admin' | 'Manager' | 'Agent'>;
 }
 
 export default function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps) {
@@ -17,7 +17,7 @@ export default function ProtectedRoute({ children, requiredRoles }: ProtectedRou
     if (!isLoading && !user) {
       router.replace('/auth/login');
     } else if (!isLoading && user && requiredRoles) {
-      const hasRequiredRole = requiredRoles.some(role => user.roles.includes(role as any));
+      const hasRequiredRole = requiredRoles.some((role) => user.roles.includes(role));
       if (!hasRequiredRole) {
         router.replace('/dashboard');
       }
@@ -40,7 +40,7 @@ export default function ProtectedRoute({ children, requiredRoles }: ProtectedRou
   }
 
   if (requiredRoles) {
-    const hasRequiredRole = requiredRoles.some(role => user.roles.includes(role as any));
+    const hasRequiredRole = requiredRoles.some((role) => user.roles.includes(role));
     if (!hasRequiredRole) {
       return null; // Will redirect in useEffect
     }
