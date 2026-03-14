@@ -31,7 +31,7 @@ applyObservabilityMiddleware(app);
 
 const allowedOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:3000')
   .split(',')
-  .map((value) => value.trim())
+  .map((value) => value.trim().replace(/\/+$/, ''))
   .filter(Boolean);
 
 app.use(cors({
@@ -39,7 +39,8 @@ app.use(cors({
     if (!origin || process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
-    if (allowedOrigins.includes(origin)) {
+    const normalizedOrigin = origin.replace(/\/+$/, '');
+    if (allowedOrigins.includes(normalizedOrigin)) {
       return callback(null, true);
     }
     return callback(new Error('CORS blocked'));
