@@ -4,7 +4,7 @@ export type TenantPlan = 'free' | 'pro' | 'enterprise';
 
 export type UserRole = 'Admin' | 'Manager' | 'Agent';
 
-export type AuthProvider = 'phone' | 'google' | 'telegram' | 'email';
+export type AuthProvider = 'phone' | 'telegram' | 'email';
 
 export type IntegrationType = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel';
 
