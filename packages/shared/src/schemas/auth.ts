@@ -12,15 +12,17 @@ export const phoneOtpVerifySchema = z.object({
 
 // Password auth schemas
 export const registerWithPasswordSchema = z.object({
-  tenantName: z.string().min(2, 'Tenant name is required').max(120),
-  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
+  login: z
+    .string()
+    .min(3, 'Login must be at least 3 characters')
+    .max(50, 'Login must be at most 50 characters')
+    .regex(/^[a-zA-Z0-9._-]+$/, 'Login may contain only letters, numbers, dots, underscores, and hyphens'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  email: z.string().email().optional(),
-  name: z.string().min(2).max(120).optional(),
+  confirmPassword: z.string().min(8, 'Confirm password must be at least 8 characters'),
 });
 
 export const loginWithPasswordSchema = z.object({
-  login: z.string().min(3, 'Login is required'), // phone or email
+  login: z.string().min(3, 'Login is required'),
   password: z.string().min(1, 'Password is required'),
 });
 
