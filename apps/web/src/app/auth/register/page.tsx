@@ -6,10 +6,7 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 
 export default function RegisterPage() {
-  const [tenantName, setTenantName] = useState('');
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const [loginValue, setLoginValue] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -30,11 +27,9 @@ export default function RegisterPage() {
     setIsLoading(true);
     try {
       const result = await registerWithPassword.mutateAsync({
-        tenantName,
-        name: name || undefined,
-        phone,
-        email: email || undefined,
+        login: loginValue,
         password,
+        confirmPassword,
       });
 
       if (result.success && result.token && result.user) {
@@ -55,7 +50,7 @@ export default function RegisterPage() {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Create your tenant account</h2>
-          <p className="mt-2 text-center text-sm text-gray-600">Register with phone and password</p>
+          <p className="mt-2 text-center text-sm text-gray-600">Register with login and password</p>
         </div>
 
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
@@ -67,63 +62,17 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="tenantName" className="block text-sm font-medium text-gray-700">
-                Company Name
+              <label htmlFor="login" className="block text-sm font-medium text-gray-700">
+                Login
               </label>
               <input
-                id="tenantName"
+                id="login"
                 type="text"
                 required
-                value={tenantName}
-                onChange={(e) => setTenantName(e.target.value)}
+                value={loginValue}
+                onChange={(e) => setLoginValue(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="Acme LLC"
-                disabled={isLoading}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-                Full Name (optional)
-              </label>
-              <input
-                id="name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="John Doe"
-                disabled={isLoading}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
-                Phone Number
-              </label>
-              <input
-                id="phone"
-                type="tel"
-                required
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="+998993667666"
-                disabled={isLoading}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email (optional)
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="user@example.com"
+                placeholder="your-login"
                 disabled={isLoading}
               />
             </div>
@@ -159,6 +108,10 @@ export default function RegisterPage() {
                 disabled={isLoading}
               />
             </div>
+
+            <p className="text-xs text-gray-500">
+              Enter the same password twice to confirm it before account creation.
+            </p>
 
             <button
               type="submit"
