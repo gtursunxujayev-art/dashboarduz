@@ -41,7 +41,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.production
+      dockerfile: Dockerfile
     container_name: dashboarduz-api-staging
     environment:
       NODE_ENV: staging
@@ -69,7 +69,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.production
+      dockerfile: Dockerfile
     container_name: dashboarduz-worker-staging
     command: node dist/workers/worker.js
     environment:
