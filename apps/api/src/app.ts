@@ -6,6 +6,7 @@ import webhookRouter from './webhooks';
 import { initSentry, log, LogLevel } from './services/observability';
 import { checkRedisHealth } from './services/queue/redis-client';
 import { applyObservabilityMiddleware } from './middleware/observability';
+import { prisma } from '@dashboarduz/db';
 
 dotenv.config();
 
@@ -56,13 +57,17 @@ app.use(express.json({
 
 app.get('/health', async (_req, res) => {
   try {
-    const redisHealth = await checkRedisHealth();
+    const [redisHealth, dbHealth] = await Promise.all([
+      checkRedisHealth(),
+      prisma.$queryRaw`SELECT 1`,
+    ]);
     const healthStatus = {
       status: redisHealth.status === 'healthy' ? 'healthy' : 'degraded',
       timestamp: new Date().toISOString(),
       services: {
         api: 'healthy',
         redis: redisHealth,
+        db: dbHealth ? 'healthy' : 'unhealthy',
       },
     };
 
@@ -73,6 +78,40 @@ app.get('/health', async (_req, res) => {
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
       error: error.message,
+    });
+  }
+});
+
+app.get('/health/ready', async (_req, res) => {
+  try {
+    const [redisHealth, queueHealth] = await Promise.all([
+      checkRedisHealth(),
+      (async () => {
+        const { queueService } = await import('./services/queue');
+        return queueService.healthCheck();
+      })(),
+    ]);
+    await prisma.$queryRaw`SELECT 1`;
+
+    if (redisHealth.status !== 'healthy' || queueHealth.status === 'unhealthy') {
+      return res.status(503).json({
+        status: 'not_ready',
+        redis: redisHealth,
+        queues: queueHealth,
+      });
+    }
+
+    return res.json({
+      status: 'ready',
+      timestamp: new Date().toISOString(),
+      redis: redisHealth,
+      queues: queueHealth,
+    });
+  } catch (error: any) {
+    return res.status(503).json({
+      status: 'not_ready',
+      error: error.message,
+      timestamp: new Date().toISOString(),
     });
   }
 });
