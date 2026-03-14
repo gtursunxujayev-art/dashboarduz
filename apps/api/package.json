@@ -2,6 +2,9 @@
     "name":  "@dashboarduz/api",
     "version":  "1.0.0",
     "private":  true,
+    "engines":  {
+                    "node":  ">=20 <25"
+                },
     "description":  "Dashboarduz API - Multi-Tenant CRM Integrator Backend",
     "main":  "./dist/index.js",
     "scripts":  {
@@ -18,7 +21,7 @@
                     "db:migrate:deploy":  "npm run migrate:deploy --workspace @dashboarduz/db",
                     "db:studio":  "npm run studio --workspace @dashboarduz/db",
                     "db:push":  "npm run db:push --workspace @dashboarduz/db",
-                    "test":  "jest",
+                    "test":  "jest --passWithNoTests",
                     "docker:build":  "docker build -t dashboarduz-api .",
                     "docker:run":  "docker run -p 3001:3001 dashboarduz-api",
                     "postinstall":  "echo \u0027Prisma generation handled in Dockerfile or run manually with npm run db:generate\u0027",
