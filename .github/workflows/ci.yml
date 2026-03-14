@@ -36,7 +36,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if [ -n "$DATABASE_URL" ]; then
-            npm run migrate:deploy --workspace @dashboarduz/api
+            npm run db:migrate:deploy
           else
             echo "DATABASE_URL not set; skipping migration step."
           fi
