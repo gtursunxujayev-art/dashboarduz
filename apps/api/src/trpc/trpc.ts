@@ -32,12 +32,14 @@ export const protectedProcedure = t.procedure.use(async (opts) => {
     });
   }
 
-  // Set tenant context for RLS when the database function is available.
-  // The MVP can still operate because routers also scope queries by ctx.tenantId.
   try {
     await prisma.$executeRaw`SELECT app.set_tenant_context(${ctx.tenantId}::uuid, ${ctx.user.userId}::uuid)`;
-  } catch (error) {
-    console.warn('[Auth] Tenant context function unavailable, continuing without DB RLS context');
+  } catch (error: any) {
+    console.error('[Auth] Failed to set tenant context for RLS:', error?.message);
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'Tenant database context is not configured',
+    });
   }
 
   return opts.next({
