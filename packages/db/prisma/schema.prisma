@@ -47,7 +47,7 @@ model User {
   passwordHash String?
   name         String?
   roles        String[] @default(["Agent"]) // Admin, Manager, Agent
-  authProvider String   // phone, google, telegram, email
+  authProvider String   // phone, telegram, email
   providerId   String?  // external provider ID
   telegramId   String?  @unique
   googleId     String?  @unique
@@ -75,7 +75,7 @@ model User {
 model UserAuthLink {
   id        String   @id @default(uuid())
   userId    String
-  provider  String   // phone, google, telegram
+  provider  String   // phone, telegram
   providerId String
   verified  Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -120,7 +120,7 @@ model Integration {
 model Lead {
   id          String   @id @default(uuid())
   tenantId    String
-  amocrmId    String?  @unique
+  amocrmId    String?
   title       String
   contactId   String?
   status      String?  // lead status from AmoCRM
@@ -137,6 +137,7 @@ model Lead {
 
   @@index([tenantId])
   @@index([amocrmId])
+  @@unique([tenantId, amocrmId])
   @@index([contactId])
   @@index([status])
   @@index([createdAt])
@@ -156,6 +157,7 @@ model Contact {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   leads  Lead[]
+  calls  Call[]
 
   @@index([tenantId])
   @@index([tenantId, phone])
@@ -172,7 +174,7 @@ model Contact {
 model Call {
   id            String   @id @default(uuid())
   tenantId      String
-  callIdExternal String  @unique // external call ID from VoIP provider
+  callIdExternal String // external call ID from VoIP provider
   from          String   // caller number
   to            String   // called number
   direction     String   // inbound, outbound
@@ -189,12 +191,15 @@ model Call {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lead   Lead?  @relation(fields: [leadId], references: [id])
+  contact Contact? @relation(fields: [contactId], references: [id])
 
   @@index([tenantId])
   @@index([callIdExternal])
   @@index([from])
   @@index([to])
   @@index([leadId])
+  @@index([contactId])
+  @@unique([tenantId, callIdExternal])
   @@index([startedAt])
   @@map("calls")
 }
@@ -235,6 +240,7 @@ model WebhookEvent {
   tenantId    String?
   source      String   // amocrm, utel, telegram, etc.
   eventType   String
+  idempotencyKey String?
   rawPayload  Json     // original webhook payload
   signature   String?  // webhook signature for verification
   processed   Boolean  @default(false)
@@ -247,6 +253,8 @@ model WebhookEvent {
 
   @@index([tenantId])
   @@index([source, processed])
+  @@index([source, idempotencyKey])
+  @@unique([tenantId, source, idempotencyKey])
   @@index([createdAt])
   @@map("webhook_events")
 }
