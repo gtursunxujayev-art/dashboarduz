@@ -22,6 +22,13 @@ export interface AmoCRMIntegrationConfig {
   lastRefreshedAt?: Date;
 }
 
+export interface AmoCRMAccountInfo {
+  id?: number | string;
+  name?: string;
+  domain?: string;
+  subdomain?: string;
+}
+
 export class AmoCRMService {
   private clientId: string;
   private clientSecret: string;
@@ -148,17 +155,28 @@ export class AmoCRMService {
         return false;
       }
       
-      // Calculate HMAC-SHA256 of the raw request body
-      const expectedSignature = EncryptionService.generateHMAC(
-        typeof payload === 'string' ? payload : payload.toString('utf8'),
-        this.webhookSecret
-      );
-      
-      // Compare signatures using timing-safe comparison
-      const isValid = crypto.timingSafeEqual(
-        Buffer.from(signature, 'hex'),
-        Buffer.from(expectedSignature, 'hex')
-      );
+      const payloadString = typeof payload === 'string' ? payload : payload.toString('utf8');
+      const expectedHex = EncryptionService.generateHMAC(payloadString, this.webhookSecret);
+      const normalizedSignature = signature.trim();
+      const expectedBufferHex = Buffer.from(expectedHex, 'hex');
+
+      let providedBuffer: Buffer | null = null;
+      if (/^[a-fA-F0-9]+$/.test(normalizedSignature)) {
+        providedBuffer = Buffer.from(normalizedSignature, 'hex');
+      } else {
+        try {
+          providedBuffer = Buffer.from(normalizedSignature, 'base64');
+        } catch {
+          providedBuffer = null;
+        }
+      }
+
+      if (!providedBuffer || providedBuffer.length !== expectedBufferHex.length) {
+        logger.warn('Invalid webhook signature format/length');
+        return false;
+      }
+
+      const isValid = crypto.timingSafeEqual(providedBuffer, expectedBufferHex);
       
       if (!isValid) {
         logger.warn('Invalid webhook signature');
@@ -169,6 +187,23 @@ export class AmoCRMService {
       logger.error({ error: error.message }, 'Webhook signature verification error');
       return false;
     }
+  }
+
+  async fetchAccountInfo(accessToken: string): Promise<AmoCRMAccountInfo> {
+    const response = await fetch(`${this.baseUrl}/api/v4/account`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ error: errorText, status: response.status }, 'AmoCRM account fetch error');
+      throw new Error(`Failed to fetch AmoCRM account: ${response.status} ${response.statusText}`);
+    }
+
+    return (await response.json()) as AmoCRMAccountInfo;
   }
 
   // Fetch leads from AmoCRM (polling fallback)
