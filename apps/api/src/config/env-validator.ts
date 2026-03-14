@@ -92,6 +92,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'staging', 'production', 'test']).default('development'),
   PORT: z.string().default('3001'),
   API_URL: z.string().url().optional(),
+  PUBLIC_API_URL: z.string().url().optional(),
   FRONTEND_URL: z.string().url().optional(),
   CORS_ORIGIN: z.string().optional(),
   
@@ -208,7 +209,6 @@ export function validateFeatureRequirements(feature: string): void {
   const requirements: Record<string, string[]> = {
     otp_twilio: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_VERIFY_SERVICE_SID'],
     otp_firebase: ['FIREBASE_PROJECT_ID', 'FIREBASE_PRIVATE_KEY', 'FIREBASE_CLIENT_EMAIL'],
-    google_oauth: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REDIRECT_URI'],
     telegram: ['TELEGRAM_BOT_TOKEN'],
     amocrm: ['AMOCRM_CLIENT_ID', 'AMOCRM_CLIENT_SECRET', 'AMOCRM_REDIRECT_URI'],
     utel: ['UTEL_API_URL', 'UTEL_API_TOKEN'],
@@ -238,7 +238,6 @@ export function validateAllFeatures(): void {
     validateFeatureRequirements('otp_firebase');
   }
 
-  validateFeatureRequirements('google_oauth');
   validateFeatureRequirements('telegram');
   validateFeatureRequirements('amocrm');
   validateFeatureRequirements('utel');
@@ -257,6 +256,7 @@ export function getEnvConfig() {
     nodeEnv: currentEnv.NODE_ENV,
     port: parseInt(currentEnv.PORT, 10),
     apiUrl: currentEnv.API_URL,
+    publicApiUrl: currentEnv.PUBLIC_API_URL,
     frontendUrl: currentEnv.FRONTEND_URL,
     corsOrigin: currentEnv.CORS_ORIGIN,
     sentryEnabled: !!currentEnv.SENTRY_DSN,
