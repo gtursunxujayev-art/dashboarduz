@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
 
 type UserRole = 'Admin' | 'Manager' | 'Agent';
@@ -23,11 +23,14 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const TOKEN_STORAGE_KEY = 'token';
+const USER_STORAGE_KEY = 'auth_user';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<JWTPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+  const pathname = usePathname();
   
   const meQuery = trpc.auth.me.useQuery(undefined, {
     enabled: false, // We'll call it manually
@@ -35,31 +38,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const refreshUser = useCallback(async () => {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!token) {
+      setUser(null);
+      localStorage.removeItem(USER_STORAGE_KEY);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const data = await meQuery.refetch();
       if (data.data) {
-        setUser({
+        const nextUser = {
           userId: data.data.id,
           tenantId: data.data.tenantId,
           roles: data.data.roles as UserRole[],
           email: data.data.email || undefined,
           phone: data.data.phone || undefined,
-        });
+        };
+        setUser(nextUser);
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
       } else {
-        // No user data, clear auth
-        logout();
+        setUser(null);
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        localStorage.removeItem(USER_STORAGE_KEY);
       }
     } catch (error) {
       console.error('Failed to refresh user:', error);
-      logout();
+      const cachedUser = localStorage.getItem(USER_STORAGE_KEY);
+      if (!cachedUser) {
+        setUser(null);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [meQuery, router]);
+  }, [meQuery]);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (token) {
+      const cachedUser = localStorage.getItem(USER_STORAGE_KEY);
+      if (cachedUser) {
+        try {
+          setUser(JSON.parse(cachedUser) as JWTPayload);
+        } catch {
+          localStorage.removeItem(USER_STORAGE_KEY);
+        }
+      }
       void refreshUser();
     } else {
       setIsLoading(false);
@@ -67,16 +92,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshUser]);
 
   const login = (token: string, userData: JWTPayload) => {
-    localStorage.setItem('token', token);
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
     setUser(userData);
     router.push('/dashboard');
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
     setUser(null);
     router.push('/auth/login');
   };
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    if (pathname === '/') {
+      if (user) {
+        router.replace('/dashboard');
+      } else {
+        router.replace('/auth/login');
+      }
+    }
+  }, [isLoading, pathname, router, user]);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, login, logout, refreshUser }}>
