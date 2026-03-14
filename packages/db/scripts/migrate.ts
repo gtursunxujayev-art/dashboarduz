@@ -32,7 +32,7 @@ export async function runMigrations(environment: string = 'production'): Promise
 
     // Run migrations
     try {
-      execSync('pnpm prisma migrate deploy', {
+      execSync('npx prisma migrate deploy --schema=packages/db/prisma/schema.prisma', {
         stdio: 'inherit',
         cwd: path.join(__dirname, '../../..'),
         env: {
