@@ -7,11 +7,17 @@ type AppRouter = any;
 
 export const trpc = createTRPCReact<AppRouter>() as any;
 
+function normalizeBaseUrl(url?: string) {
+  return (url || 'http://localhost:3001').replace(/\/+$/, '');
+}
+
 export function createTRPCClient() {
+  const apiBaseUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL);
+
   return trpc.createClient({
     links: [
       httpBatchLink({
-        url: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/trpc`,
+        url: `${apiBaseUrl}/api/trpc`,
         headers() {
           const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
           return {
