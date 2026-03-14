@@ -1,4 +1,4 @@
-// src/webhooks/index.ts
+import crypto from 'crypto';
 import express from 'express';
 import { prisma } from '@dashboarduz/db';
 import type { Request, Response } from 'express';
@@ -10,39 +10,69 @@ import { EncryptionService } from '../services/security/encryption';
 
 const router = express.Router();
 
-// AmoCRM webhook receiver — verify -> persist -> enqueue -> ack
+function getRawBody(req: Request): string {
+  const rawBody = (req as any).rawBody;
+  if (typeof rawBody === 'string') {
+    return rawBody;
+  }
+  return JSON.stringify(req.body ?? {});
+}
+
+function buildIdempotencyKey(source: string, tenantId: string, payload: string): string {
+  return crypto.createHash('sha256').update(`${source}:${tenantId}:${payload}`).digest('hex');
+}
+
+function isUniqueViolation(error: any): boolean {
+  return error?.code === 'P2002';
+}
+
+async function enqueueWebhookJob(params: {
+  jobName: string;
+  eventId: string;
+  tenantId: string;
+  idempotencyKey: string;
+}) {
+  const webhookQueue = getQueue(QueueName.WEBHOOK_PROCESSING);
+  await webhookQueue.add(
+    params.jobName,
+    {
+      eventId: params.eventId,
+      tenantId: params.tenantId,
+      idempotencyKey: params.idempotencyKey,
+    },
+    {
+      jobId: `${params.jobName}:${params.tenantId}:${params.idempotencyKey}`,
+      attempts: 5,
+      backoff: { type: 'exponential', delay: 3000 },
+      removeOnComplete: true,
+    },
+  );
+}
+
 router.post('/amocrm', async (req: Request, res: Response) => {
   try {
     const signature = (req.headers['x-signature'] || req.headers['x-amocrm-signature']) as string | undefined;
-    const rawBody = (req as any).rawBody ?? req.body; // ensure raw body available (Express rawBody middleware)
+    const rawBody = getRawBody(req);
 
-    // 1) Verify signature
     const isValid = amocrmService.verifyWebhookSignature(rawBody, signature);
     if (!isValid) {
       logger.warn({ msg: 'Invalid AmoCRM webhook signature' });
       return res.status(403).json({ error: 'Invalid signature' });
     }
 
-    // 2) Resolve tenant via integration mapping (account id from payload)
-    const accountId = req.body?.account?.id ?? req.body?.account_id;
-    if (!accountId) {
+    const accountIdRaw = req.body?.account?.id ?? req.body?.account_id;
+    if (!accountIdRaw) {
       return res.status(400).json({ error: 'Missing AmoCRM account id' });
     }
 
-    const webhookLimit = await rateLimiter.isAllowed(String(accountId), 'webhook:amocrm', {
-      maxRequests: 600,
-      windowMs: 60 * 1000,
-      keyPrefix: 'webhook',
-    });
-    if (!webhookLimit.allowed) {
-      return res.status(429).json({ error: 'Rate limit exceeded' });
-    }
+    const accountId = String(accountIdRaw);
     const integration = await prisma.integration.findFirst({
       where: {
         type: 'amocrm',
+        status: 'active',
         config: {
           path: ['account_id'],
-          equals: String(accountId),
+          equals: accountId,
         },
       },
     });
@@ -52,28 +82,45 @@ router.post('/amocrm', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Integration not found' });
     }
 
-    // 3) Persist raw event to webhook_events (durable)
-    const event = await prisma.webhookEvent.create({
-      data: {
-        tenantId: integration.tenantId,
-        source: 'amocrm',
-        eventType: req.body.account?.id ? 'account_update' : 'unknown',
-        rawPayload: req.body,
-        signature: signature || null,
-        processed: false,
-      },
+    const webhookLimit = await rateLimiter.isAllowed(integration.tenantId, 'webhook:amocrm', {
+      maxRequests: 600,
+      windowMs: 60 * 1000,
+      keyPrefix: 'webhook',
     });
+    if (!webhookLimit.allowed) {
+      return res.status(429).json({ error: 'Rate limit exceeded' });
+    }
 
-    // 4) Enqueue background job to process this event
-    const webhookQueue = getQueue(QueueName.WEBHOOK_PROCESSING);
-    await webhookQueue.add('process-amocrm-webhook', {
+    const idempotencyKey = buildIdempotencyKey('amocrm', integration.tenantId, rawBody);
+    const eventType = req.body?.event_type
+      || (req.body?.leads ? 'leads' : req.body?.contacts ? 'contacts' : 'unknown');
+
+    let event;
+    try {
+      event = await prisma.webhookEvent.create({
+        data: {
+          tenantId: integration.tenantId,
+          source: 'amocrm',
+          eventType,
+          idempotencyKey,
+          rawPayload: req.body,
+          signature: signature || null,
+          processed: false,
+        },
+      });
+    } catch (error: any) {
+      if (isUniqueViolation(error)) {
+        logger.info({ msg: 'Duplicate AmoCRM webhook ignored', idempotencyKey });
+        return res.status(200).json({ received: true, duplicate: true });
+      }
+      throw error;
+    }
+
+    await enqueueWebhookJob({
+      jobName: 'process-amocrm-webhook',
       eventId: event.id,
       tenantId: integration.tenantId,
-      idempotencyKey: `webhook-${event.id}`,
-    }, {
-      attempts: 5,
-      backoff: { type: 'exponential', delay: 3000 },
-      removeOnComplete: true
+      idempotencyKey,
     });
 
     await prisma.auditLog.create({
@@ -82,11 +129,10 @@ router.post('/amocrm', async (req: Request, res: Response) => {
         action: 'webhook_received',
         resource: 'webhook',
         resourceId: event.id,
-        metadata: { source: 'amocrm', eventType: event.eventType },
+        metadata: { source: 'amocrm', eventType },
       },
     });
 
-    // 5) ACK
     return res.status(200).json({ received: true });
   } catch (err) {
     logger.error({ err }, 'AmoCRM webhook handler failed');
@@ -94,42 +140,44 @@ router.post('/amocrm', async (req: Request, res: Response) => {
   }
 });
 
-// UTeL VoIP webhook receiver
 router.post('/utel', async (req: Request, res: Response) => {
   try {
+    const rawBody = getRawBody(req);
     const signature = req.headers['x-signature'] as string | undefined;
-    const rawBody = (req as any).rawBody ?? JSON.stringify(req.body);
+    const integrationKey = (req.query.integration_key as string | undefined)
+      || (req.headers['x-integration-key'] as string | undefined);
 
-    const webhookSecret = process.env.UTEL_WEBHOOK_SECRET;
-    if (process.env.NODE_ENV === 'production') {
-      if (!webhookSecret) {
-        logger.error({ msg: 'UTEL_WEBHOOK_SECRET is not configured in production' });
-        return res.status(500).json({ error: 'Webhook verification is not configured' });
-      }
-      if (!signature) {
-        return res.status(403).json({ error: 'Missing signature' });
-      }
-      const validSignature = EncryptionService.verifyHMAC(
-        typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody),
-        signature,
-        webhookSecret,
-      );
-      if (!validSignature) {
-        logger.warn({ msg: 'Invalid UTeL webhook signature' });
-        return res.status(403).json({ error: 'Invalid signature' });
-      }
-    } else if (!webhookSecret) {
-      logger.warn({ msg: 'UTEL_WEBHOOK_SECRET not configured; skipping signature verification in non-production' });
+    if (!integrationKey) {
+      return res.status(400).json({ error: 'Missing integration key' });
     }
 
-    // Resolve tenant via integration
     const integration = await prisma.integration.findFirst({
-      where: { type: 'voip_utel', status: 'active' },
+      where: {
+        type: 'voip_utel',
+        status: 'active',
+        config: {
+          path: ['webhookKey'],
+          equals: integrationKey,
+        },
+      },
     });
 
     if (!integration) {
-      logger.warn({ msg: 'UTeL integration not found' });
+      logger.warn({ msg: 'UTeL integration not found for key' });
       return res.status(404).json({ error: 'Integration not found' });
+    }
+
+    const webhookSecret = process.env.UTEL_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      if (!signature) {
+        return res.status(403).json({ error: 'Missing signature' });
+      }
+      const isValidSignature = EncryptionService.verifyHMAC(rawBody, signature, webhookSecret);
+      if (!isValidSignature) {
+        return res.status(403).json({ error: 'Invalid signature' });
+      }
+    } else if (process.env.NODE_ENV === 'production') {
+      logger.warn({ msg: 'UTEL_WEBHOOK_SECRET is not configured in production' });
     }
 
     const webhookLimit = await rateLimiter.isAllowed(integration.tenantId, 'webhook:utel', {
@@ -141,28 +189,35 @@ router.post('/utel', async (req: Request, res: Response) => {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
 
-    // Persist event
-    const event = await prisma.webhookEvent.create({
-      data: {
-        tenantId: integration.tenantId,
-        source: 'utel',
-        eventType: req.body.event_type || 'call_event',
-        rawPayload: req.body,
-        signature: signature || null,
-        processed: false,
-      },
-    });
+    const idempotencyKey = buildIdempotencyKey('utel', integration.tenantId, rawBody);
+    const eventType = req.body?.event_type || 'call_event';
 
-    // Enqueue processing
-    const webhookQueue = getQueue(QueueName.WEBHOOK_PROCESSING);
-    await webhookQueue.add('process-utel-webhook', {
+    let event;
+    try {
+      event = await prisma.webhookEvent.create({
+        data: {
+          tenantId: integration.tenantId,
+          source: 'utel',
+          eventType,
+          idempotencyKey,
+          rawPayload: req.body,
+          signature: signature || null,
+          processed: false,
+        },
+      });
+    } catch (error: any) {
+      if (isUniqueViolation(error)) {
+        logger.info({ msg: 'Duplicate UTeL webhook ignored', idempotencyKey });
+        return res.status(200).json({ received: true, duplicate: true });
+      }
+      throw error;
+    }
+
+    await enqueueWebhookJob({
+      jobName: 'process-utel-webhook',
       eventId: event.id,
       tenantId: integration.tenantId,
-      idempotencyKey: `webhook-${event.id}`,
-    }, {
-      attempts: 5,
-      backoff: { type: 'exponential', delay: 3000 },
-      removeOnComplete: true
+      idempotencyKey,
     });
 
     await prisma.auditLog.create({
@@ -171,7 +226,7 @@ router.post('/utel', async (req: Request, res: Response) => {
         action: 'webhook_received',
         resource: 'webhook',
         resourceId: event.id,
-        metadata: { source: 'utel', eventType: event.eventType },
+        metadata: { source: 'utel', eventType },
       },
     });
 
@@ -182,30 +237,26 @@ router.post('/utel', async (req: Request, res: Response) => {
   }
 });
 
-// Telegram webhook receiver
 router.post('/telegram', async (req: Request, res: Response) => {
   try {
-    // Telegram webhooks don't typically have signatures, but we can validate the bot token
-    const botToken = req.headers['x-telegram-bot-token'] as string | undefined;
-    
-    if (!botToken) {
-      logger.warn({ msg: 'Missing Telegram bot token in webhook' });
-      return res.status(403).json({ error: 'Missing bot token' });
+    const rawBody = getRawBody(req);
+    const secretToken = req.headers['x-telegram-bot-api-secret-token'] as string | undefined;
+    if (!secretToken) {
+      return res.status(403).json({ error: 'Missing Telegram secret token' });
     }
 
-    // Find integration with this bot token
     const integration = await prisma.integration.findFirst({
-      where: { 
+      where: {
         type: 'telegram',
+        status: 'active',
         config: {
-          path: ['botToken'],
-          equals: botToken,
+          path: ['webhookSecret'],
+          equals: secretToken,
         },
       },
     });
 
     if (!integration) {
-      logger.warn({ msg: 'Telegram integration not found for bot token' });
       return res.status(404).json({ error: 'Integration not found' });
     }
 
@@ -218,27 +269,34 @@ router.post('/telegram', async (req: Request, res: Response) => {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
 
-    // Persist event
-    const event = await prisma.webhookEvent.create({
-      data: {
-        tenantId: integration.tenantId,
-        source: 'telegram',
-        eventType: 'message',
-        rawPayload: req.body,
-        processed: false,
-      },
-    });
+    const idempotencyKey = buildIdempotencyKey('telegram', integration.tenantId, rawBody);
+    const eventType = req.body?.message ? 'message' : req.body?.callback_query ? 'callback_query' : 'update';
 
-    // Enqueue processing
-    const webhookQueue = getQueue(QueueName.WEBHOOK_PROCESSING);
-    await webhookQueue.add('process-telegram-webhook', {
+    let event;
+    try {
+      event = await prisma.webhookEvent.create({
+        data: {
+          tenantId: integration.tenantId,
+          source: 'telegram',
+          eventType,
+          idempotencyKey,
+          rawPayload: req.body,
+          processed: false,
+        },
+      });
+    } catch (error: any) {
+      if (isUniqueViolation(error)) {
+        logger.info({ msg: 'Duplicate Telegram webhook ignored', idempotencyKey });
+        return res.status(200).json({ received: true, duplicate: true });
+      }
+      throw error;
+    }
+
+    await enqueueWebhookJob({
+      jobName: 'process-telegram-webhook',
       eventId: event.id,
       tenantId: integration.tenantId,
-      idempotencyKey: `webhook-${event.id}`,
-    }, {
-      attempts: 5,
-      backoff: { type: 'exponential', delay: 3000 },
-      removeOnComplete: true
+      idempotencyKey,
     });
 
     await prisma.auditLog.create({
@@ -247,7 +305,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
         action: 'webhook_received',
         resource: 'webhook',
         resourceId: event.id,
-        metadata: { source: 'telegram', eventType: event.eventType },
+        metadata: { source: 'telegram', eventType },
       },
     });
 
