@@ -1,34 +1,65 @@
-﻿# Dashboarduz Monorepo
+# Dashboarduz Monorepo
 
 ## Structure
-- apps/web: Next.js frontend (deploy to Vercel)
-- apps/api: Express + tRPC backend (deploy to Railway)
-- packages/shared: Shared Zod schemas/types
-- packages/db: Prisma schema/client and DB scripts
+- `apps/web`: Next.js dashboard (Vercel)
+- `apps/api`: Express + tRPC API and worker entrypoints (Railway)
+- `packages/shared`: shared types and Zod schemas
+- `packages/db`: Prisma schema, client, and migrations
 
-## Install
+## MVP Scope
+- Auth: `phone OTP` + `login/password`
+- Telegram: link/integration only (not primary login)
+- Integrations enabled: `amocrm`, `telegram`, `voip_utel`
+- Google auth: removed from active runtime
+- Google Sheets: deferred/disabled in MVP
+
+## Local Commands
 ```bash
 npm install
-```
-
-## Development
-```bash
-npm run dev:web
-npm run dev:api
-npm run dev:worker
-```
-
-## Build
-```bash
+npm run db:generate
+npm run type-check
 npm run build
 ```
 
-## Type Check
+Run services:
 ```bash
-npm run type-check
+npm run dev:api
+npm run dev:worker
+npm run dev:web
 ```
 
-## Deploy Mapping
-- Vercel project root: `apps/web`
-- Railway API service root: `apps/api`
-- Railway Worker service root: `apps/api` (worker command)
+## Deploy Topology
+- Web: Vercel project root `apps/web`
+- API: Railway service root `apps/api` with start command `npm run start --workspace @dashboarduz/api`
+- Worker: Railway service root `apps/api` with start command `npm run start:worker --workspace @dashboarduz/api`
+- Database: Neon Postgres
+- Queue: managed Redis
+
+## Release Path (Canonical)
+1. `npm install`
+2. `npm run db:migrate:deploy`
+3. Roll out API
+4. Roll out worker
+5. Roll out web
+
+## Required Env Contract
+
+API/worker core:
+- `NODE_ENV=production`
+- `DATABASE_URL`
+- `REDIS_URL`
+- `JWT_SECRET`
+- `ENCRYPTION_KEY`
+- `FRONTEND_URL` and/or `CORS_ORIGIN`
+
+Integrations:
+- `AMOCRM_CLIENT_ID`
+- `AMOCRM_CLIENT_SECRET`
+- `AMOCRM_REDIRECT_URI`
+- `AMOCRM_WEBHOOK_SECRET`
+- `UTEL_API_URL`
+- `UTEL_API_TOKEN`
+- `TELEGRAM_BOT_TOKEN` (required for Telegram integration and outbound notifications)
+
+Web:
+- `NEXT_PUBLIC_API_URL`
