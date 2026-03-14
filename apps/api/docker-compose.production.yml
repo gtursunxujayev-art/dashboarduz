@@ -63,7 +63,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.production
+      dockerfile: Dockerfile
     container_name: dashboarduz-api-prod
     environment:
       NODE_ENV: production
@@ -108,7 +108,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.production
+      dockerfile: Dockerfile
     container_name: dashboarduz-worker-prod
     command: node dist/workers/worker.js
     environment:
