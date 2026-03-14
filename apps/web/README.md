@@ -25,7 +25,7 @@ Key values:
 
 ## MVP auth/integrations scope
 
-- Login: Phone OTP
+- Login: Phone OTP + Login/Password
 - Telegram: account linking/integration after login
 - Google Sign-In: removed for MVP
 - Google Sheets: disabled/deferred for MVP
