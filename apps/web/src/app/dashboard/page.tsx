@@ -16,6 +16,15 @@ export default function DashboardPage() {
   });
   
   const integrationsQuery = trpc.integrations.list.useQuery();
+  const callsQuery = trpc.calls.list.useQuery({
+    page: 1,
+    limit: 1,
+  });
+  const notificationsQuery = trpc.notifications.list.useQuery({
+    page: 1,
+    limit: 1,
+    status: 'pending',
+  });
 
   return (
     <div className="space-y-6">
@@ -73,7 +82,7 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 truncate">Today's Calls</dt>
-                  <dd className="text-lg font-medium text-gray-900">0</dd>
+                  <dd className="text-lg font-medium text-gray-900">{callsQuery.data?.pagination.total || 0}</dd>
                 </dl>
               </div>
             </div>
@@ -91,7 +100,7 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 truncate">Pending Notifications</dt>
-                  <dd className="text-lg font-medium text-gray-900">0</dd>
+                  <dd className="text-lg font-medium text-gray-900">{notificationsQuery.data?.pagination.total || 0}</dd>
                 </dl>
               </div>
             </div>
