@@ -26,12 +26,6 @@ export const loginWithPasswordSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-// Google OAuth schemas
-export const googleOAuthCallbackSchema = z.object({
-  code: z.string(),
-  state: z.string().optional(),
-});
-
 // Telegram Login schemas
 export const telegramLoginSchema = z.object({
   id: z.number(),
@@ -63,7 +57,6 @@ export type PhoneOtpRequest = z.infer<typeof phoneOtpRequestSchema>;
 export type PhoneOtpVerify = z.infer<typeof phoneOtpVerifySchema>;
 export type RegisterWithPassword = z.infer<typeof registerWithPasswordSchema>;
 export type LoginWithPassword = z.infer<typeof loginWithPasswordSchema>;
-export type GoogleOAuthCallback = z.infer<typeof googleOAuthCallbackSchema>;
 export type TelegramLogin = z.infer<typeof telegramLoginSchema>;
 export type LinkAccount = z.infer<typeof linkAccountSchema>;
 export type JWTPayload = z.infer<typeof jwtPayloadSchema>;
