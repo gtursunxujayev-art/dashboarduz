@@ -41,6 +41,7 @@ model Tenant {
 model User {
   id           String   @id @default(uuid())
   tenantId     String
+  username     String?  @unique
   email        String?
   phone        String?
   passwordHash String?
@@ -62,6 +63,7 @@ model User {
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
   @@index([tenantId])
+  @@index([username])
   @@index([email])
   @@index([phone])
   @@index([telegramId])
