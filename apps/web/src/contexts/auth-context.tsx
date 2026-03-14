@@ -46,14 +46,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const data = await meQuery.refetch();
-      if (data.data) {
+      const response = await meQuery.refetch();
+      if (response.data) {
         const nextUser = {
-          userId: data.data.id,
-          tenantId: data.data.tenantId,
-          roles: data.data.roles as UserRole[],
-          email: data.data.email || undefined,
-          phone: data.data.phone || undefined,
+          userId: response.data.id,
+          tenantId: response.data.tenantId,
+          roles: response.data.roles as UserRole[],
+          email: response.data.email || undefined,
+          phone: response.data.phone || undefined,
         };
         setUser(nextUser);
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
@@ -64,10 +64,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Failed to refresh user:', error);
-      const cachedUser = localStorage.getItem(USER_STORAGE_KEY);
-      if (!cachedUser) {
-        setUser(null);
-      }
+      setUser(null);
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      localStorage.removeItem(USER_STORAGE_KEY);
     } finally {
       setIsLoading(false);
     }
