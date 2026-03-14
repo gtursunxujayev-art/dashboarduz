@@ -1,7 +1,7 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
 
 type UserRole = 'Admin' | 'Manager' | 'Agent';
@@ -30,14 +30,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<JWTPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
-  const pathname = usePathname();
   
   const meQuery = trpc.auth.me.useQuery(undefined, {
     enabled: false, // We'll call it manually
     retry: false,
   });
 
-  const refreshUser = useCallback(async () => {
+  const refreshUser = async () => {
     const token = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (!token) {
       setUser(null);
@@ -72,24 +71,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [meQuery]);
+  };
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (token) {
-      const cachedUser = localStorage.getItem(USER_STORAGE_KEY);
-      if (cachedUser) {
-        try {
-          setUser(JSON.parse(cachedUser) as JWTPayload);
-        } catch {
-          localStorage.removeItem(USER_STORAGE_KEY);
+    void (async () => {
+      const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+      if (token) {
+        const cachedUser = localStorage.getItem(USER_STORAGE_KEY);
+        if (cachedUser) {
+          try {
+            setUser(JSON.parse(cachedUser) as JWTPayload);
+          } catch {
+            localStorage.removeItem(USER_STORAGE_KEY);
+          }
         }
+        await refreshUser();
+      } else {
+        setIsLoading(false);
       }
-      void refreshUser();
-    } else {
-      setIsLoading(false);
-    }
-  }, [refreshUser]);
+    })();
+    // Run once on app bootstrap to avoid auth refresh loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const login = (token: string, userData: JWTPayload) => {
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
@@ -104,20 +107,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     router.push('/auth/login');
   };
-
-  useEffect(() => {
-    if (isLoading) {
-      return;
-    }
-
-    if (pathname === '/') {
-      if (user) {
-        router.replace('/dashboard');
-      } else {
-        router.replace('/auth/login');
-      }
-    }
-  }, [isLoading, pathname, router, user]);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, login, logout, refreshUser }}>
