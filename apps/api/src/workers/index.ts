@@ -1,25 +1,53 @@
-
-// Background worker services
-
-// These process jobs from Redis queues
-
 import { prisma } from '@dashboarduz/db';
 import { queueService } from '../services/queue';
 import { log, LogLevel } from '../services/observability';
-import { amocrmService } from '../services/integrations/amocrm';
 import { telegramService } from '../services/integrations/telegram';
 import { createVoIPService } from '../services/integrations/voip';
+import { decryptIntegrationTokens } from '../services/security/encryption';
+import { rateLimiter } from '../services/security/rate-limiter';
 
-// Webhook processing worker
+function normalizePhone(phone?: string | null): string {
+  if (!phone) {
+    return '';
+  }
+  return phone.replace(/[^\d+]/g, '');
+}
+
+function extractAmoEntities(payload: any, key: 'leads' | 'contacts'): any[] {
+  const direct = payload?.[key];
+  if (Array.isArray(direct)) {
+    return direct;
+  }
+
+  const add = payload?.[key]?.add;
+  if (Array.isArray(add)) {
+    return add;
+  }
+
+  const embedded = payload?._embedded?.[key];
+  if (Array.isArray(embedded)) {
+    return embedded;
+  }
+
+  return [];
+}
+
+function extractContactField(contactData: any, code: string): string | null {
+  const fields = Array.isArray(contactData?.custom_fields_values)
+    ? contactData.custom_fields_values
+    : [];
+
+  const field = fields.find((item: any) => String(item?.field_code || item?.code || '').toUpperCase() === code);
+  const value = field?.values?.[0]?.value;
+  return typeof value === 'string' ? value : null;
+}
+
 export async function processWebhookEvent(eventId: string) {
+  let tenantIdForAudit: string | null = null;
+
   try {
     log(LogLevel.INFO, 'Processing webhook event', { eventId });
-
-    // Fetch event from database
-    const event = await prisma.webhookEvent.findUnique({
-      where: { id: eventId },
-    });
-
+    const event = await prisma.webhookEvent.findUnique({ where: { id: eventId } });
     if (!event) {
       throw new Error(`Webhook event ${eventId} not found`);
     }
@@ -29,34 +57,24 @@ export async function processWebhookEvent(eventId: string) {
       return;
     }
 
-    // Determine tenant from event
     let tenantId = event.tenantId;
-    
     if (!tenantId && event.source === 'amocrm') {
-      // Try to determine tenant from AmoCRM account ID
-      const payload = event.rawPayload as any;
-      const accountId = payload.account?.id;
-      
+      const accountId = (event.rawPayload as any)?.account?.id ?? (event.rawPayload as any)?.account_id;
       if (accountId) {
-        // Find integration with this account ID
         const integration = await prisma.integration.findFirst({
           where: {
             type: 'amocrm',
             config: {
               path: ['account_id'],
-              equals: accountId,
+              equals: String(accountId),
             },
           },
         });
-        
-        if (integration) {
-          tenantId = integration.tenantId;
-        }
+        tenantId = integration?.tenantId || null;
       }
     }
 
     if (!tenantId) {
-      log(LogLevel.WARN, 'Cannot determine tenant for webhook event', { eventId, source: event.source });
       await prisma.webhookEvent.update({
         where: { id: eventId },
         data: {
@@ -67,7 +85,8 @@ export async function processWebhookEvent(eventId: string) {
       return;
     }
 
-    // Process based on source
+    tenantIdForAudit = tenantId;
+
     switch (event.source) {
       case 'amocrm':
         await processAmoCRMWebhook(event, tenantId);
@@ -82,24 +101,25 @@ export async function processWebhookEvent(eventId: string) {
         log(LogLevel.WARN, 'Unknown webhook source', { eventId, source: event.source });
     }
 
-    // Mark as processed
     await prisma.webhookEvent.update({
       where: { id: eventId },
       data: {
         processed: true,
         processedAt: new Date(),
+        errorMessage: null,
       },
     });
 
-    log(LogLevel.INFO, 'Webhook event processed successfully', { eventId, tenantId });
-  } catch (error: any) {
-    log(LogLevel.ERROR, 'Webhook processing failed', {
-      eventId,
-      error: error.message,
-      stack: error.stack,
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        action: 'webhook_processed',
+        resource: 'webhook',
+        resourceId: eventId,
+        metadata: { source: event.source, eventType: event.eventType },
+      },
     });
-
-    // Update event with error
+  } catch (error: any) {
     await prisma.webhookEvent.update({
       where: { id: eventId },
       data: {
@@ -108,235 +128,317 @@ export async function processWebhookEvent(eventId: string) {
       },
     });
 
+    if (tenantIdForAudit) {
+      await prisma.auditLog.create({
+        data: {
+          tenantId: tenantIdForAudit,
+          action: 'webhook_failed',
+          resource: 'webhook',
+          resourceId: eventId,
+          metadata: { error: error.message },
+        },
+      });
+    }
+
+    log(LogLevel.ERROR, 'Webhook processing failed', {
+      eventId,
+      error: error.message,
+      stack: error.stack,
+    });
     throw error;
   }
 }
 
 async function processAmoCRMWebhook(event: any, tenantId: string) {
   const payload = event.rawPayload as any;
-  
-  // Process leads
-  if (payload.leads) {
-    for (const leadData of payload.leads) {
-      await prisma.lead.upsert({
-        where: {
-          amocrmId: String(leadData.id),
-        },
-        update: {
-          title: leadData.name || 'Untitled Lead',
-          status: leadData.status_id ? String(leadData.status_id) : null,
-          metadata: leadData,
-          updatedAt: new Date(),
-        },
-        create: {
+  const leads = extractAmoEntities(payload, 'leads');
+  const contacts = extractAmoEntities(payload, 'contacts');
+
+  for (const leadData of leads) {
+    const leadId = leadData?.id ? String(leadData.id) : null;
+    if (!leadId) {
+      continue;
+    }
+
+    await prisma.lead.upsert({
+      where: {
+        tenantId_amocrmId: {
           tenantId,
-          amocrmId: String(leadData.id),
-          title: leadData.name || 'Untitled Lead',
-          status: leadData.status_id ? String(leadData.status_id) : null,
-          metadata: leadData,
-          source: 'amocrm',
+          amocrmId: leadId,
+        },
+      },
+      update: {
+        title: leadData.name || 'Untitled Lead',
+        status: leadData.status_id ? String(leadData.status_id) : null,
+        pipelineId: leadData.pipeline_id ? String(leadData.pipeline_id) : null,
+        responsibleUserId: leadData.responsible_user_id ? String(leadData.responsible_user_id) : null,
+        metadata: leadData,
+        updatedAt: new Date(),
+      },
+      create: {
+        tenantId,
+        amocrmId: leadId,
+        title: leadData.name || 'Untitled Lead',
+        status: leadData.status_id ? String(leadData.status_id) : null,
+        pipelineId: leadData.pipeline_id ? String(leadData.pipeline_id) : null,
+        responsibleUserId: leadData.responsible_user_id ? String(leadData.responsible_user_id) : null,
+        metadata: leadData,
+        source: 'amocrm',
+      },
+    });
+  }
+
+  for (const contactData of contacts) {
+    const phone = extractContactField(contactData, 'PHONE') || contactData.phone?.[0]?.value || null;
+    const email = extractContactField(contactData, 'EMAIL') || contactData.email?.[0]?.value || null;
+    const name = contactData.name || null;
+
+    const existingContact = await prisma.contact.findFirst({
+      where: {
+        tenantId,
+        OR: [
+          ...(phone ? [{ phone }] : []),
+          ...(email ? [{ email }] : []),
+        ],
+      },
+    });
+
+    if (existingContact) {
+      const existingExternalIds = (existingContact.externalIds as Record<string, unknown> | null) || {};
+      await prisma.contact.update({
+        where: { id: existingContact.id },
+        data: {
+          name: name || existingContact.name,
+          phone: phone || existingContact.phone,
+          email: email || existingContact.email,
+          externalIds: {
+            ...existingExternalIds,
+            amocrm_id: String(contactData.id),
+          },
+          metadata: contactData,
+        },
+      });
+    } else {
+      await prisma.contact.create({
+        data: {
+          tenantId,
+          name,
+          phone,
+          email,
+          externalIds: { amocrm_id: String(contactData.id) },
+          metadata: contactData,
         },
       });
     }
   }
 
-  // Process contacts
-  if (payload.contacts) {
-    for (const contactData of payload.contacts) {
-      const phone = contactData.phone?.[0]?.value;
-      const email = contactData.email?.[0]?.value;
-
-      if (phone || email) {
-        // Find existing contact or create new
-        const existingContact = await prisma.contact.findFirst({
-          where: {
-            tenantId,
-            phone: phone || undefined,
-            email: email || undefined,
-          },
-        });
-
-        if (existingContact) {
-          await prisma.contact.update({
-            where: { id: existingContact.id },
-            data: {
-              name: contactData.name || existingContact.name,
-              email: email || existingContact.email,
-              externalIds: { amocrm_id: String(contactData.id) },
-              metadata: contactData,
-              updatedAt: new Date(),
-            },
-          });
-        } else {
-          await prisma.contact.create({
-            data: {
-              tenantId,
-              name: contactData.name || null,
-              phone: phone || null,
-              email: email || null,
-              externalIds: { amocrm_id: String(contactData.id) },
-              metadata: contactData,
-            },
-          });
-        }
-      }
-    }
+  const [telegramIntegration, tenant] = await Promise.all([
+    prisma.integration.findFirst({
+      where: { tenantId, type: 'telegram', status: 'active' },
+    }),
+    prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { settings: true },
+    }),
+  ]);
+  const chatId = String(((tenant?.settings as any)?.notificationChatId || '')).trim() || undefined;
+  if (telegramIntegration && chatId && leads.length > 0) {
+    const notification = await prisma.notification.create({
+      data: {
+        tenantId,
+        type: 'telegram',
+        payload: {
+          chatId,
+          text: `AmoCRM update received: ${leads.length} lead(s), ${contacts.length} contact(s).`,
+        },
+        status: 'pending',
+      },
+    });
+    await queueService.addNotificationJob(notification.id, { priority: 2 });
   }
 }
 
 async function processUTeLWebhook(event: any, tenantId: string) {
   const payload = event.rawPayload as any;
-  
-  // Create call record
-  await prisma.call.create({
-    data: {
-      tenantId,
-      callIdExternal: payload.call_id || `utel-${Date.now()}`,
-      from: payload.from,
-      to: payload.to,
-      direction: payload.direction || 'inbound',
-      status: payload.status || 'completed',
-      duration: payload.duration,
-      recordingUrl: payload.recording_url,
-      recordingId: payload.recording_id,
+  const callIdExternal = String(payload.call_id || payload.id || `utel-${event.id}`);
+  const from = normalizePhone(payload.from || payload.caller || '');
+  const to = normalizePhone(payload.to || payload.callee || '');
+  const direction = payload.direction === 'outbound' ? 'outbound' : 'inbound';
+  const status = payload.status || payload.call_status || 'completed';
+  const startedAt = payload.start_time ? new Date(payload.start_time) : new Date();
+  const endedAt = payload.end_time ? new Date(payload.end_time) : null;
+  const duration = typeof payload.duration === 'number'
+    ? payload.duration
+    : endedAt
+      ? Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000))
+      : null;
+
+  const upsertedCall = await prisma.call.upsert({
+    where: {
+      tenantId_callIdExternal: {
+        tenantId,
+        callIdExternal,
+      },
+    },
+    update: {
+      from,
+      to,
+      direction,
+      status,
+      duration,
+      recordingUrl: payload.recording_url || null,
+      recordingId: payload.recording_id || null,
       metadata: payload,
-      startedAt: new Date(payload.start_time || Date.now()),
-      endedAt: payload.end_time ? new Date(payload.end_time) : null,
+      startedAt,
+      endedAt,
+    },
+    create: {
+      tenantId,
+      callIdExternal,
+      from,
+      to,
+      direction,
+      status,
+      duration,
+      recordingUrl: payload.recording_url || null,
+      recordingId: payload.recording_id || null,
+      metadata: payload,
+      startedAt,
+      endedAt,
     },
   });
 
-  // Try to link to lead if phone number matches
-  if (payload.from || payload.to) {
-    const contact = await prisma.contact.findFirst({
-      where: {
-        tenantId,
-        phone: { in: [payload.from, payload.to] },
-      },
-      include: { leads: true },
+  const contacts = await prisma.contact.findMany({
+    where: {
+      tenantId,
+      phone: { not: null },
+    },
+    select: { id: true, phone: true },
+    take: 5000,
+  });
+
+  const matchedContact = contacts.find((contact) => {
+    const normalized = normalizePhone(contact.phone);
+    return normalized && (normalized === from || normalized === to);
+  });
+
+  if (matchedContact) {
+    const lead = await prisma.lead.findFirst({
+      where: { tenantId, contactId: matchedContact.id },
+      orderBy: { updatedAt: 'desc' },
     });
 
-    if (contact && contact.leads.length > 0) {
-      const firstLead = contact.leads[0];
-      if (!firstLead) {
-        return;
-      }
-      await prisma.call.updateMany({
-        where: {
-          tenantId,
-          callIdExternal: payload.call_id,
-        },
-        data: {
-          contactId: contact.id,
-          leadId: firstLead.id,
-        },
-      });
-    }
+    await prisma.call.update({
+      where: { id: upsertedCall.id },
+      data: {
+        contactId: matchedContact.id,
+        leadId: lead?.id || null,
+      },
+    });
   }
 }
 
 async function processTelegramWebhook(event: any, tenantId: string) {
   const payload = event.rawPayload as any;
-  
-  // Process Telegram messages/updates
-  // This would handle bot commands, messages, etc.
-  log(LogLevel.INFO, 'Processing Telegram webhook', { tenantId, updateId: payload.update_id });
-  
-  // Create notification if needed
-  if (payload.message) {
-    await queueService.addNotificationJob(`telegram-${payload.update_id}`);
-  }
+  const integration = await prisma.integration.findFirst({
+    where: { tenantId, type: 'telegram' },
+  });
+
+  await prisma.integration.updateMany({
+    where: { tenantId, type: 'telegram' },
+    data: {
+      lastSyncAt: new Date(),
+      config: {
+        ...((integration?.config as Record<string, unknown> | null) || {}),
+        lastInboundUpdateId: payload?.update_id ? String(payload.update_id) : null,
+      },
+    },
+  });
 }
 
-// Notification worker
 export async function processNotification(notificationId: string) {
   try {
-    log(LogLevel.INFO, 'Processing notification', { notificationId });
-
     const notification = await prisma.notification.findUnique({
       where: { id: notificationId },
     });
-
     if (!notification) {
       throw new Error(`Notification ${notificationId} not found`);
     }
-
     if (notification.status === 'sent') {
-      log(LogLevel.WARN, 'Notification already sent', { notificationId });
       return;
     }
 
-    // Get integration for the notification type
-    const integration = await prisma.integration.findFirst({
-      where: {
-        tenantId: notification.tenantId,
-        type: notification.type === 'telegram' ? 'telegram' : undefined,
-        status: 'active',
-      },
+    const rateLimit = await rateLimiter.isAllowed(notification.tenantId, 'notifications:fanout', {
+      maxRequests: 120,
+      windowMs: 60 * 1000,
+      keyPrefix: 'notifications',
     });
-
-    if (!integration) {
-      throw new Error(`No active ${notification.type} integration found`);
+    if (!rateLimit.allowed) {
+      throw new Error('Per-tenant notification rate limit exceeded');
     }
 
-    // Send notification based on type
-    switch (notification.type) {
-      case 'telegram':
-        await sendTelegramNotification(notification, integration);
-        break;
-      case 'email':
-        await sendEmailNotification(notification);
-        break;
-      case 'sms':
-        await sendSMSNotification(notification);
-        break;
-      default:
-        throw new Error(`Unknown notification type: ${notification.type}`);
+    if (notification.type === 'telegram') {
+      const integration = await prisma.integration.findFirst({
+        where: {
+          tenantId: notification.tenantId,
+          type: 'telegram',
+          status: 'active',
+        },
+      });
+      if (!integration?.tokensEncrypted) {
+        throw new Error('No active Telegram integration found');
+      }
+
+      const tokens = decryptIntegrationTokens<{ botToken?: string }>(integration.tokensEncrypted);
+      if (!tokens.botToken) {
+        throw new Error('Telegram bot token is missing');
+      }
+
+      await sendTelegramNotification(notification.payload as any, tokens.botToken);
+    } else if (notification.type === 'email') {
+      throw new Error('Email notification not implemented');
+    } else if (notification.type === 'sms') {
+      throw new Error('SMS notification not implemented');
+    } else {
+      throw new Error(`Unsupported notification type: ${notification.type}`);
     }
 
-    // Update notification status
     await prisma.notification.update({
       where: { id: notificationId },
       data: {
         status: 'sent',
         sentAt: new Date(),
         attempts: { increment: 1 },
+        errorMessage: null,
       },
     });
-
-    log(LogLevel.INFO, 'Notification sent successfully', { notificationId });
-    } catch (error: any) {
-    log(LogLevel.ERROR, 'Notification processing failed', {
-      notificationId,
-      error: error.message,
-      stack: error.stack,
-    });
-
-    // Fetch notification again for error handling
+  } catch (error: any) {
     const notification = await prisma.notification.findUnique({
       where: { id: notificationId },
     });
-
     if (!notification) {
-      throw new Error(`Notification ${notificationId} not found during error handling`);
+      throw error;
     }
 
-    // Update notification with error
-    const updated = await prisma.notification.update({
+    const nextAttempts = notification.attempts + 1;
+    const shouldRetry = nextAttempts < notification.maxAttempts;
+    const nextRetryAt = shouldRetry
+      ? new Date(Date.now() + Math.pow(2, Math.max(0, notification.attempts)) * 1000)
+      : null;
+
+    await prisma.notification.update({
       where: { id: notificationId },
       data: {
         attempts: { increment: 1 },
         errorMessage: error.message,
-        status: notification.attempts + 1 >= notification.maxAttempts ? 'failed' : 'retrying',
-        nextRetryAt: notification.attempts + 1 < notification.maxAttempts 
-          ? new Date(Date.now() + Math.pow(2, notification.attempts) * 1000)
-          : null,
+        status: shouldRetry ? 'retrying' : 'failed',
+        nextRetryAt,
       },
     });
 
-    // Re-queue if not at max attempts
-    if (updated.status === 'retrying' && updated.nextRetryAt) {
+    if (shouldRetry && nextRetryAt) {
       await queueService.addNotificationJob(notificationId, {
-        delay: updated.nextRetryAt.getTime() - Date.now(),
+        delay: nextRetryAt.getTime() - Date.now(),
       });
     }
 
@@ -344,54 +446,21 @@ export async function processNotification(notificationId: string) {
   }
 }
 
-async function sendTelegramNotification(notification: any, integration: any) {
-  const payload = notification.payload as any;
-  const botToken = (integration.config as any)?.botToken;
-  
-  if (!botToken) {
-    throw new Error('Telegram bot token not found');
+async function sendTelegramNotification(payload: any, botToken: string) {
+  if (!payload?.chatId || !payload?.text) {
+    throw new Error('Telegram payload must include chatId and text');
   }
 
   await telegramService.sendMessage(
     botToken,
-    payload.chatId,
-    payload.text,
-    payload.options
+    String(payload.chatId),
+    String(payload.text),
+    payload.options,
   );
 }
 
-async function sendEmailNotification(notification: any) {
-  // TODO: Implement email sending (SendGrid, SES, etc.)
-  log(LogLevel.WARN, 'Email notification not implemented', { notificationId: notification.id });
-  throw new Error('Email notification not implemented');
-}
-
-async function sendSMSNotification(notification: any) {
-  // TODO: Implement SMS sending (Twilio, etc.)
-  log(LogLevel.WARN, 'SMS notification not implemented', { notificationId: notification.id });
-  throw new Error('SMS notification not implemented');
-}
-
-// Export worker
 export async function processExport(exportId: string) {
-  try {
-    log(LogLevel.INFO, 'Processing export', { exportId });
-
-    // TODO: Implement export generation
-    // 1. Fetch export parameters
-    // 2. Generate PDF or Excel
-    // 3. Upload to S3
-    // 4. Send download link via email/Telegram
-
-    log(LogLevel.INFO, 'Export processed successfully', { exportId });
-  } catch (error: any) {
-    log(LogLevel.ERROR, 'Export processing failed', {
-      exportId,
-      error: error.message,
-      stack: error.stack,
-    });
-    throw error;
-  }
+  log(LogLevel.INFO, 'Processing export', { exportId });
 }
 
 export async function processIntegrationSync(integrationType: string, tenantId: string) {
@@ -407,7 +476,18 @@ export async function processIntegrationSync(integrationType: string, tenantId: 
     throw new Error(`Active integration not found for type=${integrationType}, tenant=${tenantId}`);
   }
 
-  // Minimal MVP sync behavior: mark successful sync heartbeat.
+  if (integrationType === 'voip_utel' && integration.tokensEncrypted) {
+    const config = (integration.config as Record<string, unknown> | null) || {};
+    const tokens = decryptIntegrationTokens<{ apiToken?: string }>(integration.tokensEncrypted);
+    if (tokens.apiToken) {
+      const voipService = createVoIPService({
+        apiToken: tokens.apiToken,
+        apiUrl: String(config.apiUrl || process.env.UTEL_API_URL || 'https://api.utel.uz'),
+      });
+      await voipService.validateToken();
+    }
+  }
+
   await prisma.integration.update({
     where: { id: integration.id },
     data: { lastSyncAt: new Date() },
