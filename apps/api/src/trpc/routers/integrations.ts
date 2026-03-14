@@ -1,31 +1,46 @@
+import crypto from 'crypto';
 import { router, protectedProcedure } from '../trpc';
 import { z } from 'zod';
 import { amocrmConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
+import { encryptIntegrationTokens } from '../../services/security/encryption';
+import { createSignedAmoCRMState } from '../../services/integrations/oauth-state';
+
+function normalizeBaseUrl(url?: string): string | null {
+  if (!url) {
+    return null;
+  }
+  return url.replace(/\/+$/, '');
+}
+
+function getPublicApiBaseUrl(): string {
+  const explicit = normalizeBaseUrl(process.env.PUBLIC_API_URL || process.env.API_URL);
+  if (explicit) {
+    return explicit;
+  }
+
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  if (railwayDomain) {
+    return `https://${railwayDomain.replace(/\/+$/, '')}`;
+  }
+
+  const port = process.env.PORT || '3001';
+  return `http://localhost:${port}`;
+}
 
 export const integrationsRouter = router({
-  // List all integrations for tenant
   list: protectedProcedure.query(async ({ ctx }) => {
-    if (!ctx.tenantId) {
-      throw new TRPCError({ code: 'UNAUTHORIZED' });
-    }
-
-    return await prisma.integration.findMany({
+    return prisma.integration.findMany({
       where: { tenantId: ctx.tenantId },
       orderBy: { createdAt: 'desc' },
     });
   }),
 
-  // Get integration by type
   getByType: protectedProcedure
     .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel']) }))
     .query(async ({ input, ctx }) => {
-      if (!ctx.tenantId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
-      }
-
-      return await prisma.integration.findUnique({
+      return prisma.integration.findUnique({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -35,17 +50,16 @@ export const integrationsRouter = router({
       });
     }),
 
-  // Connect AmoCRM
   connectAmoCRM: protectedProcedure
     .input(amocrmConnectSchema)
-    .mutation(async ({ input: _input, ctx }) => {
-      if (!ctx.tenantId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
-      }
-
+    .mutation(async ({ ctx }) => {
       const { amocrmService } = await import('../../services/integrations/amocrm');
-      const oauthState = `tenant:${ctx.tenantId}`;
+      const oauthState = createSignedAmoCRMState({
+        tenantId: ctx.tenantId,
+        userId: ctx.user.userId,
+      });
       const authUrl = amocrmService.getAuthUrl(oauthState);
+      const now = new Date();
 
       const integration = await prisma.integration.upsert({
         where: {
@@ -56,13 +70,17 @@ export const integrationsRouter = router({
         },
         update: {
           status: 'pending',
-          config: { authUrl },
+          config: {
+            authStartedAt: now.toISOString(),
+          },
         },
         create: {
           tenantId: ctx.tenantId,
           type: 'amocrm',
           status: 'pending',
-          config: { authUrl },
+          config: {
+            authStartedAt: now.toISOString(),
+          },
         },
       });
 
@@ -70,30 +88,37 @@ export const integrationsRouter = router({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
-          action: 'integration_connect',
+          action: 'integration_connect_init',
           resource: 'integration',
           resourceId: integration.id,
           metadata: { type: 'amocrm' },
         },
       });
 
-      return { integration, authUrl };
+      return {
+        integration,
+        authUrl,
+        stateIssuedAt: now.toISOString(),
+      };
     }),
 
-  // Connect Telegram Bot
   connectTelegram: protectedProcedure
     .input(telegramBotConnectSchema)
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.tenantId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
-      }
-
       const { telegramService } = await import('../../services/integrations/telegram');
-      const isValidToken = await telegramService.verifyBotToken(input.botToken);
-      if (!isValidToken) {
+      const verification = await telegramService.verifyBotToken(input.botToken);
+      if (!verification.isValid || !verification.bot) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid Telegram bot token' });
       }
 
+      const webhookSecret = crypto.randomBytes(24).toString('hex');
+      const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/telegram`;
+      const webhookResult = await telegramService.setWebhook(input.botToken, webhookUrl, webhookSecret);
+      if (!webhookResult?.ok) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Failed to register Telegram webhook' });
+      }
+
+      const validatedAt = new Date();
       const integration = await prisma.integration.upsert({
         where: {
           tenantId_type: {
@@ -103,13 +128,31 @@ export const integrationsRouter = router({
         },
         update: {
           status: 'active',
-          config: { botToken: input.botToken },
+          tokensEncrypted: encryptIntegrationTokens({ botToken: input.botToken }),
+          config: {
+            botId: String(verification.bot.id),
+            botUsername: verification.bot.username || null,
+            botName: verification.bot.first_name || null,
+            webhookUrl,
+            webhookSecret,
+            lastValidatedAt: validatedAt.toISOString(),
+          },
+          lastSyncAt: validatedAt,
         },
         create: {
           tenantId: ctx.tenantId,
           type: 'telegram',
           status: 'active',
-          config: { botToken: input.botToken },
+          tokensEncrypted: encryptIntegrationTokens({ botToken: input.botToken }),
+          config: {
+            botId: String(verification.bot.id),
+            botUsername: verification.bot.username || null,
+            botName: verification.bot.first_name || null,
+            webhookUrl,
+            webhookSecret,
+            lastValidatedAt: validatedAt.toISOString(),
+          },
+          lastSyncAt: validatedAt,
         },
       });
 
@@ -124,35 +167,45 @@ export const integrationsRouter = router({
         },
       });
 
-      return integration;
+      return {
+        integration,
+        connection: {
+          verified: true,
+          validatedAt: validatedAt.toISOString(),
+          bot: {
+            id: verification.bot.id,
+            username: verification.bot.username,
+            name: verification.bot.first_name,
+          },
+          webhookUrl,
+        },
+      };
     }),
 
-  // Connect Google Sheets
-  connectGoogleSheets: protectedProcedure
-    .mutation(async () => {
-      throw new TRPCError({
-        code: 'PRECONDITION_FAILED',
-        message: 'Google Sheets integration is disabled in MVP',
-      });
-    }),
+  connectGoogleSheets: protectedProcedure.mutation(async () => {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'Google Sheets integration is disabled in MVP',
+    });
+  }),
 
-  // Connect VoIP (UTeL)
   connectVoIP: protectedProcedure
     .input(voipConnectSchema)
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.tenantId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
-      }
-
       const { createVoIPService } = await import('../../services/integrations/voip');
+      const resolvedApiUrl = input.apiUrl || process.env.UTEL_API_URL || 'https://api.utel.uz';
       const voipService = createVoIPService({
         apiToken: input.apiToken,
-        apiUrl: input.apiUrl || 'https://api.utel.uz',
+        apiUrl: resolvedApiUrl,
       });
       const isValidToken = await voipService.validateToken();
       if (!isValidToken) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid VoIP API token' });
       }
+
+      const webhookKey = crypto.randomBytes(24).toString('hex');
+      const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/utel?integration_key=${webhookKey}`;
+      const validatedAt = new Date();
 
       const integration = await prisma.integration.upsert({
         where: {
@@ -163,13 +216,27 @@ export const integrationsRouter = router({
         },
         update: {
           status: 'active',
-          config: { apiToken: input.apiToken, apiUrl: input.apiUrl },
+          tokensEncrypted: encryptIntegrationTokens({ apiToken: input.apiToken }),
+          config: {
+            apiUrl: resolvedApiUrl,
+            webhookKey,
+            webhookUrl,
+            lastValidatedAt: validatedAt.toISOString(),
+          },
+          lastSyncAt: validatedAt,
         },
         create: {
           tenantId: ctx.tenantId,
           type: 'voip_utel',
           status: 'active',
-          config: { apiToken: input.apiToken, apiUrl: input.apiUrl },
+          tokensEncrypted: encryptIntegrationTokens({ apiToken: input.apiToken }),
+          config: {
+            apiUrl: resolvedApiUrl,
+            webhookKey,
+            webhookUrl,
+            lastValidatedAt: validatedAt.toISOString(),
+          },
+          lastSyncAt: validatedAt,
         },
       });
 
@@ -184,17 +251,20 @@ export const integrationsRouter = router({
         },
       });
 
-      return integration;
+      return {
+        integration,
+        connection: {
+          verified: true,
+          validatedAt: validatedAt.toISOString(),
+          webhookUrl,
+          apiUrl: resolvedApiUrl,
+        },
+      };
     }),
 
-  // Disconnect integration
   disconnect: protectedProcedure
     .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel']) }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.tenantId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
-      }
-
       await prisma.integration.updateMany({
         where: {
           tenantId: ctx.tenantId,
