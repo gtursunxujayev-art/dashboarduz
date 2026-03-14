@@ -77,7 +77,7 @@ export default function LoginPage() {
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Sign in to Dashboarduz</h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Use Phone OTP or login with password
+            Use Phone OTP or sign in with login and password
           </p>
         </div>
 
@@ -162,7 +162,7 @@ export default function LoginPage() {
             <form onSubmit={handlePasswordSubmit} className="space-y-4">
               <div>
                 <label htmlFor="login" className="block text-sm font-medium text-gray-700">
-                  Phone or Email
+                  Login
                 </label>
                 <input
                   id="login"
@@ -172,7 +172,7 @@ export default function LoginPage() {
                   value={loginValue}
                   onChange={(e) => setLoginValue(e.target.value)}
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="+998993667666 or user@example.com"
+                  placeholder="your-login"
                   disabled={isLoading}
                 />
               </div>
