@@ -10,6 +10,20 @@ export const phoneOtpVerifySchema = z.object({
   code: z.string().length(6, 'OTP code must be 6 digits'),
 });
 
+// Password auth schemas
+export const registerWithPasswordSchema = z.object({
+  tenantName: z.string().min(2, 'Tenant name is required').max(120),
+  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  email: z.string().email().optional(),
+  name: z.string().min(2).max(120).optional(),
+});
+
+export const loginWithPasswordSchema = z.object({
+  login: z.string().min(3, 'Login is required'), // phone or email
+  password: z.string().min(1, 'Password is required'),
+});
+
 // Google OAuth schemas
 export const googleOAuthCallbackSchema = z.object({
   code: z.string(),
@@ -45,6 +59,8 @@ export const jwtPayloadSchema = z.object({
 
 export type PhoneOtpRequest = z.infer<typeof phoneOtpRequestSchema>;
 export type PhoneOtpVerify = z.infer<typeof phoneOtpVerifySchema>;
+export type RegisterWithPassword = z.infer<typeof registerWithPasswordSchema>;
+export type LoginWithPassword = z.infer<typeof loginWithPasswordSchema>;
 export type GoogleOAuthCallback = z.infer<typeof googleOAuthCallbackSchema>;
 export type TelegramLogin = z.infer<typeof telegramLoginSchema>;
 export type LinkAccount = z.infer<typeof linkAccountSchema>;
