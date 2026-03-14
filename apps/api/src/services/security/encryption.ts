@@ -139,11 +139,17 @@ export class EncryptionService {
 
   // Verify HMAC signature
   static verifyHMAC(data: string, signature: string, secret: string): boolean {
-    const expectedSignature = this.generateHMAC(data, secret);
-    return crypto.timingSafeEqual(
-      Buffer.from(signature, 'hex'),
-      Buffer.from(expectedSignature, 'hex')
-    );
+    try {
+      const expectedSignature = this.generateHMAC(data, secret);
+      const provided = Buffer.from(signature, 'hex');
+      const expected = Buffer.from(expectedSignature, 'hex');
+      if (provided.length !== expected.length) {
+        return false;
+      }
+      return crypto.timingSafeEqual(provided, expected);
+    } catch {
+      return false;
+    }
   }
 }
 
