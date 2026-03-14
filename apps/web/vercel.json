@@ -5,10 +5,6 @@
   "installCommand": "npm install --include=dev",
   "regions": ["iad1"],
   "outputDirectory": ".next",
-  "env": {
-    "NEXT_PUBLIC_API_URL": "",
-    "NEXT_PUBLIC_SENTRY_DSN": ""
-  },
   "build": {
     "env": {
       "NODE_ENV": "production"
@@ -47,12 +43,6 @@
           "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none';"
         }
       ]
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://api.yourdomain.com/api/:path*"
     }
   ]
 }
