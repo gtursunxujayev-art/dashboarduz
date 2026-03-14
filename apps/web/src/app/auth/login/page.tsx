@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -20,7 +21,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const { login } = useAuth();
+  const router = useRouter();
+  const { user, isLoading: isAuthLoading, login } = useAuth();
   const requestOtp = trpc.auth.requestOtp.useMutation();
   const verifyOtp = trpc.auth.verifyOtp.useMutation();
   const loginWithPassword = trpc.auth.loginWithPassword.useMutation();
@@ -70,6 +72,12 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isAuthLoading && user) {
+      router.replace('/dashboard');
+    }
+  }, [isAuthLoading, router, user]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
