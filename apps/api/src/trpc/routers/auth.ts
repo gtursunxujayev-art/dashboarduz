@@ -311,98 +311,11 @@ export const authRouter = router({
   // Telegram Login: Verify and link account
   telegramLogin: publicProcedure
     .input(telegramLoginSchema)
-    .mutation(async ({ input }) => {
-      try {
-        // Verify Telegram authentication
-        const { telegramAuthService } = await import('../../services/auth/telegram');
-        const { signJWT } = await import('../../services/auth/jwt');
-        
-        const verification = telegramAuthService.verifyUser(input);
-        
-        if (!verification.isValid || !verification.user) {
-          throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: verification.error || 'Invalid Telegram authentication',
-          });
-        }
-
-        const { user: telegramUser } = verification;
-
-        // Find or create user
-        let user = await prisma.user.findFirst({
-          where: { telegramId: String(telegramUser.id) },
-        });
-
-        let tenantId: string;
-        
-        if (!user) {
-          // Create tenant and user
-          const tenant = await prisma.tenant.create({
-            data: {
-              name: `Tenant ${telegramUser.firstName}`,
-              plan: 'free',
-            },
-          });
-
-          user = await prisma.user.create({
-            data: {
-              tenantId: tenant.id,
-              name: `${telegramUser.firstName} ${telegramUser.lastName || ''}`.trim(),
-              telegramId: String(telegramUser.id),
-              roles: ['Admin'],
-              authProvider: 'telegram',
-            },
-          });
-          
-          tenantId = tenant.id;
-        } else {
-          tenantId = user.tenantId;
-        }
-
-        // Update last login
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { 
-            lastLoginAt: new Date(),
-            name: `${telegramUser.firstName} ${telegramUser.lastName || ''}`.trim(),
-          },
-        });
-
-        // Generate JWT token
-        const jwtPayload = {
-          userId: user.id,
-          tenantId,
-          roles: user.roles.filter((role: string): role is UserRole => ['Admin', 'Manager', 'Agent'].includes(role)),
-        };
-
-        const token = signJWT(jwtPayload);
-
-        await prisma.auditLog.create({
-          data: {
-            tenantId,
-            userId: user.id,
-            action: 'login_telegram',
-            resource: 'auth',
-            metadata: { telegramId: String(telegramUser.id) },
-          },
-        });
-
-        return {
-          success: true,
-          user: jwtPayload,
-          token,
-        };
-      } catch (error: any) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-        
-        console.error('[Auth] Telegram login error:', error);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: error.message || 'Telegram authentication failed',
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Telegram direct login is disabled in MVP. Use Phone OTP or Login + Password and link Telegram in integrations.',
+      });
     }),
 
   // Get current user
