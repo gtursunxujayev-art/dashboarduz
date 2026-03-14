@@ -15,11 +15,11 @@ export default function ProtectedRoute({ children, requiredRoles }: ProtectedRou
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push('/auth/login');
+      router.replace('/auth/login');
     } else if (!isLoading && user && requiredRoles) {
       const hasRequiredRole = requiredRoles.some(role => user.roles.includes(role as any));
       if (!hasRequiredRole) {
-        router.push('/dashboard');
+        router.replace('/dashboard');
       }
     }
   }, [user, isLoading, router, requiredRoles]);
