@@ -7,7 +7,7 @@ import {
   customerSearchSchema,
 } from '@dashboarduz/shared';
 import { z } from 'zod';
-import { protectedProcedure, router } from '../trpc';
+import { adminProcedure, protectedProcedure, router } from '../trpc';
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'Agent'] as const;
 
@@ -168,7 +168,7 @@ export const customerIncomeRouter = router({
       });
     }),
 
-  createCourse: protectedProcedure
+  createCourse: adminProcedure
     .input(createCourseSchema)
     .mutation(async ({ ctx, input }) => {
       const name = input.name.trim();
@@ -194,7 +194,7 @@ export const customerIncomeRouter = router({
       });
     }),
 
-  createTariff: protectedProcedure
+  createTariff: adminProcedure
     .input(createTariffSchema)
     .mutation(async ({ ctx, input }) => {
       const course = await prisma.course.findFirst({
@@ -232,6 +232,109 @@ export const customerIncomeRouter = router({
         update: {
           isActive: true,
         },
+      });
+    }),
+
+  courseCatalog: protectedProcedure.query(async ({ ctx }) => {
+    return prisma.course.findMany({
+      where: { tenantId: ctx.tenantId },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        tariffs: {
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+            courseId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+  }),
+
+  updateCourse: adminProcedure
+    .input(
+      z.object({
+        courseId: z.string().uuid(),
+        name: z.string().min(1).max(120).optional(),
+        isActive: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const course = await prisma.course.findFirst({
+        where: {
+          id: input.courseId,
+          tenantId: ctx.tenantId,
+        },
+        select: { id: true },
+      });
+
+      if (!course) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found.' });
+      }
+
+      const data: { name?: string; isActive?: boolean } = {};
+      if (typeof input.name === 'string') {
+        data.name = input.name.trim();
+      }
+      if (typeof input.isActive === 'boolean') {
+        data.isActive = input.isActive;
+      }
+
+      if (!Object.keys(data).length) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
+      }
+
+      return prisma.course.update({
+        where: { id: input.courseId },
+        data,
+      });
+    }),
+
+  updateTariff: adminProcedure
+    .input(
+      z.object({
+        tariffId: z.string().uuid(),
+        name: z.string().min(1).max(120).optional(),
+        isActive: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tariff = await prisma.tariff.findFirst({
+        where: {
+          id: input.tariffId,
+          tenantId: ctx.tenantId,
+        },
+        select: { id: true },
+      });
+
+      if (!tariff) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Tariff not found.' });
+      }
+
+      const data: { name?: string; isActive?: boolean } = {};
+      if (typeof input.name === 'string') {
+        data.name = input.name.trim();
+      }
+      if (typeof input.isActive === 'boolean') {
+        data.isActive = input.isActive;
+      }
+
+      if (!Object.keys(data).length) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
+      }
+
+      return prisma.tariff.update({
+        where: { id: input.tariffId },
+        data,
       });
     }),
 
