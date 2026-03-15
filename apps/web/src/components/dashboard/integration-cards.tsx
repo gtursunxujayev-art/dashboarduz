@@ -32,7 +32,7 @@ const integrationCatalog: Array<{
   {
     id: 'voip_utel',
     name: 'VoIP (UTeL)',
-    description: 'Validate UTeL token, ingest call events, and enable click-to-call.',
+    description: 'Webhook-only mode: register webhook URL and ingest call events.',
     color: 'bg-purple-50 border-purple-200',
   },
 ];
@@ -69,8 +69,6 @@ export default function IntegrationCards() {
   const [amocrmLongLivedToken, setAmocrmLongLivedToken] = useState('');
   const [amocrmBaseUrl, setAmocrmBaseUrl] = useState('');
   const [telegramToken, setTelegramToken] = useState('');
-  const [voipToken, setVoipToken] = useState('');
-  const [voipApiUrl, setVoipApiUrl] = useState('');
 
   const listQuery = trpc.integrations.list.useQuery();
   const connectAmoCRM = trpc.integrations.connectAmoCRM.useMutation();
@@ -120,15 +118,7 @@ export default function IntegrationCards() {
       }
 
       if (integrationId === 'voip_utel') {
-        if (!voipToken.trim()) {
-          throw new Error('UTeL API token is required');
-        }
-        await connectVoIP.mutateAsync({
-          apiToken: voipToken.trim(),
-          apiUrl: voipApiUrl.trim() || undefined,
-        });
-        setVoipToken('');
-        setVoipApiUrl('');
+        await connectVoIP.mutateAsync({});
         await listQuery.refetch();
         return;
       }
@@ -230,31 +220,6 @@ export default function IntegrationCards() {
                     placeholder="123456:ABC..."
                     className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
-                </div>
-              )}
-
-              {integration.id === 'voip_utel' && integration.status === 'disconnected' && (
-                <div className="mt-4 space-y-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700">UTeL API Token</label>
-                    <input
-                      type="password"
-                      value={voipToken}
-                      onChange={(e) => setVoipToken(e.target.value)}
-                      placeholder="API token"
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700">UTeL API URL (optional)</label>
-                    <input
-                      type="url"
-                      value={voipApiUrl}
-                      onChange={(e) => setVoipApiUrl(e.target.value)}
-                      placeholder="https://api.utel.uz"
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
                 </div>
               )}
 
