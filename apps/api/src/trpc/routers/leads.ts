@@ -129,7 +129,9 @@ export const leadsRouter = router({
             limit: Math.min(input.limit, 100),
             with: 'contacts',
             query: input.search || undefined,
-            pipelineIds: amoContext.selectedPipelineIds || undefined,
+            pipelineIds: input.pipelineIds && input.pipelineIds.length > 0
+              ? input.pipelineIds
+              : (amoContext.selectedPipelineIds || undefined),
           },
           amoContext.baseUrl,
         ),
