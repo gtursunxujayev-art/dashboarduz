@@ -1,19 +1,45 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import LeadsTable from '@/components/dashboard/leads-table';
 import AnalyticsCharts from '@/components/dashboard/analytics-charts';
 import { trpc } from '@/lib/trpc';
+import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 
 type DashboardRange = 'today' | 'week' | 'month';
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [range, setRange] = useState<DashboardRange>('month');
+  const [pipelineIds, setPipelineIds] = useState<string[]>([]);
+  const amoPipelinesQuery = trpc.integrations.getAmoCRMPipelines.useQuery(undefined, {
+    retry: false,
+  });
+
+  const pipelineOptions = useMemo(() => {
+    const pipelines = amoPipelinesQuery.data?.pipelines || [];
+    return pipelines.map((pipeline: any) => ({
+      id: pipeline.id,
+      label: pipeline.name,
+    }));
+  }, [amoPipelinesQuery.data]);
+
+  useEffect(() => {
+    if (!amoPipelinesQuery.data) {
+      return;
+    }
+
+    if (amoPipelinesQuery.data.hasExplicitSelection) {
+      setPipelineIds(amoPipelinesQuery.data.selectedPipelineIds);
+      return;
+    }
+
+    setPipelineIds((amoPipelinesQuery.data.pipelines || []).map((pipeline: any) => pipeline.id));
+  }, [amoPipelinesQuery.data]);
 
   const summaryQuery = trpc.dashboard.summary.useQuery(
-    { range },
+    { range, pipelineIds },
     {
       retry: 1,
       refetchInterval: 5 * 60 * 1000,
@@ -75,7 +101,19 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-6">
         <div className="rounded-lg bg-white shadow">
           <div className="px-4 py-5 sm:p-6">
-            <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Analytics Overview</h3>
+            <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <h3 className="text-lg font-medium leading-6 text-gray-900">Analytics Overview</h3>
+              <div className="w-full max-w-md">
+                <MultiSelectDropdown
+                  label="Pipelines Filter"
+                  options={pipelineOptions}
+                  selectedIds={pipelineIds}
+                  onChange={setPipelineIds}
+                  placeholder="Select pipelines"
+                  disabled={amoPipelinesQuery.isLoading}
+                />
+              </div>
+            </div>
             <AnalyticsCharts
               range={range}
               onRangeChange={setRange}
@@ -89,7 +127,7 @@ export default function DashboardPage() {
         <div className="rounded-lg bg-white shadow">
           <div className="px-4 py-5 sm:p-6">
             <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Recent Leads</h3>
-            <LeadsTable />
+            <LeadsTable pipelineIds={pipelineIds} />
           </div>
         </div>
       </div>
