@@ -2,7 +2,6 @@
 
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
-import IntegrationCards from '@/components/dashboard/integration-cards';
 import LeadsTable from '@/components/dashboard/leads-table';
 import AnalyticsCharts from '@/components/dashboard/analytics-charts';
 
@@ -125,14 +124,6 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Integrations Section */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-4 py-5 sm:p-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Your Integrations</h3>
-          <IntegrationCards />
         </div>
       </div>
 
