@@ -26,8 +26,6 @@ Core:
 Integrations:
 - `AMOCRM_LONG_LIVED_TOKEN` (optional default token)
 - `AMOCRM_WEBHOOK_SECRET`
-- `UTEL_API_URL`
-- `UTEL_API_TOKEN`
 - `TELEGRAM_BOT_TOKEN` (required if Telegram integration/notifications are enabled)
 
 Optional:
