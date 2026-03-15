@@ -82,19 +82,10 @@ export const leadsRouter = router({
   // Create lead
   create: protectedProcedure
     .input(createLeadSchema)
-    .mutation(async ({ input, ctx }) => {
-      if (!ctx.tenantId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
-      }
-
-      return await prisma.lead.create({
-        data: {
-          tenantId: ctx.tenantId,
-          ...input,
-        },
-        include: {
-          contact: true,
-        },
+    .mutation(async () => {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Manual lead creation is disabled. Leads are ingestion-only from AmoCRM.',
       });
     }),
 
@@ -104,47 +95,20 @@ export const leadsRouter = router({
       id: z.string().uuid(),
       data: updateLeadSchema,
     }))
-    .mutation(async ({ input, ctx }) => {
-      if (!ctx.tenantId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
-      }
-
-      // Verify lead belongs to tenant
-      const existing = await prisma.lead.findFirst({
-        where: {
-          id: input.id,
-          tenantId: ctx.tenantId,
-        },
-      });
-
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Lead not found' });
-      }
-
-      return await prisma.lead.update({
-        where: { id: input.id },
-        data: input.data,
-        include: {
-          contact: true,
-        },
+    .mutation(async () => {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Manual lead updates are disabled. Leads are ingestion-only from AmoCRM.',
       });
     }),
 
   // Delete lead
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ input, ctx }) => {
-      if (!ctx.tenantId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
-      }
-
-      await prisma.lead.deleteMany({
-        where: {
-          id: input.id,
-          tenantId: ctx.tenantId,
-        },
+    .mutation(async () => {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Manual lead deletion is disabled. Leads are ingestion-only from AmoCRM.',
       });
-
-      return { success: true };
     }),
 });
