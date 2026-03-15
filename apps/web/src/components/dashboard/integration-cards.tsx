@@ -14,7 +14,7 @@ const integrationCatalog: Array<{
   {
     id: 'amocrm',
     name: 'AmoCRM',
-    description: 'OAuth2 connection for leads/contacts sync and webhook ingestion.',
+    description: 'Connect by long-lived token for leads/contacts sync and webhook ingestion.',
     color: 'bg-blue-50 border-blue-200',
   },
   {
@@ -66,6 +66,8 @@ function statusText(status: string) {
 export default function IntegrationCards() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<IntegrationId | null>(null);
+  const [amocrmLongLivedToken, setAmocrmLongLivedToken] = useState('');
+  const [amocrmBaseUrl, setAmocrmBaseUrl] = useState('');
   const [telegramToken, setTelegramToken] = useState('');
   const [voipToken, setVoipToken] = useState('');
   const [voipApiUrl, setVoipApiUrl] = useState('');
@@ -94,12 +96,17 @@ export default function IntegrationCards() {
 
     try {
       if (integrationId === 'amocrm') {
-        const result = await connectAmoCRM.mutateAsync({});
-        if (result.authUrl) {
-          window.location.assign(result.authUrl);
-          return;
+        if (!amocrmLongLivedToken.trim()) {
+          throw new Error('AmoCRM long-lived token is required');
         }
-        throw new Error('AmoCRM auth URL was not returned');
+        await connectAmoCRM.mutateAsync({
+          longLivedToken: amocrmLongLivedToken.trim(),
+          baseUrl: amocrmBaseUrl.trim() || undefined,
+        });
+        setAmocrmLongLivedToken('');
+        setAmocrmBaseUrl('');
+        await listQuery.refetch();
+        return;
       }
 
       if (integrationId === 'telegram') {
@@ -182,6 +189,34 @@ export default function IntegrationCards() {
                     <p>Last validation: {new Date(String((integrationConfig as any).lastValidatedAt)).toLocaleString()}</p>
                   )}
                   {webhookUrl && <p className="break-all">Webhook: {webhookUrl}</p>}
+                  {(integrationConfig as any).connectionMode && (
+                    <p>Mode: {String((integrationConfig as any).connectionMode)}</p>
+                  )}
+                </div>
+              )}
+
+              {integration.id === 'amocrm' && integration.status !== 'active' && (
+                <div className="mt-4 space-y-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700">AmoCRM Long-lived Token</label>
+                    <input
+                      type="password"
+                      value={amocrmLongLivedToken}
+                      onChange={(e) => setAmocrmLongLivedToken(e.target.value)}
+                      placeholder="Long-lived token"
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700">AmoCRM Base URL (optional)</label>
+                    <input
+                      type="url"
+                      value={amocrmBaseUrl}
+                      onChange={(e) => setAmocrmBaseUrl(e.target.value)}
+                      placeholder="https://www.amocrm.ru"
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -224,14 +259,14 @@ export default function IntegrationCards() {
               )}
 
               <div className="mt-4 flex gap-2">
-                {integration.status === 'disconnected' ? (
+                {integration.status === 'disconnected' || (integration.id === 'amocrm' && integration.status !== 'active') ? (
                   <button
                     type="button"
                     onClick={() => handleConnect(integration.id)}
                     disabled={loading || integration.id === 'google_sheets'}
                     className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {loading ? 'Connecting...' : integration.id === 'google_sheets' ? 'Disabled' : 'Connect'}
+                    {loading ? 'Connecting...' : integration.id === 'google_sheets' ? 'Disabled' : integration.id === 'amocrm' ? 'Connect by Token' : 'Connect'}
                   </button>
                 ) : (
                   <button
