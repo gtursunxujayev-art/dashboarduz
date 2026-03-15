@@ -8,7 +8,7 @@ export default function LeadsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Leads</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Read-only leads synchronized from AmoCRM
+          Live read-only leads from AmoCRM
         </p>
       </div>
 
