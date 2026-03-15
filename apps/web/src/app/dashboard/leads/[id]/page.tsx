@@ -9,7 +9,7 @@ export default function LeadDetailsPage({ params }: { params: { id: string } }) 
     return <p className="text-sm text-gray-600">Loading lead...</p>;
   }
 
-  if (!leadQuery.data) {
+  if (leadQuery.error || !leadQuery.data) {
     return <p className="text-sm text-red-700">Lead not found.</p>;
   }
 
@@ -19,7 +19,7 @@ export default function LeadDetailsPage({ params }: { params: { id: string } }) 
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">{lead.title}</h1>
-        <p className="mt-1 text-sm text-gray-500">Lead details and linked records.</p>
+        <p className="mt-1 text-sm text-gray-500">Live AmoCRM lead details.</p>
       </div>
 
       <div className="rounded-lg bg-white p-6 shadow">
@@ -31,6 +31,10 @@ export default function LeadDetailsPage({ params }: { params: { id: string } }) 
           <div>
             <dt className="text-xs uppercase text-gray-500">AmoCRM ID</dt>
             <dd className="text-sm text-gray-800">{lead.amocrmId || '-'}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-gray-500">Pipeline</dt>
+            <dd className="text-sm text-gray-800">{lead.pipelineName || lead.pipelineId || '-'}</dd>
           </div>
           <div>
             <dt className="text-xs uppercase text-gray-500">Created</dt>
