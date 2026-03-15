@@ -5,6 +5,8 @@ import { amocrmConnectSchema, telegramBotConnectSchema, voipConnectSchema } from
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { encryptIntegrationTokens } from '../../services/security/encryption';
+import { amocrmService } from '../../services/integrations/amocrm';
+import { asObject, getSelectedPipelineIds, getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 
 function normalizeBaseUrl(url?: string): string | null {
   if (!url) {
@@ -161,6 +163,103 @@ export const integrationsRouter = router({
           accountId,
           baseUrl: resolvedBaseUrl,
         },
+      };
+    }),
+
+  getAmoCRMPipelines: protectedProcedure.query(async ({ ctx }) => {
+    const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+    if (!amoContext) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'AmoCRM integration is not connected.',
+      });
+    }
+
+    const pipelinesResponse = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+    const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
+
+    return {
+      hasExplicitSelection: Array.isArray((amoContext.config as Record<string, unknown>).selectedPipelineIds),
+      selectedPipelineIds: amoContext.selectedPipelineIds || [],
+      pipelines: pipelines.map((pipeline) => ({
+        id: String(pipeline.id || ''),
+        name: String(pipeline.name || pipeline.id || 'Unnamed pipeline'),
+        statuses: Array.isArray(pipeline._embedded?.statuses)
+          ? pipeline._embedded.statuses.map((status) => ({
+              id: String(status.id || ''),
+              name: String(status.name || status.id || 'Unnamed status'),
+            }))
+          : [],
+      })),
+    };
+  }),
+
+  updateAmoCRMPipelines: protectedProcedure
+    .input(z.object({ pipelineIds: z.array(z.string()) }))
+    .mutation(async ({ input, ctx }) => {
+      const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+      if (!amoContext) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'AmoCRM integration is not connected.',
+        });
+      }
+
+      const pipelinesResponse = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+      const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
+      const availablePipelineIds = new Set(
+        pipelines
+          .map((pipeline) => String(pipeline.id || '').trim())
+          .filter(Boolean),
+      );
+
+      const nextPipelineIds = input.pipelineIds
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+
+      for (const pipelineId of nextPipelineIds) {
+        if (!availablePipelineIds.has(pipelineId)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Unknown AmoCRM pipeline id: ${pipelineId}`,
+          });
+        }
+      }
+
+      const nextConfig = {
+        ...amoContext.config,
+        selectedPipelineIds: nextPipelineIds,
+        pipelineCatalog: pipelines.map((pipeline) => ({
+          id: String(pipeline.id || ''),
+          name: String(pipeline.name || pipeline.id || 'Unnamed pipeline'),
+        })),
+        lastPipelineSyncAt: new Date().toISOString(),
+      };
+
+      const integration = await prisma.integration.update({
+        where: { id: amoContext.integrationId },
+        data: {
+          config: nextConfig,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'integration_update',
+          resource: 'integration',
+          resourceId: integration.id,
+          metadata: {
+            type: 'amocrm',
+            selectedPipelineIds: nextPipelineIds,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        selectedPipelineIds: nextPipelineIds,
       };
     }),
 
