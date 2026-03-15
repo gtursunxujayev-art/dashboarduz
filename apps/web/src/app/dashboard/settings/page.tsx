@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/auth-context';
 type FieldOption = {
   key: string;
   label: string;
-  source: 'catalog' | 'metadata';
+  source: 'catalog' | 'system';
 };
 
 export default function SettingsPage() {
@@ -25,6 +25,9 @@ export default function SettingsPage() {
   const [defaultChatId, setDefaultChatId] = useState('');
   const [reasonFieldKey, setReasonFieldKey] = useState('');
   const [sourceFieldKey, setSourceFieldKey] = useState('');
+  const [outcomeFieldKey, setOutcomeFieldKey] = useState('');
+  const [qualifiedValues, setQualifiedValues] = useState('');
+  const [nonQualifiedValues, setNonQualifiedValues] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -41,6 +44,9 @@ export default function SettingsPage() {
     const dashboardSettings = ((settings.dashboard as Record<string, unknown> | null) || {});
     setReasonFieldKey(String(dashboardSettings.reasonFieldKey || ''));
     setSourceFieldKey(String(dashboardSettings.sourceFieldKey || ''));
+    setOutcomeFieldKey(String(dashboardSettings.outcomeFieldKey || ''));
+    setQualifiedValues(Array.isArray(dashboardSettings.qualifiedValues) ? dashboardSettings.qualifiedValues.join(', ') : '');
+    setNonQualifiedValues(Array.isArray(dashboardSettings.nonQualifiedValues) ? dashboardSettings.nonQualifiedValues.join(', ') : '');
   }, [tenantQuery.data]);
 
   const fieldOptions = useMemo<FieldOption[]>(() => {
@@ -59,6 +65,12 @@ export default function SettingsPage() {
     }
 
     try {
+      const parseValues = (value: string) =>
+        value
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean);
+
       await updateTenant.mutateAsync({
         name: name.trim() || undefined,
         settings: {
@@ -66,6 +78,9 @@ export default function SettingsPage() {
           dashboard: {
             reasonFieldKey: reasonFieldKey || null,
             sourceFieldKey: sourceFieldKey || null,
+            outcomeFieldKey: outcomeFieldKey || null,
+            qualifiedValues: parseValues(qualifiedValues),
+            nonQualifiedValues: parseValues(nonQualifiedValues),
           },
         },
       });
@@ -96,7 +111,7 @@ export default function SettingsPage() {
           )}
           {fieldOptionsQuery.error && isAdmin && (
             <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              Field catalog is unavailable. Metadata-based options may be incomplete.
+              AmoCRM field catalog is unavailable. Connect and validate AmoCRM to configure live analytics fields.
             </p>
           )}
           {success && <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
@@ -163,6 +178,53 @@ export default function SettingsPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Outcome Field</label>
+                <select
+                  value={outcomeFieldKey}
+                  onChange={(e) => setOutcomeFieldKey(e.target.value)}
+                  disabled={!isAdmin || fieldOptionsQuery.isLoading}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                >
+                  <option value="">Select field</option>
+                  {fieldOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label} ({option.source})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="rounded-md bg-blue-50 px-3 py-3 text-sm text-blue-800">
+                Live AmoCRM analytics uses the selected outcome field on every request. Enter comma-separated values below to map which values mean qualified and non-qualified.
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Qualified Values</label>
+                <input
+                  value={qualifiedValues}
+                  onChange={(e) => setQualifiedValues(e.target.value)}
+                  disabled={!isAdmin}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                  placeholder="Approved, Converted, Paid"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Non-Qualified Values</label>
+                <input
+                  value={nonQualifiedValues}
+                  onChange={(e) => setNonQualifiedValues(e.target.value)}
+                  disabled={!isAdmin}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                  placeholder="Rejected, Lost, Duplicate"
+                />
               </div>
             </div>
 
