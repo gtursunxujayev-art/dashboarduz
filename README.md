@@ -10,6 +10,7 @@
 - Auth: `phone OTP` + `login/password`
 - Telegram: link/integration only (not primary login)
 - Integrations enabled: `amocrm`, `telegram`, `voip_utel`
+- AmoCRM is token-only (long-lived token)
 - Google auth: removed from active runtime
 - Google Sheets: deferred/disabled in MVP
 
@@ -53,9 +54,7 @@ API/worker core:
 - `FRONTEND_URL` and/or `CORS_ORIGIN`
 
 Integrations:
-- `AMOCRM_CLIENT_ID`
-- `AMOCRM_CLIENT_SECRET`
-- `AMOCRM_REDIRECT_URI`
+- `AMOCRM_LONG_LIVED_TOKEN` (optional default token)
 - `AMOCRM_WEBHOOK_SECRET`
 - `UTEL_API_URL`
 - `UTEL_API_TOKEN`
