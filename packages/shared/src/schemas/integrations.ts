@@ -27,10 +27,7 @@ export const googleSheetsConnectSchema = z.object({
 });
 
 // VoIP (UTeL) integration
-export const voipConnectSchema = z.object({
-  apiToken: z.string().min(1, 'API token is required'),
-  apiUrl: z.string().url().optional(),
-});
+export const voipConnectSchema = z.object({}).optional();
 
 // Generic integration update
 export const integrationUpdateSchema = z.object({
