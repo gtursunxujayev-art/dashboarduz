@@ -253,18 +253,7 @@ export const integrationsRouter = router({
 
   connectVoIP: protectedProcedure
     .input(voipConnectSchema)
-    .mutation(async ({ input, ctx }) => {
-      const { createVoIPService } = await import('../../services/integrations/voip');
-      const resolvedApiUrl = input.apiUrl || process.env.UTEL_API_URL || 'https://api.utel.uz';
-      const voipService = createVoIPService({
-        apiToken: input.apiToken,
-        apiUrl: resolvedApiUrl,
-      });
-      const isValidToken = await voipService.validateToken();
-      if (!isValidToken) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid VoIP API token' });
-      }
-
+    .mutation(async ({ ctx }) => {
       const webhookKey = crypto.randomBytes(24).toString('hex');
       const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/utel?integration_key=${webhookKey}`;
       const validatedAt = new Date();
@@ -278,11 +267,11 @@ export const integrationsRouter = router({
         },
         update: {
           status: 'active',
-          tokensEncrypted: encryptIntegrationTokens({ apiToken: input.apiToken }),
+          tokensEncrypted: null,
           config: {
-            apiUrl: resolvedApiUrl,
             webhookKey,
             webhookUrl,
+            connectionMode: 'webhook_only',
             lastValidatedAt: validatedAt.toISOString(),
           },
           lastSyncAt: validatedAt,
@@ -291,11 +280,11 @@ export const integrationsRouter = router({
           tenantId: ctx.tenantId,
           type: 'voip_utel',
           status: 'active',
-          tokensEncrypted: encryptIntegrationTokens({ apiToken: input.apiToken }),
+          tokensEncrypted: null,
           config: {
-            apiUrl: resolvedApiUrl,
             webhookKey,
             webhookUrl,
+            connectionMode: 'webhook_only',
             lastValidatedAt: validatedAt.toISOString(),
           },
           lastSyncAt: validatedAt,
@@ -319,7 +308,7 @@ export const integrationsRouter = router({
           verified: true,
           validatedAt: validatedAt.toISOString(),
           webhookUrl,
-          apiUrl: resolvedApiUrl,
+          mode: 'webhook_only',
         },
       };
     }),
