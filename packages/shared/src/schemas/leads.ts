@@ -22,6 +22,7 @@ export const leadQuerySchema = z.object({
   status: z.string().optional(),
   contactId: z.string().uuid().optional(),
   search: z.string().optional(),
+  pipelineIds: z.array(z.string()).optional(),
   cursor: z.string().optional(),
 });
 
