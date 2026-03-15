@@ -31,18 +31,27 @@ const PIE_COLORS = [
 
 type DashboardRange = z.infer<typeof dashboardRangeSchema>;
 
+const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
+
 function getRangeStart(range: DashboardRange, now: Date): Date {
+  const offsetMs = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
+  const shiftedNow = new Date(now.getTime() + offsetMs);
+
+  const year = shiftedNow.getUTCFullYear();
+  const month = shiftedNow.getUTCMonth();
+  const date = shiftedNow.getUTCDate();
+
   if (range === 'today') {
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return new Date(Date.UTC(year, month, date) - offsetMs);
   }
 
   if (range === 'week') {
-    const day = now.getDay();
+    const day = shiftedNow.getUTCDay();
     const daysSinceMonday = (day + 6) % 7;
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
+    return new Date(Date.UTC(year, month, date - daysSinceMonday) - offsetMs);
   }
 
-  return new Date(now.getFullYear(), now.getMonth(), 1);
+  return new Date(Date.UTC(year, month, 1) - offsetMs);
 }
 
 function toPieData(input: Map<string, number>) {
@@ -291,21 +300,45 @@ export const dashboardRouter = router({
         ? input.pipelineIds
         : (amoContext.selectedPipelineIds || null);
 
-      const leads = await amocrmService.fetchAllLeads(
-        amoContext.accessToken,
-        {
-          pipelineIds: selectedPipelineIds,
-          limit: 250,
-        },
-        amoContext.baseUrl,
-      );
-
       const values = new Set<string>();
-      for (const lead of leads) {
-        const value = extractLeadValue(lead, input.fieldKey);
-        if (value) {
-          values.add(value);
+      let page = 1;
+      let stagnantPages = 0;
+      const maxPages = 40;
+
+      while (page <= maxPages) {
+        const response = await amocrmService.fetchLeads(
+          amoContext.accessToken,
+          '',
+          {
+            page,
+            limit: 250,
+            pipelineIds: selectedPipelineIds || undefined,
+          },
+          amoContext.baseUrl,
+        );
+
+        const leads = Array.isArray(response._embedded?.leads) ? response._embedded.leads : [];
+        const sizeBefore = values.size;
+
+        for (const lead of leads) {
+          const value = extractLeadValue(lead, input.fieldKey);
+          if (value) {
+            values.add(value);
+          }
         }
+
+        if (values.size === sizeBefore) {
+          stagnantPages += 1;
+        } else {
+          stagnantPages = 0;
+        }
+
+        const hasNext = Boolean(response._links?.next?.href);
+        if (!hasNext || stagnantPages >= 5) {
+          break;
+        }
+
+        page += 1;
       }
 
       return {
