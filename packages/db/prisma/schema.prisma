@@ -46,7 +46,7 @@ model User {
   phone        String?
   passwordHash String?
   name         String?
-  roles        String[] @default(["Agent"]) // Admin, Manager, Agent
+  roles        String[] @default(["Agent"]) // Admin, Manager, Agent, Finance
   authProvider String   // phone, telegram, email
   providerId   String?  // external provider ID
   telegramId   String?  @unique
