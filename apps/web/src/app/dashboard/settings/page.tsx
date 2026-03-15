@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 
 type FieldOption = {
   key: string;
@@ -14,22 +15,38 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const isAdmin = Boolean(user?.roles?.includes('Admin'));
 
+  const [name, setName] = useState('');
+  const [defaultChatId, setDefaultChatId] = useState('');
+  const [reasonFieldKey, setReasonFieldKey] = useState('');
+  const [sourceFieldKey, setSourceFieldKey] = useState('');
+  const [qualifiedStageIds, setQualifiedStageIds] = useState<string[]>([]);
+  const [qualifiedValues, setQualifiedValues] = useState<string[]>([]);
+  const [nonQualifiedValues, setNonQualifiedValues] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
   const tenantQuery = trpc.tenant.get.useQuery();
   const fieldOptionsQuery = trpc.dashboard.fieldOptions.useQuery(undefined, {
     enabled: isAdmin,
     retry: false,
   });
+  const amoPipelinesQuery = trpc.integrations.getAmoCRMPipelines.useQuery(undefined, {
+    enabled: isAdmin,
+    retry: false,
+  });
+  const reasonValueOptionsQuery = trpc.dashboard.reasonValueOptions.useQuery(
+    {
+      fieldKey: reasonFieldKey || undefined,
+      pipelineIds: amoPipelinesQuery.data?.selectedPipelineIds?.length
+        ? amoPipelinesQuery.data.selectedPipelineIds
+        : undefined,
+    },
+    {
+      enabled: isAdmin && Boolean(reasonFieldKey),
+      retry: false,
+    },
+  );
   const updateTenant = trpc.tenant.update.useMutation();
-
-  const [name, setName] = useState('');
-  const [defaultChatId, setDefaultChatId] = useState('');
-  const [reasonFieldKey, setReasonFieldKey] = useState('');
-  const [sourceFieldKey, setSourceFieldKey] = useState('');
-  const [outcomeFieldKey, setOutcomeFieldKey] = useState('');
-  const [qualifiedValues, setQualifiedValues] = useState('');
-  const [nonQualifiedValues, setNonQualifiedValues] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (!tenantQuery.data) {
@@ -44,15 +61,45 @@ export default function SettingsPage() {
     const dashboardSettings = ((settings.dashboard as Record<string, unknown> | null) || {});
     setReasonFieldKey(String(dashboardSettings.reasonFieldKey || ''));
     setSourceFieldKey(String(dashboardSettings.sourceFieldKey || ''));
-    setOutcomeFieldKey(String(dashboardSettings.outcomeFieldKey || ''));
-    setQualifiedValues(Array.isArray(dashboardSettings.qualifiedValues) ? dashboardSettings.qualifiedValues.join(', ') : '');
-    setNonQualifiedValues(Array.isArray(dashboardSettings.nonQualifiedValues) ? dashboardSettings.nonQualifiedValues.join(', ') : '');
+    setQualifiedStageIds(Array.isArray(dashboardSettings.qualifiedStageIds) ? dashboardSettings.qualifiedStageIds.map(String) : []);
+    setQualifiedValues(Array.isArray(dashboardSettings.qualifiedValues) ? dashboardSettings.qualifiedValues.map(String) : []);
+    setNonQualifiedValues(Array.isArray(dashboardSettings.nonQualifiedValues) ? dashboardSettings.nonQualifiedValues.map(String) : []);
   }, [tenantQuery.data]);
 
   const fieldOptions = useMemo<FieldOption[]>(() => {
     const options = fieldOptionsQuery.data?.options;
     return Array.isArray(options) ? (options as FieldOption[]) : [];
   }, [fieldOptionsQuery.data]);
+
+  const selectedPipelineIds = useMemo(() => {
+    if (!amoPipelinesQuery.data) {
+      return [];
+    }
+
+    if (amoPipelinesQuery.data.hasExplicitSelection) {
+      return amoPipelinesQuery.data.selectedPipelineIds;
+    }
+
+    return amoPipelinesQuery.data.pipelines.map((pipeline: any) => pipeline.id);
+  }, [amoPipelinesQuery.data]);
+
+  const qualifiedStageOptions = useMemo(() => {
+    const pipelines = amoPipelinesQuery.data?.pipelines || [];
+    return pipelines
+      .filter((pipeline: any) => selectedPipelineIds.includes(pipeline.id))
+      .flatMap((pipeline: any) =>
+        (Array.isArray(pipeline.statuses) ? pipeline.statuses : []).map((status: any) => ({
+          id: status.id,
+          label: status.name,
+          description: pipeline.name,
+        })),
+      );
+  }, [amoPipelinesQuery.data, selectedPipelineIds]);
+
+  const reasonValueOptions = useMemo(() => {
+    const values = reasonValueOptionsQuery.data?.values || [];
+    return values.map((value: string) => ({ id: value, label: value }));
+  }, [reasonValueOptionsQuery.data]);
 
   const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -65,12 +112,6 @@ export default function SettingsPage() {
     }
 
     try {
-      const parseValues = (value: string) =>
-        value
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean);
-
       await updateTenant.mutateAsync({
         name: name.trim() || undefined,
         settings: {
@@ -78,9 +119,9 @@ export default function SettingsPage() {
           dashboard: {
             reasonFieldKey: reasonFieldKey || null,
             sourceFieldKey: sourceFieldKey || null,
-            outcomeFieldKey: outcomeFieldKey || null,
-            qualifiedValues: parseValues(qualifiedValues),
-            nonQualifiedValues: parseValues(nonQualifiedValues),
+            qualifiedStageIds,
+            qualifiedValues,
+            nonQualifiedValues,
           },
         },
       });
@@ -112,6 +153,11 @@ export default function SettingsPage() {
           {fieldOptionsQuery.error && isAdmin && (
             <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
               AmoCRM field catalog is unavailable. Connect and validate AmoCRM to configure live analytics fields.
+            </p>
+          )}
+          {amoPipelinesQuery.error && isAdmin && (
+            <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              AmoCRM pipelines are unavailable. Connect AmoCRM and save pipeline selection in Integrations first.
             </p>
           )}
           {success && <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
@@ -181,51 +227,33 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Outcome Field</label>
-                <select
-                  value={outcomeFieldKey}
-                  onChange={(e) => setOutcomeFieldKey(e.target.value)}
-                  disabled={!isAdmin || fieldOptionsQuery.isLoading}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                >
-                  <option value="">Select field</option>
-                  {fieldOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label} ({option.source})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="rounded-md bg-blue-50 px-3 py-3 text-sm text-blue-800">
-                Live AmoCRM analytics uses the selected outcome field on every request. Enter comma-separated values below to map which values mean qualified and non-qualified.
-              </div>
-            </div>
+            <MultiSelectDropdown
+              label="Qualified Stages"
+              options={qualifiedStageOptions}
+              selectedIds={qualifiedStageIds}
+              onChange={setQualifiedStageIds}
+              placeholder="Select stages from checked pipelines"
+              disabled={!isAdmin || amoPipelinesQuery.isLoading}
+            />
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Qualified Values</label>
-                <input
-                  value={qualifiedValues}
-                  onChange={(e) => setQualifiedValues(e.target.value)}
-                  disabled={!isAdmin}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                  placeholder="Approved, Converted, Paid"
-                />
-              </div>
+              <MultiSelectDropdown
+                label="Qualified Values"
+                options={reasonValueOptions}
+                selectedIds={qualifiedValues}
+                onChange={setQualifiedValues}
+                placeholder={reasonFieldKey ? 'Choose values from selected reason field' : 'Select reason field first'}
+                disabled={!isAdmin || !reasonFieldKey || reasonValueOptionsQuery.isLoading}
+              />
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Non-Qualified Values</label>
-                <input
-                  value={nonQualifiedValues}
-                  onChange={(e) => setNonQualifiedValues(e.target.value)}
-                  disabled={!isAdmin}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                  placeholder="Rejected, Lost, Duplicate"
-                />
-              </div>
+              <MultiSelectDropdown
+                label="Non-Qualified Values"
+                options={reasonValueOptions}
+                selectedIds={nonQualifiedValues}
+                onChange={setNonQualifiedValues}
+                placeholder={reasonFieldKey ? 'Choose values from selected reason field' : 'Select reason field first'}
+                disabled={!isAdmin || !reasonFieldKey || reasonValueOptionsQuery.isLoading}
+              />
             </div>
 
             <button
