@@ -2,9 +2,6 @@ import { router, protectedProcedure } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { createVoIPService } from '../../services/integrations/voip';
-import { decryptIntegrationTokens } from '../../services/security/encryption';
-import { rateLimiter } from '../../services/security/rate-limiter';
 
 const callsListSchema = z.object({
   page: z.number().int().positive().default(1),
@@ -90,86 +87,10 @@ export const callsRouter = router({
 
   clickToCall: protectedProcedure
     .input(clickToCallSchema)
-    .mutation(async ({ input, ctx }) => {
-      const limit = await rateLimiter.isAllowed(ctx.tenantId, 'calls:click-to-call', {
-        maxRequests: 60,
-        windowMs: 60 * 1000,
-        keyPrefix: 'calls',
+    .mutation(async () => {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Click-to-call is disabled in webhook-only UTeL mode.',
       });
-      if (!limit.allowed) {
-        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Too many click-to-call requests' });
-      }
-
-      const integration = await prisma.integration.findFirst({
-        where: {
-          tenantId: ctx.tenantId,
-          type: 'voip_utel',
-          status: 'active',
-        },
-      });
-      if (!integration?.tokensEncrypted) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'UTeL integration is not connected' });
-      }
-
-      const tokens = decryptIntegrationTokens<{ apiToken?: string }>(integration.tokensEncrypted);
-      if (!tokens.apiToken) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'UTeL token is not available' });
-      }
-
-      const config = (integration.config as Record<string, unknown> | null) || {};
-      const voipService = createVoIPService({
-        apiToken: tokens.apiToken,
-        apiUrl: String(config.apiUrl || process.env.UTEL_API_URL || 'https://api.utel.uz'),
-      });
-
-      const outbound = await voipService.makeCall(input.from, input.to, {
-        caller_id: input.callerId,
-        recording: input.recording,
-      });
-
-      const callIdExternal = String(outbound.call_id || `manual-${Date.now()}`);
-      const call = await prisma.call.upsert({
-        where: {
-          tenantId_callIdExternal: {
-            tenantId: ctx.tenantId,
-            callIdExternal,
-          },
-        },
-        update: {
-          from: input.from,
-          to: input.to,
-          direction: 'outbound',
-          status: outbound.status || 'ringing',
-          startedAt: new Date(),
-          metadata: outbound,
-        },
-        create: {
-          tenantId: ctx.tenantId,
-          callIdExternal,
-          from: input.from,
-          to: input.to,
-          direction: 'outbound',
-          status: outbound.status || 'ringing',
-          startedAt: new Date(),
-          metadata: outbound,
-        },
-      });
-
-      await prisma.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'click_to_call',
-          resource: 'call',
-          resourceId: call.id,
-          metadata: { from: input.from, to: input.to, callIdExternal },
-        },
-      });
-
-      return {
-        callIdExternal,
-        status: outbound.status,
-        call,
-      };
     }),
 });
