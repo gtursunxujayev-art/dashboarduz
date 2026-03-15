@@ -3,3 +3,4 @@ export * from './types';
 export * from './schemas/auth';
 export * from './schemas/integrations';
 export * from './schemas/leads';
+export * from './schemas/customer-income';
