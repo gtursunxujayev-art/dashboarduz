@@ -5,7 +5,6 @@ import IntegrationCards from '@/components/dashboard/integration-cards';
 
 export default function IntegrationsPage() {
   const listQuery = trpc.integrations.list.useQuery();
-  const amocrmIntegration = listQuery.data?.find((integration: any) => integration.type === 'amocrm');
   const utelIntegration = listQuery.data?.find((integration: any) => integration.type === 'voip_utel');
 
   const amocrmWebhook = `${process.env.NEXT_PUBLIC_API_URL}/webhooks/amocrm`;
@@ -56,7 +55,7 @@ export default function IntegrationsPage() {
                 </button>
               </div>
               <p className="mt-1 text-xs text-gray-500">
-                Add this URL in AmoCRM webhook settings after OAuth connection.
+                Add this URL in AmoCRM webhook settings after token connection.
               </p>
             </div>
 
@@ -82,12 +81,6 @@ export default function IntegrationsPage() {
                 Use the full URL (including integration key) in UTeL webhook settings.
               </p>
             </div>
-
-            {amocrmIntegration?.status === 'pending' && (
-              <p className="text-xs text-amber-700">
-                AmoCRM is pending authorization. Click Connect in the card above to complete OAuth.
-              </p>
-            )}
           </div>
         </div>
       </div>
