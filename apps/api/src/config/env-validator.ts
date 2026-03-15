@@ -209,7 +209,7 @@ export function validateFeatureRequirements(feature: string): void {
     otp_firebase: ['FIREBASE_PROJECT_ID', 'FIREBASE_PRIVATE_KEY', 'FIREBASE_CLIENT_EMAIL'],
     telegram: ['TELEGRAM_BOT_TOKEN'],
     amocrm: ['AMOCRM_WEBHOOK_SECRET'],
-    utel: ['UTEL_API_URL', 'UTEL_API_TOKEN'],
+    utel: [],
     sendgrid: ['SENDGRID_API_KEY', 'SENDGRID_FROM_EMAIL'],
     aws_s3: ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET'],
   };
