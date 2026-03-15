@@ -33,7 +33,6 @@ Required for MVP:
 - `PUBLIC_API_URL` (recommended for integration webhook URL generation)
 - `AMOCRM_LONG_LIVED_TOKEN` (optional default token, per-tenant token can be set from UI)
 - `AMOCRM_WEBHOOK_SECRET`
-- `UTEL_API_URL`, `UTEL_API_TOKEN`
 - `TELEGRAM_BOT_TOKEN` (required for Telegram integration and outbound notifications)
 
 Optional:
