@@ -27,6 +27,61 @@ export interface AmoCRMLeadCustomFieldsResponse {
   };
 }
 
+export interface AmoCRMLeadPipelineStatus {
+  id?: number | string;
+  name?: string;
+}
+
+export interface AmoCRMLeadPipeline {
+  id?: number | string;
+  name?: string;
+  sort?: number;
+  _embedded?: {
+    statuses?: AmoCRMLeadPipelineStatus[];
+  };
+}
+
+export interface AmoCRMLeadPipelinesResponse {
+  _embedded?: {
+    pipelines?: AmoCRMLeadPipeline[];
+  };
+}
+
+export interface AmoCRMLead {
+  id?: number | string;
+  name?: string;
+  status_id?: number | string;
+  pipeline_id?: number | string;
+  source_id?: number | string;
+  loss_reason_id?: number | string;
+  responsible_user_id?: number | string;
+  created_at?: number | string;
+  updated_at?: number | string;
+  custom_fields_values?: Array<{
+    field_id?: number | string;
+    field_name?: string;
+    field_code?: string;
+    values?: Array<{
+      value?: unknown;
+    }>;
+  }>;
+  _embedded?: {
+    contacts?: Array<Record<string, unknown>>;
+  };
+  [key: string]: unknown;
+}
+
+export interface AmoCRMLeadListResponse {
+  _embedded?: {
+    leads?: AmoCRMLead[];
+  };
+  _links?: {
+    next?: {
+      href?: string;
+    };
+  };
+}
+
 export class AmoCRMService {
   private defaultBaseUrl: string;
   private webhookSecret: string;
@@ -117,12 +172,28 @@ export class AmoCRMService {
     page?: number;
     limit?: number;
     with?: string;
+    query?: string;
+    pipelineIds?: string[];
+    createdAtFrom?: Date;
+    createdAtTo?: Date;
   }, baseUrl?: string) {
     try {
       const queryParams = new URLSearchParams();
       if (params?.page) queryParams.set('page', params.page.toString());
       if (params?.limit) queryParams.set('limit', params.limit.toString());
       if (params?.with) queryParams.set('with', params.with);
+      if (params?.query) queryParams.set('query', params.query);
+      if (params?.pipelineIds) {
+        params.pipelineIds.forEach((pipelineId) => {
+          queryParams.append('filter[pipeline_id][]', pipelineId);
+        });
+      }
+      if (params?.createdAtFrom) {
+        queryParams.set('filter[created_at][from]', Math.floor(params.createdAtFrom.getTime() / 1000).toString());
+      }
+      if (params?.createdAtTo) {
+        queryParams.set('filter[created_at][to]', Math.floor(params.createdAtTo.getTime() / 1000).toString());
+      }
 
       const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
       const url = `${resolvedBaseUrl}/api/v4/leads${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
@@ -140,7 +211,7 @@ export class AmoCRMService {
         throw new Error(`Failed to fetch leads from AmoCRM: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as AmoCRMLeadListResponse;
       if (!data._embedded || !data._embedded.leads) {
         throw new Error('Invalid response structure from AmoCRM');
       }
@@ -207,6 +278,95 @@ export class AmoCRMService {
     }
 
     return (await response.json()) as AmoCRMLeadCustomFieldsResponse;
+  }
+
+  async fetchPipelines(accessToken: string, baseUrl?: string): Promise<AmoCRMLeadPipelinesResponse> {
+    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
+    const response = await fetch(`${resolvedBaseUrl}/api/v4/leads/pipelines`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ error: errorText, status: response.status }, 'AmoCRM pipelines fetch error');
+      throw new Error(`Failed to fetch AmoCRM pipelines: ${response.status} ${response.statusText}`);
+    }
+
+    return (await response.json()) as AmoCRMLeadPipelinesResponse;
+  }
+
+  async fetchLeadById(accessToken: string, leadId: string, params?: {
+    with?: string;
+  }, baseUrl?: string): Promise<AmoCRMLead> {
+    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
+    const queryParams = new URLSearchParams();
+    if (params?.with) {
+      queryParams.set('with', params.with);
+    }
+    const url = `${resolvedBaseUrl}/api/v4/leads/${leadId}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ error: errorText, status: response.status, leadId }, 'AmoCRM lead fetch by id error');
+      throw new Error(`Failed to fetch AmoCRM lead: ${response.status} ${response.statusText}`);
+    }
+
+    return (await response.json()) as AmoCRMLead;
+  }
+
+  async fetchAllLeads(accessToken: string, params?: {
+    pipelineIds?: string[] | null;
+    query?: string;
+    createdAtFrom?: Date;
+    createdAtTo?: Date;
+    with?: string;
+    limit?: number;
+    maxPages?: number;
+  }, baseUrl?: string): Promise<AmoCRMLead[]> {
+    const pageSize = Math.min(Math.max(params?.limit || 250, 1), 250);
+    const maxPages = Math.max(params?.maxPages || 1000, 1);
+
+    const allLeads: AmoCRMLead[] = [];
+    let page = 1;
+
+    while (page <= maxPages) {
+      const response = await this.fetchLeads(
+        accessToken,
+        '',
+        {
+          page,
+          limit: pageSize,
+          with: params?.with,
+          query: params?.query,
+          pipelineIds: params?.pipelineIds || undefined,
+          createdAtFrom: params?.createdAtFrom,
+          createdAtTo: params?.createdAtTo,
+        },
+        baseUrl,
+      );
+
+      const leads = Array.isArray(response._embedded?.leads) ? response._embedded?.leads : [];
+      allLeads.push(...leads);
+
+      const hasNext = Boolean(response._links?.next?.href);
+      if (!hasNext || leads.length < pageSize) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    return allLeads;
   }
 
   async createLead(accessToken: string, leadData: any, baseUrl?: string) {
