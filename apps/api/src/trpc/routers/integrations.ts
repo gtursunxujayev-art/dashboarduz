@@ -255,7 +255,7 @@ export const integrationsRouter = router({
     .input(voipConnectSchema)
     .mutation(async ({ ctx }) => {
       const webhookKey = crypto.randomBytes(24).toString('hex');
-      const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/utel?integration_key=${webhookKey}`;
+      const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/voip?integration_key=${webhookKey}`;
       const validatedAt = new Date();
 
       const integration = await prisma.integration.upsert({
