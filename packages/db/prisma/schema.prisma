@@ -128,6 +128,8 @@ model Lead {
   responsibleUserId String?
   metadata    Json?    // additional lead data
   source      String?  // where lead came from
+  externalCreatedAt DateTime?
+  externalUpdatedAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -141,6 +143,7 @@ model Lead {
   @@index([contactId])
   @@index([status])
   @@index([createdAt])
+  @@index([externalCreatedAt])
   @@map("leads")
 }
 
@@ -174,6 +177,7 @@ model Contact {
 model Call {
   id            String   @id @default(uuid())
   tenantId      String
+  provider      String   @default("unknown")
   callIdExternal String // external call ID from VoIP provider
   from          String   // caller number
   to            String   // called number
@@ -194,12 +198,13 @@ model Call {
   contact Contact? @relation(fields: [contactId], references: [id])
 
   @@index([tenantId])
+  @@index([provider])
   @@index([callIdExternal])
   @@index([from])
   @@index([to])
   @@index([leadId])
   @@index([contactId])
-  @@unique([tenantId, callIdExternal])
+  @@unique([tenantId, provider, callIdExternal])
   @@index([startedAt])
   @@map("calls")
 }
