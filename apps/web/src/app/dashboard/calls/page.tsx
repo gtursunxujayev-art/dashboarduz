@@ -16,7 +16,7 @@ export default function CallsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Call History</h1>
         <p className="mt-1 text-sm text-gray-500">
-          View inbound and webhook-ingested VoIP calls from UTeL
+          View webhook-ingested VoIP calls from UTeL and other connected operators
         </p>
       </div>
 
@@ -24,7 +24,7 @@ export default function CallsPage() {
         <div className="px-4 py-5 sm:p-6">
           {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
           <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            UTeL is configured in webhook-only mode. Click-to-call is disabled.
+            Calls are webhook-ingested in provider-agnostic mode. Click-to-call is disabled.
           </p>
 
           {callsQuery.isLoading ? (
@@ -35,6 +35,7 @@ export default function CallsPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Call ID</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Provider</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">From</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">To</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Status</th>
@@ -47,6 +48,7 @@ export default function CallsPage() {
                   {callsQuery.data.data.map((call: any) => (
                     <tr key={call.id}>
                       <td className="px-4 py-3 text-xs text-gray-700">{call.callIdExternal}</td>
+                      <td className="px-4 py-3 text-sm capitalize text-gray-700">{call.provider || 'unknown'}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{call.from}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{call.to}</td>
                       <td className="px-4 py-3 text-sm capitalize text-gray-700">{call.status}</td>
@@ -59,7 +61,7 @@ export default function CallsPage() {
               </table>
             </div>
           ) : (
-            <p className="text-sm text-gray-600">No calls yet. Connect UTeL webhook and send call events to populate history.</p>
+            <p className="text-sm text-gray-600">No calls yet. Connect VoIP webhook and send call events to populate history.</p>
           )}
         </div>
       </div>
