@@ -41,6 +41,50 @@ function extractContactField(contactData: any, code: string): string | null {
   return typeof value === 'string' ? value : null;
 }
 
+function parseAmoTimestamp(value: unknown): Date | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const millis = value > 1_000_000_000_000 ? value : value * 1000;
+    const parsed = new Date(millis);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  if (typeof value === 'string') {
+    const asNumber = Number(value);
+    if (!Number.isNaN(asNumber)) {
+      return parseAmoTimestamp(asNumber);
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+}
+
+function parseCallDate(value: unknown): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const millis = value > 1_000_000_000_000 ? value : value * 1000;
+    const parsed = new Date(millis);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  if (typeof value === 'string') {
+    const asNumber = Number(value);
+    if (!Number.isNaN(asNumber)) {
+      return parseCallDate(asNumber);
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+}
+
 export async function processWebhookEvent(eventId: string) {
   let tenantIdForAudit: string | null = null;
 
@@ -90,8 +134,9 @@ export async function processWebhookEvent(eventId: string) {
       case 'amocrm':
         await processAmoCRMWebhook(event, tenantId);
         break;
+      case 'voip':
       case 'utel':
-        await processUTeLWebhook(event, tenantId);
+        await processVoIPWebhook(event, tenantId);
         break;
       case 'telegram':
         await processTelegramWebhook(event, tenantId);
@@ -159,6 +204,9 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
       continue;
     }
 
+    const externalCreatedAt = parseAmoTimestamp(leadData.created_at);
+    const externalUpdatedAt = parseAmoTimestamp(leadData.updated_at);
+
     await prisma.lead.upsert({
       where: {
         tenantId_amocrmId: {
@@ -172,6 +220,9 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
         pipelineId: leadData.pipeline_id ? String(leadData.pipeline_id) : null,
         responsibleUserId: leadData.responsible_user_id ? String(leadData.responsible_user_id) : null,
         metadata: leadData,
+        source: 'amocrm',
+        externalCreatedAt,
+        externalUpdatedAt,
         updatedAt: new Date(),
       },
       create: {
@@ -183,6 +234,8 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
         responsibleUserId: leadData.responsible_user_id ? String(leadData.responsible_user_id) : null,
         metadata: leadData,
         source: 'amocrm',
+        externalCreatedAt,
+        externalUpdatedAt,
       },
     });
   }
@@ -257,15 +310,18 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
   }
 }
 
-async function processUTeLWebhook(event: any, tenantId: string) {
+async function processVoIPWebhook(event: any, tenantId: string) {
   const payload = event.rawPayload as any;
-  const callIdExternal = String(payload.call_id || payload.id || `utel-${event.id}`);
+  const provider = String(payload.provider || payload.operator || payload.vendor || payload.source || 'utel')
+    .trim()
+    .toLowerCase() || 'utel';
+  const callIdExternal = String(payload.call_id || payload.id || `${provider}-${event.id}`);
   const from = normalizePhone(payload.from || payload.caller || '');
   const to = normalizePhone(payload.to || payload.callee || '');
   const direction = payload.direction === 'outbound' ? 'outbound' : 'inbound';
   const status = payload.status || payload.call_status || 'completed';
-  const startedAt = payload.start_time ? new Date(payload.start_time) : new Date();
-  const endedAt = payload.end_time ? new Date(payload.end_time) : null;
+  const startedAt = parseCallDate(payload.start_time || payload.started_at || payload.startedAt) || new Date();
+  const endedAt = parseCallDate(payload.end_time || payload.ended_at || payload.endedAt);
   const duration = typeof payload.duration === 'number'
     ? payload.duration
     : endedAt
@@ -274,12 +330,14 @@ async function processUTeLWebhook(event: any, tenantId: string) {
 
   const upsertedCall = await prisma.call.upsert({
     where: {
-      tenantId_callIdExternal: {
+      tenantId_provider_callIdExternal: {
         tenantId,
+        provider,
         callIdExternal,
       },
     },
     update: {
+      provider,
       from,
       to,
       direction,
@@ -293,6 +351,7 @@ async function processUTeLWebhook(event: any, tenantId: string) {
     },
     create: {
       tenantId,
+      provider,
       callIdExternal,
       from,
       to,
