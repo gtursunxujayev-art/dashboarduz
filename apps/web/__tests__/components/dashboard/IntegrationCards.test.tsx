@@ -32,7 +32,7 @@ describe('IntegrationCards', () => {
     render(<IntegrationCards />);
     expect(screen.getByText('AmoCRM')).toBeInTheDocument();
     expect(screen.getByText('Telegram Bot')).toBeInTheDocument();
-    expect(screen.getByText('VoIP (UTeL)')).toBeInTheDocument();
+    expect(screen.getByText('VoIP (Webhook)')).toBeInTheDocument();
     expect(screen.getByText('Google Sheets')).toBeInTheDocument();
   });
 });
