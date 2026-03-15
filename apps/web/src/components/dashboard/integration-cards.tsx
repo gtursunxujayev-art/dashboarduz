@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 
 type IntegrationId = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel';
@@ -69,11 +69,17 @@ export default function IntegrationCards() {
   const [amocrmLongLivedToken, setAmocrmLongLivedToken] = useState('');
   const [amocrmBaseUrl, setAmocrmBaseUrl] = useState('');
   const [telegramToken, setTelegramToken] = useState('');
+  const [selectedPipelineIds, setSelectedPipelineIds] = useState<string[]>([]);
 
   const listQuery = trpc.integrations.list.useQuery();
+  const amoPipelinesQuery = trpc.integrations.getAmoCRMPipelines.useQuery(undefined, {
+    enabled: Boolean(listQuery.data?.find((it: any) => it.type === 'amocrm' && it.status === 'active')),
+    retry: false,
+  });
   const connectAmoCRM = trpc.integrations.connectAmoCRM.useMutation();
   const connectTelegram = trpc.integrations.connectTelegram.useMutation();
   const connectVoIP = trpc.integrations.connectVoIP.useMutation();
+  const updateAmoCRMPipelines = trpc.integrations.updateAmoCRMPipelines.useMutation();
   const disconnectIntegration = trpc.integrations.disconnect.useMutation();
 
   const integrations = useMemo(() => {
@@ -87,6 +93,20 @@ export default function IntegrationCards() {
       };
     });
   }, [listQuery.data]);
+
+  useEffect(() => {
+    if (!amoPipelinesQuery.data) {
+      return;
+    }
+
+    const availableIds = amoPipelinesQuery.data.pipelines.map((pipeline: any) => pipeline.id);
+    if (amoPipelinesQuery.data.hasExplicitSelection) {
+      setSelectedPipelineIds(amoPipelinesQuery.data.selectedPipelineIds);
+      return;
+    }
+
+    setSelectedPipelineIds(availableIds);
+  }, [amoPipelinesQuery.data]);
 
   const handleConnect = async (integrationId: IntegrationId) => {
     setError(null);
@@ -147,6 +167,21 @@ export default function IntegrationCards() {
     }
   };
 
+  const handleSavePipelines = async () => {
+    setError(null);
+    setActionLoading('amocrm');
+    try {
+      await updateAmoCRMPipelines.mutateAsync({
+        pipelineIds: selectedPipelineIds,
+      });
+      await Promise.all([listQuery.refetch(), amoPipelinesQuery.refetch()]);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update AmoCRM pipelines');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   return (
     <div>
       {error && (
@@ -160,6 +195,8 @@ export default function IntegrationCards() {
           const integrationConfig = integration.config || {};
           const webhookUrl = String((integrationConfig as any).webhookUrl || '');
           const loading = actionLoading === integration.id;
+          const pipelines = amoPipelinesQuery.data?.pipelines || [];
+          const isAmoActive = integration.id === 'amocrm' && integration.status === 'active';
 
           return (
             <div key={integration.id} className={`rounded-lg border p-4 ${integration.color}`}>
@@ -182,6 +219,67 @@ export default function IntegrationCards() {
                   {(integrationConfig as any).connectionMode && (
                     <p>Mode: {String((integrationConfig as any).connectionMode)}</p>
                   )}
+                </div>
+              )}
+
+              {isAmoActive && (
+                <div className="mt-4 rounded-md border border-blue-100 bg-white p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Pipelines Included in Live Reads</p>
+                      <p className="text-xs text-gray-500">
+                        Dashboard analytics, live lead pages, and webhook lead ingestion use only checked pipelines.
+                      </p>
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      {selectedPipelineIds.length}/{pipelines.length} selected
+                    </span>
+                  </div>
+
+                  {amoPipelinesQuery.isLoading ? (
+                    <p className="mt-3 text-sm text-gray-500">Loading pipelines...</p>
+                  ) : pipelines.length === 0 ? (
+                    <p className="mt-3 text-sm text-gray-500">No pipelines returned by AmoCRM.</p>
+                  ) : (
+                    <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+                      {pipelines.map((pipeline: any) => (
+                        <label key={pipeline.id} className="flex items-start gap-3 rounded-md border border-gray-100 px-3 py-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={selectedPipelineIds.includes(pipeline.id)}
+                            onChange={(event) => {
+                              setSelectedPipelineIds((current) => {
+                                if (event.target.checked) {
+                                  return Array.from(new Set([...current, pipeline.id]));
+                                }
+                                return current.filter((id) => id !== pipeline.id);
+                              });
+                            }}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-900">{pipeline.name}</p>
+                            {Array.isArray(pipeline.statuses) && pipeline.statuses.length > 0 && (
+                              <p className="text-xs text-gray-500">
+                                Statuses: {pipeline.statuses.map((status: any) => status.name).join(', ')}
+                              </p>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={handleSavePipelines}
+                      disabled={loading || amoPipelinesQuery.isLoading}
+                      className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading ? 'Saving...' : 'Save Pipeline Selection'}
+                    </button>
+                  </div>
                 </div>
               )}
 
