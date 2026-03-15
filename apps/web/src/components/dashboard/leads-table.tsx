@@ -54,13 +54,6 @@ export default function LeadsTable() {
             className="block w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
           />
         </div>
-        
-        <Link
-          href="/dashboard/leads/new"
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          + New Lead
-        </Link>
       </div>
 
       {/* Table */}
@@ -121,7 +114,7 @@ export default function LeadsTable() {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {lead.source || 'Manual'}
+                  {lead.source || '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {new Date(lead.createdAt).toLocaleDateString()}
@@ -129,13 +122,10 @@ export default function LeadsTable() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <Link
                     href={`/dashboard/leads/${lead.id}`}
-                    className="text-blue-600 hover:text-blue-900 mr-3"
+                    className="text-blue-600 hover:text-blue-900"
                   >
                     View
                   </Link>
-                  <button className="text-gray-600 hover:text-gray-900">
-                    Edit
-                  </button>
                 </td>
               </tr>
             ))}
@@ -206,16 +196,8 @@ export default function LeadsTable() {
           </svg>
           <h3 className="mt-2 text-sm font-medium text-gray-900">No leads</h3>
           <p className="mt-1 text-sm text-gray-500">
-            Get started by creating a new lead or connecting AmoCRM.
+            Connect AmoCRM and send webhooks to start receiving leads.
           </p>
-          <div className="mt-6">
-            <Link
-              href="/dashboard/leads/new"
-              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              + New Lead
-            </Link>
-          </div>
         </div>
       )}
 
