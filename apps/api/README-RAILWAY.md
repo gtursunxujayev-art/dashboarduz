@@ -24,9 +24,7 @@ Core:
 - `PUBLIC_API_URL` (your Railway public API URL)
 
 Integrations:
-- `AMOCRM_CLIENT_ID`
-- `AMOCRM_CLIENT_SECRET`
-- `AMOCRM_REDIRECT_URI` (`https://<api-domain>/api/integrations/amocrm/callback`)
+- `AMOCRM_LONG_LIVED_TOKEN` (optional default token)
 - `AMOCRM_WEBHOOK_SECRET`
 - `UTEL_API_URL`
 - `UTEL_API_TOKEN`
