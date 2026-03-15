@@ -11,7 +11,7 @@ type DashboardRange = 'today' | 'week' | 'month';
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [range, setRange] = useState<DashboardRange>('month');
+  const [range, setRange] = useState<DashboardRange>('today');
   const [pipelineIds, setPipelineIds] = useState<string[]>([]);
   const amoPipelinesQuery = trpc.integrations.getAmoCRMPipelines.useQuery(undefined, {
     retry: false,
@@ -71,7 +71,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         <div className="overflow-hidden rounded-lg bg-white shadow">
           <div className="p-5">
-            <p className="text-sm font-medium text-gray-500">Total Leads</p>
+            <p className="text-sm font-medium text-gray-500">New Leads</p>
             <p className="mt-2 text-2xl font-semibold text-gray-900">{stats?.totalLeads ?? 0}</p>
           </div>
         </div>
