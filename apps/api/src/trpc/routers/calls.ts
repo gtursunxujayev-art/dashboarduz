@@ -90,7 +90,7 @@ export const callsRouter = router({
     .mutation(async () => {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
-        message: 'Click-to-call is disabled in webhook-only UTeL mode.',
+        message: 'Click-to-call is disabled in webhook-only VoIP mode.',
       });
     }),
 });
