@@ -17,6 +17,16 @@ export interface AmoCRMAccountInfo {
   subdomain?: string;
 }
 
+export interface AmoCRMLeadCustomFieldsResponse {
+  _embedded?: {
+    custom_fields?: Array<{
+      id?: number | string;
+      name?: string;
+      code?: string;
+    }>;
+  };
+}
+
 export class AmoCRMService {
   private defaultBaseUrl: string;
   private webhookSecret: string;
@@ -179,6 +189,24 @@ export class AmoCRMService {
       logger.error({ error: error.message }, 'AmoCRM fetch contacts error');
       throw new Error(`Failed to fetch AmoCRM contacts: ${error.message}`);
     }
+  }
+
+  async fetchLeadCustomFields(accessToken: string, baseUrl?: string): Promise<AmoCRMLeadCustomFieldsResponse> {
+    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
+    const response = await fetch(`${resolvedBaseUrl}/api/v4/leads/custom_fields`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ error: errorText, status: response.status }, 'AmoCRM lead custom fields fetch error');
+      throw new Error(`Failed to fetch AmoCRM lead custom fields: ${response.status} ${response.statusText}`);
+    }
+
+    return (await response.json()) as AmoCRMLeadCustomFieldsResponse;
   }
 
   async createLead(accessToken: string, leadData: any, baseUrl?: string) {
