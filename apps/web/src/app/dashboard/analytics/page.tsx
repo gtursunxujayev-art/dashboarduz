@@ -21,7 +21,7 @@ export default function AnalyticsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Analytics</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Non-qualified reasons and lead-source distribution from AmoCRM ingestion data.
+          Non-qualified reasons and lead-source distribution from live AmoCRM data.
         </p>
       </div>
 
