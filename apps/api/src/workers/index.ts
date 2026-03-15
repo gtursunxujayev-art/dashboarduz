@@ -4,6 +4,7 @@ import { log, LogLevel } from '../services/observability';
 import { telegramService } from '../services/integrations/telegram';
 import { decryptIntegrationTokens } from '../services/security/encryption';
 import { rateLimiter } from '../services/security/rate-limiter';
+import { asObject, getSelectedPipelineIds } from '../services/integrations/amocrm-live';
 
 function normalizePhone(phone?: string | null): string {
   if (!phone) {
@@ -197,10 +198,27 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
   const payload = event.rawPayload as any;
   const leads = extractAmoEntities(payload, 'leads');
   const contacts = extractAmoEntities(payload, 'contacts');
+  const integration = await prisma.integration.findUnique({
+    where: {
+      tenantId_type: {
+        tenantId,
+        type: 'amocrm',
+      },
+    },
+    select: {
+      config: true,
+    },
+  });
+  const selectedPipelineIds = getSelectedPipelineIds(integration?.config);
 
   for (const leadData of leads) {
     const leadId = leadData?.id ? String(leadData.id) : null;
     if (!leadId) {
+      continue;
+    }
+
+    const pipelineId = leadData?.pipeline_id ? String(leadData.pipeline_id) : null;
+    if (selectedPipelineIds && (!pipelineId || !selectedPipelineIds.includes(pipelineId))) {
       continue;
     }
 
@@ -217,7 +235,7 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
       update: {
         title: leadData.name || 'Untitled Lead',
         status: leadData.status_id ? String(leadData.status_id) : null,
-        pipelineId: leadData.pipeline_id ? String(leadData.pipeline_id) : null,
+        pipelineId,
         responsibleUserId: leadData.responsible_user_id ? String(leadData.responsible_user_id) : null,
         metadata: leadData,
         source: 'amocrm',
@@ -230,7 +248,7 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
         amocrmId: leadId,
         title: leadData.name || 'Untitled Lead',
         status: leadData.status_id ? String(leadData.status_id) : null,
-        pipelineId: leadData.pipeline_id ? String(leadData.pipeline_id) : null,
+        pipelineId,
         responsibleUserId: leadData.responsible_user_id ? String(leadData.responsible_user_id) : null,
         metadata: leadData,
         source: 'amocrm',
