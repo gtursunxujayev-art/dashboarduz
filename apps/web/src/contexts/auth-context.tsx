@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
 
-type UserRole = 'Admin' | 'Manager' | 'Agent';
+type UserRole = 'Admin' | 'Manager' | 'Agent' | 'Finance';
 
 interface JWTPayload {
   userId: string;
