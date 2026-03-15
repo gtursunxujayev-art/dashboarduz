@@ -31,8 +31,8 @@ const integrationCatalog: Array<{
   },
   {
     id: 'voip_utel',
-    name: 'VoIP (UTeL)',
-    description: 'Webhook-only mode: register webhook URL and ingest call events.',
+    name: 'VoIP (Webhook)',
+    description: 'Webhook-only mode: ingest call events from UTeL and other operators.',
     color: 'bg-purple-50 border-purple-200',
   },
 ];
