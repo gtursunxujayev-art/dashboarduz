@@ -15,6 +15,9 @@ interface MultiSelectDropdownProps {
   onChange: (next: string[]) => void;
   placeholder?: string;
   disabled?: boolean;
+  loading?: boolean;
+  loadingText?: string;
+  emptyText?: string;
 }
 
 export default function MultiSelectDropdown({
@@ -24,6 +27,9 @@ export default function MultiSelectDropdown({
   onChange,
   placeholder = 'Select values',
   disabled = false,
+  loading = false,
+  loadingText = 'Loading options...',
+  emptyText = 'No options available.',
 }: MultiSelectDropdownProps) {
   const selectedLabels = useMemo(() => {
     const selected = options.filter((option) => selectedIds.includes(option.id)).map((option) => option.label);
@@ -33,8 +39,11 @@ export default function MultiSelectDropdown({
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700">{label}</label>
-      <details className="relative mt-1" open={false}>
-        <summary className={`list-none rounded-md border border-gray-300 px-3 py-2 text-sm ${disabled ? 'bg-gray-100 text-gray-500' : 'cursor-pointer bg-white text-gray-700'}`}>
+      <details className="relative mt-1">
+        <summary
+          style={{ backgroundColor: disabled ? '#F3F4F6' : '#FFFFFF', color: disabled ? '#6B7280' : '#111827' }}
+          className={`list-none rounded-md border border-gray-300 px-3 py-2 text-sm ${disabled ? '' : 'cursor-pointer'}`}
+        >
           <div className="flex items-center justify-between gap-3">
             <span className="truncate">{selectedLabels}</span>
             <span className="text-xs text-gray-500">{selectedIds.length} selected</span>
@@ -42,9 +51,14 @@ export default function MultiSelectDropdown({
         </summary>
 
         {!disabled && (
-          <div className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-md border border-gray-200 bg-white p-2 shadow-lg">
-            {options.length === 0 ? (
-              <p className="px-2 py-2 text-sm text-gray-500">No options available.</p>
+          <div
+            style={{ backgroundColor: '#FFFFFF', color: '#111827' }}
+            className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-md border border-gray-200 p-2 shadow-lg"
+          >
+            {loading ? (
+              <p className="px-2 py-2 text-sm text-gray-500">{loadingText}</p>
+            ) : options.length === 0 ? (
+              <p className="px-2 py-2 text-sm text-gray-500">{emptyText}</p>
             ) : (
               <div className="space-y-1">
                 {options.map((option) => (
