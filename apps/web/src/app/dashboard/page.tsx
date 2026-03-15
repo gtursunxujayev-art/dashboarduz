@@ -36,7 +36,7 @@ export default function DashboardPage() {
               <h3 className="text-lg font-medium leading-6 text-gray-900">
                 Welcome back, {user?.email?.split('@')[0] || user?.phone || 'User'}!
               </h3>
-              <p className="mt-1 text-sm text-gray-500">Your dashboard is now driven by ingestion-only CRM data.</p>
+              <p className="mt-1 text-sm text-gray-500">Your lead analytics now come live from AmoCRM, while webhooks continue tracking lead changes.</p>
             </div>
           </div>
         </div>
