@@ -8,6 +8,7 @@ import { notificationsRouter } from './notifications';
 import { usersRouter } from './users';
 import { tenantRouter } from './tenant';
 import { dashboardRouter } from './dashboard';
+import { customerIncomeRouter } from './customer-income';
 
 export const appRouter = router({
   auth: authRouter,
@@ -19,6 +20,7 @@ export const appRouter = router({
   users: usersRouter,
   tenant: tenantRouter,
   dashboard: dashboardRouter,
+  customerIncome: customerIncomeRouter,
 });
 
 export type AppRouter = typeof appRouter;
