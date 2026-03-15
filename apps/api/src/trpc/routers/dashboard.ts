@@ -104,7 +104,7 @@ function isMappedValue(value: string | null, targetValues: string[]): boolean {
 
 export const dashboardRouter = router({
   summary: protectedProcedure
-    .input(z.object({ range: dashboardRangeSchema }))
+    .input(z.object({ range: dashboardRangeSchema, pipelineIds: z.array(z.string()).optional() }))
     .query(async ({ ctx, input }) => {
       const now = new Date();
       const rangeStart = getRangeStart(input.range, now);
@@ -121,16 +121,18 @@ export const dashboardRouter = router({
       const dashboardSettings = asObject(settings?.dashboard);
       const reasonFieldKey = typeof dashboardSettings?.reasonFieldKey === 'string' ? dashboardSettings.reasonFieldKey : null;
       const sourceFieldKey = typeof dashboardSettings?.sourceFieldKey === 'string' ? dashboardSettings.sourceFieldKey : null;
-      const outcomeFieldKey = typeof dashboardSettings?.outcomeFieldKey === 'string' ? dashboardSettings.outcomeFieldKey : null;
       const qualifiedValues = asStringArray(dashboardSettings?.qualifiedValues);
       const nonQualifiedValues = asStringArray(dashboardSettings?.nonQualifiedValues);
+      const qualifiedStageIds = asStringArray(dashboardSettings?.qualifiedStageIds);
 
       const [amoContext, catalogOptions] = await Promise.all([
         getTenantAmoCRMContext(ctx.tenantId),
         collectCatalogFieldOptions(ctx.tenantId),
       ]);
       const fieldLabelMap = buildFieldLabelMap([...getSystemLeadFieldOptions(), ...catalogOptions]);
-      const selectedPipelineIds = amoContext?.selectedPipelineIds ?? null;
+      const selectedPipelineIds = input.pipelineIds && input.pipelineIds.length > 0
+        ? input.pipelineIds
+        : (amoContext?.selectedPipelineIds ?? null);
       const leads = amoContext
         ? await amocrmService.fetchAllLeads(
             amoContext.accessToken,
@@ -180,9 +182,15 @@ export const dashboardRouter = router({
       let nonQualifiedLeads = 0;
 
       for (const lead of leads) {
-        const outcomeValue = extractLeadValue(lead, outcomeFieldKey);
-        const isQualified = isMappedValue(outcomeValue, qualifiedValues);
-        const isNonQualified = isMappedValue(outcomeValue, nonQualifiedValues);
+        const reasonValue = extractLeadValue(lead, reasonFieldKey);
+        const stageId = lead.status_id !== null && lead.status_id !== undefined ? String(lead.status_id) : null;
+        const isQualifiedByStage = stageId ? qualifiedStageIds.includes(stageId) : false;
+        const isQualified = qualifiedStageIds.length > 0
+          ? isQualifiedByStage
+          : isMappedValue(reasonValue, qualifiedValues);
+        const isNonQualified = nonQualifiedValues.length > 0
+          ? isMappedValue(reasonValue, nonQualifiedValues)
+          : (!isQualified && Boolean(reasonValue));
 
         if (isQualified) {
           qualifiedLeads += 1;
@@ -190,7 +198,6 @@ export const dashboardRouter = router({
 
         if (isNonQualified) {
           nonQualifiedLeads += 1;
-          const reasonValue = extractLeadValue(lead, reasonFieldKey);
           if (reasonValue) {
             reasonCounts.set(reasonValue, (reasonCounts.get(reasonValue) ?? 0) + 1);
           }
@@ -204,6 +211,7 @@ export const dashboardRouter = router({
 
       return {
         range: input.range,
+        selectedPipelineIds: selectedPipelineIds || [],
         summary: {
           totalLeads: leads.length,
           qualifiedLeads,
@@ -261,9 +269,47 @@ export const dashboardRouter = router({
     return {
       reasonFieldKey: typeof dashboardSettings?.reasonFieldKey === 'string' ? dashboardSettings.reasonFieldKey : null,
       sourceFieldKey: typeof dashboardSettings?.sourceFieldKey === 'string' ? dashboardSettings.sourceFieldKey : null,
-      outcomeFieldKey: typeof dashboardSettings?.outcomeFieldKey === 'string' ? dashboardSettings.outcomeFieldKey : null,
+      qualifiedStageIds: asStringArray(dashboardSettings?.qualifiedStageIds),
       qualifiedValues: asStringArray(dashboardSettings?.qualifiedValues),
       nonQualifiedValues: asStringArray(dashboardSettings?.nonQualifiedValues),
     };
   }),
+
+  reasonValueOptions: adminProcedure
+    .input(z.object({ fieldKey: z.string().optional(), pipelineIds: z.array(z.string()).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      if (!input?.fieldKey) {
+        return { values: [] as string[] };
+      }
+
+      const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+      if (!amoContext) {
+        return { values: [] as string[] };
+      }
+
+      const selectedPipelineIds = input.pipelineIds && input.pipelineIds.length > 0
+        ? input.pipelineIds
+        : (amoContext.selectedPipelineIds || null);
+
+      const leads = await amocrmService.fetchAllLeads(
+        amoContext.accessToken,
+        {
+          pipelineIds: selectedPipelineIds,
+          limit: 250,
+        },
+        amoContext.baseUrl,
+      );
+
+      const values = new Set<string>();
+      for (const lead of leads) {
+        const value = extractLeadValue(lead, input.fieldKey);
+        if (value) {
+          values.add(value);
+        }
+      }
+
+      return {
+        values: Array.from(values).sort((a, b) => a.localeCompare(b)),
+      };
+    }),
 });
