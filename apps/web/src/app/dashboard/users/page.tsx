@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 
-const availableRoles = ['Admin', 'Manager', 'Agent'] as const;
+const availableRoles = ['Admin', 'Manager', 'Agent', 'Finance'] as const;
 
 export default function UsersPage() {
   const usersQuery = trpc.users.list.useQuery();
