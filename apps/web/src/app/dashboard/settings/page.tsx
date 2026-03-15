@@ -198,11 +198,12 @@ export default function SettingsPage() {
                   value={reasonFieldKey}
                   onChange={(e) => setReasonFieldKey(e.target.value)}
                   disabled={!isAdmin || fieldOptionsQuery.isLoading}
+                  style={{ backgroundColor: '#FFFFFF', color: '#111827' }}
                   className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                 >
-                  <option value="">Select field</option>
+                  <option value="" style={{ backgroundColor: '#FFFFFF', color: '#111827' }}>Select field</option>
                   {fieldOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
+                    <option key={option.key} value={option.key} style={{ backgroundColor: '#FFFFFF', color: '#111827' }}>
                       {option.label} ({option.source})
                     </option>
                   ))}
@@ -215,11 +216,12 @@ export default function SettingsPage() {
                   value={sourceFieldKey}
                   onChange={(e) => setSourceFieldKey(e.target.value)}
                   disabled={!isAdmin || fieldOptionsQuery.isLoading}
+                  style={{ backgroundColor: '#FFFFFF', color: '#111827' }}
                   className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                 >
-                  <option value="">Select field</option>
+                  <option value="" style={{ backgroundColor: '#FFFFFF', color: '#111827' }}>Select field</option>
                   {fieldOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
+                    <option key={option.key} value={option.key} style={{ backgroundColor: '#FFFFFF', color: '#111827' }}>
                       {option.label} ({option.source})
                     </option>
                   ))}
@@ -239,12 +241,15 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <MultiSelectDropdown
                 label="Qualified Values"
-                options={reasonValueOptions}
-                selectedIds={qualifiedValues}
-                onChange={setQualifiedValues}
-                placeholder={reasonFieldKey ? 'Choose values from selected reason field' : 'Select reason field first'}
-                disabled={!isAdmin || !reasonFieldKey || reasonValueOptionsQuery.isLoading}
-              />
+              options={reasonValueOptions}
+              selectedIds={qualifiedValues}
+              onChange={setQualifiedValues}
+              placeholder={reasonFieldKey ? 'Choose values from selected reason field' : 'Select reason field first'}
+              disabled={!isAdmin || !reasonFieldKey}
+              loading={reasonValueOptionsQuery.isLoading}
+              loadingText="Loading values from selected reason field..."
+              emptyText="No values found yet for this reason field."
+            />
 
               <MultiSelectDropdown
                 label="Non-Qualified Values"
@@ -252,7 +257,10 @@ export default function SettingsPage() {
                 selectedIds={nonQualifiedValues}
                 onChange={setNonQualifiedValues}
                 placeholder={reasonFieldKey ? 'Choose values from selected reason field' : 'Select reason field first'}
-                disabled={!isAdmin || !reasonFieldKey || reasonValueOptionsQuery.isLoading}
+                disabled={!isAdmin || !reasonFieldKey}
+                loading={reasonValueOptionsQuery.isLoading}
+                loadingText="Loading values from selected reason field..."
+                emptyText="No values found yet for this reason field."
               />
             </div>
 
