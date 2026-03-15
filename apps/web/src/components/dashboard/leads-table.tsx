@@ -6,49 +6,27 @@ import Link from 'next/link';
 
 export default function LeadsTable() {
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<string>('');
   const [search, setSearch] = useState('');
   
   const leadsQuery = trpc.leads.list.useQuery({
     page,
     limit: 10,
-    status: statusFilter || undefined,
     search: search || undefined,
   });
 
   const leads = leadsQuery.data?.data || [];
   const pagination = leadsQuery.data?.pagination;
 
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'new': return 'bg-blue-100 text-blue-800';
-      case 'contacted': return 'bg-yellow-100 text-yellow-800';
-      case 'qualified': return 'bg-green-100 text-green-800';
-      case 'lost': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  const getStatusColor = (status: string) => status ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800';
 
   return (
     <div>
       {/* Filters */}
       <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
         <div className="flex space-x-2">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="block w-full sm:w-auto pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-          >
-            <option value="">All Statuses</option>
-            <option value="new">New</option>
-            <option value="contacted">Contacted</option>
-            <option value="qualified">Qualified</option>
-            <option value="lost">Lost</option>
-          </select>
-          
           <input
             type="text"
-            placeholder="Search leads..."
+            placeholder="Search live AmoCRM leads..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="block w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
@@ -114,7 +92,10 @@ export default function LeadsTable() {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {lead.source || '-'}
+                  <div>{lead.source || '-'}</div>
+                  {lead.pipelineName && (
+                    <div className="text-xs text-gray-400">{lead.pipelineName}</div>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {new Date(lead.createdAt).toLocaleDateString()}
@@ -155,9 +136,15 @@ export default function LeadsTable() {
           <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <div>
               <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">{(page - 1) * 10 + 1}</span> to{' '}
-                <span className="font-medium">{(page - 1) * 10 + leads.length}</span> of{' '}
-                <span className="font-medium">{pagination.total || 0}</span> results
+                Showing <span className="font-medium">{leads.length === 0 ? 0 : (page - 1) * 10 + 1}</span> to{' '}
+                <span className="font-medium">{(page - 1) * 10 + leads.length}</span>
+                {typeof pagination.total === 'number' ? (
+                  <>
+                    {' '}of <span className="font-medium">{pagination.total}</span> results
+                  </>
+                ) : (
+                  ' from live AmoCRM data'
+                )}
               </p>
             </div>
             <div>
