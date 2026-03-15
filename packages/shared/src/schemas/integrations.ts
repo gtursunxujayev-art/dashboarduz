@@ -1,7 +1,10 @@
 import { z } from 'zod';
 
 // AmoCRM integration
-export const amocrmConnectSchema = z.object({}).optional();
+export const amocrmConnectSchema = z.object({
+  longLivedToken: z.string().min(1, 'Long-lived token is required'),
+  baseUrl: z.string().url().optional(),
+});
 
 export const amocrmWebhookSchema = z.object({
   account: z.object({
