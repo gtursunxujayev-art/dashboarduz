@@ -7,6 +7,7 @@ import { callsRouter } from './calls';
 import { notificationsRouter } from './notifications';
 import { usersRouter } from './users';
 import { tenantRouter } from './tenant';
+import { dashboardRouter } from './dashboard';
 
 export const appRouter = router({
   auth: authRouter,
@@ -17,6 +18,7 @@ export const appRouter = router({
   notifications: notificationsRouter,
   users: usersRouter,
   tenant: tenantRouter,
+  dashboard: dashboardRouter,
 });
 
 export type AppRouter = typeof appRouter;
