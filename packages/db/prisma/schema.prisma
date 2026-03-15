@@ -33,6 +33,10 @@ model Tenant {
   notifications   Notification[]
   auditLogs       AuditLog[]
   webhookEvents   WebhookEvent[]
+  customers       Customer[]
+  courses         Course[]
+  tariffs         Tariff[]
+  incomes         Income[]
 
   @@index([subdomain])
   @@map("tenants")
@@ -59,6 +63,7 @@ model User {
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   auditLogs    AuditLog[]
   linkedAccounts UserAuthLink[]
+  managedIncomes Income[] @relation("IncomeManager")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -288,4 +293,99 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ============================================
+// CUSTOMERS, COURSES, TARIFFS, INCOME
+// ============================================
+
+model Customer {
+  id              String   @id @default(uuid())
+  tenantId        String
+  customerNumber  String
+  name            String
+  telegramUsername String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  incomes Income[]
+
+  @@unique([tenantId, customerNumber])
+  @@index([tenantId])
+  @@index([customerNumber])
+  @@map("customers")
+}
+
+model Course {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tariffs Tariff[]
+  incomes Income[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("courses")
+}
+
+model Tariff {
+  id        String   @id @default(uuid())
+  tenantId  String
+  courseId  String
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  incomes Income[]
+
+  @@unique([tenantId, courseId, name])
+  @@index([tenantId])
+  @@index([courseId])
+  @@map("tariffs")
+}
+
+model Income {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  customerId         String
+  managerUserId      String
+  type               String   // new_sale, repayment
+  relatedDebtIncomeId String?
+  courseId           String?
+  tariffId           String?
+  entryDate          DateTime
+  deadline           DateTime?
+  coursePriceAmount  Int?     // amount in whole currency units
+  debtAmount         Int?     // source debt amount at creation time
+  paymentAmount      Int      // paid amount
+  remainingDebtAmount Int     // remaining debt after this transaction
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  manager  User     @relation("IncomeManager", fields: [managerUserId], references: [id], onDelete: Restrict)
+  course   Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  tariff   Tariff?  @relation(fields: [tariffId], references: [id], onDelete: SetNull)
+
+  relatedDebtIncome Income? @relation("DebtRepaymentSource", fields: [relatedDebtIncomeId], references: [id], onDelete: SetNull)
+  repayments        Income[] @relation("DebtRepaymentSource")
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([managerUserId])
+  @@index([type])
+  @@index([entryDate])
+  @@index([remainingDebtAmount])
+  @@index([relatedDebtIncomeId])
+  @@map("incomes")
 }
