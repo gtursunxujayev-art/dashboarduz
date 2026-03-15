@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type Option = {
   id: string;
@@ -31,26 +31,68 @@ export default function MultiSelectDropdown({
   loadingText = 'Loading options...',
   emptyText = 'No options available.',
 }: MultiSelectDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
   const selectedLabels = useMemo(() => {
     const selected = options.filter((option) => selectedIds.includes(option.id)).map((option) => option.label);
     return selected.length > 0 ? selected.join(', ') : placeholder;
   }, [options, placeholder, selectedIds]);
 
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current) {
+        return;
+      }
+      if (!containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (disabled) {
+      setIsOpen(false);
+    }
+  }, [disabled]);
+
   return (
-    <div>
+    <div ref={containerRef}>
       <label className="block text-sm font-medium text-gray-700">{label}</label>
-      <details className="relative mt-1">
-        <summary
+      <div className="relative mt-1">
+        <button
+          type="button"
+          onClick={() => {
+            if (disabled) {
+              return;
+            }
+            setIsOpen((value) => !value);
+          }}
+          aria-expanded={isOpen}
           style={{ backgroundColor: disabled ? '#F3F4F6' : '#FFFFFF', color: disabled ? '#6B7280' : '#111827' }}
-          className={`list-none rounded-md border border-gray-300 px-3 py-2 text-sm ${disabled ? '' : 'cursor-pointer'}`}
+          className={`w-full rounded-md border border-gray-300 px-3 py-2 text-left text-sm ${disabled ? '' : 'cursor-pointer'}`}
         >
           <div className="flex items-center justify-between gap-3">
             <span className="truncate">{selectedLabels}</span>
             <span className="text-xs text-gray-500">{selectedIds.length} selected</span>
           </div>
-        </summary>
+        </button>
 
-        {!disabled && (
+        {!disabled && isOpen && (
           <div
             style={{ backgroundColor: '#FFFFFF', color: '#111827' }}
             className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-md border border-gray-200 p-2 shadow-lg"
@@ -87,7 +129,7 @@ export default function MultiSelectDropdown({
             )}
           </div>
         )}
-      </details>
+      </div>
     </div>
   );
 }
