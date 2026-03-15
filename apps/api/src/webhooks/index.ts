@@ -22,6 +22,21 @@ function buildIdempotencyKey(source: string, tenantId: string, payload: string):
   return crypto.createHash('sha256').update(`${source}:${tenantId}:${payload}`).digest('hex');
 }
 
+function resolveVoipProvider(req: Request): string {
+  const headerProvider = req.headers['x-voip-provider'];
+  const queryProvider = req.query.provider;
+  const bodyProvider = req.body?.provider || req.body?.operator || req.body?.vendor;
+
+  const provider = String(
+    (Array.isArray(headerProvider) ? headerProvider[0] : headerProvider)
+      || (Array.isArray(queryProvider) ? queryProvider[0] : queryProvider)
+      || bodyProvider
+      || 'utel',
+  ).trim().toLowerCase();
+
+  return provider || 'utel';
+}
+
 function isUniqueViolation(error: any): boolean {
   return error?.code === 'P2002';
 }
@@ -140,7 +155,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/utel', async (req: Request, res: Response) => {
+async function handleVoipWebhook(req: Request, res: Response) {
   try {
     const rawBody = getRawBody(req);
     const signature = req.headers['x-signature'] as string | undefined;
@@ -180,7 +195,7 @@ router.post('/utel', async (req: Request, res: Response) => {
       logger.warn({ msg: 'UTEL_WEBHOOK_SECRET is not configured in production' });
     }
 
-    const webhookLimit = await rateLimiter.isAllowed(integration.tenantId, 'webhook:utel', {
+    const webhookLimit = await rateLimiter.isAllowed(integration.tenantId, 'webhook:voip', {
       maxRequests: 300,
       windowMs: 60 * 1000,
       keyPrefix: 'webhook',
@@ -189,7 +204,8 @@ router.post('/utel', async (req: Request, res: Response) => {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
 
-    const idempotencyKey = buildIdempotencyKey('utel', integration.tenantId, rawBody);
+    const provider = resolveVoipProvider(req);
+    const idempotencyKey = buildIdempotencyKey(`voip:${provider}`, integration.tenantId, rawBody);
     const eventType = req.body?.event_type || 'call_event';
 
     let event;
@@ -197,24 +213,27 @@ router.post('/utel', async (req: Request, res: Response) => {
       event = await prisma.webhookEvent.create({
         data: {
           tenantId: integration.tenantId,
-          source: 'utel',
+          source: 'voip',
           eventType,
-          idempotencyKey,
-          rawPayload: req.body,
+          idempotencyKey: `${provider}:${idempotencyKey}`,
+          rawPayload: {
+            ...req.body,
+            provider,
+          },
           signature: signature || null,
           processed: false,
         },
       });
     } catch (error: any) {
       if (isUniqueViolation(error)) {
-        logger.info({ msg: 'Duplicate UTeL webhook ignored', idempotencyKey });
+        logger.info({ msg: 'Duplicate VoIP webhook ignored', idempotencyKey, provider });
         return res.status(200).json({ received: true, duplicate: true });
       }
       throw error;
     }
 
     await enqueueWebhookJob({
-      jobName: 'process-utel-webhook',
+      jobName: 'process-voip-webhook',
       eventId: event.id,
       tenantId: integration.tenantId,
       idempotencyKey,
@@ -226,16 +245,19 @@ router.post('/utel', async (req: Request, res: Response) => {
         action: 'webhook_received',
         resource: 'webhook',
         resourceId: event.id,
-        metadata: { source: 'utel', eventType },
+        metadata: { source: 'voip', provider, eventType },
       },
     });
 
     return res.status(200).json({ received: true });
   } catch (err) {
-    logger.error({ err }, 'UTeL webhook handler failed');
+    logger.error({ err }, 'VoIP webhook handler failed');
     return res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
+
+router.post('/utel', handleVoipWebhook);
+router.post('/voip', handleVoipWebhook);
 
 router.post('/telegram', async (req: Request, res: Response) => {
   try {
