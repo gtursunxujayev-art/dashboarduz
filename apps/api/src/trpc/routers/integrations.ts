@@ -5,7 +5,6 @@ import { amocrmConnectSchema, telegramBotConnectSchema, voipConnectSchema } from
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { encryptIntegrationTokens } from '../../services/security/encryption';
-import { createSignedAmoCRMState } from '../../services/integrations/oauth-state';
 
 function normalizeBaseUrl(url?: string): string | null {
   if (!url) {
@@ -27,6 +26,29 @@ function getPublicApiBaseUrl(): string {
 
   const port = process.env.PORT || '3001';
   return `http://localhost:${port}`;
+}
+
+async function fetchAmoCRMAccountByToken(accessToken: string, baseUrl: string) {
+  const response = await fetch(`${baseUrl}/api/v4/account`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Failed to validate AmoCRM long-lived token (${response.status})`,
+    });
+  }
+
+  return response.json() as Promise<{
+    id?: number | string;
+    name?: string;
+    domain?: string;
+    subdomain?: string;
+  }>;
 }
 
 export const integrationsRouter = router({
@@ -52,15 +74,19 @@ export const integrationsRouter = router({
 
   connectAmoCRM: protectedProcedure
     .input(amocrmConnectSchema)
-    .mutation(async ({ ctx }) => {
-      const { amocrmService } = await import('../../services/integrations/amocrm');
-      const oauthState = createSignedAmoCRMState({
-        tenantId: ctx.tenantId,
-        userId: ctx.user.userId,
-      });
-      const authUrl = amocrmService.getAuthUrl(oauthState);
-      const now = new Date();
+    .mutation(async ({ input, ctx }) => {
+      const resolvedBaseUrl = normalizeBaseUrl(input.baseUrl || process.env.AMOCRM_BASE_URL || 'https://www.amocrm.ru');
+      if (!resolvedBaseUrl) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid AmoCRM base URL' });
+      }
 
+      const accountInfo = await fetchAmoCRMAccountByToken(input.longLivedToken.trim(), resolvedBaseUrl);
+      const accountId = accountInfo.id ? String(accountInfo.id) : null;
+      if (!accountId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'AmoCRM account id was not returned' });
+      }
+
+      const validatedAt = new Date();
       const integration = await prisma.integration.upsert({
         where: {
           tenantId_type: {
@@ -69,18 +95,49 @@ export const integrationsRouter = router({
           },
         },
         update: {
-          status: 'pending',
+          status: 'active',
+          tokensEncrypted: encryptIntegrationTokens({
+            access_token: input.longLivedToken.trim(),
+            token_type: 'Bearer',
+            source: 'long_lived_token',
+          }),
+          refreshToken: null,
+          expiresAt: null,
           config: {
-            authStartedAt: now.toISOString(),
+            account_id: accountId,
+            account_name: accountInfo.name || null,
+            domain: accountInfo.domain || null,
+            subdomain: accountInfo.subdomain || null,
+            base_url: resolvedBaseUrl,
+            connectionMode: 'long_lived_token',
+            connectedAt: validatedAt.toISOString(),
+            lastValidatedAt: validatedAt.toISOString(),
           },
+          lastSyncAt: validatedAt,
+          errorMessage: null,
         },
         create: {
           tenantId: ctx.tenantId,
           type: 'amocrm',
-          status: 'pending',
+          status: 'active',
+          tokensEncrypted: encryptIntegrationTokens({
+            access_token: input.longLivedToken.trim(),
+            token_type: 'Bearer',
+            source: 'long_lived_token',
+          }),
+          refreshToken: null,
+          expiresAt: null,
           config: {
-            authStartedAt: now.toISOString(),
+            account_id: accountId,
+            account_name: accountInfo.name || null,
+            domain: accountInfo.domain || null,
+            subdomain: accountInfo.subdomain || null,
+            base_url: resolvedBaseUrl,
+            connectionMode: 'long_lived_token',
+            connectedAt: validatedAt.toISOString(),
+            lastValidatedAt: validatedAt.toISOString(),
           },
+          lastSyncAt: validatedAt,
         },
       });
 
@@ -88,17 +145,22 @@ export const integrationsRouter = router({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
-          action: 'integration_connect_init',
+          action: 'integration_connect',
           resource: 'integration',
           resourceId: integration.id,
-          metadata: { type: 'amocrm' },
+          metadata: { type: 'amocrm', mode: 'long_lived_token' },
         },
       });
 
       return {
         integration,
-        authUrl,
-        stateIssuedAt: now.toISOString(),
+        connection: {
+          verified: true,
+          validatedAt: validatedAt.toISOString(),
+          mode: 'long_lived_token',
+          accountId,
+          baseUrl: resolvedBaseUrl,
+        },
       };
     }),
 
