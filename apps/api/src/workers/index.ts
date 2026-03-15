@@ -2,7 +2,6 @@ import { prisma } from '@dashboarduz/db';
 import { queueService } from '../services/queue';
 import { log, LogLevel } from '../services/observability';
 import { telegramService } from '../services/integrations/telegram';
-import { createVoIPService } from '../services/integrations/voip';
 import { decryptIntegrationTokens } from '../services/security/encryption';
 import { rateLimiter } from '../services/security/rate-limiter';
 
@@ -474,18 +473,6 @@ export async function processIntegrationSync(integrationType: string, tenantId: 
 
   if (!integration) {
     throw new Error(`Active integration not found for type=${integrationType}, tenant=${tenantId}`);
-  }
-
-  if (integrationType === 'voip_utel' && integration.tokensEncrypted) {
-    const config = (integration.config as Record<string, unknown> | null) || {};
-    const tokens = decryptIntegrationTokens<{ apiToken?: string }>(integration.tokensEncrypted);
-    if (tokens.apiToken) {
-      const voipService = createVoIPService({
-        apiToken: tokens.apiToken,
-        apiUrl: String(config.apiUrl || process.env.UTEL_API_URL || 'https://api.utel.uz'),
-      });
-      await voipService.validateToken();
-    }
   }
 
   await prisma.integration.update({
