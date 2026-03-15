@@ -172,7 +172,7 @@ export const secretRotationConfigs: SecretRotationConfig[] = [
   { secretName: 'jwt/secret', rotationIntervalDays: 90 },
   { secretName: 'encryption/key', rotationIntervalDays: 365 },
   { secretName: 'oauth/google/client_secret', rotationIntervalDays: 180 },
-  { secretName: 'oauth/amocrm/client_secret', rotationIntervalDays: 180 },
+  { secretName: 'amocrm/long_lived_token', rotationIntervalDays: 180 },
 ];
 
 // Check if secrets need rotation
