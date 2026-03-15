@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { UserRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
-const roleSchema = z.enum(['Admin', 'Manager', 'Agent']);
+const roleSchema = z.enum(['Admin', 'Manager', 'Agent', 'Finance']);
 
 export const usersRouter = router({
   list: adminProcedure.query(async ({ ctx }) => {
