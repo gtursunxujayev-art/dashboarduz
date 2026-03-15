@@ -31,7 +31,7 @@ Required for MVP:
 - `ENCRYPTION_KEY`
 - `FRONTEND_URL` and/or `CORS_ORIGIN`
 - `PUBLIC_API_URL` (recommended for integration webhook URL generation)
-- `AMOCRM_CLIENT_ID`, `AMOCRM_CLIENT_SECRET`, `AMOCRM_REDIRECT_URI`
+- `AMOCRM_LONG_LIVED_TOKEN` (optional default token, per-tenant token can be set from UI)
 - `AMOCRM_WEBHOOK_SECRET`
 - `UTEL_API_URL`, `UTEL_API_TOKEN`
 - `TELEGRAM_BOT_TOKEN` (required for Telegram integration and outbound notifications)
@@ -47,4 +47,5 @@ Optional:
 - Google Sign-In: removed
 - Google Sheets: deferred/disabled
 - Integrations: AmoCRM, Telegram, VoIP (UTeL)
+- AmoCRM is token-only (long-lived token)
 - Queue workers: webhook/notification/export/sync jobs via Redis + BullMQ
