@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import Link from 'next/link';
 
-export default function LeadsTable() {
+export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   
@@ -12,6 +12,7 @@ export default function LeadsTable() {
     page,
     limit: 10,
     search: search || undefined,
+    pipelineIds: pipelineIds && pipelineIds.length > 0 ? pipelineIds : undefined,
   });
 
   const leads = leadsQuery.data?.data || [];
