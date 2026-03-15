@@ -18,6 +18,9 @@ export const leadsRouter = router({
 
       const where: any = {
         tenantId: ctx.tenantId,
+        amocrmId: {
+          not: null,
+        },
       };
 
       if (status) where.status = status;
@@ -65,6 +68,9 @@ export const leadsRouter = router({
         where: {
           id: input.id,
           tenantId: ctx.tenantId,
+          amocrmId: {
+            not: null,
+          },
         },
         include: {
           contact: true,
