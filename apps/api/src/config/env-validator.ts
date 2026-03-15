@@ -44,10 +44,8 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   
   // AmoCRM
-  AMOCRM_CLIENT_ID: z.string().optional(),
-  AMOCRM_CLIENT_SECRET: z.string().optional(),
-  AMOCRM_REDIRECT_URI: z.string().url().optional(),
   AMOCRM_BASE_URL: z.string().url().default('https://www.amocrm.ru'),
+  AMOCRM_LONG_LIVED_TOKEN: z.string().optional(),
   
   // UTeL VoIP
   UTEL_API_URL: z.string().url().optional(),
@@ -210,7 +208,7 @@ export function validateFeatureRequirements(feature: string): void {
     otp_twilio: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_VERIFY_SERVICE_SID'],
     otp_firebase: ['FIREBASE_PROJECT_ID', 'FIREBASE_PRIVATE_KEY', 'FIREBASE_CLIENT_EMAIL'],
     telegram: ['TELEGRAM_BOT_TOKEN'],
-    amocrm: ['AMOCRM_CLIENT_ID', 'AMOCRM_CLIENT_SECRET', 'AMOCRM_REDIRECT_URI'],
+    amocrm: ['AMOCRM_WEBHOOK_SECRET'],
     utel: ['UTEL_API_URL', 'UTEL_API_TOKEN'],
     sendgrid: ['SENDGRID_API_KEY', 'SENDGRID_FROM_EMAIL'],
     aws_s3: ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET'],
