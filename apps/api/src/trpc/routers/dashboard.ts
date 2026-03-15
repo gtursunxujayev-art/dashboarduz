@@ -76,6 +76,9 @@ function getRangeStart(range: DashboardRange, now: Date): Date {
 function buildLeadRangeWhere(tenantId: string, start: Date, end: Date): Prisma.LeadWhereInput {
   return {
     tenantId,
+    amocrmId: {
+      not: null,
+    },
     OR: [
       {
         externalCreatedAt: {
