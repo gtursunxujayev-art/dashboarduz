@@ -131,14 +131,6 @@ app.get('/health/queues', async (_req, res) => {
 
 app.use('/webhooks', webhookRouter);
 
-try {
-  const amocrmRouter = require('./routes/integrations/amocrm').default;
-  app.use('/api/integrations/amocrm', amocrmRouter);
-  console.log('[Config] AmoCRM routes registered');
-} catch (error: any) {
-  console.error('[Config] Failed to register AmoCRM routes:', error.message);
-}
-
 app.use('/api/trpc', trpcMiddleware);
 
 app.get('/api', (_req, res) => {
