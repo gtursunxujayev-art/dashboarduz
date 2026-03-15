@@ -29,3 +29,4 @@ Key values:
 - Telegram: account linking/integration after login
 - Google Sign-In: removed for MVP
 - Google Sheets: disabled/deferred for MVP
+- AmoCRM: long-lived-token connection from integrations page
