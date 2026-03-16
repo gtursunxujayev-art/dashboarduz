@@ -1,52 +1,53 @@
 {
-    "name":  "@dashboarduz/web",
-    "version":  "1.0.0",
-    "private":  true,
-    "engines":  {
-                    "node":  ">=20 <25"
-                },
-    "scripts":  {
-                    "dev":  "next dev",
-                    "build":  "next build",
-                    "start":  "next start",
-                    "lint":  "next lint",
-                    "type-check":  "tsc --noEmit",
-                    "test":  "jest",
-                    "test:watch":  "jest --watch",
-                    "test:coverage":  "jest --coverage",
-                    "cypress:open":  "cypress open",
-                    "cypress:run":  "cypress run",
-                    "e2e":  "cypress run",
-                    "vercel-build":  "next build"
+    "name": "@dashboarduz/web",
+    "version": "1.0.0",
+    "private": true,
+    "engines": {
+        "node": ">=20 <25"
     },
-    "dependencies":  {
-                         "@tanstack/react-query":  "^4.42.2",
-                         "@tanstack/react-query-devtools":  "^4.42.0",
-                         "@trpc/client":  "^10.45.4",
-                         "@trpc/react-query":  "^10.45.4",
-                         "autoprefixer":  "^10.4.23",
-                         "next":  "^14.2.35",
-                         "postcss":  "^8.5.6",
-                         "react":  "^18.2.0",
-                         "react-dom":  "^18.2.0",
-                         "recharts":  "^2.15.4",
-                         "superjson":  "^2.2.6",
-                         "tailwindcss":  "^3.4.19",
-                         "zod":  "^3.25.76"
-                     },
-    "devDependencies":  {
-                            "@testing-library/jest-dom":  "^6.9.1",
-                            "@testing-library/react":  "^14.3.1",
-                            "@testing-library/user-event":  "^14.6.1",
-                            "@types/jest":  "^29.5.14",
-                            "@types/node":  "^20.19.30",
-                            "@types/react":  "^18.3.27",
-                            "@types/react-dom":  "^18.3.7",
-                            "cypress":  "^13.17.0",
-                            "eslint":  "^8.57.1",
-                            "eslint-config-next":  "^14.2.35",
-                            "jest":  "^29.7.0",
-                            "jest-environment-jsdom":  "^29.7.0",
-                            "typescript":  "^5.9.3"
-                        }
+    "scripts": {
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "lint": "next lint",
+        "type-check": "tsc --noEmit",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage",
+        "cypress:open": "cypress open",
+        "cypress:run": "cypress run",
+        "e2e": "cypress run",
+        "vercel-build": "next build"
+    },
+    "dependencies": {
+        "@tanstack/react-query": "^4.42.2",
+        "@tanstack/react-query-devtools": "^4.42.0",
+        "@trpc/client": "^10.45.4",
+        "@trpc/react-query": "^10.45.4",
+        "autoprefixer": "^10.4.23",
+        "next": "^14.2.35",
+        "postcss": "^8.5.6",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "recharts": "^2.15.4",
+        "superjson": "^2.2.6",
+        "tailwindcss": "^3.4.19",
+        "xlsx": "^0.18.5",
+        "zod": "^3.25.76"
+    },
+    "devDependencies": {
+        "@testing-library/jest-dom": "^6.9.1",
+        "@testing-library/react": "^14.3.1",
+        "@testing-library/user-event": "^14.6.1",
+        "@types/jest": "^29.5.14",
+        "@types/node": "^20.19.30",
+        "@types/react": "^18.3.27",
+        "@types/react-dom": "^18.3.7",
+        "cypress": "^13.17.0",
+        "eslint": "^8.57.1",
+        "eslint-config-next": "^14.2.35",
+        "jest": "^29.7.0",
+        "jest-environment-jsdom": "^29.7.0",
+        "typescript": "^5.9.3"
+    }
 }
