@@ -32,6 +32,30 @@ const PIE_COLORS = [
 type DashboardRange = z.infer<typeof dashboardRangeSchema>;
 
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
+const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+
+async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
+  const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  if (!isAgentOnly) {
+    return { isScoped: false, responsibleUserId: null as string | null };
+  }
+
+  const currentUser = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      tenantId,
+      isActive: true,
+    },
+    select: {
+      amocrmResponsibleUserId: true,
+    },
+  });
+
+  return {
+    isScoped: true,
+    responsibleUserId: currentUser?.amocrmResponsibleUserId || null,
+  };
+}
 
 function getRangeStart(range: DashboardRange, now: Date): Date {
   const offsetMs = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
@@ -117,6 +141,7 @@ export const dashboardRouter = router({
     .query(async ({ ctx, input }) => {
       const now = new Date();
       const rangeStart = getRangeStart(input.range, now);
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
       const tenant = await prisma.tenant.findUnique({
         where: { id: ctx.tenantId },
         select: { settings: true },
@@ -142,11 +167,12 @@ export const dashboardRouter = router({
       const selectedPipelineIds = input.pipelineIds && input.pipelineIds.length > 0
         ? input.pipelineIds
         : (amoContext?.selectedPipelineIds ?? null);
-      const leads = amoContext
+      const leads = amoContext && (!scope.isScoped || scope.responsibleUserId)
         ? await amocrmService.fetchAllLeads(
             amoContext.accessToken,
             {
               pipelineIds: selectedPipelineIds,
+              responsibleUserIds: scope.isScoped ? [scope.responsibleUserId as string] : undefined,
               createdAtFrom: rangeStart,
               createdAtTo: now,
               limit: 250,
@@ -163,26 +189,37 @@ export const dashboardRouter = router({
               gte: rangeStart,
               lte: now,
             },
+            ...(scope.isScoped
+              ? {
+                  lead: {
+                    responsibleUserId: scope.responsibleUserId || '__unmapped__',
+                  },
+                }
+              : {}),
           },
         }),
-        prisma.notification.count({
-          where: {
-            tenantId: ctx.tenantId,
-            status: {
-              in: ['pending', 'retrying'],
-            },
-            createdAt: {
-              gte: rangeStart,
-              lte: now,
-            },
-          },
-        }),
-        prisma.integration.count({
-          where: {
-            tenantId: ctx.tenantId,
-            status: 'active',
-          },
-        }),
+        scope.isScoped
+          ? Promise.resolve(0)
+          : prisma.notification.count({
+              where: {
+                tenantId: ctx.tenantId,
+                status: {
+                  in: ['pending', 'retrying'],
+                },
+                createdAt: {
+                  gte: rangeStart,
+                  lte: now,
+                },
+              },
+            }),
+        scope.isScoped
+          ? Promise.resolve(0)
+          : prisma.integration.count({
+              where: {
+                tenantId: ctx.tenantId,
+                status: 'active',
+              },
+            }),
       ]);
 
       const reasonCounts = new Map<string, number>();
