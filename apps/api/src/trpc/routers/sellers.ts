@@ -76,16 +76,23 @@ async function getAgentResponsibleScope(tenantId: string, userId: string, roles:
     return { isScoped: false, responsibleUserId: null as string | null };
   }
 
-  const currentUser = await prisma.user.findFirst({
-    where: {
-      id: userId,
-      tenantId,
-      isActive: true,
-    },
-    select: {
-      amocrmResponsibleUserId: true,
-    },
-  });
+  let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
+  try {
+    currentUser = await prisma.user.findFirst({
+      where: {
+        id: userId,
+        tenantId,
+        isActive: true,
+      },
+      select: {
+        amocrmResponsibleUserId: true,
+      },
+    });
+  } catch (error: any) {
+    if (!String(error?.message || '').includes('amocrmResponsibleUserId')) {
+      throw error;
+    }
+  }
 
   return {
     isScoped: true,
