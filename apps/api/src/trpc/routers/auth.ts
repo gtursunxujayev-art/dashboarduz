@@ -5,6 +5,7 @@ import {
   phoneOtpVerifySchema,
   registerWithPasswordSchema,
   loginWithPasswordSchema,
+  changeCredentialsSchema,
   telegramLoginSchema,
   type UserRole,
 } from '@dashboarduz/shared';
@@ -337,6 +338,83 @@ export const authRouter = router({
 
     return user;
   }),
+
+  changeCredentials: protectedProcedure
+    .input(changeCredentialsSchema)
+    .mutation(async ({ ctx, input }) => {
+      const user = await prisma.user.findUnique({
+        where: { id: ctx.user.userId },
+        select: {
+          id: true,
+          tenantId: true,
+          username: true,
+          passwordHash: true,
+        },
+      });
+
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      }
+
+      if (!user.passwordHash) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Password login is not configured for this user.' });
+      }
+
+      const passwordOk = await verifyPassword(input.currentPassword, user.passwordHash);
+      if (!passwordOk) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Current password is incorrect.' });
+      }
+
+      const nextLogin = input.newLogin?.trim().toLowerCase();
+      if (nextLogin && nextLogin !== user.username) {
+        const duplicate = await prisma.user.findFirst({
+          where: {
+            username: nextLogin,
+            NOT: { id: user.id },
+          },
+          select: { id: true },
+        });
+        if (duplicate) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Login already in use.' });
+        }
+      }
+
+      const nextPasswordHash = input.newPassword ? await hashPassword(input.newPassword) : null;
+      if (!nextLogin && !nextPasswordHash) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No changes provided.' });
+      }
+
+      const updated = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          ...(nextLogin ? { username: nextLogin } : {}),
+          ...(nextPasswordHash ? { passwordHash: nextPasswordHash } : {}),
+        },
+        select: {
+          id: true,
+          username: true,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: user.tenantId,
+          userId: user.id,
+          action: 'self_credentials_update',
+          resource: 'auth',
+          resourceId: user.id,
+          metadata: {
+            loginUpdated: Boolean(nextLogin),
+            passwordUpdated: Boolean(nextPasswordHash),
+          },
+        },
+      });
+
+      return {
+        success: true,
+        user: updated,
+      };
+    }),
 
   // Link additional auth method
   linkAccount: protectedProcedure
