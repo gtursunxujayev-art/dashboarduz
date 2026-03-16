@@ -117,6 +117,7 @@ export default function IncomePage() {
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
   const [googleSheetUrl, setGoogleSheetUrl] = useState('');
+  const [bulkFallbackManagerUserId, setBulkFallbackManagerUserId] = useState('');
 
   const formOptionsQuery = trpc.customerIncome.formOptions.useQuery(undefined, {
     retry: false,
@@ -202,6 +203,12 @@ export default function IncomePage() {
       setManagerUserId(managers[0].id);
     }
   }, [managerUserId, managers]);
+
+  useEffect(() => {
+    if (!bulkFallbackManagerUserId && managers.length > 0) {
+      setBulkFallbackManagerUserId(managers[0].id);
+    }
+  }, [bulkFallbackManagerUserId, managers]);
 
   useEffect(() => {
     if (!selectedCustomer) {
@@ -292,7 +299,10 @@ export default function IncomePage() {
     setBulkSuccess(null);
 
     try {
-      const result = await bulkImportRowsMutation.mutateAsync({ rows }) as BulkImportResult;
+      const result = await bulkImportRowsMutation.mutateAsync({
+        rows,
+        fallbackManagerUserId: bulkFallbackManagerUserId || undefined,
+      }) as BulkImportResult;
       setBulkSuccess(summarizeBulkResult(result));
       await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
     } catch (bulkImportError) {
@@ -341,7 +351,10 @@ export default function IncomePage() {
     setBulkSuccess(null);
 
     try {
-      const result = await bulkImportFromSheetMutation.mutateAsync({ sheetUrl: trimmedUrl }) as BulkImportResult;
+      const result = await bulkImportFromSheetMutation.mutateAsync({
+        sheetUrl: trimmedUrl,
+        fallbackManagerUserId: bulkFallbackManagerUserId || undefined,
+      }) as BulkImportResult;
       setBulkSuccess(summarizeBulkResult(result));
       await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
     } catch (sheetImportError) {
@@ -461,6 +474,25 @@ export default function IncomePage() {
         <div className="space-y-4 p-6">
           {bulkError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{bulkError}</p>}
           {bulkSuccess && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{bulkSuccess}</p>}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Fallback Sales Manager (for unmatched names)</label>
+            <select
+              value={bulkFallbackManagerUserId}
+              onChange={(event) => setBulkFallbackManagerUserId(event.target.value)}
+              className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">No fallback manager</option>
+              {managers.map((manager: any) => (
+                <option key={`bulk-fallback-${manager.id}`} value={manager.id}>
+                  {manager.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              If a name in Excel/Sheets does not match a system user, import will use this manager.
+            </p>
+          </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <button
