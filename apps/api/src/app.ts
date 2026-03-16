@@ -50,10 +50,27 @@ app.use(cors({
 }));
 
 app.use(express.json({
+  limit: process.env.JSON_BODY_LIMIT || '10mb',
   verify: (req: any, _res, buf) => {
     req.rawBody = buf.toString('utf8');
   },
 }));
+
+app.use((error: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (error?.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: 'Request payload is too large. Split the upload into smaller batches.',
+    });
+  }
+
+  if (error instanceof SyntaxError && 'body' in error) {
+    return res.status(400).json({
+      error: 'Invalid JSON payload.',
+    });
+  }
+
+  return next(error);
+});
 
 app.get('/health', async (_req, res) => {
   try {
