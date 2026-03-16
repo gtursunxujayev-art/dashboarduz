@@ -10,6 +10,10 @@ import { amocrmService } from '../../services/integrations/amocrm';
 
 const roleSchema = z.enum(['Admin', 'Manager', 'Agent', 'Finance']);
 
+function isMissingAmoResponsibleColumnError(error: unknown) {
+  return String((error as any)?.message || '').includes('amocrmResponsibleUserId');
+}
+
 function normalizeLoginSeed(value: string) {
   const normalized = value
     .trim()
@@ -72,22 +76,48 @@ export const usersRouter = router({
   }),
 
   list: adminProcedure.query(async ({ ctx }) => {
-    return prisma.user.findMany({
-      where: { tenantId: ctx.tenantId },
-      orderBy: { createdAt: 'asc' },
-      select: {
-        id: true,
-        username: true,
-        name: true,
-        email: true,
-        phone: true,
-        roles: true,
-        amocrmResponsibleUserId: true,
-        isActive: true,
-        lastLoginAt: true,
-        createdAt: true,
-      },
-    });
+    try {
+      return await prisma.user.findMany({
+        where: { tenantId: ctx.tenantId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          username: true,
+          name: true,
+          email: true,
+          phone: true,
+          roles: true,
+          isActive: true,
+          lastLoginAt: true,
+          createdAt: true,
+        },
+      });
+    } catch (error: any) {
+      if (!isMissingAmoResponsibleColumnError(error)) {
+        throw error;
+      }
+
+      const fallback = await prisma.user.findMany({
+        where: { tenantId: ctx.tenantId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          username: true,
+          name: true,
+          email: true,
+          phone: true,
+          roles: true,
+          isActive: true,
+          lastLoginAt: true,
+          createdAt: true,
+        },
+      });
+
+      return fallback.map((user) => ({
+        ...user,
+        amocrmResponsibleUserId: null,
+      }));
+    }
   }),
 
   create: adminProcedure
@@ -112,24 +142,39 @@ export const usersRouter = router({
         });
       }
 
-      const created = await prisma.user.create({
-        data: {
-          tenantId: ctx.tenantId,
-          name: input.name?.trim() || null,
-          username,
-          passwordHash,
-          authProvider: 'email',
-          roles: [role],
-          amocrmResponsibleUserId: role === 'Agent' ? input.amocrmResponsibleUserId || null : null,
-        },
-        select: {
-          id: true,
-          username: true,
-          name: true,
-          roles: true,
-          amocrmResponsibleUserId: true,
-        },
-      });
+      const createData: any = {
+        tenantId: ctx.tenantId,
+        name: input.name?.trim() || null,
+        username,
+        passwordHash,
+        authProvider: 'email',
+        roles: [role],
+      };
+
+      if (role === 'Agent') {
+        createData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || null;
+      }
+
+      let created: { id: string; username: string | null; name: string | null; roles: string[] };
+      try {
+        created = await prisma.user.create({
+          data: createData,
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            roles: true,
+          },
+        });
+      } catch (error: any) {
+        if (isMissingAmoResponsibleColumnError(error)) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'AmoCRM manager mapping column is missing. Run database migrations first.',
+          });
+        }
+        throw error;
+      }
 
       await prisma.auditLog.create({
         data: {
@@ -140,7 +185,7 @@ export const usersRouter = router({
           resourceId: created.id,
           metadata: {
             role,
-            amocrmResponsibleUserId: created.amocrmResponsibleUserId,
+            amocrmResponsibleUserId: input.amocrmResponsibleUserId || null,
           },
         },
       });
@@ -168,19 +213,48 @@ export const usersRouter = router({
           id: input.userId,
           tenantId: ctx.tenantId,
         },
+        select: {
+          id: true,
+        },
       });
       if (!user) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
       }
 
+      let previousAmoResponsibleUserId: string | null = null;
+      if (input.roles.includes('Agent')) {
+        try {
+          const mappingSource = await prisma.user.findFirst({
+            where: {
+              id: input.userId,
+              tenantId: ctx.tenantId,
+            },
+            select: {
+              amocrmResponsibleUserId: true,
+            },
+          });
+          previousAmoResponsibleUserId = mappingSource?.amocrmResponsibleUserId || null;
+        } catch (error: any) {
+          if (isMissingAmoResponsibleColumnError(error)) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'AmoCRM manager mapping column is missing. Run database migrations first.',
+            });
+          }
+          throw error;
+        }
+      }
+
+      const updateData: any = {
+        roles: input.roles as UserRole[],
+      };
+      if (input.roles.includes('Agent')) {
+        updateData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || previousAmoResponsibleUserId || null;
+      }
+
       const updated = await prisma.user.update({
         where: { id: user.id },
-        data: {
-          roles: input.roles as UserRole[],
-          amocrmResponsibleUserId: input.roles.includes('Agent')
-            ? (input.amocrmResponsibleUserId || user.amocrmResponsibleUserId || null)
-            : null,
-        },
+        data: updateData,
         select: {
           id: true,
           username: true,
