@@ -12,6 +12,9 @@ export default function UsersPage() {
   const amocrmManagersQuery = trpc.users.amocrmManagers.useQuery(undefined, {
     retry: false,
   });
+  const utelManagersQuery = trpc.users.utelManagers.useQuery(undefined, {
+    retry: false,
+  });
   const createUser = trpc.users.create.useMutation();
   const updateRole = trpc.users.updateRole.useMutation();
   const updateCredentials = trpc.users.updateCredentials.useMutation();
@@ -23,28 +26,34 @@ export default function UsersPage() {
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('Agent');
   const [newAmoManagerId, setNewAmoManagerId] = useState('');
+  const [newUtelManagerId, setNewUtelManagerId] = useState('');
 
   const [roleDrafts, setRoleDrafts] = useState<Record<string, UserRole>>({});
   const [managerDrafts, setManagerDrafts] = useState<Record<string, string>>({});
+  const [utelDrafts, setUtelDrafts] = useState<Record<string, string>>({});
   const [loginDrafts, setLoginDrafts] = useState<Record<string, string>>({});
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
 
   const amocrmManagers = useMemo(() => amocrmManagersQuery.data || [], [amocrmManagersQuery.data]);
+  const utelManagers = useMemo(() => utelManagersQuery.data || [], [utelManagersQuery.data]);
 
   useEffect(() => {
     const users = usersQuery.data || [];
     const nextRoleDrafts: Record<string, UserRole> = {};
     const nextManagerDrafts: Record<string, string> = {};
+    const nextUtelDrafts: Record<string, string> = {};
     const nextLoginDrafts: Record<string, string> = {};
 
     for (const user of users as any[]) {
       nextRoleDrafts[user.id] = (user.roles?.[0] || 'Agent') as UserRole;
       nextManagerDrafts[user.id] = user.amocrmResponsibleUserId || '';
+      nextUtelDrafts[user.id] = user.utelManagerExternalId || '';
       nextLoginDrafts[user.id] = user.username || '';
     }
 
     setRoleDrafts(nextRoleDrafts);
     setManagerDrafts(nextManagerDrafts);
+    setUtelDrafts(nextUtelDrafts);
     setLoginDrafts(nextLoginDrafts);
   }, [usersQuery.data]);
 
@@ -58,12 +67,14 @@ export default function UsersPage() {
         name: newName.trim() || undefined,
         role: newRole,
         amocrmResponsibleUserId: newRole === 'Agent' ? (newAmoManagerId || undefined) : undefined,
+        utelManagerExternalId: newRole === 'Agent' ? (newUtelManagerId || undefined) : undefined,
       });
 
       setCreatedCredentials(created.credentials);
       setNewName('');
       setNewRole('Agent');
       setNewAmoManagerId('');
+      setNewUtelManagerId('');
       await usersQuery.refetch();
     } catch (mutationError: any) {
       setError(mutationError?.message || 'Failed to create user');
@@ -80,6 +91,9 @@ export default function UsersPage() {
         roles: [roleDrafts[userId] || 'Agent'],
         amocrmResponsibleUserId: (roleDrafts[userId] || 'Agent') === 'Agent'
           ? (managerDrafts[userId] || undefined)
+          : undefined,
+        utelManagerExternalId: (roleDrafts[userId] || 'Agent') === 'Agent'
+          ? (utelDrafts[userId] || undefined)
           : undefined,
       });
       await usersQuery.refetch();
@@ -137,13 +151,18 @@ export default function UsersPage() {
               AmoCRM managers are unavailable. Connect AmoCRM integration to map Agent users.
             </p>
           )}
+          {utelManagersQuery.error && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              UTeL managers are unavailable. Incoming UTeL calls are required to build the manager list.
+            </p>
+          )}
           {createdCredentials && (
             <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
               User created. Login: <strong>{createdCredentials.login}</strong>, Password: <strong>{createdCredentials.password}</strong>
             </p>
           )}
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_180px_1fr_auto]">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_160px_1fr_1fr_auto]">
             <input
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
@@ -169,6 +188,19 @@ export default function UsersPage() {
             >
               <option value="">{newRole === 'Agent' ? 'Select AmoCRM manager' : 'Not required for this role'}</option>
               {amocrmManagers.map((manager: any) => (
+                <option key={manager.id} value={manager.id}>
+                  {manager.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={newUtelManagerId}
+              onChange={(event) => setNewUtelManagerId(event.target.value)}
+              disabled={newRole !== 'Agent'}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+            >
+              <option value="">{newRole === 'Agent' ? 'Select UTeL manager' : 'Not required for this role'}</option>
+              {utelManagers.map((manager: any) => (
                 <option key={manager.id} value={manager.id}>
                   {manager.name}
                 </option>
@@ -200,7 +232,7 @@ export default function UsersPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">User</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Role + AmoCRM manager</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Role + CRM/UTeL manager</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Credentials</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Last Login</th>
                   </tr>
@@ -218,7 +250,7 @@ export default function UsersPage() {
                         <div className="text-xs text-gray-500">ID: {user.id}</div>
                       </td>
                       <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-[160px_1fr_auto]">
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-[140px_1fr_1fr_auto]">
                           <select
                             value={roleDrafts[user.id] || 'Agent'}
                             onChange={(event) =>
@@ -246,6 +278,25 @@ export default function UsersPage() {
                                 : 'Not required for this role'}
                             </option>
                             {amocrmManagers.map((manager: any) => (
+                              <option key={manager.id} value={manager.id}>
+                                {manager.name}
+                              </option>
+                              ))}
+                            </select>
+                          <select
+                            value={utelDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setUtelDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            disabled={(roleDrafts[user.id] || 'Agent') !== 'Agent'}
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
+                          >
+                            <option value="">
+                              {(roleDrafts[user.id] || 'Agent') === 'Agent'
+                                ? 'Select UTeL manager'
+                                : 'Not required for this role'}
+                            </option>
+                            {utelManagers.map((manager: any) => (
                               <option key={manager.id} value={manager.id}>
                                 {manager.name}
                               </option>
