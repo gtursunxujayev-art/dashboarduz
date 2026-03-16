@@ -52,6 +52,7 @@ type BulkIncomeRow = Record<string, BulkIncomeCell>;
 
 type RowLookupContext = {
   managersByKey: Map<string, string>;
+  managersByNormalizedName: Array<{ id: string; name: string }>;
   coursesByKey: Map<string, string>;
   tariffsByCourseIdAndKey: Map<string, string>;
 };
@@ -229,13 +230,40 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
   ]);
 
   const managersByKey = new Map<string, string>();
+  const aliasCandidates = new Map<string, Set<string>>();
+  const managersByNormalizedName: Array<{ id: string; name: string }> = [];
+
+  const addManagerAlias = (alias: string, managerId: string) => {
+    const normalizedAlias = normalizeKey(alias);
+    if (!normalizedAlias) {
+      return;
+    }
+    const existing = aliasCandidates.get(normalizedAlias) ?? new Set<string>();
+    existing.add(managerId);
+    aliasCandidates.set(normalizedAlias, existing);
+  };
+
   for (const manager of managers) {
-    managersByKey.set(normalizeKey(manager.id), manager.id);
+    addManagerAlias(manager.id, manager.id);
     if (manager.username) {
-      managersByKey.set(normalizeKey(manager.username), manager.id);
+      addManagerAlias(manager.username, manager.id);
     }
     if (manager.name) {
-      managersByKey.set(normalizeKey(manager.name), manager.id);
+      addManagerAlias(manager.name, manager.id);
+      const tokens = manager.name.split(/\s+/).map((token) => token.trim()).filter(Boolean);
+      for (const token of tokens) {
+        addManagerAlias(token, manager.id);
+      }
+      managersByNormalizedName.push({
+        id: manager.id,
+        name: normalizeKey(manager.name),
+      });
+    }
+  }
+
+  for (const [alias, managerIds] of aliasCandidates.entries()) {
+    if (managerIds.size === 1) {
+      managersByKey.set(alias, [...managerIds][0] as string);
     }
   }
 
@@ -254,26 +282,66 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
 
   return {
     managersByKey,
+    managersByNormalizedName,
     coursesByKey,
     tariffsByCourseIdAndKey,
   };
+}
+
+function resolveManagerUserId(params: {
+  rawManagerValue: string;
+  lookupContext: RowLookupContext;
+  fallbackManagerUserId?: string;
+  rowNumber: number;
+}): string {
+  const { rawManagerValue, lookupContext, fallbackManagerUserId, rowNumber } = params;
+  const normalizedRawValue = normalizeKey(rawManagerValue);
+
+  if (!normalizedRawValue) {
+    if (fallbackManagerUserId) {
+      return fallbackManagerUserId;
+    }
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `Row ${rowNumber}: sales manager is required.` });
+  }
+
+  const exactMatch = lookupContext.managersByKey.get(normalizedRawValue);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const containsMatches = lookupContext.managersByNormalizedName.filter((manager) =>
+    manager.name.includes(normalizedRawValue) || normalizedRawValue.includes(manager.name),
+  );
+
+  if (containsMatches.length === 1) {
+    return containsMatches[0]?.id as string;
+  }
+
+  if (fallbackManagerUserId) {
+    return fallbackManagerUserId;
+  }
+
+  throw new TRPCError({
+    code: 'BAD_REQUEST',
+    message: `Row ${rowNumber}: sales manager is missing or not found (${rawManagerValue || 'empty'})`,
+  });
 }
 
 function parseBulkRowToCreateIncomeInput(
   rawRow: BulkIncomeRow,
   rowNumber: number,
   lookupContext: RowLookupContext,
+  fallbackManagerUserId?: string,
 ): CreateIncomeInput {
   const row = buildNormalizedRow(rawRow);
 
   const managerRaw = normalizeStringValue(getRowValue(row, MANAGER_HEADERS));
-  const managerUserId = lookupContext.managersByKey.get(normalizeKey(managerRaw));
-  if (!managerUserId) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: `Row ${rowNumber}: sales manager is missing or not found (${managerRaw || 'empty'})`,
-    });
-  }
+  const managerUserId = resolveManagerUserId({
+    rawManagerValue: managerRaw,
+    lookupContext,
+    fallbackManagerUserId,
+    rowNumber,
+  });
 
   const entryDate = parseDateValue(getRowValue(row, ENTRY_DATE_HEADERS));
   if (!entryDate) {
@@ -1081,6 +1149,10 @@ export const customerIncomeRouter = router({
   bulkImportRows: protectedProcedure
     .input(bulkIncomeImportSchema)
     .mutation(async ({ ctx, input }) => {
+      if (input.fallbackManagerUserId) {
+        await assertManagerBelongsToTenant(ctx.tenantId, input.fallbackManagerUserId);
+      }
+
       const lookupContext = await buildRowLookupContext(ctx.tenantId);
       const failures: Array<{ rowNumber: number; message: string }> = [];
       let importedCount = 0;
@@ -1094,7 +1166,12 @@ export const customerIncomeRouter = router({
         }
 
         try {
-          const createInput = parseBulkRowToCreateIncomeInput(rawRow, rowNumber, lookupContext);
+          const createInput = parseBulkRowToCreateIncomeInput(
+            rawRow,
+            rowNumber,
+            lookupContext,
+            input.fallbackManagerUserId,
+          );
           await createIncomeEntry({
             tenantId: ctx.tenantId,
             userId: ctx.user.userId,
@@ -1123,6 +1200,7 @@ export const customerIncomeRouter = router({
             importedCount,
             failedCount: failures.length,
             totalRows: input.rows.length,
+            fallbackManagerUserId: input.fallbackManagerUserId || null,
           },
         },
       });
@@ -1138,6 +1216,10 @@ export const customerIncomeRouter = router({
   bulkImportFromGoogleSheet: protectedProcedure
     .input(bulkIncomeImportFromGoogleSheetSchema)
     .mutation(async ({ ctx, input }) => {
+      if (input.fallbackManagerUserId) {
+        await assertManagerBelongsToTenant(ctx.tenantId, input.fallbackManagerUserId);
+      }
+
       const csvUrl = resolveGoogleSheetCsvUrl(input.sheetUrl);
       const response = await fetch(csvUrl, {
         headers: {
@@ -1184,7 +1266,12 @@ export const customerIncomeRouter = router({
           continue;
         }
         try {
-          const createInput = parseBulkRowToCreateIncomeInput(rawRow, rowNumber, lookupContext);
+          const createInput = parseBulkRowToCreateIncomeInput(
+            rawRow,
+            rowNumber,
+            lookupContext,
+            input.fallbackManagerUserId,
+          );
           await createIncomeEntry({
             tenantId: ctx.tenantId,
             userId: ctx.user.userId,
@@ -1214,6 +1301,7 @@ export const customerIncomeRouter = router({
             importedCount,
             failedCount: failures.length,
             totalRows: rows.length,
+            fallbackManagerUserId: input.fallbackManagerUserId || null,
           },
         },
       });
