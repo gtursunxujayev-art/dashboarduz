@@ -35,10 +35,12 @@ export const bulkIncomeCellSchema = z.union([z.string(), z.number(), z.boolean()
 
 export const bulkIncomeImportSchema = z.object({
   rows: z.array(z.record(bulkIncomeCellSchema)).min(1).max(5000),
+  fallbackManagerUserId: z.string().uuid().optional(),
 });
 
 export const bulkIncomeImportFromGoogleSheetSchema = z.object({
   sheetUrl: z.string().min(1).max(2048),
+  fallbackManagerUserId: z.string().uuid().optional(),
 });
 
 export type IncomeType = z.infer<typeof incomeTypeSchema>;
