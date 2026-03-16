@@ -10,6 +10,31 @@ import {
   getTenantAmoCRMContext,
 } from '../../services/integrations/amocrm-live';
 
+const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+
+async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
+  const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  if (!isAgentOnly) {
+    return { isScoped: false, responsibleUserId: null as string | null };
+  }
+
+  const currentUser = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      tenantId,
+      isActive: true,
+    },
+    select: {
+      amocrmResponsibleUserId: true,
+    },
+  });
+
+  return {
+    isScoped: true,
+    responsibleUserId: currentUser?.amocrmResponsibleUserId || null,
+  };
+}
+
 function parseAmoTimestamp(value: unknown): Date {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const millis = value > 1_000_000_000_000 ? value : value * 1000;
@@ -98,6 +123,19 @@ export const leadsRouter = router({
   list: protectedProcedure
     .input(leadQuerySchema)
     .query(async ({ input, ctx }) => {
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      if (scope.isScoped && !scope.responsibleUserId) {
+        return {
+          data: [],
+          pagination: {
+            page: input.page,
+            limit: input.limit,
+            total: undefined,
+            hasMore: false,
+          },
+        };
+      }
+
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
       if (!amoContext) {
         return {
@@ -132,6 +170,7 @@ export const leadsRouter = router({
             pipelineIds: input.pipelineIds && input.pipelineIds.length > 0
               ? input.pipelineIds
               : (amoContext.selectedPipelineIds || undefined),
+            responsibleUserIds: scope.isScoped && scope.responsibleUserId ? [scope.responsibleUserId] : undefined,
           },
           amoContext.baseUrl,
         ),
@@ -156,6 +195,11 @@ export const leadsRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ input, ctx }) => {
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      if (scope.isScoped && !scope.responsibleUserId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Lead not found' });
+      }
+
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
       if (!amoContext) {
         throw new TRPCError({
@@ -173,6 +217,15 @@ export const leadsRouter = router({
           amoContext.baseUrl,
         ),
       ]);
+
+      if (scope.isScoped) {
+        const responsibleUserId = lead.responsible_user_id !== null && lead.responsible_user_id !== undefined
+          ? String(lead.responsible_user_id)
+          : null;
+        if (!responsibleUserId || responsibleUserId !== scope.responsibleUserId) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Lead not found' });
+        }
+      }
 
       const pipelineId = lead.pipeline_id !== null && lead.pipeline_id !== undefined ? String(lead.pipeline_id) : null;
       if (amoContext.selectedPipelineIds && (!pipelineId || !amoContext.selectedPipelineIds.includes(pipelineId))) {
