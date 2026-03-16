@@ -22,6 +22,10 @@ export default function SettingsPage() {
   const [qualifiedStageIds, setQualifiedStageIds] = useState<string[]>([]);
   const [qualifiedValues, setQualifiedValues] = useState<string[]>([]);
   const [nonQualifiedValues, setNonQualifiedValues] = useState<string[]>([]);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newLogin, setNewLogin] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [credentialMessage, setCredentialMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -47,6 +51,7 @@ export default function SettingsPage() {
     },
   );
   const updateTenant = trpc.tenant.update.useMutation();
+  const changeCredentials = trpc.auth.changeCredentials.useMutation();
 
   useEffect(() => {
     if (!tenantQuery.data) {
@@ -132,6 +137,25 @@ export default function SettingsPage() {
       setSuccess('Settings updated successfully.');
     } catch (err: any) {
       setError(err?.message || 'Failed to update settings');
+    }
+  };
+
+  const handleCredentialSave = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    setCredentialMessage(null);
+
+    try {
+      await changeCredentials.mutateAsync({
+        currentPassword,
+        newLogin: newLogin.trim() || undefined,
+        newPassword: newPassword.trim() || undefined,
+      });
+      setCurrentPassword('');
+      setNewPassword('');
+      setCredentialMessage('Your credentials were updated successfully.');
+    } catch (mutationError: any) {
+      setError(mutationError?.message || 'Failed to update credentials');
     }
   };
 
@@ -272,6 +296,47 @@ export default function SettingsPage() {
               {updateTenant.isLoading ? 'Saving...' : 'Save Settings'}
             </button>
           </form>
+
+          <div className="mt-8 border-t border-gray-100 pt-6">
+            <h2 className="text-base font-semibold text-gray-900">My Login & Password</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              You can change your own login and password here.
+            </p>
+
+            {credentialMessage && (
+              <p className="mt-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{credentialMessage}</p>
+            )}
+
+            <form onSubmit={handleCredentialSave} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                placeholder="Current password"
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <input
+                value={newLogin}
+                onChange={(event) => setNewLogin(event.target.value)}
+                placeholder="New login (optional)"
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                placeholder="New password (optional)"
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <button
+                type="submit"
+                disabled={changeCredentials.isLoading}
+                className="w-fit rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {changeCredentials.isLoading ? 'Updating...' : 'Update My Credentials'}
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </div>
