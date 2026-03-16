@@ -39,6 +39,9 @@ export default function CoursesPage() {
   const [courseEditName, setCourseEditName] = useState<Record<string, string>>({});
   const [tariffEditName, setTariffEditName] = useState<Record<string, string>>({});
   const [subTariffEditName, setSubTariffEditName] = useState<Record<string, string>>({});
+  const [openCourseIds, setOpenCourseIds] = useState<Record<string, boolean>>({});
+  const [openTariffIds, setOpenTariffIds] = useState<Record<string, boolean>>({});
+  const [showSubTariffForm, setShowSubTariffForm] = useState<Record<string, boolean>>({});
 
   const catalogQuery = trpc.customerIncome.courseCatalog.useQuery(undefined, {
     retry: false,
@@ -57,6 +60,18 @@ export default function CoursesPage() {
   const resetMessages = () => {
     setError(null);
     setSuccess(null);
+  };
+
+  const toggleCourseOpen = (courseId: string) => {
+    setOpenCourseIds((prev) => ({ [courseId]: !prev[courseId] }));
+  };
+
+  const toggleTariffOpen = (tariffId: string) => {
+    setOpenTariffIds((prev) => ({ [tariffId]: !prev[tariffId] }));
+  };
+
+  const toggleSubTariffForm = (tariffId: string) => {
+    setShowSubTariffForm((prev) => ({ ...prev, [tariffId]: !prev[tariffId] }));
   };
 
   const handleCreateCourse = async (event: FormEvent<HTMLFormElement>) => {
@@ -213,6 +228,7 @@ export default function CoursesPage() {
         name,
       });
       setNewSubTariffName((prev) => ({ ...prev, [tariffId]: '' }));
+      setShowSubTariffForm((prev) => ({ ...prev, [tariffId]: false }));
       setSuccess('Sub-tariff saved successfully.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
@@ -337,131 +353,179 @@ export default function CoursesPage() {
           ) : courses.length === 0 ? (
             <p className="text-sm text-gray-600">No courses yet.</p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {courses.map((course) => (
-                <div key={course.id} className="rounded-md border border-gray-200 p-4">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto] md:items-center">
-                    <input
-                      value={courseEditName[course.id] ?? course.name}
-                      onChange={(event) =>
-                        setCourseEditName((prev) => ({ ...prev, [course.id]: event.target.value }))
-                      }
-                      className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateCourse(course)}
-                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleCourse(course)}
-                      className={`rounded-md px-3 py-2 text-sm font-medium ${
-                        course.isActive
-                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                          : 'bg-green-100 text-green-700 hover:bg-green-200'
-                      }`}
-                    >
-                      {course.isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                  </div>
+                <div key={course.id} className="overflow-hidden rounded-md border border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => toggleCourseOpen(course.id)}
+                    className="flex w-full items-center justify-between bg-gray-50 px-4 py-3 text-left hover:bg-gray-100"
+                  >
+                    <div>
+                      <p className="text-base font-medium text-gray-900">{course.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {course.tariffs.length} tariff{course.tariffs.length === 1 ? '' : 's'} - {course.isActive ? 'Active' : 'Inactive'}
+                      </p>
+                    </div>
+                    <span className="text-sm text-blue-600">{openCourseIds[course.id] ? 'Close' : 'Open'}</span>
+                  </button>
 
-                  <div className="mt-3 space-y-2">
-                    {course.tariffs.length === 0 ? (
-                      <p className="text-sm text-gray-500">No tariffs attached.</p>
-                    ) : (
-                      course.tariffs.map((tariff) => (
-                        <div key={tariff.id} className="space-y-3 rounded-md bg-gray-50 p-3">
-                          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto] md:items-center">
-                            <input
-                              value={tariffEditName[tariff.id] ?? tariff.name}
-                              onChange={(event) =>
-                                setTariffEditName((prev) => ({ ...prev, [tariff.id]: event.target.value }))
-                              }
-                              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateTariff(tariff)}
-                              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleToggleTariff(tariff)}
-                              className={`rounded-md px-3 py-2 text-sm font-medium ${
-                                tariff.isActive
-                                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                  : 'bg-green-100 text-green-700 hover:bg-green-200'
-                              }`}
-                            >
-                              {tariff.isActive ? 'Deactivate' : 'Activate'}
-                            </button>
-                          </div>
+                  {openCourseIds[course.id] && (
+                    <div className="space-y-3 border-t border-gray-200 p-4">
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto] md:items-center">
+                        <input
+                          value={courseEditName[course.id] ?? course.name}
+                          onChange={(event) =>
+                            setCourseEditName((prev) => ({ ...prev, [course.id]: event.target.value }))
+                          }
+                          className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateCourse(course)}
+                          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleCourse(course)}
+                          className={`rounded-md px-3 py-2 text-sm font-medium ${
+                            course.isActive
+                              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                              : 'bg-green-100 text-green-700 hover:bg-green-200'
+                          }`}
+                        >
+                          {course.isActive ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </div>
 
-                          <div className="rounded-md border border-gray-200 bg-white p-3">
-                            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Sub Tariffs (Optional)</p>
-                            <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto]">
-                              <input
-                                value={newSubTariffName[tariff.id] || ''}
-                                onChange={(event) =>
-                                  setNewSubTariffName((prev) => ({ ...prev, [tariff.id]: event.target.value }))
-                                }
-                                placeholder="Add sub tariff"
-                                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              />
+                      {course.tariffs.length === 0 ? (
+                        <p className="text-sm text-gray-500">No tariffs attached.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {course.tariffs.map((tariff) => (
+                            <div key={tariff.id} className="overflow-hidden rounded-md border border-gray-200 bg-gray-50">
                               <button
                                 type="button"
-                                onClick={() => handleCreateSubTariff(tariff.id)}
-                                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                                onClick={() => toggleTariffOpen(tariff.id)}
+                                className="flex w-full items-center justify-between bg-white px-3 py-2 text-left hover:bg-gray-50"
                               >
-                                Add Sub Tariff
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900">{tariff.name}</p>
+                                  <p className="text-xs text-gray-500">
+                                    {tariff.subTariffs?.length || 0} sub tariff{(tariff.subTariffs?.length || 0) === 1 ? '' : 's'} - {tariff.isActive ? 'Active' : 'Inactive'}
+                                  </p>
+                                </div>
+                                <span className="text-xs text-blue-600">{openTariffIds[tariff.id] ? 'Close' : 'Open'}</span>
                               </button>
-                            </div>
 
-                            {tariff.subTariffs?.length ? (
-                              <div className="space-y-2">
-                                {tariff.subTariffs.map((subTariff) => (
-                                  <div key={subTariff.id} className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto_auto] md:items-center">
+                              {openTariffIds[tariff.id] && (
+                                <div className="space-y-3 border-t border-gray-200 p-3">
+                                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto] md:items-center">
                                     <input
-                                      value={subTariffEditName[subTariff.id] ?? subTariff.name}
+                                      value={tariffEditName[tariff.id] ?? tariff.name}
                                       onChange={(event) =>
-                                        setSubTariffEditName((prev) => ({ ...prev, [subTariff.id]: event.target.value }))
+                                        setTariffEditName((prev) => ({ ...prev, [tariff.id]: event.target.value }))
                                       }
-                                      className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     />
                                     <button
                                       type="button"
-                                      onClick={() => handleUpdateSubTariff(subTariff)}
+                                      onClick={() => handleUpdateTariff(tariff)}
                                       className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                     >
                                       Save
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => handleToggleSubTariff(subTariff)}
+                                      onClick={() => handleToggleTariff(tariff)}
                                       className={`rounded-md px-3 py-2 text-sm font-medium ${
-                                        subTariff.isActive
+                                        tariff.isActive
                                           ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                                           : 'bg-green-100 text-green-700 hover:bg-green-200'
                                       }`}
                                     >
-                                      {subTariff.isActive ? 'Deactivate' : 'Activate'}
+                                      {tariff.isActive ? 'Deactivate' : 'Activate'}
                                     </button>
                                   </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-sm text-gray-500">No sub tariffs yet.</p>
-                            )}
-                          </div>
+
+                                  <div className="rounded-md border border-gray-200 bg-white p-3">
+                                    <div className="mb-3 flex items-center justify-between">
+                                      <p className="text-xs font-semibold uppercase text-gray-500">Sub Tariffs (Optional)</p>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleSubTariffForm(tariff.id)}
+                                        className="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
+                                      >
+                                        {showSubTariffForm[tariff.id] ? 'Cancel' : 'Add Sub Tariff'}
+                                      </button>
+                                    </div>
+
+                                    {showSubTariffForm[tariff.id] && (
+                                      <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto]">
+                                        <input
+                                          value={newSubTariffName[tariff.id] || ''}
+                                          onChange={(event) =>
+                                            setNewSubTariffName((prev) => ({ ...prev, [tariff.id]: event.target.value }))
+                                          }
+                                          placeholder="Add sub tariff"
+                                          className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCreateSubTariff(tariff.id)}
+                                          className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                                        >
+                                          Save Sub Tariff
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {tariff.subTariffs?.length ? (
+                                      <div className="space-y-2">
+                                        {tariff.subTariffs.map((subTariff) => (
+                                          <div key={subTariff.id} className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto_auto] md:items-center">
+                                            <input
+                                              value={subTariffEditName[subTariff.id] ?? subTariff.name}
+                                              onChange={(event) =>
+                                                setSubTariffEditName((prev) => ({ ...prev, [subTariff.id]: event.target.value }))
+                                              }
+                                              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => handleUpdateSubTariff(subTariff)}
+                                              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            >
+                                              Save
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleToggleSubTariff(subTariff)}
+                                              className={`rounded-md px-3 py-2 text-sm font-medium ${
+                                                subTariff.isActive
+                                                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                                  : 'bg-green-100 text-green-700 hover:bg-green-200'
+                                              }`}
+                                            >
+                                              {subTariff.isActive ? 'Deactivate' : 'Activate'}
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm text-gray-500">No sub tariffs yet.</p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      ))
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
