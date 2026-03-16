@@ -35,6 +35,12 @@ export const authRouter = router({
 
       const existingUser = await prisma.user.findFirst({
         where: { username: normalizedLogin },
+        select: {
+          id: true,
+          tenantId: true,
+          roles: true,
+          passwordHash: true,
+        },
       });
 
       if (existingUser?.passwordHash) {
@@ -54,6 +60,11 @@ export const authRouter = router({
             username: normalizedLogin,
             passwordHash,
             lastLoginAt: new Date(),
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            roles: true,
           },
         });
         userId = updatedUser.id;
@@ -75,6 +86,11 @@ export const authRouter = router({
             roles: ['Admin'],
             authProvider: 'email',
             lastLoginAt: new Date(),
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            roles: true,
           },
         });
 
@@ -125,6 +141,14 @@ export const authRouter = router({
             { phone: normalizedLogin },
           ],
         },
+        select: {
+          id: true,
+          tenantId: true,
+          roles: true,
+          phone: true,
+          email: true,
+          passwordHash: true,
+        },
       });
 
       if (!user || !user.passwordHash) {
@@ -139,6 +163,13 @@ export const authRouter = router({
       const updatedUser = await prisma.user.update({
         where: { id: user.id },
         data: { lastLoginAt: new Date() },
+        select: {
+          id: true,
+          tenantId: true,
+          roles: true,
+          phone: true,
+          email: true,
+        },
       });
 
       const jwtPayload = {
@@ -238,6 +269,12 @@ export const authRouter = router({
         // Find or create user
         let user = await prisma.user.findFirst({
           where: { phone: input.phone },
+          select: {
+            id: true,
+            tenantId: true,
+            roles: true,
+            phone: true,
+          },
         });
 
         let tenantId: string;
@@ -258,6 +295,12 @@ export const authRouter = router({
               roles: ['Admin'],
               authProvider: 'phone',
             },
+            select: {
+              id: true,
+              tenantId: true,
+              roles: true,
+              phone: true,
+            },
           });
           
           tenantId = tenant.id;
@@ -269,6 +312,7 @@ export const authRouter = router({
         await prisma.user.update({
           where: { id: user.id },
           data: { lastLoginAt: new Date() },
+          select: { id: true },
         });
 
         // Generate JWT token
@@ -327,7 +371,19 @@ export const authRouter = router({
 
     const user = await prisma.user.findUnique({
       where: { id: ctx.user.userId },
-      include: {
+      select: {
+        id: true,
+        tenantId: true,
+        username: true,
+        email: true,
+        phone: true,
+        name: true,
+        roles: true,
+        isActive: true,
+        lastLoginAt: true,
+        createdAt: true,
+        updatedAt: true,
+        authProvider: true,
         tenant: true,
       },
     });
