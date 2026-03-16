@@ -235,6 +235,52 @@ export const customerIncomeRouter = router({
       });
     }),
 
+  createSubTariff: adminProcedure
+    .input(
+      z.object({
+        tariffId: z.string().uuid(),
+        name: z.string().min(1).max(120),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tariff = await prisma.tariff.findFirst({
+        where: {
+          id: input.tariffId,
+          tenantId: ctx.tenantId,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      if (!tariff) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Tariff not found.' });
+      }
+
+      const name = input.name.trim();
+      if (!name) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Sub-tariff name is required.' });
+      }
+
+      return prisma.subTariff.upsert({
+        where: {
+          tenantId_tariffId_name: {
+            tenantId: ctx.tenantId,
+            tariffId: input.tariffId,
+            name,
+          },
+        },
+        create: {
+          tenantId: ctx.tenantId,
+          tariffId: input.tariffId,
+          name,
+          isActive: true,
+        },
+        update: {
+          isActive: true,
+        },
+      });
+    }),
+
   courseCatalog: protectedProcedure.query(async ({ ctx }) => {
     return prisma.course.findMany({
       where: { tenantId: ctx.tenantId },
@@ -254,6 +300,17 @@ export const customerIncomeRouter = router({
             courseId: true,
             createdAt: true,
             updatedAt: true,
+            subTariffs: {
+              orderBy: { name: 'asc' },
+              select: {
+                id: true,
+                name: true,
+                isActive: true,
+                tariffId: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
           },
         },
       },
@@ -334,6 +391,45 @@ export const customerIncomeRouter = router({
 
       return prisma.tariff.update({
         where: { id: input.tariffId },
+        data,
+      });
+    }),
+
+  updateSubTariff: adminProcedure
+    .input(
+      z.object({
+        subTariffId: z.string().uuid(),
+        name: z.string().min(1).max(120).optional(),
+        isActive: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const subTariff = await prisma.subTariff.findFirst({
+        where: {
+          id: input.subTariffId,
+          tenantId: ctx.tenantId,
+        },
+        select: { id: true },
+      });
+
+      if (!subTariff) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Sub-tariff not found.' });
+      }
+
+      const data: { name?: string; isActive?: boolean } = {};
+      if (typeof input.name === 'string') {
+        data.name = input.name.trim();
+      }
+      if (typeof input.isActive === 'boolean') {
+        data.isActive = input.isActive;
+      }
+
+      if (!Object.keys(data).length) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
+      }
+
+      return prisma.subTariff.update({
+        where: { id: input.subTariffId },
         data,
       });
     }),
