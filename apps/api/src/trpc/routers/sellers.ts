@@ -2,298 +2,345 @@ import { router, protectedProcedure } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { amocrmService, type AmoCRMLead, type AmoCRMUser } from '../../services/integrations/amocrm';
+import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
+
+const WON_STATUS_ID = '142';
+const LOST_STATUS_ID = '143';
+const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+
+function asString(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function parseAmoDate(value: unknown): Date {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const millis = value > 1_000_000_000_000 ? value : value * 1000;
+    return new Date(millis);
+  }
+
+  if (typeof value === 'string') {
+    const asNumber = Number(value);
+    if (!Number.isNaN(asNumber)) {
+      return parseAmoDate(asNumber);
+    }
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  return new Date(0);
+}
+
+function getDealAmount(lead: AmoCRMLead): number {
+  const maybePrice = (lead as Record<string, unknown>).price;
+  if (typeof maybePrice === 'number' && Number.isFinite(maybePrice)) {
+    return maybePrice;
+  }
+  if (typeof maybePrice === 'string') {
+    const parsed = Number(maybePrice);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return 0;
+}
+
+function getLeadResponsibleId(lead: AmoCRMLead): string | null {
+  return asString(lead.responsible_user_id);
+}
+
+function isWonLead(lead: AmoCRMLead): boolean {
+  return asString(lead.status_id) === WON_STATUS_ID;
+}
+
+function isLostLead(lead: AmoCRMLead): boolean {
+  if (asString(lead.status_id) === LOST_STATUS_ID) {
+    return true;
+  }
+  return lead.loss_reason_id !== undefined && lead.loss_reason_id !== null;
+}
+
+function toManagerRole(user: AmoCRMUser): string[] {
+  return user.rights?.is_admin ? ['Manager'] : ['Agent'];
+}
+
+async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
+  const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  if (!isAgentOnly) {
+    return { isScoped: false, responsibleUserId: null as string | null };
+  }
+
+  const currentUser = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      tenantId,
+      isActive: true,
+    },
+    select: {
+      amocrmResponsibleUserId: true,
+    },
+  });
+
+  return {
+    isScoped: true,
+    responsibleUserId: currentUser?.amocrmResponsibleUserId || null,
+  };
+}
+
+function buildMetrics(leads: AmoCRMLead[], calls: Array<{ duration: number | null; direction: string; status: string }>) {
+  const totalLeads = leads.length;
+  const wonLeads = leads.filter(isWonLead).length;
+  const lostLeads = leads.filter(isLostLead).length;
+  const activeLeads = Math.max(totalLeads - wonLeads - lostLeads, 0);
+  const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
+
+  const totalDealAmount = leads.reduce((sum, lead) => sum + getDealAmount(lead), 0);
+  const averageDealAmount = wonLeads > 0 ? totalDealAmount / wonLeads : 0;
+
+  const totalCalls = calls.length;
+  const inboundCalls = calls.filter((call) => call.direction === 'inbound').length;
+  const outboundCalls = calls.filter((call) => call.direction === 'outbound').length;
+  const totalCallDuration = calls.reduce((sum, call) => sum + (call.duration || 0), 0);
+  const averageCallDuration = totalCalls > 0 ? totalCallDuration / totalCalls : 0;
+
+  return {
+    totalLeads,
+    activeLeads,
+    wonLeads,
+    lostLeads,
+    conversionRate: Number(conversionRate.toFixed(2)),
+    totalDealAmount: Number(totalDealAmount.toFixed(2)),
+    averageDealAmount: Number(averageDealAmount.toFixed(2)),
+    totalCalls,
+    inboundCalls,
+    outboundCalls,
+    totalCallDuration,
+    averageCallDuration: Number(averageCallDuration.toFixed(2)),
+  };
+}
 
 export const sellersRouter = router({
-  // List all sellers with metrics
-  list: protectedProcedure
-    .query(async ({ ctx }) => {
-      if (!ctx.tenantId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
-      }
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+    const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+    if (!amoContext) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'AmoCRM integration is not connected.',
+      });
+    }
 
-      // Get all users with role "Agent" or "seller" in the tenant
-      const sellers = await prisma.user.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          roles: {
-            hasSome: ['Agent', 'seller'], // Look for users with either role
-          },
-          isActive: true,
+    const [amocrmUsers, allLeads] = await Promise.all([
+      amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl),
+      amocrmService.fetchAllLeads(
+        amoContext.accessToken,
+        {
+          pipelineIds: amoContext.selectedPipelineIds,
+          limit: 250,
         },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          phone: true,
-          roles: true,
-          lastLoginAt: true,
-          createdAt: true,
-        },
+        amoContext.baseUrl,
+      ),
+    ]);
+
+    const managers = amocrmUsers
+      .filter((user) => user.is_active !== false)
+      .filter((user) => {
+        if (!scope.isScoped) {
+          return true;
+        }
+        return asString(user.id) === scope.responsibleUserId;
       });
 
-      // Get metrics for each seller
-      const sellersWithMetrics = await Promise.all(
-        sellers.map(async (seller: (typeof sellers)[number]) => {
-          // Get leads assigned to this seller
-          const leads = await prisma.lead.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              responsibleUserId: seller.id,
+    const managerIds = new Set(
+      managers
+        .map((manager) => asString(manager.id))
+        .filter(Boolean) as string[],
+    );
+
+    const leadsByManager = new Map<string, AmoCRMLead[]>();
+    for (const lead of allLeads) {
+      const responsibleUserId = getLeadResponsibleId(lead);
+      if (!responsibleUserId || !managerIds.has(responsibleUserId)) {
+        continue;
+      }
+      const current = leadsByManager.get(responsibleUserId) || [];
+      current.push(lead);
+      leadsByManager.set(responsibleUserId, current);
+    }
+
+    const calls = managerIds.size > 0
+      ? await prisma.call.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            lead: {
+              responsibleUserId: {
+                in: Array.from(managerIds),
+              },
             },
-            select: {
-              id: true,
-              status: true,
-              metadata: true,
-              createdAt: true,
+          },
+          select: {
+            duration: true,
+            direction: true,
+            status: true,
+            lead: {
+              select: {
+                responsibleUserId: true,
+              },
             },
-          });
-
-          // Get calls made by this seller (using metadata as fallback since agentId field doesn't exist)
-          // Note: We'll need to check metadata for agentId or use a different approach
-          const calls = await prisma.call.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              // Since agentId field doesn't exist, we'll need to use metadata or another approach
-              // For now, we'll get all calls and filter later if needed
-            },
-            select: {
-              id: true,
-              duration: true,
-              status: true,
-              direction: true,
-              startedAt: true,
-              metadata: true,
-            },
-          });
-
-          // Filter calls by seller (check metadata for agentId)
-          const sellerCalls = calls.filter((call: any) => {
-            const metadata = call.metadata as any;
-            return metadata?.agentId === seller.id;
-          });
-
-          // Calculate metrics
-          const totalLeads = leads.length;
-          const activeLeads = leads.filter((lead: any) => lead.status && !['lost', 'won'].includes(lead.status)).length;
-          const wonLeads = leads.filter((lead: any) => lead.status === 'won').length;
-          const lostLeads = leads.filter((lead: any) => lead.status === 'lost').length;
-          
-          // Calculate deal amount from metadata
-          const totalDealAmount = leads.reduce((sum: number, lead: any) => {
-            const metadata = lead.metadata as any;
-            const dealAmount = metadata?.dealAmount || metadata?.amount || 0;
-            return sum + (typeof dealAmount === 'number' ? dealAmount : 0);
-          }, 0);
-          
-          const averageDealAmount = wonLeads > 0 ? totalDealAmount / wonLeads : 0;
-
-          // Call metrics
-          const totalCalls = sellerCalls.length;
-          const inboundCalls = sellerCalls.filter((call: any) => call.direction === 'inbound').length;
-          const outboundCalls = sellerCalls.filter((call: any) => call.direction === 'outbound').length;
-          const totalCallDuration = sellerCalls.reduce((sum: number, call: any) => sum + (call.duration || 0), 0);
-          const averageCallDuration = totalCalls > 0 ? totalCallDuration / totalCalls : 0;
-
-          // Calculate conversion rate
-          const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
-
-          return {
-            ...seller,
-            metrics: {
-              totalLeads,
-              activeLeads,
-              wonLeads,
-              lostLeads,
-              conversionRate: parseFloat(conversionRate.toFixed(2)),
-              totalDealAmount: parseFloat(totalDealAmount.toFixed(2)),
-              averageDealAmount: parseFloat(averageDealAmount.toFixed(2)),
-              totalCalls,
-              inboundCalls,
-              outboundCalls,
-              totalCallDuration,
-              averageCallDuration: parseFloat(averageCallDuration.toFixed(2)),
-            },
-          };
+          },
         })
-      );
+      : [];
 
-      return sellersWithMetrics;
-    }),
-
-  // Get seller details by ID
-  getById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .query(async ({ input, ctx }) => {
-      if (!ctx.tenantId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
+    const callsByManager = new Map<string, Array<{ duration: number | null; direction: string; status: string }>>();
+    for (const call of calls) {
+      const managerId = asString(call.lead?.responsibleUserId);
+      if (!managerId) {
+        continue;
       }
-
-      // Get seller
-      const seller = await prisma.user.findFirst({
-        where: {
-          id: input.id,
-          tenantId: ctx.tenantId,
-          roles: {
-            hasSome: ['Agent', 'seller'],
-          },
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          phone: true,
-          roles: true,
-          lastLoginAt: true,
-          createdAt: true,
-        },
+      const current = callsByManager.get(managerId) || [];
+      current.push({
+        duration: call.duration,
+        direction: call.direction,
+        status: call.status,
       });
+      callsByManager.set(managerId, current);
+    }
 
-      if (!seller) {
+    return managers
+      .map((manager) => {
+        const managerId = asString(manager.id) || '';
+        const leads = leadsByManager.get(managerId) || [];
+        const managerCalls = callsByManager.get(managerId) || [];
+
+        return {
+          id: managerId,
+          name: manager.name || manager.login || `Manager ${managerId}`,
+          email: manager.email || null,
+          phone: null,
+          roles: toManagerRole(manager),
+          lastLoginAt: null,
+          createdAt: new Date(0),
+          metrics: buildMetrics(leads, managerCalls),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .query(async ({ input, ctx }) => {
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      if (scope.isScoped && input.id !== scope.responsibleUserId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 
-      // Get leads assigned to this seller
-      const leads = await prisma.lead.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          responsibleUserId: seller.id,
-        },
-        select: {
-          id: true,
-          title: true,
-          status: true,
-          metadata: true,
-          createdAt: true,
-          updatedAt: true,
-          contact: {
-            select: {
-              name: true,
-              phone: true,
-              email: true,
+      const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+      if (!amoContext) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'AmoCRM integration is not connected.',
+        });
+      }
+
+      const [amocrmUsers, leads, calls] = await Promise.all([
+        amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl),
+        amocrmService.fetchAllLeads(
+          amoContext.accessToken,
+          {
+            pipelineIds: amoContext.selectedPipelineIds,
+            responsibleUserIds: [input.id],
+            with: 'contacts',
+            limit: 250,
+          },
+          amoContext.baseUrl,
+        ),
+        prisma.call.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            lead: {
+              responsibleUserId: input.id,
             },
           },
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        take: 50, // Limit to recent leads
-      });
-
-      // Get calls (using metadata as fallback)
-      const allCalls = await prisma.call.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-        },
-        select: {
-          id: true,
-          from: true,
-          to: true,
-          duration: true,
-          status: true,
-          direction: true,
-          startedAt: true,
-          metadata: true,
-          lead: {
-            select: {
-              id: true,
-              title: true,
+          select: {
+            id: true,
+            from: true,
+            to: true,
+            duration: true,
+            status: true,
+            direction: true,
+            startedAt: true,
+            lead: {
+              select: {
+                id: true,
+                title: true,
+              },
             },
           },
-        },
-        orderBy: {
-          startedAt: 'desc',
-        },
-        take: 50, // Limit to recent calls
-      });
-
-      // Filter calls by seller (check metadata for agentId)
-      const sellerCalls = allCalls.filter((call: any) => {
-        const metadata = call.metadata as any;
-        return metadata?.agentId === seller.id;
-      });
-
-      // Calculate metrics
-      const totalLeads = await prisma.lead.count({
-        where: {
-          tenantId: ctx.tenantId,
-          responsibleUserId: seller.id,
-        },
-      });
-
-      const activeLeads = await prisma.lead.count({
-        where: {
-          tenantId: ctx.tenantId,
-          responsibleUserId: seller.id,
-          status: {
-            notIn: ['lost', 'won'],
+          orderBy: {
+            startedAt: 'desc',
           },
-        },
-      });
+          take: 50,
+        }),
+      ]);
 
-      const wonLeads = await prisma.lead.count({
-        where: {
-          tenantId: ctx.tenantId,
-          responsibleUserId: seller.id,
-          status: 'won',
-        },
-      });
+      const sellerUser = amocrmUsers.find((user) => asString(user.id) === input.id);
+      if (!sellerUser) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
+      }
 
-      const lostLeads = await prisma.lead.count({
-        where: {
-          tenantId: ctx.tenantId,
-          responsibleUserId: seller.id,
-          status: 'lost',
-        },
-      });
+      const metrics = buildMetrics(
+        leads,
+        calls.map((call) => ({
+          duration: call.duration,
+          direction: call.direction,
+          status: call.status,
+        })),
+      );
 
-      // Get deal amounts for won leads
-      const wonLeadData = await prisma.lead.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          responsibleUserId: seller.id,
-          status: 'won',
-        },
-        select: {
-          metadata: true,
-        },
-      });
+      const recentLeads = leads
+        .slice()
+        .sort((a, b) => parseAmoDate(b.created_at).getTime() - parseAmoDate(a.created_at).getTime())
+        .slice(0, 50)
+        .map((lead) => {
+          const firstContact = Array.isArray(lead._embedded?.contacts) ? lead._embedded?.contacts[0] : null;
+          const contact = firstContact && typeof firstContact === 'object'
+            ? {
+                name: asString((firstContact as Record<string, unknown>).name),
+                phone: null,
+                email: null,
+              }
+            : null;
 
-      const totalDealAmount = wonLeadData.reduce((sum: number, lead: any) => {
-        const metadata = lead.metadata as any;
-        const dealAmount = metadata?.dealAmount || metadata?.amount || 0;
-        return sum + (typeof dealAmount === 'number' ? dealAmount : 0);
-      }, 0);
-
-      const averageDealAmount = wonLeads > 0 ? totalDealAmount / wonLeads : 0;
-
-      // Call metrics
-      const totalCalls = sellerCalls.length;
-      const inboundCalls = sellerCalls.filter((call: any) => call.direction === 'inbound').length;
-      const outboundCalls = sellerCalls.filter((call: any) => call.direction === 'outbound').length;
-      const totalCallDuration = sellerCalls.reduce((sum: number, call: any) => sum + (call.duration || 0), 0);
-      const averageCallDuration = totalCalls > 0 ? totalCallDuration / totalCalls : 0;
-
-      // Calculate conversion rate
-      const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
+          return {
+            id: asString(lead.id) || '',
+            title: lead.name || 'Untitled lead',
+            status: asString(lead.status_id),
+            metadata: lead,
+            createdAt: parseAmoDate(lead.created_at),
+            updatedAt: parseAmoDate(lead.updated_at),
+            contact,
+          };
+        });
 
       return {
-        seller,
-        metrics: {
-          totalLeads,
-          activeLeads,
-          wonLeads,
-          lostLeads,
-          conversionRate: parseFloat(conversionRate.toFixed(2)),
-          totalDealAmount: parseFloat(totalDealAmount.toFixed(2)),
-          averageDealAmount: parseFloat(averageDealAmount.toFixed(2)),
-          totalCalls,
-          inboundCalls,
-          outboundCalls,
-          totalCallDuration,
-          averageCallDuration: parseFloat(averageCallDuration.toFixed(2)),
+        seller: {
+          id: input.id,
+          name: sellerUser.name || sellerUser.login || `Manager ${input.id}`,
+          email: sellerUser.email || null,
+          phone: null,
+          roles: toManagerRole(sellerUser),
+          lastLoginAt: null,
+          createdAt: new Date(0),
         },
-        recentLeads: leads,
-        recentCalls: sellerCalls,
+        metrics,
+        recentLeads,
+        recentCalls: calls,
       };
     }),
 });
