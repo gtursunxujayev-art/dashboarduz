@@ -1,7 +1,8 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import * as XLSX from 'xlsx';
 
 type IncomeType = 'new_sale' | 'repayment';
 
@@ -11,6 +12,28 @@ type CustomerOption = {
   name: string;
   telegramUsername?: string | null;
 };
+
+type BulkImportResult = {
+  totalRows: number;
+  importedCount: number;
+  failedCount: number;
+  failures: Array<{ rowNumber: number; message: string }>;
+};
+
+const BULK_TEMPLATE_HEADERS = [
+  'entry_date',
+  'sales_manager',
+  'customer_number',
+  'customer_name',
+  'telegram_username',
+  'income_type',
+  'course',
+  'tariff',
+  'course_price',
+  'payment',
+  'deadline',
+  'debt_source_income_id',
+];
 
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -52,6 +75,30 @@ function formatAmount(value: number | null | undefined): string {
   return formatDigits(String(Math.max(value, 0)));
 }
 
+function parseBulkImportError(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const trpcErrorMessage = (error as { data?: { zodError?: { fieldErrors?: { rows?: string[] } } } }).data?.zodError
+      ?.fieldErrors?.rows?.[0];
+    if (trpcErrorMessage) {
+      return trpcErrorMessage;
+    }
+    const message = (error as { message?: string }).message;
+    if (message) {
+      return message;
+    }
+  }
+  return 'Bulk import failed.';
+}
+
+function summarizeBulkResult(result: BulkImportResult): string {
+  if (result.failedCount === 0) {
+    return `Imported ${result.importedCount}/${result.totalRows} rows successfully.`;
+  }
+
+  const preview = result.failures.slice(0, 5).map((item) => `Row ${item.rowNumber}: ${item.message}`).join(' | ');
+  return `Imported ${result.importedCount}/${result.totalRows} rows. Failed: ${result.failedCount}. ${preview}`;
+}
+
 export default function IncomePage() {
   const [entryDate, setEntryDate] = useState(getTashkentToday());
   const [managerUserId, setManagerUserId] = useState('');
@@ -67,6 +114,9 @@ export default function IncomePage() {
   const [deadline, setDeadline] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
+  const [googleSheetUrl, setGoogleSheetUrl] = useState('');
 
   const formOptionsQuery = trpc.customerIncome.formOptions.useQuery(undefined, {
     retry: false,
@@ -80,6 +130,8 @@ export default function IncomePage() {
     },
   );
   const createIncomeMutation = trpc.customerIncome.createIncome.useMutation();
+  const bulkImportRowsMutation = trpc.customerIncome.bulkImportRows.useMutation();
+  const bulkImportFromSheetMutation = trpc.customerIncome.bulkImportFromGoogleSheet.useMutation();
 
   const managers = useMemo(() => formOptionsQuery.data?.managers || [], [formOptionsQuery.data]);
   const courseOptions = useMemo(() => formOptionsQuery.data?.courses || [], [formOptionsQuery.data]);
@@ -192,6 +244,111 @@ export default function IncomePage() {
     }
   }, [courseId, tariffId, tariffOptions]);
 
+  const handleDownloadTemplate = () => {
+    const sampleRows: Array<Record<string, string>> = [
+      {
+        entry_date: getTashkentToday(),
+        sales_manager: managers[0]?.label || 'Admin',
+        customer_number: '998901234567',
+        customer_name: 'Ali Valiyev',
+        telegram_username: '@ali_valiyev',
+        income_type: 'new_sale',
+        course: courseOptions[0]?.name || 'English',
+        tariff: courseOptions[0]?.tariffs?.[0]?.name || 'Standard',
+        course_price: '1500000',
+        payment: '500000',
+        deadline: getTashkentToday(),
+        debt_source_income_id: '',
+      },
+      {
+        entry_date: getTashkentToday(),
+        sales_manager: managers[0]?.label || 'Admin',
+        customer_number: '998901234567',
+        customer_name: '',
+        telegram_username: '',
+        income_type: 'repayment',
+        course: '',
+        tariff: '',
+        course_price: '',
+        payment: '300000',
+        deadline: '',
+        debt_source_income_id: '',
+      },
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleRows, { header: BULK_TEMPLATE_HEADERS });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'IncomeImport');
+    XLSX.writeFile(workbook, 'income-import-template.xlsx');
+  };
+
+  const runBulkImport = async (rows: Array<Record<string, string | number | boolean | null>>) => {
+    if (!rows.length) {
+      setBulkError('No data rows found in file.');
+      return;
+    }
+
+    setBulkError(null);
+    setBulkSuccess(null);
+
+    try {
+      const result = await bulkImportRowsMutation.mutateAsync({ rows }) as BulkImportResult;
+      setBulkSuccess(summarizeBulkResult(result));
+      await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
+    } catch (bulkImportError) {
+      setBulkError(parseBulkImportError(bulkImportError));
+    }
+  };
+
+  const handleFileImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) {
+      return;
+    }
+
+    setBulkError(null);
+    setBulkSuccess(null);
+
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        setBulkError('The selected file does not contain a worksheet.');
+        return;
+      }
+
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, string | number | boolean | null>>(worksheet, {
+        defval: '',
+        raw: false,
+      });
+
+      await runBulkImport(rows);
+    } catch (fileImportError) {
+      setBulkError(parseBulkImportError(fileImportError));
+    }
+  };
+
+  const handleGoogleSheetImport = async () => {
+    const trimmedUrl = googleSheetUrl.trim();
+    if (!trimmedUrl) {
+      setBulkError('Google Sheets URL is required.');
+      return;
+    }
+
+    setBulkError(null);
+    setBulkSuccess(null);
+
+    try {
+      const result = await bulkImportFromSheetMutation.mutateAsync({ sheetUrl: trimmedUrl }) as BulkImportResult;
+      setBulkSuccess(summarizeBulkResult(result));
+      await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
+    } catch (sheetImportError) {
+      setBulkError(parseBulkImportError(sheetImportError));
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
@@ -291,6 +448,57 @@ export default function IncomePage() {
         <p className="mt-1 text-sm text-gray-500">
           Add new sales and debt repayments by customer.
         </p>
+      </div>
+
+      <div className="rounded-lg bg-white shadow">
+        <div className="border-b border-gray-100 px-6 py-5">
+          <h2 className="text-lg font-medium text-gray-900">Bulk Upload</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Download the template first, then upload Excel/CSV or import directly from Google Sheets.
+          </p>
+        </div>
+
+        <div className="space-y-4 p-6">
+          {bulkError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{bulkError}</p>}
+          {bulkSuccess && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{bulkSuccess}</p>}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+            >
+              Download Excel Template
+            </button>
+            <label className="cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              Upload Excel/CSV
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileImport}
+                className="hidden"
+                disabled={bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading}
+              />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
+            <input
+              value={googleSheetUrl}
+              onChange={(event) => setGoogleSheetUrl(event.target.value)}
+              placeholder="Google Sheets URL or Spreadsheet ID"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <button
+              type="button"
+              onClick={handleGoogleSheetImport}
+              disabled={bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {bulkImportFromSheetMutation.isLoading ? 'Importing...' : 'Import from Google Sheets'}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-lg bg-white shadow">
