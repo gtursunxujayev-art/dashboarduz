@@ -79,6 +79,10 @@ const dlqConfig = {
   },
 };
 
+function getDLQName(name: QueueName): string {
+  return `${name}-dlq`;
+}
+
 // Queue instances cache
 const queues: Map<QueueName, Queue> = new Map();
 const dlqQueues: Map<QueueName, Queue> = new Map();
@@ -87,22 +91,23 @@ const dlqQueues: Map<QueueName, Queue> = new Map();
 export function getQueue(name: QueueName): Queue {
   if (!queues.has(name)) {
     const config = queueConfigs[name] || {};
-    const queue = new Queue(name, {
+    const mainQueue = new Queue(name, {
       connection: getRedisClient() as any,
       ...config,
     });
-
-    queues.set(name, queue);
-    log(LogLevel.INFO, `Created queue: ${name}`);
     
     // Create corresponding DLQ
-    const dlqName = `${name}:dlq` as QueueName;
+    const dlqName = getDLQName(name);
     const dlqQueue = new Queue(dlqName, {
       connection: getRedisClient() as any,
       ...dlqConfig,
     });
-    
+
+    queues.set(name, mainQueue);
     dlqQueues.set(name, dlqQueue);
+
+    log(LogLevel.INFO, `Created queue: ${name}`);
+    
     log(LogLevel.INFO, `Created DLQ: ${dlqName}`);
   }
 
@@ -524,7 +529,7 @@ async function moveToDLQ(job: Job, queueName: QueueName, error: any): Promise<vo
     log(LogLevel.WARN, 'Job moved to DLQ', {
       jobId: job.id,
       queueName,
-      dlqName: `${queueName}:dlq`,
+      dlqName: getDLQName(queueName),
       attempts: job.attemptsMade,
       error: error.message,
     });
