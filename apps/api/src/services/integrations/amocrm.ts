@@ -47,6 +47,28 @@ export interface AmoCRMLeadPipelinesResponse {
   };
 }
 
+export interface AmoCRMUser {
+  id?: number | string;
+  name?: string;
+  email?: string;
+  login?: string;
+  is_active?: boolean;
+  rights?: {
+    is_admin?: boolean;
+  };
+}
+
+export interface AmoCRMUsersResponse {
+  _embedded?: {
+    users?: AmoCRMUser[];
+  };
+  _links?: {
+    next?: {
+      href?: string;
+    };
+  };
+}
+
 export interface AmoCRMLead {
   id?: number | string;
   name?: string;
@@ -174,6 +196,7 @@ export class AmoCRMService {
     with?: string;
     query?: string;
     pipelineIds?: string[];
+    responsibleUserIds?: string[];
     createdAtFrom?: Date;
     createdAtTo?: Date;
   }, baseUrl?: string) {
@@ -186,6 +209,11 @@ export class AmoCRMService {
       if (params?.pipelineIds) {
         params.pipelineIds.forEach((pipelineId) => {
           queryParams.append('filter[pipeline_id][]', pipelineId);
+        });
+      }
+      if (params?.responsibleUserIds) {
+        params.responsibleUserIds.forEach((responsibleUserId) => {
+          queryParams.append('filter[responsible_user_id][]', responsibleUserId);
         });
       }
       if (params?.createdAtFrom) {
@@ -326,6 +354,7 @@ export class AmoCRMService {
 
   async fetchAllLeads(accessToken: string, params?: {
     pipelineIds?: string[] | null;
+    responsibleUserIds?: string[] | null;
     query?: string;
     createdAtFrom?: Date;
     createdAtTo?: Date;
@@ -349,6 +378,7 @@ export class AmoCRMService {
           with: params?.with,
           query: params?.query,
           pipelineIds: params?.pipelineIds || undefined,
+          responsibleUserIds: params?.responsibleUserIds || undefined,
           createdAtFrom: params?.createdAtFrom,
           createdAtTo: params?.createdAtTo,
         },
@@ -367,6 +397,56 @@ export class AmoCRMService {
     }
 
     return allLeads;
+  }
+
+  async fetchUsers(accessToken: string, params?: {
+    page?: number;
+    limit?: number;
+  }, baseUrl?: string): Promise<AmoCRMUsersResponse> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.set('page', params.page.toString());
+    if (params?.limit) queryParams.set('limit', params.limit.toString());
+
+    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
+    const url = `${resolvedBaseUrl}/api/v4/users${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ error: errorText, status: response.status }, 'AmoCRM users fetch error');
+      throw new Error(`Failed to fetch AmoCRM users: ${response.status} ${response.statusText}`);
+    }
+
+    return (await response.json()) as AmoCRMUsersResponse;
+  }
+
+  async fetchAllUsers(accessToken: string, params?: {
+    limit?: number;
+    maxPages?: number;
+  }, baseUrl?: string): Promise<AmoCRMUser[]> {
+    const pageSize = Math.min(Math.max(params?.limit || 250, 1), 250);
+    const maxPages = Math.max(params?.maxPages || 50, 1);
+    const allUsers: AmoCRMUser[] = [];
+
+    let page = 1;
+    while (page <= maxPages) {
+      const response = await this.fetchUsers(accessToken, { page, limit: pageSize }, baseUrl);
+      const users = Array.isArray(response._embedded?.users) ? response._embedded.users : [];
+      allUsers.push(...users);
+
+      const hasNext = Boolean(response._links?.next?.href);
+      if (!hasNext || users.length < pageSize) {
+        break;
+      }
+      page += 1;
+    }
+
+    return allUsers;
   }
 
   async createLead(accessToken: string, leadData: any, baseUrl?: string) {
