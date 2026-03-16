@@ -10,8 +10,36 @@ import { amocrmService } from '../../services/integrations/amocrm';
 
 const roleSchema = z.enum(['Admin', 'Manager', 'Agent', 'Finance']);
 
-function isMissingAmoResponsibleColumnError(error: unknown) {
-  return String((error as any)?.message || '').includes('amocrmResponsibleUserId');
+function isMissingUserMappingColumnError(error: unknown) {
+  const message = String((error as any)?.message || '');
+  return message.includes('amocrmResponsibleUserId') || message.includes('utelManagerExternalId');
+}
+
+function toNormalizedText(value: unknown): string {
+  return String(value || '').trim();
+}
+
+function extractUtelManagerFromMetadata(metadata: unknown): { key: string; label: string } | null {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+
+  const data = metadata as Record<string, unknown>;
+  const managerName = toNormalizedText(
+    data.manager || data.agent || data.user || data.operator || data.responsible || data.employee,
+  );
+  const extension = toNormalizedText(data.extension || data.ext || data.internal || data.line);
+
+  if (!managerName && !extension) {
+    return null;
+  }
+
+  const key = extension || managerName;
+  const label = extension && managerName ? `${managerName} (${extension})` : (managerName || extension);
+  return {
+    key,
+    label,
+  };
 }
 
 function normalizeLoginSeed(value: string) {
@@ -75,6 +103,37 @@ export const usersRouter = router({
       .sort((a, b) => a.name.localeCompare(b.name));
   }),
 
+  utelManagers: adminProcedure.query(async ({ ctx }) => {
+    const calls = await prisma.call.findMany({
+      where: {
+        tenantId: ctx.tenantId,
+        provider: {
+          in: ['utel', 'voip', 'unknown'],
+        },
+      },
+      orderBy: { startedAt: 'desc' },
+      take: 3000,
+      select: {
+        metadata: true,
+      },
+    });
+
+    const uniqueManagers = new Map<string, string>();
+    for (const call of calls) {
+      const extracted = extractUtelManagerFromMetadata(call.metadata);
+      if (!extracted) {
+        continue;
+      }
+      if (!uniqueManagers.has(extracted.key)) {
+        uniqueManagers.set(extracted.key, extracted.label);
+      }
+    }
+
+    return Array.from(uniqueManagers.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }),
+
   list: adminProcedure.query(async ({ ctx }) => {
     try {
       return await prisma.user.findMany({
@@ -87,13 +146,15 @@ export const usersRouter = router({
           email: true,
           phone: true,
           roles: true,
+          amocrmResponsibleUserId: true,
+          utelManagerExternalId: true,
           isActive: true,
           lastLoginAt: true,
           createdAt: true,
         },
       });
     } catch (error: any) {
-      if (!isMissingAmoResponsibleColumnError(error)) {
+      if (!isMissingUserMappingColumnError(error)) {
         throw error;
       }
 
@@ -116,6 +177,7 @@ export const usersRouter = router({
       return fallback.map((user) => ({
         ...user,
         amocrmResponsibleUserId: null,
+        utelManagerExternalId: null,
       }));
     }
   }),
@@ -126,6 +188,7 @@ export const usersRouter = router({
         name: z.string().max(120).optional(),
         role: roleSchema,
         amocrmResponsibleUserId: z.string().optional(),
+        utelManagerExternalId: z.string().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -153,6 +216,7 @@ export const usersRouter = router({
 
       if (role === 'Agent') {
         createData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || null;
+        createData.utelManagerExternalId = input.utelManagerExternalId || null;
       }
 
       let created: { id: string; username: string | null; name: string | null; roles: string[] };
@@ -167,10 +231,10 @@ export const usersRouter = router({
           },
         });
       } catch (error: any) {
-        if (isMissingAmoResponsibleColumnError(error)) {
+        if (isMissingUserMappingColumnError(error)) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
-            message: 'AmoCRM manager mapping column is missing. Run database migrations first.',
+            message: 'User mapping columns are missing. Run database migrations first.',
           });
         }
         throw error;
@@ -186,6 +250,7 @@ export const usersRouter = router({
           metadata: {
             role,
             amocrmResponsibleUserId: input.amocrmResponsibleUserId || null,
+            utelManagerExternalId: input.utelManagerExternalId || null,
           },
         },
       });
@@ -205,6 +270,7 @@ export const usersRouter = router({
         userId: z.string().uuid(),
         roles: z.array(roleSchema).min(1),
         amocrmResponsibleUserId: z.string().optional(),
+        utelManagerExternalId: z.string().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -222,6 +288,7 @@ export const usersRouter = router({
       }
 
       let previousAmoResponsibleUserId: string | null = null;
+      let previousUtelManagerExternalId: string | null = null;
       if (input.roles.includes('Agent')) {
         try {
           const mappingSource = await prisma.user.findFirst({
@@ -231,14 +298,16 @@ export const usersRouter = router({
             },
             select: {
               amocrmResponsibleUserId: true,
+              utelManagerExternalId: true,
             },
           });
           previousAmoResponsibleUserId = mappingSource?.amocrmResponsibleUserId || null;
+          previousUtelManagerExternalId = mappingSource?.utelManagerExternalId || null;
         } catch (error: any) {
-          if (isMissingAmoResponsibleColumnError(error)) {
+          if (isMissingUserMappingColumnError(error)) {
             throw new TRPCError({
               code: 'PRECONDITION_FAILED',
-              message: 'AmoCRM manager mapping column is missing. Run database migrations first.',
+              message: 'User mapping columns are missing. Run database migrations first.',
             });
           }
           throw error;
@@ -250,6 +319,7 @@ export const usersRouter = router({
       };
       if (input.roles.includes('Agent')) {
         updateData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || previousAmoResponsibleUserId || null;
+        updateData.utelManagerExternalId = input.utelManagerExternalId || previousUtelManagerExternalId || null;
       }
 
       const updated = await prisma.user.update({
@@ -263,6 +333,7 @@ export const usersRouter = router({
           phone: true,
           roles: true,
           amocrmResponsibleUserId: true,
+          utelManagerExternalId: true,
           isActive: true,
           lastLoginAt: true,
           createdAt: true,
@@ -276,7 +347,11 @@ export const usersRouter = router({
           action: 'user_role_update',
           resource: 'user',
           resourceId: user.id,
-          metadata: { roles: input.roles },
+          metadata: {
+            roles: input.roles,
+            amocrmResponsibleUserId: input.amocrmResponsibleUserId || null,
+            utelManagerExternalId: input.utelManagerExternalId || null,
+          },
         },
       });
 
