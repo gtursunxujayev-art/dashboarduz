@@ -26,6 +26,17 @@ export const loginWithPasswordSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+export const changeCredentialsSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newLogin: z
+    .string()
+    .min(3, 'Login must be at least 3 characters')
+    .max(50, 'Login must be at most 50 characters')
+    .regex(/^[a-zA-Z0-9._-]+$/, 'Login may contain only letters, numbers, dots, underscores, and hyphens')
+    .optional(),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters').optional(),
+});
+
 // Telegram Login schemas
 export const telegramLoginSchema = z.object({
   id: z.number(),
@@ -57,6 +68,7 @@ export type PhoneOtpRequest = z.infer<typeof phoneOtpRequestSchema>;
 export type PhoneOtpVerify = z.infer<typeof phoneOtpVerifySchema>;
 export type RegisterWithPassword = z.infer<typeof registerWithPasswordSchema>;
 export type LoginWithPassword = z.infer<typeof loginWithPasswordSchema>;
+export type ChangeCredentials = z.infer<typeof changeCredentialsSchema>;
 export type TelegramLogin = z.infer<typeof telegramLoginSchema>;
 export type LinkAccount = z.infer<typeof linkAccountSchema>;
 export type JWTPayload = z.infer<typeof jwtPayloadSchema>;
