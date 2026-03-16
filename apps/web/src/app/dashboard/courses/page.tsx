@@ -9,6 +9,14 @@ type TariffItem = {
   name: string;
   isActive: boolean;
   courseId: string;
+  subTariffs: SubTariffItem[];
+};
+
+type SubTariffItem = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  tariffId: string;
 };
 
 type CourseItem = {
@@ -27,8 +35,10 @@ export default function CoursesPage() {
   const [newCourseName, setNewCourseName] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [newTariffName, setNewTariffName] = useState('');
+  const [newSubTariffName, setNewSubTariffName] = useState<Record<string, string>>({});
   const [courseEditName, setCourseEditName] = useState<Record<string, string>>({});
   const [tariffEditName, setTariffEditName] = useState<Record<string, string>>({});
+  const [subTariffEditName, setSubTariffEditName] = useState<Record<string, string>>({});
 
   const catalogQuery = trpc.customerIncome.courseCatalog.useQuery(undefined, {
     retry: false,
@@ -37,6 +47,8 @@ export default function CoursesPage() {
   const createTariff = trpc.customerIncome.createTariff.useMutation();
   const updateCourse = trpc.customerIncome.updateCourse.useMutation();
   const updateTariff = trpc.customerIncome.updateTariff.useMutation();
+  const createSubTariff = trpc.customerIncome.createSubTariff.useMutation();
+  const updateSubTariff = trpc.customerIncome.updateSubTariff.useMutation();
 
   const courses = useMemo<CourseItem[]>(() => {
     return (catalogQuery.data || []) as CourseItem[];
@@ -182,6 +194,71 @@ export default function CoursesPage() {
     }
   };
 
+  const handleCreateSubTariff = async (tariffId: string) => {
+    resetMessages();
+    if (!isAdmin) {
+      setError('Only admins can add or edit sub-tariffs.');
+      return;
+    }
+
+    const name = (newSubTariffName[tariffId] || '').trim();
+    if (!name) {
+      setError('Sub-tariff name is required.');
+      return;
+    }
+
+    try {
+      await createSubTariff.mutateAsync({
+        tariffId,
+        name,
+      });
+      setNewSubTariffName((prev) => ({ ...prev, [tariffId]: '' }));
+      setSuccess('Sub-tariff saved successfully.');
+      await catalogQuery.refetch();
+    } catch (mutationError: any) {
+      setError(mutationError?.message || 'Failed to save sub-tariff.');
+    }
+  };
+
+  const handleUpdateSubTariff = async (subTariff: SubTariffItem) => {
+    resetMessages();
+    if (!isAdmin) {
+      setError('Only admins can add or edit sub-tariffs.');
+      return;
+    }
+
+    const nextName = (subTariffEditName[subTariff.id] ?? subTariff.name).trim();
+    try {
+      await updateSubTariff.mutateAsync({
+        subTariffId: subTariff.id,
+        name: nextName,
+      });
+      setSuccess('Sub-tariff updated.');
+      await catalogQuery.refetch();
+    } catch (mutationError: any) {
+      setError(mutationError?.message || 'Failed to update sub-tariff.');
+    }
+  };
+
+  const handleToggleSubTariff = async (subTariff: SubTariffItem) => {
+    resetMessages();
+    if (!isAdmin) {
+      setError('Only admins can add or edit sub-tariffs.');
+      return;
+    }
+
+    try {
+      await updateSubTariff.mutateAsync({
+        subTariffId: subTariff.id,
+        isActive: !subTariff.isActive,
+      });
+      setSuccess('Sub-tariff status updated.');
+      await catalogQuery.refetch();
+    } catch (mutationError: any) {
+      setError(mutationError?.message || 'Failed to update sub-tariff status.');
+    }
+  };
+
   if (!isAdmin) {
     return (
       <div className="rounded-lg bg-white p-6 shadow">
@@ -296,32 +373,91 @@ export default function CoursesPage() {
                       <p className="text-sm text-gray-500">No tariffs attached.</p>
                     ) : (
                       course.tariffs.map((tariff) => (
-                        <div key={tariff.id} className="grid grid-cols-1 gap-3 rounded-md bg-gray-50 p-3 md:grid-cols-[1fr_auto_auto] md:items-center">
-                          <input
-                            value={tariffEditName[tariff.id] ?? tariff.name}
-                            onChange={(event) =>
-                              setTariffEditName((prev) => ({ ...prev, [tariff.id]: event.target.value }))
-                            }
-                            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateTariff(tariff)}
-                            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Save
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleTariff(tariff)}
-                            className={`rounded-md px-3 py-2 text-sm font-medium ${
-                              tariff.isActive
-                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                : 'bg-green-100 text-green-700 hover:bg-green-200'
-                            }`}
-                          >
-                            {tariff.isActive ? 'Deactivate' : 'Activate'}
-                          </button>
+                        <div key={tariff.id} className="space-y-3 rounded-md bg-gray-50 p-3">
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto] md:items-center">
+                            <input
+                              value={tariffEditName[tariff.id] ?? tariff.name}
+                              onChange={(event) =>
+                                setTariffEditName((prev) => ({ ...prev, [tariff.id]: event.target.value }))
+                              }
+                              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateTariff(tariff)}
+                              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTariff(tariff)}
+                              className={`rounded-md px-3 py-2 text-sm font-medium ${
+                                tariff.isActive
+                                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                  : 'bg-green-100 text-green-700 hover:bg-green-200'
+                              }`}
+                            >
+                              {tariff.isActive ? 'Deactivate' : 'Activate'}
+                            </button>
+                          </div>
+
+                          <div className="rounded-md border border-gray-200 bg-white p-3">
+                            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Sub Tariffs (Optional)</p>
+                            <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto]">
+                              <input
+                                value={newSubTariffName[tariff.id] || ''}
+                                onChange={(event) =>
+                                  setNewSubTariffName((prev) => ({ ...prev, [tariff.id]: event.target.value }))
+                                }
+                                placeholder="Add sub tariff"
+                                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleCreateSubTariff(tariff.id)}
+                                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                              >
+                                Add Sub Tariff
+                              </button>
+                            </div>
+
+                            {tariff.subTariffs?.length ? (
+                              <div className="space-y-2">
+                                {tariff.subTariffs.map((subTariff) => (
+                                  <div key={subTariff.id} className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto_auto] md:items-center">
+                                    <input
+                                      value={subTariffEditName[subTariff.id] ?? subTariff.name}
+                                      onChange={(event) =>
+                                        setSubTariffEditName((prev) => ({ ...prev, [subTariff.id]: event.target.value }))
+                                      }
+                                      className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateSubTariff(subTariff)}
+                                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                    >
+                                      Save
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleSubTariff(subTariff)}
+                                      className={`rounded-md px-3 py-2 text-sm font-medium ${
+                                        subTariff.isActive
+                                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                          : 'bg-green-100 text-green-700 hover:bg-green-200'
+                                      }`}
+                                    >
+                                      {subTariff.isActive ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-gray-500">No sub tariffs yet.</p>
+                            )}
+                          </div>
                         </div>
                       ))
                     )}
