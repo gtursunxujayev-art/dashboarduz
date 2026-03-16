@@ -86,6 +86,108 @@ function parseCallDate(value: unknown): Date | null {
   return null;
 }
 
+type NormalizedVoipCall = {
+  callIdExternal: string;
+  from: string;
+  to: string;
+  direction: 'inbound' | 'outbound';
+  status: string;
+  startedAt: Date;
+  endedAt: Date | null;
+  duration: number | null;
+  recordingUrl: string | null;
+  recordingId: string | null;
+  metadata: Record<string, unknown>;
+};
+
+function normalizeDirection(value: unknown): 'inbound' | 'outbound' {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['out', 'outbound', 'dial_out', 'outgoing'].includes(normalized)) {
+    return 'outbound';
+  }
+  return 'inbound';
+}
+
+function parseDurationSeconds(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isNaN(parsed)) {
+      return Math.max(0, parsed);
+    }
+  }
+
+  return null;
+}
+
+function extractVoipCallEntries(payload: Record<string, unknown>): Array<Record<string, unknown>> {
+  const candidates: unknown[] = [
+    payload.call,
+    payload.event,
+    payload.data,
+    payload.recentCalls,
+    payload.calls,
+    payload.call_events,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate.filter((item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === 'object',
+      );
+    }
+
+    if (candidate && typeof candidate === 'object') {
+      return [candidate as Record<string, unknown>];
+    }
+  }
+
+  return [payload];
+}
+
+function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: string): NormalizedVoipCall {
+  const direction = normalizeDirection(entry.direction);
+
+  const phone = normalizePhone(String(entry.phone || entry.client_phone || entry.customer_phone || ''));
+  const extension = normalizePhone(String(entry.extension || entry.ext || entry.internal || ''));
+  const from = normalizePhone(
+    String(entry.from || entry.caller || (direction === 'outbound' ? extension : phone) || ''),
+  );
+  const to = normalizePhone(
+    String(entry.to || entry.callee || (direction === 'outbound' ? phone : extension) || ''),
+  );
+
+  const startedAt = parseCallDate(
+    entry.start_time || entry.started_at || entry.startedAt || entry.date || entry.created_at,
+  ) || new Date();
+  const endedAt = parseCallDate(entry.end_time || entry.ended_at || entry.endedAt);
+  const parsedDuration = parseDurationSeconds(entry.duration);
+  const duration = parsedDuration ?? (endedAt
+    ? Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000))
+    : null);
+
+  const callIdExternal = String(
+    entry.call_id || entry.id || entry.uuid || entry.uniqueid || fallbackCallId,
+  );
+
+  return {
+    callIdExternal,
+    from,
+    to,
+    direction,
+    status: String(entry.status || entry.call_status || 'completed'),
+    startedAt,
+    endedAt,
+    duration,
+    recordingUrl: entry.recording_url ? String(entry.recording_url) : null,
+    recordingId: entry.recording_id ? String(entry.recording_id) : null,
+    metadata: entry,
+  };
+}
+
 export async function processWebhookEvent(eventId: string) {
   let tenantIdForAudit: string | null = null;
 
@@ -329,60 +431,14 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
 }
 
 async function processVoIPWebhook(event: any, tenantId: string) {
-  const payload = event.rawPayload as any;
+  const payload = (event.rawPayload as Record<string, unknown> | null) || {};
   const provider = String(payload.provider || payload.operator || payload.vendor || payload.source || 'utel')
     .trim()
     .toLowerCase() || 'utel';
-  const callIdExternal = String(payload.call_id || payload.id || `${provider}-${event.id}`);
-  const from = normalizePhone(payload.from || payload.caller || '');
-  const to = normalizePhone(payload.to || payload.callee || '');
-  const direction = payload.direction === 'outbound' ? 'outbound' : 'inbound';
-  const status = payload.status || payload.call_status || 'completed';
-  const startedAt = parseCallDate(payload.start_time || payload.started_at || payload.startedAt) || new Date();
-  const endedAt = parseCallDate(payload.end_time || payload.ended_at || payload.endedAt);
-  const duration = typeof payload.duration === 'number'
-    ? payload.duration
-    : endedAt
-      ? Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000))
-      : null;
-
-  const upsertedCall = await prisma.call.upsert({
-    where: {
-      tenantId_provider_callIdExternal: {
-        tenantId,
-        provider,
-        callIdExternal,
-      },
-    },
-    update: {
-      provider,
-      from,
-      to,
-      direction,
-      status,
-      duration,
-      recordingUrl: payload.recording_url || null,
-      recordingId: payload.recording_id || null,
-      metadata: payload,
-      startedAt,
-      endedAt,
-    },
-    create: {
-      tenantId,
-      provider,
-      callIdExternal,
-      from,
-      to,
-      direction,
-      status,
-      duration,
-      recordingUrl: payload.recording_url || null,
-      recordingId: payload.recording_id || null,
-      metadata: payload,
-      startedAt,
-      endedAt,
-    },
-  });
+  const callEntries = extractVoipCallEntries(payload);
+  if (!callEntries.length) {
+    return;
+  }
 
   const contacts = await prisma.contact.findMany({
     where: {
@@ -393,12 +449,60 @@ async function processVoIPWebhook(event: any, tenantId: string) {
     take: 5000,
   });
 
-  const matchedContact = contacts.find((contact) => {
-    const normalized = normalizePhone(contact.phone);
-    return normalized && (normalized === from || normalized === to);
-  });
+  for (let index = 0; index < callEntries.length; index += 1) {
+    const entry = callEntries[index];
+    if (!entry) {
+      continue;
+    }
+    const normalizedCall = normalizeVoipCall(entry, `${provider}-${event.id}-${index}`);
 
-  if (matchedContact) {
+    const upsertedCall = await prisma.call.upsert({
+      where: {
+        tenantId_provider_callIdExternal: {
+          tenantId,
+          provider,
+          callIdExternal: normalizedCall.callIdExternal,
+        },
+      },
+      update: {
+        provider,
+        from: normalizedCall.from,
+        to: normalizedCall.to,
+        direction: normalizedCall.direction,
+        status: normalizedCall.status,
+        duration: normalizedCall.duration,
+        recordingUrl: normalizedCall.recordingUrl,
+        recordingId: normalizedCall.recordingId,
+        metadata: normalizedCall.metadata as any,
+        startedAt: normalizedCall.startedAt,
+        endedAt: normalizedCall.endedAt,
+      },
+      create: {
+        tenantId,
+        provider,
+        callIdExternal: normalizedCall.callIdExternal,
+        from: normalizedCall.from,
+        to: normalizedCall.to,
+        direction: normalizedCall.direction,
+        status: normalizedCall.status,
+        duration: normalizedCall.duration,
+        recordingUrl: normalizedCall.recordingUrl,
+        recordingId: normalizedCall.recordingId,
+        metadata: normalizedCall.metadata as any,
+        startedAt: normalizedCall.startedAt,
+        endedAt: normalizedCall.endedAt,
+      },
+    });
+
+    const matchedContact = contacts.find((contact) => {
+      const normalized = normalizePhone(contact.phone);
+      return normalized && (normalized === normalizedCall.from || normalized === normalizedCall.to);
+    });
+
+    if (!matchedContact) {
+      continue;
+    }
+
     const lead = await prisma.lead.findFirst({
       where: { tenantId, contactId: matchedContact.id },
       orderBy: { updatedAt: 'desc' },
