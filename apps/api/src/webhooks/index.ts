@@ -256,6 +256,54 @@ async function handleVoipWebhook(req: Request, res: Response) {
   }
 }
 
+async function handleVoipWebhookStatus(req: Request, res: Response) {
+  try {
+    const integrationKey = (req.query.integration_key as string | undefined)
+      || (req.headers['x-integration-key'] as string | undefined);
+
+    if (!integrationKey) {
+      return res.status(200).json({
+        ok: true,
+        endpoint: '/webhooks/utel',
+        method: 'POST',
+        message: 'Webhook endpoint is alive. Send POST with integration_key query param.',
+      });
+    }
+
+    const integration = await prisma.integration.findFirst({
+      where: {
+        type: 'voip_utel',
+        status: 'active',
+        config: {
+          path: ['webhookKey'],
+          equals: integrationKey,
+        },
+      },
+      select: {
+        id: true,
+        tenantId: true,
+      },
+    });
+
+    if (!integration) {
+      return res.status(404).json({ ok: false, error: 'Integration not found' });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      endpoint: '/webhooks/utel',
+      method: 'POST',
+      integration: 'active',
+      tenantId: integration.tenantId,
+    });
+  } catch (err) {
+    logger.error({ err }, 'VoIP webhook status handler failed');
+    return res.status(500).json({ ok: false, error: 'Internal server error' });
+  }
+}
+
+router.get('/utel', handleVoipWebhookStatus);
+router.get('/voip', handleVoipWebhookStatus);
 router.post('/utel', handleVoipWebhook);
 router.post('/voip', handleVoipWebhook);
 
