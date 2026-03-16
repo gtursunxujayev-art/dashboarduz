@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
@@ -29,6 +29,10 @@ export default function Sidebar() {
 
   const isAdmin = user?.roles.includes('Admin');
 
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
   return (
     <>
       {/* Mobile sidebar toggle */}
@@ -48,8 +52,8 @@ export default function Sidebar() {
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)} />
-          <div className="fixed inset-0 flex z-40">
-            <div className="relative flex-1 flex flex-col max-w-xs w-full bg-white">
+          <div className="fixed inset-0 z-40 flex pointer-events-none">
+            <div className="relative pointer-events-auto flex-1 flex flex-col max-w-xs w-full bg-white">
               <div className="absolute top-0 right-0 -mr-12 pt-2">
                 <button
                   onClick={() => setSidebarOpen(false)}
@@ -70,6 +74,7 @@ export default function Sidebar() {
                     <Link
                       key={item.name}
                       href={item.href}
+                      onClick={() => setSidebarOpen(false)}
                       className={`group flex items-center px-2 py-2 text-base font-medium rounded-md ${
                         pathname === item.href
                           ? 'bg-gray-100 text-gray-900'
@@ -93,6 +98,7 @@ export default function Sidebar() {
                     <Link
                       key={item.name}
                       href={item.href}
+                      onClick={() => setSidebarOpen(false)}
                       className={`group flex items-center px-2 py-2 text-base font-medium rounded-md ${
                         pathname === item.href
                           ? 'bg-gray-100 text-gray-900'
