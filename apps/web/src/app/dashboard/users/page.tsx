@@ -1,43 +1,197 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 
 const availableRoles = ['Admin', 'Manager', 'Agent', 'Finance'] as const;
 
+type UserRole = (typeof availableRoles)[number];
+
 export default function UsersPage() {
   const usersQuery = trpc.users.list.useQuery();
+  const amocrmManagersQuery = trpc.users.amocrmManagers.useQuery(undefined, {
+    retry: false,
+  });
+  const createUser = trpc.users.create.useMutation();
   const updateRole = trpc.users.updateRole.useMutation();
-  const [error, setError] = useState<string | null>(null);
+  const updateCredentials = trpc.users.updateCredentials.useMutation();
 
-  const handleRoleChange = async (userId: string, nextRole: (typeof availableRoles)[number]) => {
+  const [error, setError] = useState<string | null>(null);
+  const [createdCredentials, setCreatedCredentials] = useState<{ login: string; password: string } | null>(null);
+  const [generatedResetPassword, setGeneratedResetPassword] = useState<{ userId: string; password: string } | null>(null);
+
+  const [newName, setNewName] = useState('');
+  const [newRole, setNewRole] = useState<UserRole>('Agent');
+  const [newAmoManagerId, setNewAmoManagerId] = useState('');
+
+  const [roleDrafts, setRoleDrafts] = useState<Record<string, UserRole>>({});
+  const [managerDrafts, setManagerDrafts] = useState<Record<string, string>>({});
+  const [loginDrafts, setLoginDrafts] = useState<Record<string, string>>({});
+  const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
+
+  const amocrmManagers = useMemo(() => amocrmManagersQuery.data || [], [amocrmManagersQuery.data]);
+
+  useEffect(() => {
+    const users = usersQuery.data || [];
+    const nextRoleDrafts: Record<string, UserRole> = {};
+    const nextManagerDrafts: Record<string, string> = {};
+    const nextLoginDrafts: Record<string, string> = {};
+
+    for (const user of users as any[]) {
+      nextRoleDrafts[user.id] = (user.roles?.[0] || 'Agent') as UserRole;
+      nextManagerDrafts[user.id] = user.amocrmResponsibleUserId || '';
+      nextLoginDrafts[user.id] = user.username || '';
+    }
+
+    setRoleDrafts(nextRoleDrafts);
+    setManagerDrafts(nextManagerDrafts);
+    setLoginDrafts(nextLoginDrafts);
+  }, [usersQuery.data]);
+
+  const handleCreateUser = async () => {
     setError(null);
+    setCreatedCredentials(null);
+    setGeneratedResetPassword(null);
+
+    try {
+      const created = await createUser.mutateAsync({
+        name: newName.trim() || undefined,
+        role: newRole,
+        amocrmResponsibleUserId: newRole === 'Agent' ? (newAmoManagerId || undefined) : undefined,
+      });
+
+      setCreatedCredentials(created.credentials);
+      setNewName('');
+      setNewRole('Agent');
+      setNewAmoManagerId('');
+      await usersQuery.refetch();
+    } catch (mutationError: any) {
+      setError(mutationError?.message || 'Failed to create user');
+    }
+  };
+
+  const handleRoleSave = async (userId: string) => {
+    setError(null);
+    setGeneratedResetPassword(null);
+
     try {
       await updateRole.mutateAsync({
         userId,
-        roles: [nextRole],
+        roles: [roleDrafts[userId] || 'Agent'],
+        amocrmResponsibleUserId: (roleDrafts[userId] || 'Agent') === 'Agent'
+          ? (managerDrafts[userId] || undefined)
+          : undefined,
       });
       await usersQuery.refetch();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to update role');
+    } catch (mutationError: any) {
+      setError(mutationError?.message || 'Failed to update role');
+    }
+  };
+
+  const handleCredentialsSave = async (userId: string) => {
+    setError(null);
+    setGeneratedResetPassword(null);
+
+    try {
+      await updateCredentials.mutateAsync({
+        userId,
+        username: loginDrafts[userId] || undefined,
+        password: passwordDrafts[userId] || undefined,
+      });
+      setPasswordDrafts((prev) => ({ ...prev, [userId]: '' }));
+      await usersQuery.refetch();
+    } catch (mutationError: any) {
+      setError(mutationError?.message || 'Failed to update credentials');
+    }
+  };
+
+  const handleGeneratePassword = async (userId: string) => {
+    setError(null);
+    setGeneratedResetPassword(null);
+
+    try {
+      const result = await updateCredentials.mutateAsync({
+        userId,
+        generatePassword: true,
+      });
+      if (result.generatedPassword) {
+        setGeneratedResetPassword({ userId, password: result.generatedPassword });
+      }
+    } catch (mutationError: any) {
+      setError(mutationError?.message || 'Failed to generate password');
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-6 py-5 border-b border-gray-100">
+      <div className="rounded-lg bg-white shadow">
+        <div className="border-b border-gray-100 px-6 py-5">
           <h1 className="text-xl font-semibold text-gray-900">Users</h1>
-          <p className="mt-1 text-sm text-gray-500">Manage workspace users and roles (Admin only).</p>
+          <p className="mt-1 text-sm text-gray-500">Create users, map agents to AmoCRM sales managers, and manage credentials.</p>
         </div>
-        <div className="p-6">
-          {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-          {usersQuery.error && (
-            <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-              {usersQuery.error.message}
+
+        <div className="space-y-4 p-6">
+          {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {amocrmManagersQuery.error && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              AmoCRM managers are unavailable. Connect AmoCRM integration to map Agent users.
+            </p>
+          )}
+          {createdCredentials && (
+            <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
+              User created. Login: <strong>{createdCredentials.login}</strong>, Password: <strong>{createdCredentials.password}</strong>
             </p>
           )}
 
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_180px_1fr_auto]">
+            <input
+              value={newName}
+              onChange={(event) => setNewName(event.target.value)}
+              placeholder="User name (optional)"
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <select
+              value={newRole}
+              onChange={(event) => setNewRole(event.target.value as UserRole)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {availableRoles.map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+            <select
+              value={newAmoManagerId}
+              onChange={(event) => setNewAmoManagerId(event.target.value)}
+              disabled={newRole !== 'Agent'}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+            >
+              <option value="">{newRole === 'Agent' ? 'Select AmoCRM manager' : 'Not required for this role'}</option>
+              {amocrmManagers.map((manager: any) => (
+                <option key={manager.id} value={manager.id}>
+                  {manager.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleCreateUser}
+              disabled={createUser.isLoading}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {createUser.isLoading ? 'Creating...' : 'Add User'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-white shadow">
+        <div className="border-b border-gray-100 px-6 py-5">
+          <h2 className="text-lg font-medium text-gray-900">Workspace Users</h2>
+        </div>
+
+        <div className="p-6">
           {usersQuery.isLoading ? (
             <p className="text-sm text-gray-600">Loading users...</p>
           ) : usersQuery.data?.length ? (
@@ -46,37 +200,112 @@ export default function UsersPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">User</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Login</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Role</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Role + AmoCRM manager</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Credentials</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Last Login</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
-                  {usersQuery.data.map((user: any) => (
+                  {(usersQuery.data as any[]).map((user) => {
+                    const resetState = generatedResetPassword;
+                    const generatedPasswordForRow =
+                      resetState && resetState.userId === user.id ? resetState.password : null;
+
+                    return (
                     <tr key={user.id}>
                       <td className="px-4 py-3 text-sm text-gray-800">
                         {user.name || user.email || user.phone || 'User'}
+                        <div className="text-xs text-gray-500">ID: {user.id}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{user.username || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        <select
-                          value={user.roles?.[0] || 'Agent'}
-                          onChange={(e) => handleRoleChange(user.id, e.target.value as (typeof availableRoles)[number])}
-                          className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                          disabled={updateRole.isLoading}
-                        >
-                          {availableRoles.map((role) => (
-                            <option key={role} value={role}>
-                              {role}
+                      <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-[160px_1fr_auto]">
+                          <select
+                            value={roleDrafts[user.id] || 'Agent'}
+                            onChange={(event) =>
+                              setRoleDrafts((prev) => ({ ...prev, [user.id]: event.target.value as UserRole }))
+                            }
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
+                          >
+                            {availableRoles.map((role) => (
+                              <option key={role} value={role}>
+                                {role}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={managerDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setManagerDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            disabled={(roleDrafts[user.id] || 'Agent') !== 'Agent'}
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
+                          >
+                            <option value="">
+                              {(roleDrafts[user.id] || 'Agent') === 'Agent'
+                                ? 'Select AmoCRM manager'
+                                : 'Not required for this role'}
                             </option>
-                          ))}
-                        </select>
+                            {amocrmManagers.map((manager: any) => (
+                              <option key={manager.id} value={manager.id}>
+                                {manager.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleRoleSave(user.id)}
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </td>
+                      <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto_auto]">
+                          <input
+                            value={loginDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setLoginDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            placeholder="Login"
+                            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                          />
+                          <input
+                            type="password"
+                            value={passwordDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setPasswordDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            placeholder="New password"
+                            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleCredentialsSave(user.id)}
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleGeneratePassword(user.id)}
+                            className="rounded-md bg-blue-50 px-3 py-1 text-sm text-blue-700 hover:bg-blue-100"
+                          >
+                            Generate
+                          </button>
+                        </div>
+                        {generatedPasswordForRow && (
+                          <p className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">
+                            New generated password: <strong>{generatedPasswordForRow}</strong>
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">
                         {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             </div>
