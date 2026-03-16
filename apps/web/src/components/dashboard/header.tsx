@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
+import { usePathname } from 'next/navigation';
 
 export default function Header() {
   const { user } = useAuth();
@@ -11,9 +12,10 @@ export default function Header() {
   });
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
-    const onPointerDown = (event: MouseEvent) => {
+    const onPointerDown = (event: PointerEvent) => {
       if (!menuRef.current) {
         return;
       }
@@ -22,9 +24,13 @@ export default function Header() {
       }
     };
 
-    document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
   }, []);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
 
   const tenantName = tenantQuery.data?.name || 'Workspace';
   const tenantPlan = (tenantQuery.data?.plan || 'free').toString();
