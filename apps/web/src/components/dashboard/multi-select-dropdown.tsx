@@ -40,7 +40,7 @@ export default function MultiSelectDropdown({
   }, [options, placeholder, selectedIds]);
 
   useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
+    const handlePointerDown = (event: PointerEvent) => {
       if (!containerRef.current) {
         return;
       }
@@ -55,11 +55,11 @@ export default function MultiSelectDropdown({
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('pointerdown', handlePointerDown, true);
     document.addEventListener('keydown', handleEscape);
 
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('pointerdown', handlePointerDown, true);
       document.removeEventListener('keydown', handleEscape);
     };
   }, []);
