@@ -47,7 +47,7 @@ export const tenantRouter = router({
         where: { id: ctx.tenantId },
         data: {
           ...(input.name ? { name: input.name } : {}),
-          ...(input.settings ? { settings: nextSettings as Prisma.InputJsonValue } : {}),
+          ...(input.settings ? { settings: nextSettings as Prisma.JsonObject } : {}),
         },
       });
 
