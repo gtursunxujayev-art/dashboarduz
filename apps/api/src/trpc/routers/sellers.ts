@@ -303,7 +303,7 @@ export const sellersRouter = router({
 
       const metrics = buildMetrics(
         leads,
-        calls.map((call) => ({
+        (calls as Array<{ duration: number | null; direction: string; status: string }>).map((call) => ({
           duration: call.duration,
           direction: call.direction,
           status: call.status,
