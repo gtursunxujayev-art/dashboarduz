@@ -2,7 +2,6 @@ import { router, protectedProcedure, adminProcedure } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import type { Prisma } from '@prisma/client';
 
 export const tenantRouter = router({
   get: protectedProcedure.query(async ({ ctx }) => {
@@ -42,12 +41,15 @@ export const tenantRouter = router({
       const nextSettings = input.settings
         ? { ...baseSettings, ...input.settings }
         : baseSettings;
+      const settingsPayload = input.settings
+        ? JSON.parse(JSON.stringify(nextSettings))
+        : undefined;
 
       const updated = await prisma.tenant.update({
         where: { id: ctx.tenantId },
         data: {
           ...(input.name ? { name: input.name } : {}),
-          ...(input.settings ? { settings: nextSettings as Prisma.JsonObject } : {}),
+          ...(input.settings ? { settings: settingsPayload } : {}),
         },
       });
 
