@@ -494,7 +494,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
       },
     });
 
-    const matchedContact = contacts.find((contact) => {
+    const matchedContact = (contacts as Array<{ id: string; phone: string | null }>).find((contact) => {
       const normalized = normalizePhone(contact.phone);
       return normalized && (normalized === normalizedCall.from || normalized === normalizedCall.to);
     });
