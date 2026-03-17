@@ -13,7 +13,12 @@ try {
   initializeWorkers();
   log(LogLevel.INFO, 'Worker service started');
 } catch (error: any) {
-  log(LogLevel.ERROR, 'Failed to start worker service', { error: error.message });
+  const details = {
+    error: error?.message || String(error),
+    stack: error?.stack || null,
+  };
+  log(LogLevel.ERROR, 'Failed to start worker service', details);
+  console.error('[Worker] Startup failed:', details);
   process.exit(1);
 }
 
