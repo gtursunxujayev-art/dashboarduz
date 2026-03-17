@@ -1,5 +1,6 @@
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
+import type { Prisma } from '@prisma/client';
 import {
   bulkIncomeImportFromGoogleSheetSchema,
   bulkIncomeImportSchema,
@@ -250,7 +251,10 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
     }
     if (manager.name) {
       addManagerAlias(manager.name, manager.id);
-      const tokens = manager.name.split(/\s+/).map((token) => token.trim()).filter(Boolean);
+      const tokens = manager.name
+        .split(/\s+/)
+        .map((token: string) => token.trim())
+        .filter(Boolean);
       for (const token of tokens) {
         addManagerAlias(token, manager.id);
       }
@@ -693,7 +697,7 @@ async function createIncomeEntry(params: {
     }
 
     const remainingDebtAmount = Math.max(debtSource.remainingDebtAmount - input.paymentAmount, 0);
-    createdIncome = await prisma.$transaction(async (tx) => {
+    createdIncome = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const repayment = await tx.income.create({
         data: {
           tenantId,
@@ -817,18 +821,34 @@ export const customerIncomeRouter = router({
     ]);
 
     return {
-      managers: managers.map((manager) => ({
+      managers: (managers as Array<{
+        id: string;
+        name: string | null;
+        username: string | null;
+        roles: string[];
+      }>).map((manager) => ({
         id: manager.id,
         label: manager.name || manager.username || manager.id,
         roles: manager.roles,
       })),
       customers,
-      courses: courses.map((course) => ({
+      courses: (courses as Array<{
+        id: string;
+        name: string;
+        tariffs: Array<{ id: string; name: string }>;
+      }>).map((course) => ({
         id: course.id,
         name: course.name,
         tariffs: course.tariffs,
       })),
-      outstandingDebts: outstandingDebts.map((debt) => ({
+      outstandingDebts: (outstandingDebts as Array<{
+        id: string;
+        remainingDebtAmount: number;
+        debtAmount: number | null;
+        customer: { customerNumber: string; name: string };
+        course: { name: string } | null;
+        tariff: { name: string } | null;
+      }>).map((debt) => ({
         id: debt.id,
         remainingDebtAmount: debt.remainingDebtAmount,
         debtAmount: debt.debtAmount,
