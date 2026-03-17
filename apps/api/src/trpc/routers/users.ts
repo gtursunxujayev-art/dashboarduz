@@ -174,7 +174,17 @@ export const usersRouter = router({
         },
       });
 
-      return fallback.map((user) => ({
+      return (fallback as Array<{
+        id: string;
+        username: string | null;
+        name: string | null;
+        email: string | null;
+        phone: string | null;
+        roles: string[];
+        isActive: boolean;
+        lastLoginAt: Date | null;
+        createdAt: Date;
+      }>).map((user) => ({
         ...user,
         amocrmResponsibleUserId: null,
         utelManagerExternalId: null,
