@@ -86,6 +86,55 @@ function parseCallDate(value: unknown): Date | null {
   return null;
 }
 
+function getObjectCandidates(entry: Record<string, unknown>): Record<string, unknown>[] {
+  const candidates: Record<string, unknown>[] = [entry];
+  const nestedKeys = ['call', 'data', 'payload', 'event', 'params', 'meta', 'details', 'call_data'];
+
+  for (const nestedKey of nestedKeys) {
+    const nested = entry[nestedKey];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      candidates.push(nested as Record<string, unknown>);
+    }
+  }
+
+  return candidates;
+}
+
+function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): unknown {
+  if (key in source) {
+    return source[key];
+  }
+
+  const normalizedKey = key.toLowerCase();
+  for (const [currentKey, value] of Object.entries(source)) {
+    if (currentKey.toLowerCase() === normalizedKey) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function pickVoipValue(entry: Record<string, unknown>, keys: string[]): unknown {
+  const candidates = getObjectCandidates(entry);
+
+  for (const candidate of candidates) {
+    for (const key of keys) {
+      const value = getCaseInsensitiveValue(candidate, key);
+      if (value !== null && value !== undefined && String(value).trim() !== '') {
+        return value;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function isInternalNumber(value: string): boolean {
+  const digits = value.replace(/\D/g, '');
+  return digits.length > 0 && digits.length <= 6;
+}
+
 type NormalizedVoipCall = {
   callIdExternal: string;
   from: string;
@@ -114,7 +163,25 @@ function parseDurationSeconds(value: unknown): number | null {
   }
 
   if (typeof value === 'string') {
-    const parsed = Number.parseInt(value, 10);
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (trimmed.includes(':')) {
+      const parts = trimmed.split(':').map((part) => Number.parseInt(part, 10));
+      if (parts.length >= 2 && parts.every((part) => Number.isFinite(part) && part >= 0)) {
+        const hhOrMm = parts[0] ?? 0;
+        const mmOrSs = parts[1] ?? 0;
+        const maybeSs = parts[2] ?? 0;
+        const seconds = parts.length === 2
+          ? (hhOrMm * 60 + mmOrSs)
+          : (hhOrMm * 3600 + mmOrSs * 60 + maybeSs);
+        return Math.max(0, seconds);
+      }
+    }
+
+    const parsed = Number.parseInt(trimmed, 10);
     if (!Number.isNaN(parsed)) {
       return Math.max(0, parsed);
     }
@@ -149,28 +216,107 @@ function extractVoipCallEntries(payload: Record<string, unknown>): Array<Record<
 }
 
 function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: string): NormalizedVoipCall {
-  const direction = normalizeDirection(entry.direction);
+  const rawDirection = pickVoipValue(entry, [
+    'direction',
+    'call_direction',
+    'call_type',
+    'type',
+    'event',
+    'event_type',
+  ]);
 
-  const phone = normalizePhone(String(entry.phone || entry.client_phone || entry.customer_phone || ''));
-  const extension = normalizePhone(String(entry.extension || entry.ext || entry.internal || ''));
-  const from = normalizePhone(
-    String(entry.from || entry.caller || (direction === 'outbound' ? extension : phone) || ''),
-  );
-  const to = normalizePhone(
-    String(entry.to || entry.callee || (direction === 'outbound' ? phone : extension) || ''),
-  );
+  const phone = normalizePhone(String(pickVoipValue(entry, [
+    'phone',
+    'client_phone',
+    'customer_phone',
+    'external_phone',
+    'number',
+    'callee_number',
+    'destination',
+    'dst',
+  ]) || ''));
+  const extension = normalizePhone(String(pickVoipValue(entry, [
+    'extension',
+    'ext',
+    'internal',
+    'line',
+    'agent_extension',
+    'internal_number',
+    'src',
+  ]) || ''));
 
-  const startedAt = parseCallDate(
-    entry.start_time || entry.started_at || entry.startedAt || entry.date || entry.created_at,
-  ) || new Date();
-  const endedAt = parseCallDate(entry.end_time || entry.ended_at || entry.endedAt);
-  const parsedDuration = parseDurationSeconds(entry.duration);
+  let from = normalizePhone(String(pickVoipValue(entry, [
+    'from',
+    'caller',
+    'caller_id',
+    'caller_number',
+    'from_number',
+    'src',
+  ]) || ''));
+  let to = normalizePhone(String(pickVoipValue(entry, [
+    'to',
+    'callee',
+    'callee_number',
+    'to_number',
+    'dialed_number',
+    'destination',
+    'dst',
+  ]) || ''));
+
+  let direction = normalizeDirection(rawDirection);
+  if (!from && !to) {
+    from = direction === 'outbound' ? extension : phone;
+    to = direction === 'outbound' ? phone : extension;
+  }
+
+  if (!rawDirection && from && to) {
+    const fromInternal = isInternalNumber(from);
+    const toInternal = isInternalNumber(to);
+    if (fromInternal && !toInternal) {
+      direction = 'outbound';
+    } else if (!fromInternal && toInternal) {
+      direction = 'inbound';
+    }
+  }
+
+  const startedAt = parseCallDate(pickVoipValue(entry, [
+    'start_time',
+    'started_at',
+    'startedAt',
+    'date',
+    'created_at',
+    'timestamp',
+    'time',
+  ])) || new Date();
+  const endedAt = parseCallDate(pickVoipValue(entry, [
+    'end_time',
+    'ended_at',
+    'endedAt',
+    'finished_at',
+    'hangup_time',
+  ]));
+  const parsedDuration = parseDurationSeconds(pickVoipValue(entry, [
+    'duration',
+    'billsec',
+    'talk_duration',
+    'talk_time',
+    'duration_sec',
+  ]));
   const duration = parsedDuration ?? (endedAt
     ? Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000))
     : null);
 
   const callIdExternal = String(
-    entry.call_id || entry.id || entry.uuid || entry.uniqueid || fallbackCallId,
+    pickVoipValue(entry, [
+      'call_id',
+      'id',
+      'uuid',
+      'uniqueid',
+      'linkedid',
+      'session_id',
+      'record_id',
+      'cdr_id',
+    ]) || fallbackCallId,
   );
 
   return {
@@ -178,12 +324,18 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     from,
     to,
     direction,
-    status: String(entry.status || entry.call_status || 'completed'),
+    status: String(pickVoipValue(entry, ['status', 'call_status', 'state', 'result']) || 'completed'),
     startedAt,
     endedAt,
     duration,
-    recordingUrl: entry.recording_url ? String(entry.recording_url) : null,
-    recordingId: entry.recording_id ? String(entry.recording_id) : null,
+    recordingUrl: (() => {
+      const value = pickVoipValue(entry, ['recording_url', 'record_url', 'record_url_mp3', 'recording_link']);
+      return value ? String(value) : null;
+    })(),
+    recordingId: (() => {
+      const value = pickVoipValue(entry, ['recording_id', 'record_id']);
+      return value ? String(value) : null;
+    })(),
     metadata: entry,
   };
 }
