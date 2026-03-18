@@ -38,6 +38,7 @@ model Tenant {
   tariffs         Tariff[]
   subTariffs      SubTariff[]
   incomes         Income[]
+  incomeAdjustmentRequests IncomeAdjustmentRequest[]
 
   @@index([subdomain])
   @@map("tenants")
@@ -67,6 +68,8 @@ model User {
   auditLogs    AuditLog[]
   linkedAccounts UserAuthLink[]
   managedIncomes Income[] @relation("IncomeManager")
+  requestedIncomeAdjustments IncomeAdjustmentRequest[] @relation("IncomeAdjustmentRequestedBy")
+  reviewedIncomeAdjustments IncomeAdjustmentRequest[] @relation("IncomeAdjustmentReviewedBy")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -315,6 +318,7 @@ model Customer {
 
   tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   incomes Income[]
+  incomeAdjustmentRequests IncomeAdjustmentRequest[]
 
   @@unique([tenantId, customerNumber])
   @@index([tenantId])
@@ -334,6 +338,7 @@ model Course {
   tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tariffs Tariff[]
   incomes Income[]
+  incomeAdjustmentRequests IncomeAdjustmentRequest[] @relation("IncomeAdjustmentNewCourse")
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -353,6 +358,7 @@ model Tariff {
   course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   incomes Income[]
   subTariffs SubTariff[]
+  incomeAdjustmentRequests IncomeAdjustmentRequest[] @relation("IncomeAdjustmentNewTariff")
 
   @@unique([tenantId, courseId, name])
   @@index([tenantId])
@@ -393,6 +399,7 @@ model Income {
   debtAmount         Int?     // source debt amount at creation time
   paymentAmount      Int      // paid amount
   remainingDebtAmount Int     // remaining debt after this transaction
+  lifecycleStatus    String   @default("active") // active, pending_refund, refunded
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -401,6 +408,7 @@ model Income {
   manager  User     @relation("IncomeManager", fields: [managerUserId], references: [id], onDelete: Restrict)
   course   Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   tariff   Tariff?  @relation(fields: [tariffId], references: [id], onDelete: SetNull)
+  adjustmentRequests IncomeAdjustmentRequest[]
 
   relatedDebtIncome Income? @relation("DebtRepaymentSource", fields: [relatedDebtIncomeId], references: [id], onDelete: SetNull)
   repayments        Income[] @relation("DebtRepaymentSource")
@@ -411,6 +419,45 @@ model Income {
   @@index([type])
   @@index([entryDate])
   @@index([remainingDebtAmount])
+  @@index([lifecycleStatus])
   @@index([relatedDebtIncomeId])
   @@map("incomes")
+}
+
+model IncomeAdjustmentRequest {
+  id               String   @id @default(uuid())
+  tenantId         String
+  type             String   // refund, tariff_change
+  status           String   @default("pending") // pending, approved, rejected
+  incomeId         String
+  customerId       String
+  requestedByUserId String
+  reviewedByUserId String?
+  reason           String?
+  reviewNote       String?
+  requestedAmount  Int?
+  newCourseId      String?
+  newTariffId      String?
+  newAgreementAmount Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  reviewedAt       DateTime?
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  income      Income   @relation(fields: [incomeId], references: [id], onDelete: Cascade)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  requestedBy User     @relation("IncomeAdjustmentRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  reviewedBy  User?    @relation("IncomeAdjustmentReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  newCourse   Course?  @relation("IncomeAdjustmentNewCourse", fields: [newCourseId], references: [id], onDelete: SetNull)
+  newTariff   Tariff?  @relation("IncomeAdjustmentNewTariff", fields: [newTariffId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([type])
+  @@index([incomeId])
+  @@index([customerId])
+  @@index([requestedByUserId])
+  @@index([reviewedByUserId])
+  @@index([createdAt])
+  @@map("income_adjustment_requests")
 }
