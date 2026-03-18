@@ -77,7 +77,7 @@ function pickMetadataValue(metadata: unknown, keys: string[]): string | null {
     for (const key of keys) {
       const value = getCaseInsensitiveMetadataValue(candidate, key);
       if (value !== null && value !== undefined) {
-        const normalized = String(value).trim();
+        const normalized = textFromUnknown(value);
         if (normalized) {
           return normalized;
         }
@@ -329,12 +329,13 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
       || (direction === 'outbound' ? dst : src)
       || '',
     ));
-    const extension = normalizePhone(String(
+    const extensionCandidate = normalizePhone(String(
       callHistory.extension
       || callHistory.ext
       || (direction === 'outbound' ? src : dst)
       || '',
     ));
+    const extension = isLikelyInternalPhone(extensionCandidate) ? extensionCandidate : '';
     const manager = firstTextValue([
       callHistory.manager,
       callHistory.manager_name,
@@ -361,7 +362,7 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
       ).trim() || undefined,
       direction,
       from: src,
-      to: externalPhone || dst,
+      to: dst,
       src,
       dst,
       extension,
@@ -847,7 +848,8 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       const fallbackExternalPhone = [callFrom, callTo].find((candidate) => isLikelyExternalPhone(candidate)) || '';
       const metadataExternalPhone = isLikelyExternalPhone(phoneFromMetadata) ? normalizePhone(phoneFromMetadata) : '';
       const displayPhone = metadataExternalPhone || fallbackExternalPhone || '';
-      const displayExtension = extensionFromMetadata
+      const extensionFromMetadataNormalized = normalizePhone(extensionFromMetadata || '');
+      const displayExtension = (isLikelyInternalPhone(extensionFromMetadataNormalized) ? extensionFromMetadataNormalized : null)
         || (isLikelyInternalPhone(call.direction === 'outbound' ? call.from : call.to)
           ? normalizePhone(call.direction === 'outbound' ? call.from : call.to)
           : null);
@@ -856,12 +858,21 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
         ? Number(durationFromMetadataRaw)
         : null;
       const directionFromMetadata = pickMetadataValue(call.metadata, ['normalized_direction', 'direction', 'call_direction', 'type']);
+      const statusFromMetadata = firstTextValue([
+        pickMetadataValue(call.metadata, ['status']),
+        pickMetadataValue(call.metadata, ['call_status']),
+        pickMetadataValue(call.metadata, ['state']),
+        pickMetadataValue(call.metadata, ['result']),
+      ]);
+      const statusFromRow = firstTextValue([call.status]);
 
       return {
         id: call.id,
         provider: call.provider,
         source: 'webhook',
-        status: call.status,
+        status: statusFromRow && statusFromRow !== '[object Object]'
+          ? statusFromRow
+          : (statusFromMetadata || 'completed'),
         direction: normalizeDirection(directionFromMetadata || call.direction),
         date: call.startedAt,
         duration: call.duration ?? durationFromMetadata,
