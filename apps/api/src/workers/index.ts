@@ -13,6 +13,33 @@ function normalizePhone(phone?: string | null): string {
   return phone.replace(/[^\d+]/g, '');
 }
 
+function textFromUnknown(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const objectValue = value as Record<string, unknown>;
+    const preferredKeys = ['name', 'title', 'label', 'value', 'status', 'state', 'code', 'text'];
+    for (const key of preferredKeys) {
+      const nested = textFromUnknown(objectValue[key]);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return '';
+}
+
 function extractAmoEntities(payload: any, key: 'leads' | 'contacts'): any[] {
   const direct = payload?.[key];
   if (Array.isArray(direct)) {
@@ -293,16 +320,16 @@ function extractVoipCallEntries(payload: Record<string, unknown>): Array<Record<
 }
 
 function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: string): NormalizedVoipCall {
-  const rawDirection = pickVoipValue(entry, [
+  const rawDirection = textFromUnknown(pickVoipValue(entry, [
     'direction',
     'call_direction',
     'call_type',
     'type',
     'event',
     'event_type',
-  ]);
+  ]));
 
-  const phone = normalizePhone(String(pickVoipValue(entry, [
+  const phone = normalizePhone(textFromUnknown(pickVoipValue(entry, [
     'phone',
     'phone_number',
     'client_phone',
@@ -320,8 +347,8 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'dst_num',
     'did',
     'cid_num',
-  ]) || ''));
-  const extension = normalizePhone(String(pickVoipValue(entry, [
+  ])));
+  const extensionRaw = normalizePhone(textFromUnknown(pickVoipValue(entry, [
     'extension',
     'extension_number',
     'ext',
@@ -334,8 +361,9 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'src',
     'src_num',
     'callerid',
-  ]) || ''));
-  const manager = String(pickVoipValue(entry, [
+  ])));
+  const extension = isInternalNumber(extensionRaw) ? extensionRaw : '';
+  const manager = textFromUnknown(pickVoipValue(entry, [
     'manager',
     'managerName',
     'manager_name',
@@ -354,17 +382,17 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'ext_name',
     'employee',
     'responsible',
-  ]) || '').trim() || null;
+  ])) || null;
 
-  let from = normalizePhone(String(pickVoipValue(entry, [
+  let from = normalizePhone(textFromUnknown(pickVoipValue(entry, [
     'from',
     'caller',
     'caller_id',
     'caller_number',
     'from_number',
     'src',
-  ]) || ''));
-  let to = normalizePhone(String(pickVoipValue(entry, [
+  ])));
+  let to = normalizePhone(textFromUnknown(pickVoipValue(entry, [
     'to',
     'callee',
     'callee_number',
@@ -372,10 +400,10 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'dialed_number',
     'destination',
     'dst',
-  ]) || ''));
+  ])));
 
   let direction = normalizeDirection(rawDirection);
-  const hasExplicitDirection = String(rawDirection || '').trim().length > 0;
+  const hasExplicitDirection = rawDirection.length > 0;
   if (!from && !to) {
     from = direction === 'outbound' ? extension : phone;
     to = direction === 'outbound' ? phone : extension;
@@ -461,26 +489,24 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     ? Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000))
     : null);
 
-  const callIdExternal = String(
-    pickVoipValue(entry, [
-      'call_id',
-      'linkedid',
-      'session_id',
-      'uuid',
-      'call_uuid',
-      'uniqueid',
-      'id',
-      'record_id',
-      'cdr_id',
-    ]) || fallbackCallId,
-  );
+  const callIdExternal = textFromUnknown(pickVoipValue(entry, [
+    'call_id',
+    'linkedid',
+    'session_id',
+    'uuid',
+    'call_uuid',
+    'uniqueid',
+    'id',
+    'record_id',
+    'cdr_id',
+  ])) || fallbackCallId;
 
   return {
     callIdExternal,
     from,
     to,
     direction,
-    status: String(pickVoipValue(entry, ['status', 'call_status', 'state', 'result']) || 'completed'),
+    status: textFromUnknown(pickVoipValue(entry, ['status', 'call_status', 'state', 'result'])) || 'completed',
     startedAt,
     endedAt,
     duration,
