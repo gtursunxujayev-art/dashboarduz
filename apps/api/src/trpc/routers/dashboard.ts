@@ -34,6 +34,9 @@ type DashboardRange = z.infer<typeof dashboardRangeSchema>;
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 const SALARY_CATEGORIES = ['online', 'offline', 'intensive'] as const;
+const INCOME_LIFECYCLE_ACTIVE = 'active';
+const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
+const INCOME_LIFECYCLE_REFUNDED = 'refunded';
 
 type SalaryCategory = (typeof SALARY_CATEGORIES)[number];
 type SalaryBonusMode = 'on_income' | 'on_debt_closed';
@@ -448,6 +451,7 @@ export const dashboardRouter = router({
         prisma.income.aggregate({
           where: {
             tenantId: ctx.tenantId,
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
             entryDate: {
               gte: rangeStart,
               lte: rangeEnd,
@@ -466,6 +470,7 @@ export const dashboardRouter = router({
           where: {
             tenantId: ctx.tenantId,
             type: 'new_sale',
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
             entryDate: {
               gte: rangeStart,
               lte: rangeEnd,
@@ -490,6 +495,7 @@ export const dashboardRouter = router({
         prisma.income.findMany({
           where: {
             tenantId: ctx.tenantId,
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
             entryDate: {
               gte: rangeStart,
               lte: rangeEnd,
@@ -849,6 +855,7 @@ export const dashboardRouter = router({
           select: {
             id: true,
             type: true,
+            lifecycleStatus: true,
             paymentAmount: true,
             coursePriceAmount: true,
             remainingDebtAmount: true,
@@ -910,6 +917,8 @@ export const dashboardRouter = router({
         totalIncomeAmount: 0,
         newSalesCount: 0,
         repaymentCount: 0,
+        refundCount: 0,
+        refundAmount: 0,
         debtorsCount: 0,
         totalDebtAmount: 0,
       };
@@ -921,6 +930,7 @@ export const dashboardRouter = router({
       for (const income of incomes as Array<{
         id: string;
         type: string;
+        lifecycleStatus: string;
         paymentAmount: number;
         coursePriceAmount: number | null;
         remainingDebtAmount: number;
@@ -931,6 +941,15 @@ export const dashboardRouter = router({
         course: { id: string; name: string } | null;
         tariff: { name: string } | null;
       }>) {
+        if (income.lifecycleStatus === INCOME_LIFECYCLE_REFUNDED) {
+          totals.refundCount += 1;
+          totals.refundAmount += income.paymentAmount || 0;
+        }
+
+        if (income.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
+          continue;
+        }
+
         const paymentAmount = income.paymentAmount || 0;
         totals.totalIncomeAmount += paymentAmount;
 
@@ -1011,6 +1030,7 @@ export const dashboardRouter = router({
         recentIncomes: (incomes as Array<{
           id: string;
           type: string;
+          lifecycleStatus: string;
           paymentAmount: number;
           coursePriceAmount: number | null;
           remainingDebtAmount: number;
@@ -1022,6 +1042,7 @@ export const dashboardRouter = router({
         }>).map((income) => ({
           id: income.id,
           type: income.type,
+          lifecycleStatus: income.lifecycleStatus,
           paymentAmount: income.paymentAmount,
           coursePriceAmount: income.coursePriceAmount,
           remainingDebtAmount: income.remainingDebtAmount,
@@ -1127,6 +1148,7 @@ export const dashboardRouter = router({
         where: {
           tenantId: ctx.tenantId,
           managerUserId: { in: agentIds },
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           entryDate: {
             gte: monthStart,
             lte: monthEnd,
@@ -1175,6 +1197,7 @@ export const dashboardRouter = router({
             tenantId: ctx.tenantId,
             type: 'new_sale',
             managerUserId: { in: agentIds },
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
             remainingDebtAmount: 0,
             entryDate: {
               gte: monthStart,
@@ -1197,6 +1220,7 @@ export const dashboardRouter = router({
           where: {
             tenantId: ctx.tenantId,
             type: 'repayment',
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
             remainingDebtAmount: 0,
             relatedDebtIncomeId: { not: null },
             entryDate: {
