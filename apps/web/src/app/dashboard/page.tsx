@@ -146,8 +146,8 @@ export default function DashboardPage() {
   const salaryCurrentUser = salarySummaryQuery.data?.currentUser;
   const salaryTotals = salarySummaryQuery.data?.totals;
   const salaryModeLabel = salarySummaryQuery.data?.bonusMode === 'on_debt_closed'
-    ? 'Bonus mode: Sotuv yopilganda (qarz 0 bo\'lganda)'
-    : 'Bonus mode: Tushum (har bir to\'lovdan)';
+    ? "Bonus rejimi: Sotuv yopilganda (qarz 0 bo'lganda)"
+    : "Bonus rejimi: Tushum (har bir to'lovdan)";
   const formatPercent = (value?: number) => `${(value ?? 0).toFixed(1)}%`;
 
   const metricCards = [
@@ -157,12 +157,12 @@ export default function DashboardPage() {
       subtitle: formatAmount(stats?.newSalesAgreementAmount),
     },
     {
-      title: 'Sotuv - Online',
+      title: 'Sotuv - Onlayn',
       value: String(stats?.onlineSalesCount ?? 0),
       subtitle: formatAmount(stats?.onlineSalesAgreementAmount),
     },
     {
-      title: 'Sotuv - Offline',
+      title: 'Sotuv - Oflayn',
       value: String(stats?.offlineSalesCount ?? 0),
       subtitle: formatAmount(stats?.offlineSalesAgreementAmount),
     },
@@ -361,8 +361,8 @@ export default function DashboardPage() {
               </h3>
               <p className="mt-1 text-sm text-gray-500">
                 {isFinanceOnly
-                  ? 'Moliya panelida tanlangan davr boвЂyicha tushum, qarzdorlar va kurs kesimidagi tushum koвЂrinadi.'
-                  : 'Barcha boвЂlimlar tepadagi bitta filtr bilan ishlaydi.'}
+                  ? "Moliya panelida tanlangan davr bo'yicha tushum, qarzdorlar va kurs kesimidagi tushum ko'rinadi."
+                  : "Barcha bo'limlar tepadagi bitta filtr bilan ishlaydi."}
               </p>
             </div>
           </div>
@@ -393,7 +393,7 @@ export default function DashboardPage() {
 
           <div className="rounded-lg bg-white shadow">
             <div className="px-4 py-5 sm:p-6">
-              <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Kurslar boвЂyicha tushum</h3>
+              <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Kurslar bo'yicha tushum</h3>
               {financeSummaryQuery.isLoading ? (
                 <p className="text-sm text-gray-600">Yuklanmoqda...</p>
               ) : incomeByCourse.length ? (
@@ -484,7 +484,7 @@ export default function DashboardPage() {
                     </table>
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-600">Tanlangan filtrlar boвЂyicha sotuvchi maвЂ™lumoti topilmadi.</p>
+                  <p className="text-sm text-gray-600">Tanlangan filtrlar bo'yicha sotuvchi ma'lumoti topilmadi.</p>
                 )}
               </div>
             </div>
@@ -494,4 +494,5 @@ export default function DashboardPage() {
     </div>
   );
 }
+
 
