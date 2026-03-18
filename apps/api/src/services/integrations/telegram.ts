@@ -61,6 +61,40 @@ export class TelegramService {
 
     return await response.json();
   }
+
+  async sendDocument(
+    botToken: string,
+    chatId: string,
+    documentBuffer: Buffer,
+    fileName: string,
+    caption?: string,
+  ) {
+    const formData = new FormData();
+    formData.append('chat_id', chatId);
+    if (caption) {
+      formData.append('caption', caption);
+    }
+    const binary = new Uint8Array(documentBuffer);
+    formData.append('document', new Blob([binary], { type: 'application/pdf' }), fileName);
+
+    const response = await fetch(`${this.apiUrl}${botToken}/sendDocument`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      let errorDescription = `HTTP ${response.status}`;
+      try {
+        const errorBody = await response.json() as { description?: string };
+        errorDescription = errorBody.description || errorDescription;
+      } catch {
+        // Ignore JSON parsing failures and keep the HTTP status fallback.
+      }
+      throw new Error(`Telegram API error: ${errorDescription}`);
+    }
+
+    return await response.json();
+  }
 }
 
 export const telegramService = new TelegramService();
