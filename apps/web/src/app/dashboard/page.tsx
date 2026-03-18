@@ -7,6 +7,7 @@ import { trpc } from '@/lib/trpc';
 import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
+const RANGE_OPTIONS: DashboardRange[] = ['today', 'week', 'month', 'custom'];
 
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -42,6 +43,19 @@ function renderMetricValue(value?: number | null, suffix = ''): string {
     return '-';
   }
   return `${value}${suffix}`;
+}
+
+function getRangeLabel(range: DashboardRange): string {
+  if (range === 'week') {
+    return 'This week';
+  }
+  if (range === 'month') {
+    return 'This month';
+  }
+  if (range === 'custom') {
+    return 'Custom';
+  }
+  return 'Today';
 }
 
 export default function DashboardPage() {
@@ -239,9 +253,9 @@ export default function DashboardPage() {
               <p className="text-sm text-gray-500">Bonus</p>
               <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.bonusAmount)}</p>
             </div>
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
-              <p className="text-sm text-blue-700">Total salary</p>
-              <p className="mt-2 text-2xl font-semibold text-blue-900">{formatAmount(salaryCurrentUser?.totalSalary)}</p>
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-gray-500">Total salary</p>
+              <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.totalSalary)}</p>
             </div>
           </div>
         ) : (
@@ -259,9 +273,9 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-500">Bonus total</p>
                 <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.bonus)}</p>
               </div>
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
-                <p className="text-sm text-blue-700">Total salary payout</p>
-                <p className="mt-2 text-2xl font-semibold text-blue-900">{formatAmount(salaryTotals?.salary)}</p>
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <p className="text-sm text-gray-500">Total salary payout</p>
+                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.salary)}</p>
               </div>
             </div>
 
@@ -301,11 +315,62 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <div className="rounded-lg bg-white shadow">
+        <div className="px-4 py-5 sm:p-6">
+          <div className="space-y-3">
+            <div className="inline-flex rounded-md shadow-sm">
+              {RANGE_OPTIONS.map((option, index) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setRange(option)}
+                  className={`border border-gray-300 px-4 py-2 text-sm font-medium ${
+                    range === option ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                  } ${index === 0 ? 'rounded-l-md' : ''} ${
+                    index === RANGE_OPTIONS.length - 1 ? 'rounded-r-md' : ''
+                  } ${index !== 0 ? 'border-l-0' : ''}`}
+                >
+                  {getRangeLabel(option)}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_1fr]">
+              <input
+                type="date"
+                value={dateFrom}
+                disabled={range !== 'custom'}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+              />
+              <input
+                type="date"
+                value={dateTo}
+                disabled={range !== 'custom'}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+              />
+
+              {!isFinanceOnly && isAdmin && (
+                <MultiSelectDropdown
+                  label="Pipelines Filter"
+                  options={pipelineOptions}
+                  selectedIds={pipelineIds}
+                  onChange={setPipelineIds}
+                  placeholder="Select pipelines"
+                  disabled={amoPipelinesQuery.isLoading}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="overflow-hidden rounded-lg bg-white shadow">
         <div className="px-4 py-5 sm:p-6">
           <div className="flex items-center">
-            <div className="flex-shrink-0 rounded-md bg-blue-500 p-3">
-              <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="flex-shrink-0 rounded-md bg-gray-100 p-3">
+              <svg className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
@@ -316,52 +381,9 @@ export default function DashboardPage() {
               <p className="mt-1 text-sm text-gray-500">
                 {isFinanceOnly
                   ? 'Finance dashboard shows only income, debitors, and income-by-course with selected date range.'
-                  : 'Use the date filter to review performance for the selected period.'}
+                  : 'All dashboard sections now use the same top filter.'}
               </p>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-lg bg-white shadow">
-        <div className="px-4 py-5 sm:p-6">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_180px_1fr]">
-            <select
-              value={range}
-              onChange={(event) => setRange(event.target.value as DashboardRange)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="today">Today</option>
-              <option value="week">This week</option>
-              <option value="month">This month</option>
-              <option value="custom">Custom</option>
-            </select>
-
-            <input
-              type="date"
-              value={dateFrom}
-              disabled={range !== 'custom'}
-              onChange={(event) => setDateFrom(event.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-            />
-            <input
-              type="date"
-              value={dateTo}
-              disabled={range !== 'custom'}
-              onChange={(event) => setDateTo(event.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-            />
-
-            {!isFinanceOnly && isAdmin && (
-              <MultiSelectDropdown
-                label="Pipelines Filter"
-                options={pipelineOptions}
-                selectedIds={pipelineIds}
-                onChange={setPipelineIds}
-                placeholder="Select pipelines"
-                disabled={amoPipelinesQuery.isLoading}
-              />
-            )}
           </div>
         </div>
       </div>
@@ -378,10 +400,10 @@ export default function DashboardPage() {
             {financeCards.map((card) => (
               <div
                 key={card.title}
-                className="rounded-xl border border-[#1d3155] bg-[#081734] p-5 text-white shadow-sm"
+                className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
               >
-                <p className="text-sm text-blue-100">{card.title}</p>
-                <p className="mt-2 text-4xl font-bold tracking-tight">{card.value}</p>
+                <p className="text-sm text-gray-500">{card.title}</p>
+                <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{card.value}</p>
               </div>
             ))}
           </div>
@@ -426,11 +448,11 @@ export default function DashboardPage() {
             {metricCards.map((card) => (
               <div
                 key={card.title}
-                className="rounded-xl border border-[#1d3155] bg-[#081734] p-5 text-white shadow-sm"
+                className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
               >
-                <p className="text-sm text-blue-100">{card.title}</p>
-                <p className="mt-2 text-4xl font-bold tracking-tight">{card.value}</p>
-                <p className="mt-2 text-sm text-blue-200">{card.subtitle}</p>
+                <p className="text-sm text-gray-500">{card.title}</p>
+                <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{card.value}</p>
+                <p className="mt-2 text-sm text-gray-600">{card.subtitle}</p>
               </div>
             ))}
           </div>
@@ -442,8 +464,6 @@ export default function DashboardPage() {
               <div className="px-4 py-5 sm:p-6">
                 <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Analytics Overview</h3>
                 <AnalyticsCharts
-                  range={range}
-                  onRangeChange={setRange}
                   data={summaryQuery.data}
                   isLoading={summaryQuery.isLoading}
                   isError={summaryQuery.isError}
