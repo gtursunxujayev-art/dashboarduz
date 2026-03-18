@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import express from 'express';
 import { prisma } from '@dashboarduz/db';
 import type { Request, Response } from 'express';
-import { getQueue, QueueName } from '../services/queue/queues';
+import { getDLQMetrics, getQueue, getQueueMetrics, QueueName } from '../services/queue/queues';
 import { amocrmService } from '../services/integrations/amocrm';
 import { logger } from '../lib/logger';
 import { rateLimiter } from '../services/security/rate-limiter';
@@ -62,6 +62,28 @@ async function enqueueWebhookJob(params: {
       removeOnComplete: true,
     },
   );
+}
+
+async function writeWebhookRejectionAudit(params: {
+  tenantId: string;
+  reason: string;
+  metadata?: Record<string, unknown>;
+}) {
+  try {
+    await prisma.auditLog.create({
+      data: {
+        tenantId: params.tenantId,
+        action: 'webhook_rejected',
+        resource: 'webhook',
+        metadata: {
+          reason: params.reason,
+          ...(params.metadata || {}),
+        },
+      },
+    });
+  } catch (auditError: any) {
+    logger.warn({ err: auditError, msg: 'Failed to write webhook rejection audit log' });
+  }
 }
 
 router.post('/amocrm', async (req: Request, res: Response) => {
@@ -156,6 +178,9 @@ router.post('/amocrm', async (req: Request, res: Response) => {
 });
 
 async function handleVoipWebhook(req: Request, res: Response) {
+  let tenantIdForAudit: string | null = null;
+  let providerForAudit = 'utel';
+
   try {
     const rawBody = getRawBody(req);
     const signature = req.headers['x-signature'] as string | undefined;
@@ -198,11 +223,20 @@ async function handleVoipWebhook(req: Request, res: Response) {
       logger.warn({ msg: 'UTeL integration not found for key' });
       return res.status(404).json({ error: 'Integration not found' });
     }
+    tenantIdForAudit = integration.tenantId;
 
     const webhookSecret = process.env.UTEL_WEBHOOK_SECRET;
     if (webhookSecret && signature) {
       const isValidSignature = EncryptionService.verifyHMAC(rawBody, signature, webhookSecret);
       if (!isValidSignature) {
+        await writeWebhookRejectionAudit({
+          tenantId: integration.tenantId,
+          reason: 'invalid_signature',
+          metadata: {
+            source: 'voip',
+            hasSignature: true,
+          },
+        });
         return res.status(403).json({ error: 'Invalid signature' });
       }
     } else if (webhookSecret && !signature) {
@@ -217,6 +251,13 @@ async function handleVoipWebhook(req: Request, res: Response) {
       keyPrefix: 'webhook',
     });
     if (!webhookLimit.allowed) {
+      await writeWebhookRejectionAudit({
+        tenantId: integration.tenantId,
+        reason: 'rate_limit_exceeded',
+        metadata: {
+          source: 'voip',
+        },
+      });
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
 
@@ -224,6 +265,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
       ? req.body as Record<string, unknown>
       : { raw: req.body as unknown };
     const provider = resolveVoipProvider(req);
+    providerForAudit = provider;
     const idempotencyKey = buildIdempotencyKey(`voip:${provider}`, integration.tenantId, rawBody);
     const eventTypeRaw = bodyPayload['event_type'];
     const eventType = typeof eventTypeRaw === 'string' && eventTypeRaw.trim().length > 0
@@ -272,7 +314,18 @@ async function handleVoipWebhook(req: Request, res: Response) {
     });
 
     return res.status(200).json({ received: true });
-  } catch (err) {
+  } catch (err: any) {
+    if (tenantIdForAudit) {
+      await writeWebhookRejectionAudit({
+        tenantId: tenantIdForAudit,
+        reason: 'handler_exception',
+        metadata: {
+          source: 'voip',
+          provider: providerForAudit,
+          error: err?.message || 'Unknown error',
+        },
+      });
+    }
     logger.error({ err }, 'VoIP webhook handler failed');
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -282,6 +335,8 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
   try {
     const integrationKey = (req.query.integration_key as string | undefined)
       || (req.headers['x-integration-key'] as string | undefined);
+    const debugEnabled = String(req.query.debug || '').toLowerCase() === '1'
+      || String(req.query.debug || '').toLowerCase() === 'true';
 
     if (!integrationKey) {
       return res.status(200).json({
@@ -343,6 +398,110 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       }),
     ]);
 
+    let diagnostics: Record<string, unknown> | null = null;
+    if (debugEnabled) {
+      const [
+        processedWebhookEvents,
+        pendingWebhookEvents,
+        failedWebhookEvents,
+        recentWebhookEvents,
+        recentWebhookRejections,
+      ] = await Promise.all([
+        prisma.webhookEvent.count({
+          where: {
+            tenantId: integration.tenantId,
+            source: 'voip',
+            processed: true,
+          },
+        }),
+        prisma.webhookEvent.count({
+          where: {
+            tenantId: integration.tenantId,
+            source: 'voip',
+            processed: false,
+          },
+        }),
+        prisma.webhookEvent.count({
+          where: {
+            tenantId: integration.tenantId,
+            source: 'voip',
+            errorMessage: { not: null },
+          },
+        }),
+        prisma.webhookEvent.findMany({
+          where: {
+            tenantId: integration.tenantId,
+            source: 'voip',
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+          select: {
+            id: true,
+            eventType: true,
+            processed: true,
+            processedAt: true,
+            retryCount: true,
+            errorMessage: true,
+            createdAt: true,
+            rawPayload: true,
+          },
+        }),
+        prisma.auditLog.findMany({
+          where: {
+            tenantId: integration.tenantId,
+            action: 'webhook_rejected',
+            resource: 'webhook',
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+          select: {
+            createdAt: true,
+            metadata: true,
+          },
+        }),
+      ]);
+
+      let queueMetrics: Record<string, unknown>;
+      try {
+        const [webhookQueue, webhookDLQ] = await Promise.all([
+          getQueueMetrics(QueueName.WEBHOOK_PROCESSING),
+          getDLQMetrics(QueueName.WEBHOOK_PROCESSING),
+        ]);
+        queueMetrics = {
+          webhookQueue,
+          webhookDLQ,
+        };
+      } catch (queueError: any) {
+        queueMetrics = {
+          error: queueError?.message || 'Failed to read queue metrics',
+        };
+      }
+
+      diagnostics = {
+        processedWebhookEvents,
+        pendingWebhookEvents,
+        failedWebhookEvents,
+        queueMetrics,
+        recentWebhookRejections,
+        recentWebhookEvents: recentWebhookEvents.map((event) => {
+          const payload = event.rawPayload && typeof event.rawPayload === 'object'
+            ? event.rawPayload as Record<string, unknown>
+            : {};
+          const provider = typeof payload.provider === 'string' ? payload.provider : null;
+          return {
+            id: event.id,
+            eventType: event.eventType,
+            provider,
+            processed: event.processed,
+            retryCount: event.retryCount,
+            errorMessage: event.errorMessage,
+            createdAt: event.createdAt,
+            processedAt: event.processedAt,
+          };
+        }),
+      };
+    }
+
     return res.status(200).json({
       ok: true,
       endpoint: '/webhooks/utel',
@@ -351,6 +510,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       tenantId: integration.tenantId,
       totalCalls,
       totalWebhookEvents: receivedEvents,
+      ...(diagnostics ? { diagnostics } : {}),
       recentCalls: recentCalls.map((call) => {
         const metadata = (call.metadata && typeof call.metadata === 'object')
           ? call.metadata as Record<string, unknown>
