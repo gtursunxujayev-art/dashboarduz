@@ -1,4 +1,4 @@
-import { router, protectedProcedure } from '../trpc';
+import { adminProcedure, router } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
@@ -12,7 +12,7 @@ const notificationsListSchema = z.object({
 });
 
 export const notificationsRouter = router({
-  list: protectedProcedure
+  list: adminProcedure
     .input(notificationsListSchema)
     .query(async ({ input, ctx }) => {
       const { page, limit, status, type } = input;
@@ -47,7 +47,7 @@ export const notificationsRouter = router({
       };
     }),
 
-  retry: protectedProcedure
+  retry: adminProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
       const notification = await prisma.notification.findFirst({
