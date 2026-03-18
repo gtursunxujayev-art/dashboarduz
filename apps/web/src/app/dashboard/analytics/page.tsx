@@ -115,8 +115,6 @@ export default function AnalyticsPage() {
             )}
           </div>
           <AnalyticsCharts
-            range={range}
-            onRangeChange={setRange}
             data={summaryQuery.data}
             isLoading={summaryQuery.isLoading}
             isError={summaryQuery.isError}
