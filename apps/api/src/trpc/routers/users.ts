@@ -1,4 +1,4 @@
-import { router, adminProcedure } from '../trpc';
+import { managerProcedure, router } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { z } from 'zod';
 import type { UserRole } from '@dashboarduz/shared';
@@ -82,7 +82,7 @@ async function generateUniqueLogin(seed: string) {
 }
 
 export const usersRouter = router({
-  amocrmManagers: adminProcedure.query(async ({ ctx }) => {
+  amocrmManagers: managerProcedure.query(async ({ ctx }) => {
     const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
     if (!amoContext) {
       throw new TRPCError({
@@ -103,7 +103,7 @@ export const usersRouter = router({
       .sort((a, b) => a.name.localeCompare(b.name));
   }),
 
-  utelManagers: adminProcedure.query(async ({ ctx }) => {
+  utelManagers: managerProcedure.query(async ({ ctx }) => {
     const calls = await prisma.call.findMany({
       where: {
         tenantId: ctx.tenantId,
@@ -134,7 +134,7 @@ export const usersRouter = router({
       .sort((a, b) => a.name.localeCompare(b.name));
   }),
 
-  list: adminProcedure.query(async ({ ctx }) => {
+  list: managerProcedure.query(async ({ ctx }) => {
     try {
       return await prisma.user.findMany({
         where: { tenantId: ctx.tenantId },
@@ -192,7 +192,7 @@ export const usersRouter = router({
     }
   }),
 
-  create: adminProcedure
+  create: managerProcedure
     .input(
       z.object({
         name: z.string().max(120).optional(),
@@ -274,7 +274,7 @@ export const usersRouter = router({
       };
     }),
 
-  updateRole: adminProcedure
+  updateRole: managerProcedure
     .input(
       z.object({
         userId: z.string().uuid(),
@@ -368,7 +368,7 @@ export const usersRouter = router({
       return updated;
     }),
 
-  updateCredentials: adminProcedure
+  updateCredentials: managerProcedure
     .input(
       z.object({
         userId: z.string().uuid(),
