@@ -20,6 +20,7 @@ export default function UsersPage() {
   const updateCredentials = trpc.users.updateCredentials.useMutation();
 
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [createdCredentials, setCreatedCredentials] = useState<{ login: string; password: string } | null>(null);
   const [generatedResetPassword, setGeneratedResetPassword] = useState<{ userId: string; password: string } | null>(null);
 
@@ -59,6 +60,7 @@ export default function UsersPage() {
 
   const handleCreateUser = async () => {
     setError(null);
+    setSuccess(null);
     setCreatedCredentials(null);
     setGeneratedResetPassword(null);
 
@@ -75,6 +77,7 @@ export default function UsersPage() {
       setNewRole('Agent');
       setNewAmoManagerId('');
       setNewUtelManagerId('');
+      setSuccess('User created successfully.');
       await usersQuery.refetch();
     } catch (mutationError: any) {
       setError(mutationError?.message || 'Failed to create user');
@@ -83,6 +86,7 @@ export default function UsersPage() {
 
   const handleRoleSave = async (userId: string) => {
     setError(null);
+    setSuccess(null);
     setGeneratedResetPassword(null);
 
     try {
@@ -96,6 +100,7 @@ export default function UsersPage() {
           ? (utelDrafts[userId] || undefined)
           : undefined,
       });
+      setSuccess('User role and manager mapping saved successfully.');
       await usersQuery.refetch();
     } catch (mutationError: any) {
       setError(mutationError?.message || 'Failed to update role');
@@ -104,6 +109,7 @@ export default function UsersPage() {
 
   const handleCredentialsSave = async (userId: string) => {
     setError(null);
+    setSuccess(null);
     setGeneratedResetPassword(null);
 
     try {
@@ -113,6 +119,7 @@ export default function UsersPage() {
         password: passwordDrafts[userId] || undefined,
       });
       setPasswordDrafts((prev) => ({ ...prev, [userId]: '' }));
+      setSuccess('User credentials saved successfully.');
       await usersQuery.refetch();
     } catch (mutationError: any) {
       setError(mutationError?.message || 'Failed to update credentials');
@@ -121,6 +128,7 @@ export default function UsersPage() {
 
   const handleGeneratePassword = async (userId: string) => {
     setError(null);
+    setSuccess(null);
     setGeneratedResetPassword(null);
 
     try {
@@ -130,6 +138,7 @@ export default function UsersPage() {
       });
       if (result.generatedPassword) {
         setGeneratedResetPassword({ userId, password: result.generatedPassword });
+        setSuccess('New password generated successfully.');
       }
     } catch (mutationError: any) {
       setError(mutationError?.message || 'Failed to generate password');
@@ -146,6 +155,7 @@ export default function UsersPage() {
 
         <div className="space-y-4 p-6">
           {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {success && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
           {amocrmManagersQuery.error && (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
               AmoCRM managers are unavailable. Connect AmoCRM integration to map Agent users.
