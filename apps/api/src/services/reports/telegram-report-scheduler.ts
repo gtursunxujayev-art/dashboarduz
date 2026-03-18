@@ -40,6 +40,17 @@ type ReportMetrics = {
   talkDurationSeconds: number;
 };
 
+type TelegramIntegrationWithTenant = {
+  id: string;
+  tenantId: string;
+  tokensEncrypted: string | null;
+  config: unknown;
+  tenant: {
+    name: string | null;
+    settings: unknown;
+  };
+};
+
 let schedulerTimer: NodeJS.Timeout | null = null;
 let schedulerInProgress = false;
 
@@ -232,6 +243,22 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
   }
 
   return windows;
+}
+
+function buildTodayWindow(nowUtc: Date): ReportWindow {
+  const nowLocal = toLocalDate(nowUtc);
+  const year = nowLocal.getUTCFullYear();
+  const month = nowLocal.getUTCMonth();
+  const day = nowLocal.getUTCDate();
+  const periodStart = fromLocalParts(year, month, day, 0, 0, 0, 0);
+
+  return {
+    kind: 'daily',
+    title: 'Immediate Report (Today)',
+    periodStart,
+    periodEnd: nowUtc,
+    periodKey: formatLocalDate(periodStart),
+  };
 }
 
 function buildLeadWhere(
@@ -435,6 +462,72 @@ function buildReportLines(params: {
   ];
 }
 
+async function getSelectedPipelineIdsForTenant(tenantId: string): Promise<string[]> {
+  const amocrmIntegration = await prisma.integration.findUnique({
+    where: {
+      tenantId_type: {
+        tenantId,
+        type: 'amocrm',
+      },
+    },
+    select: {
+      config: true,
+    },
+  });
+
+  return Array.isArray((amocrmIntegration?.config as any)?.selectedPipelineIds)
+    ? (amocrmIntegration?.config as any).selectedPipelineIds.map((value: unknown) => String(value))
+    : [];
+}
+
+async function sendWindowToIntegration(
+  integration: TelegramIntegrationWithTenant,
+  window: ReportWindow,
+  nowUtc: Date,
+): Promise<{ recipientCount: number; fileName: string }> {
+  const recipients = parseTelegramRecipients(integration.config).filter(
+    (recipient) => recipient.started && recipient.selectedForReports,
+  );
+  if (recipients.length === 0) {
+    throw new Error('No Telegram recipients selected for reports');
+  }
+
+  const selectedPipelineIds = await getSelectedPipelineIdsForTenant(integration.tenantId);
+  const metrics = await collectMetrics({
+    tenantId: integration.tenantId,
+    tenantSettings: integration.tenant.settings,
+    periodStart: window.periodStart,
+    periodEnd: window.periodEnd,
+    selectedPipelineIds,
+  });
+
+  const lines = buildReportLines({
+    tenantName: integration.tenant.name || integration.tenantId,
+    title: window.title,
+    periodStart: window.periodStart,
+    periodEnd: window.periodEnd,
+    generatedAt: nowUtc,
+    metrics,
+  });
+  const pdfBuffer = createSimplePdf(lines);
+  const fileName = `dashboard-report-${window.kind}-${window.periodKey}.pdf`;
+  const caption = `${window.title}\n${formatLocalDate(window.periodStart)} - ${formatLocalDate(window.periodEnd)}`;
+
+  const tokens = decryptIntegrationTokens<{ botToken?: string }>(integration.tokensEncrypted || '');
+  if (!tokens.botToken) {
+    throw new Error('Telegram bot token is missing');
+  }
+
+  for (const recipient of recipients) {
+    await telegramService.sendDocument(tokens.botToken, recipient.chatId, pdfBuffer, fileName, caption);
+  }
+
+  return {
+    recipientCount: recipients.length,
+    fileName,
+  };
+}
+
 async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void> {
   const integrations = await prisma.integration.findMany({
     where: {
@@ -458,11 +551,11 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
 
   const redis = getRedisClient();
 
-  for (const integration of integrations) {
-    const recipients = parseTelegramRecipients(integration.config).filter(
+  for (const integration of integrations as TelegramIntegrationWithTenant[]) {
+    const recipientsSelected = parseTelegramRecipients(integration.config).some(
       (recipient) => recipient.started && recipient.selectedForReports,
     );
-    if (recipients.length === 0) {
+    if (!recipientsSelected) {
       continue;
     }
 
@@ -473,49 +566,7 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
     }
 
     try {
-      const amocrmIntegration = await prisma.integration.findUnique({
-        where: {
-          tenantId_type: {
-            tenantId: integration.tenantId,
-            type: 'amocrm',
-          },
-        },
-        select: {
-          config: true,
-        },
-      });
-      const selectedPipelineIds = Array.isArray((amocrmIntegration?.config as any)?.selectedPipelineIds)
-        ? (amocrmIntegration?.config as any).selectedPipelineIds.map((value: unknown) => String(value))
-        : [];
-
-      const metrics = await collectMetrics({
-        tenantId: integration.tenantId,
-        tenantSettings: integration.tenant.settings,
-        periodStart: window.periodStart,
-        periodEnd: window.periodEnd,
-        selectedPipelineIds,
-      });
-
-      const lines = buildReportLines({
-        tenantName: integration.tenant.name || integration.tenantId,
-        title: window.title,
-        periodStart: window.periodStart,
-        periodEnd: window.periodEnd,
-        generatedAt: nowUtc,
-        metrics,
-      });
-      const pdfBuffer = createSimplePdf(lines);
-      const fileName = `dashboard-report-${window.kind}-${window.periodKey}.pdf`;
-      const caption = `${window.title}\n${formatLocalDate(window.periodStart)} - ${formatLocalDate(window.periodEnd)}`;
-
-      const tokens = decryptIntegrationTokens<{ botToken?: string }>(integration.tokensEncrypted || '');
-      if (!tokens.botToken) {
-        throw new Error('Telegram bot token is missing');
-      }
-
-      for (const recipient of recipients) {
-        await telegramService.sendDocument(tokens.botToken, recipient.chatId, pdfBuffer, fileName, caption);
-      }
+      const sent = await sendWindowToIntegration(integration, window, nowUtc);
 
       await prisma.auditLog.create({
         data: {
@@ -527,8 +578,8 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
             schedule: window.kind,
             periodStart: window.periodStart.toISOString(),
             periodEnd: window.periodEnd.toISOString(),
-            recipientCount: recipients.length,
-            fileName,
+            recipientCount: sent.recipientCount,
+            fileName: sent.fileName,
           },
         },
       });
@@ -536,7 +587,7 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
       log(LogLevel.INFO, 'Scheduled Telegram report sent', {
         tenantId: integration.tenantId,
         schedule: window.kind,
-        recipients: recipients.length,
+        recipients: sent.recipientCount,
       });
     } catch (error: any) {
       await redis.del(lockKey);
@@ -606,5 +657,86 @@ export function stopTelegramReportScheduler(): void {
   if (schedulerTimer) {
     clearInterval(schedulerTimer);
     schedulerTimer = null;
+  }
+}
+
+export async function sendImmediateTodayReportForTenant(tenantId: string): Promise<{
+  sent: boolean;
+  recipientCount: number;
+  periodStart: string;
+  periodEnd: string;
+  schedule: 'manual_today';
+}> {
+  const integration = await prisma.integration.findFirst({
+    where: {
+      tenantId,
+      type: 'telegram',
+      status: 'active',
+      tokensEncrypted: { not: null },
+    },
+    select: {
+      id: true,
+      tenantId: true,
+      tokensEncrypted: true,
+      config: true,
+      tenant: {
+        select: {
+          name: true,
+          settings: true,
+        },
+      },
+    },
+  });
+
+  if (!integration) {
+    throw new Error('Telegram integration is not connected');
+  }
+
+  const recipients = parseTelegramRecipients(integration.config).filter(
+    (recipient) => recipient.started && recipient.selectedForReports,
+  );
+  if (recipients.length === 0) {
+    throw new Error('No Telegram recipients selected for scheduled reports');
+  }
+
+  const nowUtc = new Date();
+  const window = buildTodayWindow(nowUtc);
+  const redis = getRedisClient();
+  const minuteKey = Math.floor(nowUtc.getTime() / 60_000);
+  const lockKey = `telegram-report:manual:${tenantId}:${window.periodKey}:${minuteKey}`;
+  const lockResult = await redis.set(lockKey, nowUtc.toISOString(), 'EX', 120, 'NX');
+  if (lockResult !== 'OK') {
+    throw new Error('A report was already sent in the last minute. Please wait and try again.');
+  }
+
+  try {
+    const sent = await sendWindowToIntegration(integration as TelegramIntegrationWithTenant, window, nowUtc);
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId: integration.tenantId,
+        action: 'telegram_report_sent',
+        resource: 'integration',
+        resourceId: integration.id,
+        metadata: {
+          schedule: 'manual_today',
+          periodStart: window.periodStart.toISOString(),
+          periodEnd: window.periodEnd.toISOString(),
+          recipientCount: sent.recipientCount,
+          fileName: sent.fileName,
+        },
+      },
+    });
+
+    return {
+      sent: true,
+      recipientCount: sent.recipientCount,
+      periodStart: window.periodStart.toISOString(),
+      periodEnd: window.periodEnd.toISOString(),
+      schedule: 'manual_today',
+    };
+  } catch (error) {
+    await redis.del(lockKey);
+    throw error;
   }
 }
