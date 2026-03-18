@@ -16,6 +16,166 @@ const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'Agent'] as const;
 const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive'] as const;
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 
+function isMissingCourseCategoryColumnError(error: unknown): boolean {
+  const message = String((error as any)?.message || '').toLowerCase();
+  return message.includes('courses.category') && message.includes('does not exist');
+}
+
+type CourseWithTariffsSafe = {
+  id: string;
+  name: string;
+  category: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  tariffs: Array<{
+    id: string;
+    name: string;
+    isActive: boolean;
+    courseId: string;
+    createdAt: Date;
+    updatedAt: Date;
+    subTariffs: Array<{
+      id: string;
+      name: string;
+      isActive: boolean;
+      tariffId: string;
+      createdAt: Date;
+      updatedAt: Date;
+    }>;
+  }>;
+};
+
+async function fetchCoursesWithTariffsSafe(params: { tenantId: string; onlyActive: boolean }): Promise<CourseWithTariffsSafe[]> {
+  const where = params.onlyActive
+    ? { tenantId: params.tenantId, isActive: true }
+    : { tenantId: params.tenantId };
+
+  try {
+    const courses = await prisma.course.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        tariffs: {
+          where: params.onlyActive ? { isActive: true } : undefined,
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+            courseId: true,
+            createdAt: true,
+            updatedAt: true,
+            subTariffs: {
+              orderBy: { name: 'asc' },
+              select: {
+                id: true,
+                name: true,
+                isActive: true,
+                tariffId: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return courses as CourseWithTariffsSafe[];
+  } catch (error) {
+    if (!isMissingCourseCategoryColumnError(error)) {
+      throw error;
+    }
+
+    const fallbackCourses = await prisma.course.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        tariffs: {
+          where: params.onlyActive ? { isActive: true } : undefined,
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+            courseId: true,
+            createdAt: true,
+            updatedAt: true,
+            subTariffs: {
+              orderBy: { name: 'asc' },
+              select: {
+                id: true,
+                name: true,
+                isActive: true,
+                tariffId: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return (fallbackCourses as Array<{
+      id: string;
+      name: string;
+      isActive: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+      tariffs: CourseWithTariffsSafe['tariffs'];
+    }>).map((course) => ({
+      ...course,
+      category: 'offline',
+    }));
+  }
+}
+
+async function fetchCourseOptionsSafe(tenantId: string): Promise<Array<{ id: string; name: string; category: string }>> {
+  try {
+    const courses = await prisma.course.findMany({
+      where: { tenantId, isActive: true },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+      },
+    });
+    return courses as Array<{ id: string; name: string; category: string }>;
+  } catch (error) {
+    if (!isMissingCourseCategoryColumnError(error)) {
+      throw error;
+    }
+
+    const fallbackCourses = await prisma.course.findMany({
+      where: { tenantId, isActive: true },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    return (fallbackCourses as Array<{ id: string; name: string }>).map((course) => ({
+      ...course,
+      category: 'offline',
+    }));
+  }
+}
+
 function isAgentOnly(roles: string[]): boolean {
   return roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 }
@@ -802,19 +962,9 @@ export const customerIncomeRouter = router({
           telegramUsername: true,
         },
       }),
-      prisma.course.findMany({
-        where: { tenantId: ctx.tenantId, isActive: true },
-        orderBy: { name: 'asc' },
-        include: {
-          tariffs: {
-            where: { isActive: true },
-            orderBy: { name: 'asc' },
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
+      fetchCoursesWithTariffsSafe({
+        tenantId: ctx.tenantId,
+        onlyActive: true,
       }),
       prisma.income.findMany({
         where: {
@@ -1045,39 +1195,9 @@ export const customerIncomeRouter = router({
     }),
 
   courseCatalog: protectedProcedure.query(async ({ ctx }) => {
-    return prisma.course.findMany({
-      where: { tenantId: ctx.tenantId },
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        category: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-        tariffs: {
-          orderBy: { name: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            isActive: true,
-            courseId: true,
-            createdAt: true,
-            updatedAt: true,
-            subTariffs: {
-              orderBy: { name: 'asc' },
-              select: {
-                id: true,
-                name: true,
-                isActive: true,
-                tariffId: true,
-                createdAt: true,
-                updatedAt: true,
-              },
-            },
-          },
-        },
-      },
+    return fetchCoursesWithTariffsSafe({
+      tenantId: ctx.tenantId,
+      onlyActive: false,
     });
   }),
 
@@ -1556,15 +1676,7 @@ export const customerIncomeRouter = router({
             updatedAt: true,
           },
         }),
-        prisma.course.findMany({
-          where: { tenantId: ctx.tenantId, isActive: true },
-          orderBy: { name: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            category: true,
-          },
-        }),
+        fetchCourseOptionsSafe(ctx.tenantId),
       ]);
 
       if (!customers.length) {
