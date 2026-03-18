@@ -37,7 +37,7 @@ function getCategoryLabel(category: CourseItem['category']): string {
   return COURSE_CATEGORY_OPTIONS.find((option) => option.value === category)?.label || category;
 }
 
-export default function kurslariPage() {
+export default function CoursesPage() {
   const { user } = useAuth();
   const canManageCourses = Boolean(user?.roles?.includes('Admin') || user?.roles?.includes('Manager'));
 
