@@ -42,7 +42,7 @@ export default function LoginPage() {
           login(result.token, result.user);
           return;
         }
-        setError('OTP kod notoвЂgвЂri');
+        setError("OTP kod noto'g'ri");
       }
     } catch (err: any) {
       setError(err?.message || 'Autentifikatsiya muvaffaqiyatsiz');
@@ -65,7 +65,7 @@ export default function LoginPage() {
         login(result.token, result.user);
         return;
       }
-      setError('Login yoki parol notoвЂgвЂri');
+      setError("Login yoki parol noto'g'ri");
     } catch (err: any) {
       setError(err?.message || 'Autentifikatsiya muvaffaqiyatsiz');
     } finally {
@@ -226,4 +226,5 @@ export default function LoginPage() {
     </div>
   );
 }
+
 
