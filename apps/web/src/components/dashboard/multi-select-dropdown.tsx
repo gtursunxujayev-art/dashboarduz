@@ -25,11 +25,11 @@ export default function MultiSelectDropdown({
   options,
   selectedIds,
   onChange,
-  placeholder = 'Select values',
+  placeholder = 'Qiymatlarni tanlang',
   disabled = false,
   loading = false,
-  loadingText = 'Loading options...',
-  emptyText = 'No options available.',
+  loadingText = 'Variantlar yuklanmoqda...',
+  emptyText = 'Variantlar topilmadi.',
 }: MultiSelectDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -88,7 +88,7 @@ export default function MultiSelectDropdown({
         >
           <div className="flex items-center justify-between gap-3">
             <span className="truncate">{selectedLabels}</span>
-            <span className="text-xs text-gray-500">{selectedIds.length} selected</span>
+            <span className="text-xs text-gray-500">{selectedIds.length} ta tanlandi</span>
           </div>
         </button>
 
