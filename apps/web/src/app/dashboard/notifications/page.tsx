@@ -19,7 +19,7 @@ export default function NotificationsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Bildirishnomalar</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Navbat holati va yetkazish tarixini koвЂring
+          Navbat holati va yetkazish tarixini ko'ring
         </p>
       </div>
 
@@ -70,11 +70,12 @@ export default function NotificationsPage() {
               </table>
             </div>
           ) : (
-            <p className="text-sm text-gray-600">Hozircha bildirishnoma yoвЂq. Integratsiya hodisalari shu yerda koвЂrinadi.</p>
+            <p className="text-sm text-gray-600">Hozircha bildirishnoma yo'q. Integratsiya hodisalari shu yerda ko'rinadi.</p>
           )}
         </div>
       </div>
     </div>
   );
 }
+
 
