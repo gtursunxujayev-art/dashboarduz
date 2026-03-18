@@ -11,6 +11,7 @@ import {
   parseTelegramRecipients,
   updateTelegramReportSelection,
 } from '../../services/integrations/telegram-recipients';
+import { sendImmediateTodayReportForTenant } from '../../services/reports/telegram-report-scheduler';
 
 function normalizeBaseUrl(url?: string): string | null {
   if (!url) {
@@ -474,6 +475,18 @@ export const integrationsRouter = router({
         selectedChatIds,
       };
     }),
+
+  sendTelegramTodayReportNow: adminProcedure.mutation(async ({ ctx }) => {
+    try {
+      const result = await sendImmediateTodayReportForTenant(ctx.tenantId);
+      return result;
+    } catch (error: any) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: error?.message || 'Failed to send report',
+      });
+    }
+  }),
 
   connectGoogleSheets: adminProcedure.mutation(async () => {
     throw new TRPCError({
