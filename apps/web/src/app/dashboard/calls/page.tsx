@@ -88,7 +88,7 @@ export default function CallsPage() {
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">#</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Xodim</th>
                     {!isAgentOnly && (
-                      <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Ext</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Ichki raqam</th>
                     )}
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Barcha qo&apos;ng&apos;iroqlar</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Kuniga o&apos;rtacha qo&apos;ng&apos;iroqlar</th>
