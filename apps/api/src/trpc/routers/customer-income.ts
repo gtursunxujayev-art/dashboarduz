@@ -15,6 +15,20 @@ import { managerProcedure, protectedProcedure, router } from '../trpc';
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'Agent'] as const;
 const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive'] as const;
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'Manager', 'Organizator', 'Organizer']);
+const APPROVER_ROLES_REFUND = new Set(['Admin', 'Finance']);
+const INCOME_LIFECYCLE_ACTIVE = 'active';
+const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
+const INCOME_LIFECYCLE_REFUNDED = 'refunded';
+const ADJUSTMENT_TYPE_REFUND = 'refund';
+const ADJUSTMENT_TYPE_TARIFF_CHANGE = 'tariff_change';
+const ADJUSTMENT_STATUS_PENDING = 'pending';
+const ADJUSTMENT_STATUS_APPROVED = 'approved';
+const ADJUSTMENT_STATUS_REJECTED = 'rejected';
+
+function isAdminUser(roles: string[]): boolean {
+  return roles.includes('Admin');
+}
 
 function isMissingCourseCategoryColumnError(error: unknown): boolean {
   const message = String((error as any)?.message || '').toLowerCase();
@@ -178,6 +192,55 @@ async function fetchCourseOptionsSafe(tenantId: string): Promise<Array<{ id: str
 
 function isAgentOnly(roles: string[]): boolean {
   return roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+}
+
+function isPrivilegedAdjustmentViewer(roles: string[]): boolean {
+  return roles.some((role) => PRIVILEGED_ROLES.has(role) || role === 'Organizator' || role === 'Organizer');
+}
+
+function canApproveRefundRequest(roles: string[]): boolean {
+  return roles.some((role) => APPROVER_ROLES_REFUND.has(role));
+}
+
+function canApproveTariffChangeRequest(roles: string[]): boolean {
+  return roles.some((role) => APPROVER_ROLES_TARIFF_CHANGE.has(role));
+}
+
+function getAdjustmentRoleScope(rolesInput: string[]) {
+  const roles = rolesInput.map((role) => String(role));
+  const isAdmin = roles.includes('Admin');
+  const hasFinance = roles.includes('Finance');
+  const hasManagerLike = roles.includes('Manager')
+    || roles.includes('Organizator')
+    || roles.includes('Organizer');
+  const canSeeAll = isPrivilegedAdjustmentViewer(roles);
+
+  const typeGuard: typeof ADJUSTMENT_TYPE_REFUND | typeof ADJUSTMENT_TYPE_TARIFF_CHANGE | null = canSeeAll && !isAdmin
+    ? (
+        hasFinance && !hasManagerLike
+          ? ADJUSTMENT_TYPE_REFUND
+          : (!hasFinance && hasManagerLike ? ADJUSTMENT_TYPE_TARIFF_CHANGE : null)
+      )
+    : null;
+
+  return {
+    roles,
+    isAdmin,
+    hasFinance,
+    hasManagerLike,
+    canSeeAll,
+    typeGuard,
+  };
+}
+
+function getIncomeLifecycleLabel(status: string): string {
+  if (status === INCOME_LIFECYCLE_PENDING_REFUND) {
+    return 'pending_refund';
+  }
+  if (status === INCOME_LIFECYCLE_REFUNDED) {
+    return 'refunded';
+  }
+  return INCOME_LIFECYCLE_ACTIVE;
 }
 
 function parseDateInput(input: string): Date {
@@ -787,6 +850,7 @@ async function createIncomeEntry(params: {
         customerId: customer.id,
         managerUserId: input.managerUserId,
         type: 'new_sale',
+        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
         courseId: input.courseId,
         tariffId: input.tariffId,
         entryDate,
@@ -805,6 +869,7 @@ async function createIncomeEntry(params: {
           tenantId,
           customerId: customer.id,
           type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           remainingDebtAmount: { gt: 0 },
         },
         orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
@@ -826,6 +891,7 @@ async function createIncomeEntry(params: {
         id: debtSourceId,
         tenantId,
         type: 'new_sale',
+        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
         remainingDebtAmount: { gt: 0 },
       },
       select: {
@@ -870,6 +936,7 @@ async function createIncomeEntry(params: {
           customerId: customer!.id,
           managerUserId: input.managerUserId,
           type: 'repayment',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           relatedDebtIncomeId: debtSource.id,
           courseId: debtSource.courseId,
           tariffId: debtSource.tariffId,
@@ -944,13 +1011,14 @@ export const customerIncomeRouter = router({
         where: {
           tenantId: ctx.tenantId,
           ...(scopedManagerUserId
-            ? {
-                incomes: {
-                  some: {
-                    managerUserId: scopedManagerUserId,
+              ? {
+                  incomes: {
+                    some: {
+                      managerUserId: scopedManagerUserId,
+                      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                    },
                   },
-                },
-              }
+                }
             : {}),
         },
         orderBy: { createdAt: 'desc' },
@@ -970,6 +1038,7 @@ export const customerIncomeRouter = router({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           remainingDebtAmount: { gt: 0 },
           ...(scopedManagerUserId
             ? {
@@ -1050,13 +1119,14 @@ export const customerIncomeRouter = router({
         where: {
           tenantId: ctx.tenantId,
           ...(scopedManagerUserId
-            ? {
-                incomes: {
-                  some: {
-                    managerUserId: scopedManagerUserId,
+              ? {
+                  incomes: {
+                    some: {
+                      managerUserId: scopedManagerUserId,
+                      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                    },
                   },
-                },
-              }
+                }
             : {}),
           ...(query
             ? {
@@ -1393,6 +1463,13 @@ export const customerIncomeRouter = router({
   bulkImportRows: protectedProcedure
     .input(bulkIncomeImportSchema)
     .mutation(async ({ ctx, input }) => {
+      if (!isAdminUser(ctx.user.roles)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Bulk upload is available for Admin only.',
+        });
+      }
+
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
       if (input.fallbackManagerUserId) {
         if (scopedManagerUserId && input.fallbackManagerUserId !== scopedManagerUserId) {
@@ -1472,6 +1549,13 @@ export const customerIncomeRouter = router({
   bulkImportFromGoogleSheet: protectedProcedure
     .input(bulkIncomeImportFromGoogleSheetSchema)
     .mutation(async ({ ctx, input }) => {
+      if (!isAdminUser(ctx.user.roles)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Bulk upload is available for Admin only.',
+        });
+      }
+
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
       if (input.fallbackManagerUserId) {
         if (scopedManagerUserId && input.fallbackManagerUserId !== scopedManagerUserId) {
@@ -1586,7 +1670,7 @@ export const customerIncomeRouter = router({
     .input(z.object({ limit: z.number().int().positive().max(200).default(30) }).optional())
     .query(async ({ ctx, input }) => {
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
-      return prisma.income.findMany({
+      const incomes = await prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           ...(scopedManagerUserId
@@ -1621,6 +1705,632 @@ export const customerIncomeRouter = router({
           },
         },
       });
+
+      return incomes.map((income) => ({
+        ...income,
+        lifecycleStatus: getIncomeLifecycleLabel(income.lifecycleStatus),
+      }));
+    }),
+
+  listAdjustableIncomes: protectedProcedure
+    .input(z.object({ customerId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+
+      const customer = await prisma.customer.findFirst({
+        where: {
+          id: input.customerId,
+          tenantId: ctx.tenantId,
+          ...(scopedManagerUserId
+            ? {
+                incomes: {
+                  some: {
+                    managerUserId: scopedManagerUserId,
+                  },
+                },
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          customerNumber: true,
+          name: true,
+          telegramUsername: true,
+        },
+      });
+
+      if (!customer) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Customer not found.' });
+      }
+
+      const incomes = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          customerId: customer.id,
+          paymentAmount: { gt: 0 },
+          ...(scopedManagerUserId
+            ? {
+                managerUserId: scopedManagerUserId,
+              }
+            : {}),
+        },
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        take: 80,
+        select: {
+          id: true,
+          type: true,
+          lifecycleStatus: true,
+          paymentAmount: true,
+          coursePriceAmount: true,
+          debtAmount: true,
+          remainingDebtAmount: true,
+          entryDate: true,
+          course: { select: { id: true, name: true } },
+          tariff: { select: { id: true, name: true } },
+          manager: { select: { id: true, name: true, username: true } },
+        },
+      });
+
+      return {
+        customer,
+        incomes: incomes.map((income) => ({
+          ...income,
+          lifecycleStatus: getIncomeLifecycleLabel(income.lifecycleStatus),
+          managerLabel: income.manager.name || income.manager.username || income.manager.id,
+          canCreateRequest: income.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE,
+          canChangeTariff: income.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE && income.type === 'new_sale',
+        })),
+      };
+    }),
+
+  listAdjustmentRequests: protectedProcedure
+    .input(
+      z
+        .object({
+          status: z.enum([ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_STATUS_APPROVED, ADJUSTMENT_STATUS_REJECTED]).optional(),
+          type: z.enum([ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE]).optional(),
+          limit: z.number().int().positive().max(200).default(80),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const scope = getAdjustmentRoleScope(ctx.user.roles);
+      const roleTypeGuard = scope.typeGuard;
+
+      if (input?.type && roleTypeGuard && input.type !== roleTypeGuard) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'You do not have access to this request type.',
+        });
+      }
+
+      const where: Prisma.IncomeAdjustmentRequestWhereInput = {
+        tenantId: ctx.tenantId,
+        ...(input?.status ? { status: input.status } : {}),
+        ...(input?.type
+          ? { type: input.type }
+          : (roleTypeGuard ? { type: roleTypeGuard } : {})),
+        ...(!scope.canSeeAll
+          ? {
+              OR: [
+                { requestedByUserId: ctx.user.userId },
+                { income: { managerUserId: ctx.user.userId } },
+              ],
+            }
+          : {}),
+      };
+
+      const requests = await prisma.incomeAdjustmentRequest.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }],
+        take: input?.limit ?? 80,
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          reason: true,
+          reviewNote: true,
+          requestedAmount: true,
+          newAgreementAmount: true,
+          createdAt: true,
+          reviewedAt: true,
+          income: {
+            select: {
+              id: true,
+              type: true,
+              lifecycleStatus: true,
+              paymentAmount: true,
+              coursePriceAmount: true,
+              remainingDebtAmount: true,
+              course: { select: { name: true } },
+              tariff: { select: { name: true } },
+              customer: { select: { customerNumber: true, name: true } },
+              manager: { select: { name: true, username: true } },
+            },
+          },
+          requestedBy: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+            },
+          },
+          reviewedBy: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+            },
+          },
+          newCourse: { select: { id: true, name: true } },
+          newTariff: { select: { id: true, name: true } },
+        },
+      });
+
+      return requests.map((request) => ({
+        ...request,
+        income: {
+          ...request.income,
+          lifecycleStatus: getIncomeLifecycleLabel(request.income.lifecycleStatus),
+          managerLabel: request.income.manager.name || request.income.manager.username || '-',
+        },
+        requestedByLabel: request.requestedBy.name || request.requestedBy.username || request.requestedBy.id,
+        reviewedByLabel: request.reviewedBy
+          ? (request.reviewedBy.name || request.reviewedBy.username || request.reviewedBy.id)
+          : null,
+      }));
+    }),
+
+  adjustmentBadgeCount: protectedProcedure.query(async ({ ctx }) => {
+    const scope = getAdjustmentRoleScope(ctx.user.roles);
+    const pendingWhereBase: Prisma.IncomeAdjustmentRequestWhereInput = {
+      tenantId: ctx.tenantId,
+      status: ADJUSTMENT_STATUS_PENDING,
+      ...(scope.typeGuard ? { type: scope.typeGuard } : {}),
+      ...(!scope.canSeeAll
+        ? {
+            OR: [
+              { requestedByUserId: ctx.user.userId },
+              { income: { managerUserId: ctx.user.userId } },
+            ],
+          }
+        : {}),
+    };
+
+    const [pendingTotal, pendingRefund, pendingTariffChange] = await Promise.all([
+      prisma.incomeAdjustmentRequest.count({
+        where: pendingWhereBase,
+      }),
+      prisma.incomeAdjustmentRequest.count({
+        where: {
+          ...pendingWhereBase,
+          type: ADJUSTMENT_TYPE_REFUND,
+        },
+      }),
+      prisma.incomeAdjustmentRequest.count({
+        where: {
+          ...pendingWhereBase,
+          type: ADJUSTMENT_TYPE_TARIFF_CHANGE,
+        },
+      }),
+    ]);
+
+    return {
+      pendingTotal,
+      pendingRefund,
+      pendingTariffChange,
+      scopedToApproverQueue: scope.canSeeAll,
+    };
+  }),
+
+  createAdjustmentRequest: protectedProcedure
+    .input(
+      z.object({
+        type: z.enum([ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE]),
+        incomeId: z.string().uuid(),
+        reason: z.string().max(500).optional(),
+        newCourseId: z.string().uuid().optional(),
+        newTariffId: z.string().uuid().optional(),
+        newAgreementAmount: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const sourceIncome = await prisma.income.findFirst({
+        where: {
+          id: input.incomeId,
+          tenantId: ctx.tenantId,
+          paymentAmount: { gt: 0 },
+          ...(scopedManagerUserId
+            ? {
+                managerUserId: scopedManagerUserId,
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          type: true,
+          tenantId: true,
+          customerId: true,
+          courseId: true,
+          tariffId: true,
+          coursePriceAmount: true,
+          paymentAmount: true,
+          lifecycleStatus: true,
+        },
+      });
+
+      if (!sourceIncome) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Selected income was not found.' });
+      }
+
+      if (sourceIncome.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Only active income entries can be adjusted.',
+        });
+      }
+
+      const existingPending = await prisma.incomeAdjustmentRequest.findFirst({
+        where: {
+          tenantId: ctx.tenantId,
+          incomeId: sourceIncome.id,
+          status: ADJUSTMENT_STATUS_PENDING,
+        },
+        select: { id: true },
+      });
+
+      if (existingPending) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'A pending request already exists for this income entry.',
+        });
+      }
+
+      if (input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE) {
+        if (sourceIncome.type !== 'new_sale') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Tariff change is available only for new sale entries.',
+          });
+        }
+
+        if (!input.newCourseId || !input.newTariffId || !input.newAgreementAmount) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Course, tariff, and agreement amount are required for tariff change.',
+          });
+        }
+
+        const [course, tariff] = await Promise.all([
+          prisma.course.findFirst({
+            where: {
+              id: input.newCourseId,
+              tenantId: ctx.tenantId,
+              isActive: true,
+            },
+            select: { id: true },
+          }),
+          prisma.tariff.findFirst({
+            where: {
+              id: input.newTariffId,
+              tenantId: ctx.tenantId,
+              courseId: input.newCourseId,
+              isActive: true,
+            },
+            select: { id: true },
+          }),
+        ]);
+
+        if (!course || !tariff) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected course/tariff was not found.' });
+        }
+      }
+
+      const createdRequest = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const request = await tx.incomeAdjustmentRequest.create({
+          data: {
+            tenantId: ctx.tenantId,
+            type: input.type,
+            status: ADJUSTMENT_STATUS_PENDING,
+            incomeId: sourceIncome.id,
+            customerId: sourceIncome.customerId,
+            requestedByUserId: ctx.user.userId,
+            reason: input.reason?.trim() || null,
+            requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? sourceIncome.paymentAmount : null,
+            newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
+            newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
+            newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
+          },
+          select: {
+            id: true,
+            type: true,
+            status: true,
+          },
+        });
+
+        if (input.type === ADJUSTMENT_TYPE_REFUND) {
+          await tx.income.update({
+            where: { id: sourceIncome.id },
+            data: {
+              lifecycleStatus: INCOME_LIFECYCLE_PENDING_REFUND,
+            },
+          });
+        }
+
+        return request;
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'income_adjustment_request_create',
+          resource: 'income_adjustment_request',
+          resourceId: createdRequest.id,
+          metadata: {
+            incomeId: sourceIncome.id,
+            type: input.type,
+          },
+        },
+      });
+
+      return createdRequest;
+    }),
+
+  approveAdjustmentRequest: protectedProcedure
+    .input(
+      z.object({
+        requestId: z.string().uuid(),
+        reviewNote: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const request = await prisma.incomeAdjustmentRequest.findFirst({
+        where: {
+          id: input.requestId,
+          tenantId: ctx.tenantId,
+        },
+        include: {
+          income: {
+            select: {
+              id: true,
+              type: true,
+              managerUserId: true,
+              lifecycleStatus: true,
+              paymentAmount: true,
+              coursePriceAmount: true,
+            },
+          },
+        },
+      });
+
+      if (!request) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Request not found.' });
+      }
+
+      if (request.status !== ADJUSTMENT_STATUS_PENDING) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Only pending requests can be approved.' });
+      }
+
+      if (request.type === ADJUSTMENT_TYPE_REFUND && !canApproveRefundRequest(ctx.user.roles)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin or Finance role is required to approve refunds.' });
+      }
+
+      if (request.type === ADJUSTMENT_TYPE_TARIFF_CHANGE && !canApproveTariffChangeRequest(ctx.user.roles)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Admin, Manager, or Organizator role is required to approve tariff changes.',
+        });
+      }
+
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        if (request.type === ADJUSTMENT_TYPE_REFUND) {
+          await tx.income.update({
+            where: { id: request.incomeId },
+            data: {
+              lifecycleStatus: INCOME_LIFECYCLE_REFUNDED,
+            },
+          });
+        } else {
+          if (!request.newCourseId || !request.newTariffId || !request.newAgreementAmount) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'Tariff-change request does not have target course/tariff/agreement.',
+            });
+          }
+
+          const [course, tariff, sourceIncome, repaymentAggregate] = await Promise.all([
+            tx.course.findFirst({
+              where: {
+                id: request.newCourseId,
+                tenantId: ctx.tenantId,
+                isActive: true,
+              },
+              select: { id: true },
+            }),
+            tx.tariff.findFirst({
+              where: {
+                id: request.newTariffId,
+                tenantId: ctx.tenantId,
+                courseId: request.newCourseId,
+                isActive: true,
+              },
+              select: { id: true },
+            }),
+            tx.income.findFirst({
+              where: {
+                id: request.incomeId,
+                tenantId: ctx.tenantId,
+                type: 'new_sale',
+              },
+              select: {
+                id: true,
+                paymentAmount: true,
+                lifecycleStatus: true,
+              },
+            }),
+            tx.income.aggregate({
+              where: {
+                tenantId: ctx.tenantId,
+                type: 'repayment',
+                relatedDebtIncomeId: request.incomeId,
+                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              },
+              _sum: {
+                paymentAmount: true,
+              },
+            }),
+          ]);
+
+          if (!course || !tariff || !sourceIncome) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'Cannot apply tariff change: source/new course/new tariff is missing.',
+            });
+          }
+          if (sourceIncome.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'Tariff change can be applied only to active income entries.',
+            });
+          }
+
+          const activeSourcePayment = sourceIncome.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE
+            ? (sourceIncome.paymentAmount ?? 0)
+            : 0;
+          const activeRepayments = repaymentAggregate._sum.paymentAmount ?? 0;
+          const totalPaid = activeSourcePayment + activeRepayments;
+          const remainingDebtAmount = Math.max(request.newAgreementAmount - totalPaid, 0);
+
+          await tx.income.update({
+            where: { id: request.incomeId },
+            data: {
+              courseId: request.newCourseId,
+              tariffId: request.newTariffId,
+              coursePriceAmount: request.newAgreementAmount,
+              debtAmount: request.newAgreementAmount,
+              remainingDebtAmount,
+            },
+          });
+
+          await tx.income.updateMany({
+            where: {
+              tenantId: ctx.tenantId,
+              type: 'repayment',
+              relatedDebtIncomeId: request.incomeId,
+            },
+            data: {
+              courseId: request.newCourseId,
+              tariffId: request.newTariffId,
+            },
+          });
+        }
+
+        await tx.incomeAdjustmentRequest.update({
+          where: { id: request.id },
+          data: {
+            status: ADJUSTMENT_STATUS_APPROVED,
+            reviewedByUserId: ctx.user.userId,
+            reviewNote: input.reviewNote?.trim() || null,
+            reviewedAt: new Date(),
+          },
+        });
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'income_adjustment_request_approve',
+          resource: 'income_adjustment_request',
+          resourceId: request.id,
+          metadata: {
+            type: request.type,
+            incomeId: request.incomeId,
+          },
+        },
+      });
+
+      return { success: true };
+    }),
+
+  rejectAdjustmentRequest: protectedProcedure
+    .input(
+      z.object({
+        requestId: z.string().uuid(),
+        reviewNote: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const request = await prisma.incomeAdjustmentRequest.findFirst({
+        where: {
+          id: input.requestId,
+          tenantId: ctx.tenantId,
+        },
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          incomeId: true,
+        },
+      });
+
+      if (!request) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Request not found.' });
+      }
+
+      if (request.status !== ADJUSTMENT_STATUS_PENDING) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Only pending requests can be rejected.' });
+      }
+
+      if (request.type === ADJUSTMENT_TYPE_REFUND && !canApproveRefundRequest(ctx.user.roles)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin or Finance role is required to reject refunds.' });
+      }
+
+      if (request.type === ADJUSTMENT_TYPE_TARIFF_CHANGE && !canApproveTariffChangeRequest(ctx.user.roles)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Admin, Manager, or Organizator role is required to reject tariff changes.',
+        });
+      }
+
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        if (request.type === ADJUSTMENT_TYPE_REFUND) {
+          await tx.income.update({
+            where: { id: request.incomeId },
+            data: {
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            },
+          });
+        }
+
+        await tx.incomeAdjustmentRequest.update({
+          where: { id: request.id },
+          data: {
+            status: ADJUSTMENT_STATUS_REJECTED,
+            reviewedByUserId: ctx.user.userId,
+            reviewNote: input.reviewNote?.trim() || null,
+            reviewedAt: new Date(),
+          },
+        });
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'income_adjustment_request_reject',
+          resource: 'income_adjustment_request',
+          resourceId: request.id,
+          metadata: {
+            type: request.type,
+            incomeId: request.incomeId,
+          },
+        },
+      });
+
+      return { success: true };
     }),
 
   listCustomers: protectedProcedure
@@ -1644,6 +2354,7 @@ export const customerIncomeRouter = router({
           incomes: {
             some: {
               managerUserId: scopedManagerUserId,
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
             },
           },
         });
@@ -1668,6 +2379,7 @@ export const customerIncomeRouter = router({
                     managerUserId: scopedManagerUserId,
                   }
                 : {}),
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
               courseId: input.courseId,
             },
           },
@@ -1684,6 +2396,7 @@ export const customerIncomeRouter = router({
                   }
                 : {}),
               type: 'new_sale',
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
               remainingDebtAmount: { gt: 0 },
             },
           },
@@ -1699,6 +2412,7 @@ export const customerIncomeRouter = router({
                     }
                   : {}),
                 type: 'new_sale',
+                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
                 remainingDebtAmount: { gt: 0 },
               },
             },
@@ -1740,6 +2454,7 @@ export const customerIncomeRouter = router({
         where: {
           tenantId: ctx.tenantId,
           customerId: { in: customerIds },
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           ...(scopedManagerUserId
             ? {
                 managerUserId: scopedManagerUserId,
