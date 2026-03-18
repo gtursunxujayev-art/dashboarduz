@@ -18,7 +18,7 @@ export default function AuthCallbackPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center text-sm text-gray-600">Redirecting...</div>
+        <div className="text-center text-sm text-gray-600">Yo'naltirilmoqda...</div>
       </div>
     }>
       <AuthCallbackContent />
