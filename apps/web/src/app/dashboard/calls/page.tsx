@@ -30,7 +30,7 @@ export default function CallsPage() {
     refetchInterval: 60_000,
   });
 
-  const rows = callsQuery.data?.rows || [];
+  const rows = useMemo(() => callsQuery.data?.rows ?? [], [callsQuery.data?.rows]);
   const totals = useMemo(() => ({
     totalCalls: rows.reduce((sum: number, row: any) => sum + Number(row.totalCalls || 0), 0),
     totalDurationSeconds: rows.reduce((sum: number, row: any) => sum + Number(row.totalDurationSeconds || 0), 0),
