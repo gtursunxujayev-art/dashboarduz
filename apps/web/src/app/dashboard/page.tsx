@@ -1,8 +1,7 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
-import AnalyticsCharts from '@/components/dashboard/analytics-charts';
 import { trpc } from '@/lib/trpc';
 import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 
@@ -35,7 +34,7 @@ function formatDuration(seconds?: number | null): string {
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   const remainingSeconds = safeSeconds % 60;
-  return `${hours}h ${minutes}m ${remainingSeconds}s`;
+  return `${hours} soat ${minutes} daqiqa ${remainingSeconds} soniya`;
 }
 
 function renderMetricValue(value?: number | null, suffix = ''): string {
@@ -47,15 +46,15 @@ function renderMetricValue(value?: number | null, suffix = ''): string {
 
 function getRangeLabel(range: DashboardRange): string {
   if (range === 'week') {
-    return 'This week';
+    return 'Hafta';
   }
   if (range === 'month') {
-    return 'This month';
+    return 'Oy';
   }
   if (range === 'custom') {
-    return 'Custom';
+    return 'Ixtiyoriy';
   }
-  return 'Today';
+  return 'Bugun';
 }
 
 export default function DashboardPage() {
@@ -173,26 +172,6 @@ export default function DashboardPage() {
       subtitle: formatAmount(stats?.intensiveSalesAgreementAmount),
     },
     {
-      title: 'Yangi lidlar',
-      value: String(stats?.totalLeads ?? 0),
-      subtitle: 'Tanlangan davr',
-    },
-    {
-      title: 'Sifatli lidlar',
-      value: String(stats?.qualifiedLeads ?? 0),
-      subtitle: `${formatPercent(stats?.qualifiedLeadSharePercent)} ulush`,
-    },
-    {
-      title: 'Sifatsiz lidlar',
-      value: String(stats?.nonQualifiedLeads ?? 0),
-      subtitle: `${formatPercent(stats?.nonQualifiedLeadSharePercent)} ulush`,
-    },
-    {
-      title: 'Konversiya (sotuv/lid)',
-      value: formatPercent(stats?.conversionPercent),
-      subtitle: 'Sotuvlar soni / lidlar soni',
-    },
-    {
       title: 'Tushum',
       value: formatAmount(stats?.totalIncomeAmount),
       subtitle: 'Tanlangan davr bo\'yicha',
@@ -226,23 +205,23 @@ export default function DashboardPage() {
       <div className="px-4 py-5 sm:p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-medium leading-6 text-gray-900">Salary (Current month)</h3>
+            <h3 className="text-lg font-medium leading-6 text-gray-900">Maosh (joriy oy)</h3>
             <p className="mt-1 text-sm text-gray-500">{salaryModeLabel}</p>
           </div>
         </div>
 
         {salarySummaryQuery.error && (
           <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {salarySummaryQuery.error.message || 'Failed to load salary summary.'}
+            {salarySummaryQuery.error.message || 'Maosh ma\'lumotini yuklashda xatolik.'}
           </div>
         )}
 
         {salarySummaryQuery.isLoading ? (
-          <p className="text-sm text-gray-600">Loading salary data...</p>
+          <p className="text-sm text-gray-600">Maosh ma'lumotlari yuklanmoqda...</p>
         ) : isAgentOnly ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-gray-500">Fixed salary</p>
+              <p className="text-sm text-gray-500">Fiks maosh</p>
               <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.fixedSalary)}</p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -254,7 +233,7 @@ export default function DashboardPage() {
               <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.bonusAmount)}</p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-gray-500">Total salary</p>
+              <p className="text-sm text-gray-500">Jami maosh</p>
               <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.totalSalary)}</p>
             </div>
           </div>
@@ -262,19 +241,19 @@ export default function DashboardPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Fixed salary total</p>
+                <p className="text-sm text-gray-500">Jami fiks maosh</p>
                 <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.fixedSalary)}</p>
               </div>
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">KPI total</p>
+                <p className="text-sm text-gray-500">Jami KPI</p>
                 <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.kpi)}</p>
               </div>
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Bonus total</p>
+                <p className="text-sm text-gray-500">Jami bonus</p>
                 <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.bonus)}</p>
               </div>
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Total salary payout</p>
+                <p className="text-sm text-gray-500">Jami maosh to'lovi</p>
                 <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.salary)}</p>
               </div>
             </div>
@@ -285,10 +264,10 @@ export default function DashboardPage() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fixed</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fiks</th>
                       <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">KPI</th>
                       <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bonus</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Total</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Jami</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
@@ -305,7 +284,7 @@ export default function DashboardPage() {
                 </table>
               </div>
             ) : (
-              <p className="text-sm text-gray-600">No agent salary data found for current month.</p>
+              <p className="text-sm text-gray-600">Joriy oy bo'yicha agent maoshi topilmadi.</p>
             )}
           </div>
         )}
@@ -318,21 +297,23 @@ export default function DashboardPage() {
       <div className="rounded-lg bg-white shadow">
         <div className="px-4 py-5 sm:p-6">
           <div className="space-y-3">
-            <div className="inline-flex rounded-md shadow-sm">
-              {RANGE_OPTIONS.map((option, index) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setRange(option)}
-                  className={`border border-gray-300 px-4 py-2 text-sm font-medium ${
-                    range === option ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
-                  } ${index === 0 ? 'rounded-l-md' : ''} ${
-                    index === RANGE_OPTIONS.length - 1 ? 'rounded-r-md' : ''
-                  } ${index !== 0 ? 'border-l-0' : ''}`}
-                >
-                  {getRangeLabel(option)}
-                </button>
-              ))}
+            <div className="overflow-x-auto">
+              <div className="inline-flex min-w-max rounded-md shadow-sm">
+                {RANGE_OPTIONS.map((option, index) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setRange(option)}
+                    className={`border border-gray-300 px-4 py-2 text-sm font-medium ${
+                      range === option ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                    } ${index === 0 ? 'rounded-l-md' : ''} ${
+                      index === RANGE_OPTIONS.length - 1 ? 'rounded-r-md' : ''
+                    } ${index !== 0 ? 'border-l-0' : ''}`}
+                  >
+                    {getRangeLabel(option)}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_1fr]">
@@ -353,11 +334,11 @@ export default function DashboardPage() {
 
               {!isFinanceOnly && isAdmin && (
                 <MultiSelectDropdown
-                  label="Pipelines Filter"
+                  label="Pipeline filtri"
                   options={pipelineOptions}
                   selectedIds={pipelineIds}
                   onChange={setPipelineIds}
-                  placeholder="Select pipelines"
+                  placeholder="Pipeline tanlang"
                   disabled={amoPipelinesQuery.isLoading}
                 />
               )}
@@ -375,13 +356,13 @@ export default function DashboardPage() {
               </svg>
             </div>
             <div className="ml-5">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">
-                Welcome back, {user?.email?.split('@')[0] || user?.phone || 'User'}!
+                <h3 className="text-lg font-medium leading-6 text-gray-900">
+                Xush kelibsiz, {user?.email?.split('@')[0] || user?.phone || 'Foydalanuvchi'}!
               </h3>
               <p className="mt-1 text-sm text-gray-500">
                 {isFinanceOnly
-                  ? 'Finance dashboard shows only income, debitors, and income-by-course with selected date range.'
-                  : 'All dashboard sections now use the same top filter.'}
+                  ? 'Moliya panelida tanlangan davr boвЂyicha tushum, qarzdorlar va kurs kesimidagi tushum koвЂrinadi.'
+                  : 'Barcha boвЂlimlar tepadagi bitta filtr bilan ishlaydi.'}
               </p>
             </div>
           </div>
@@ -392,7 +373,7 @@ export default function DashboardPage() {
         <div className="space-y-6">
           {financeSummaryQuery.error && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {financeSummaryQuery.error.message || 'Failed to load finance dashboard data.'}
+              {financeSummaryQuery.error.message || 'Moliya paneli ma\'lumotlarini yuklashda xatolik.'}
             </div>
           )}
 
@@ -412,17 +393,17 @@ export default function DashboardPage() {
 
           <div className="rounded-lg bg-white shadow">
             <div className="px-4 py-5 sm:p-6">
-              <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Income by Course</h3>
+              <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Kurslar boвЂyicha tushum</h3>
               {financeSummaryQuery.isLoading ? (
-                <p className="text-sm text-gray-600">Loading...</p>
+                <p className="text-sm text-gray-600">Yuklanmoqda...</p>
               ) : incomeByCourse.length ? (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Course</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sales</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Income</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sotuvlar</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
@@ -437,7 +418,7 @@ export default function DashboardPage() {
                   </table>
                 </div>
               ) : (
-                <p className="text-sm text-gray-600">No income data for selected date range.</p>
+                <p className="text-sm text-gray-600">Tanlangan davr uchun tushum ma'lumoti topilmadi.</p>
               )}
             </div>
           </div>
@@ -462,33 +443,19 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 gap-6">
             <div className="rounded-lg bg-white shadow">
               <div className="px-4 py-5 sm:p-6">
-                <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Analytics Overview</h3>
-                <AnalyticsCharts
-                  data={summaryQuery.data}
-                  isLoading={summaryQuery.isLoading}
-                  isError={summaryQuery.isError}
-                />
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-white shadow">
-              <div className="px-4 py-5 sm:p-6">
                 <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Sotuvchilar</h3>
                 {summaryQuery.isLoading ? (
-                  <p className="text-sm text-gray-600">Loading seller performance...</p>
+                  <p className="text-sm text-gray-600">Sotuvchilar ma'lumoti yuklanmoqda...</p>
                 ) : sellerPerformance.length ? (
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Name</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">New leads</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qualified leads</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sale</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Conversion</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agreements sum</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Income sum</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Talked</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Ism</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sotuv</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Shartnoma summasi</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum summasi</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Suhbat vaqti</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
@@ -496,18 +463,7 @@ export default function DashboardPage() {
                           <tr key={seller.userId}>
                             <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{seller.name}</td>
                             <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {renderMetricValue(seller.newLeads)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {renderMetricValue(seller.qualifiedLeads)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                               {renderMetricValue(seller.sales)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {seller.conversionPercent === null || seller.conversionPercent === undefined
-                                ? '-'
-                                : `${seller.conversionPercent.toFixed(1)}%`}
                             </td>
                             <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                               {seller.agreementsAmount === null || seller.agreementsAmount === undefined
@@ -528,7 +484,7 @@ export default function DashboardPage() {
                     </table>
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-600">No seller performance data for selected filters.</p>
+                  <p className="text-sm text-gray-600">Tanlangan filtrlar boвЂyicha sotuvchi maвЂ™lumoti topilmadi.</p>
                 )}
               </div>
             </div>
@@ -538,3 +494,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
