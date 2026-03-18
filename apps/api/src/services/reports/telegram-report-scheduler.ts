@@ -4,6 +4,7 @@ import { telegramService } from '../integrations/telegram';
 import { parseTelegramRecipients } from '../integrations/telegram-recipients';
 import { decryptIntegrationTokens } from '../security/encryption';
 import { getRedisClient } from '../queue/redis-client';
+import { extractLeadValue, humanizeKey } from '../integrations/amocrm-live';
 
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
@@ -38,6 +39,16 @@ type ReportMetrics = {
   intensiveAgreementTotal: number;
   totalCalls: number;
   talkDurationSeconds: number;
+  reasonBreakdown: Array<{ label: string; value: number }>;
+  sourceBreakdown: Array<{ label: string; value: number }>;
+  managerRows: Array<{
+    name: string;
+    leads: number;
+    qualified: number;
+    sales: number;
+    conversion: number;
+    amount: number;
+  }>;
 };
 
 type TelegramIntegrationWithTenant = {
@@ -116,46 +127,238 @@ function escapePdfText(value: string): string {
     .replace(/[^\x20-\x7E]/g, '?');
 }
 
-function createSimplePdf(lines: string[]): Buffer {
-  const maxLines = 46;
-  const sliced = lines.slice(0, maxLines);
-  const streamParts: string[] = ['BT', '/F1 11 Tf', '50 800 Td', '14 TL'];
+type PdfColor = [number, number, number];
+type PdfFont = 'F1' | 'F2';
 
-  for (let index = 0; index < sliced.length; index += 1) {
-    const line = escapePdfText(sliced[index] || '');
-    if (index > 0) {
-      streamParts.push('T*');
-    }
-    streamParts.push(`(${line}) Tj`);
+class PdfCanvas {
+  private readonly pageWidth = 595;
+  private readonly pageHeight = 842;
+  private readonly commands: string[] = [];
+
+  private toPdfY(top: number, height = 0): number {
+    return this.pageHeight - top - height;
   }
 
-  streamParts.push('ET');
-  const contentStream = streamParts.join('\n');
+  private fmt(value: number): string {
+    return Number(value.toFixed(3)).toString();
+  }
 
-  const objects = [
-    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
-    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n',
-    `4 0 obj\n<< /Length ${Buffer.byteLength(contentStream, 'utf8')} >>\nstream\n${contentStream}\nendstream\nendobj\n`,
-    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+  setFill(color: PdfColor) {
+    this.commands.push(`${this.fmt(color[0])} ${this.fmt(color[1])} ${this.fmt(color[2])} rg`);
+  }
+
+  setStroke(color: PdfColor) {
+    this.commands.push(`${this.fmt(color[0])} ${this.fmt(color[1])} ${this.fmt(color[2])} RG`);
+  }
+
+  setLineWidth(width: number) {
+    this.commands.push(`${this.fmt(width)} w`);
+  }
+
+  rect(top: number, left: number, width: number, height: number, options: {
+    fill?: PdfColor;
+    stroke?: PdfColor;
+    lineWidth?: number;
+  } = {}) {
+    if (options.fill) this.setFill(options.fill);
+    if (options.stroke) this.setStroke(options.stroke);
+    if (options.lineWidth !== undefined) this.setLineWidth(options.lineWidth);
+    this.commands.push(
+      `${this.fmt(left)} ${this.fmt(this.toPdfY(top, height))} ${this.fmt(width)} ${this.fmt(height)} re`,
+    );
+    if (options.fill && options.stroke) {
+      this.commands.push('B');
+    } else if (options.fill) {
+      this.commands.push('f');
+    } else {
+      this.commands.push('S');
+    }
+  }
+
+  text(top: number, left: number, text: string, options: {
+    size?: number;
+    color?: PdfColor;
+    font?: PdfFont;
+  } = {}) {
+    const font = options.font || 'F1';
+    const size = options.size || 10;
+    const color = options.color || ([0.11, 0.16, 0.24] as PdfColor);
+    const escaped = escapePdfText(text);
+    const baselineY = this.toPdfY(top) - size;
+    this.commands.push('BT');
+    this.commands.push(`${font === 'F2' ? '/F2' : '/F1'} ${this.fmt(size)} Tf`);
+    this.commands.push(`${this.fmt(color[0])} ${this.fmt(color[1])} ${this.fmt(color[2])} rg`);
+    this.commands.push(`${this.fmt(left)} ${this.fmt(baselineY)} Td`);
+    this.commands.push(`(${escaped}) Tj`);
+    this.commands.push('ET');
+  }
+
+  build(): Buffer {
+    const contentStream = this.commands.join('\n');
+    const objects = [
+      '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+      '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+      '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>\nendobj\n',
+      `4 0 obj\n<< /Length ${Buffer.byteLength(contentStream, 'utf8')} >>\nstream\n${contentStream}\nendstream\nendobj\n`,
+      '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+      '6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n',
+    ];
+
+    let pdf = '%PDF-1.4\n';
+    const offsets: number[] = [0];
+    for (const object of objects) {
+      offsets.push(Buffer.byteLength(pdf, 'utf8'));
+      pdf += object;
+    }
+
+    const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+    pdf += `xref\n0 ${objects.length + 1}\n`;
+    pdf += '0000000000 65535 f \n';
+    for (let index = 1; index < offsets.length; index += 1) {
+      pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+    }
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+    return Buffer.from(pdf, 'utf8');
+  }
+}
+
+function topBreakdownRows(entries: Array<{ label: string; value: number }>, fallbackLabel: string): string[] {
+  if (!entries.length) {
+    return [`${fallbackLabel}: 0`];
+  }
+  return entries.slice(0, 5).map((entry) => {
+    const normalizedLabel = entry.label.trim().length > 0
+      ? humanizeKey(entry.label)
+      : fallbackLabel;
+    return `${normalizedLabel}: ${entry.value}`;
+  });
+}
+
+function createStyledReportPdf(params: {
+  tenantName: string;
+  title: string;
+  periodStart: Date;
+  periodEnd: Date;
+  generatedAt: Date;
+  metrics: ReportMetrics;
+}): Buffer {
+  const c = new PdfCanvas();
+  const dark: PdfColor = [0.03, 0.08, 0.2];
+  const lightBorder: PdfColor = [0.72, 0.78, 0.86];
+  const cardBg: PdfColor = [0.96, 0.97, 0.99];
+  const textDark: PdfColor = [0.11, 0.16, 0.24];
+  const accent: PdfColor = [0.12, 0.4, 0.95];
+  const white: PdfColor = [1, 1, 1];
+
+  c.rect(16, 24, 547, 62, { fill: dark });
+  c.text(28, 44, params.tenantName, { font: 'F2', size: 20, color: white });
+  c.text(52, 270, params.title, { font: 'F1', size: 12, color: [0.76, 0.82, 0.92] });
+  c.text(92, 44, `Period: ${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`, { size: 10, color: textDark });
+  c.text(106, 44, `Generated: ${formatLocalDateTime(params.generatedAt)}`, { size: 10, color: textDark });
+
+  const cardTitles = [
+    'Income',
+    'Agreement',
+    'Online income',
+    'Offline income',
+    'New leads',
+    'Qualified leads',
+  ];
+  const cardValues = [
+    formatCurrency(params.metrics.incomeTotal),
+    formatCurrency(params.metrics.agreementTotal),
+    formatCurrency(params.metrics.onlineAgreementTotal),
+    formatCurrency(params.metrics.offlineAgreementTotal),
+    String(params.metrics.newLeads),
+    `${params.metrics.qualifiedLeads} (${params.metrics.qualifiedShare.toFixed(1)}%)`,
   ];
 
-  let pdf = '%PDF-1.4\n';
-  const offsets: number[] = [0];
-  for (const object of objects) {
-    offsets.push(Buffer.byteLength(pdf, 'utf8'));
-    pdf += object;
+  let cardTop = 130;
+  for (let index = 0; index < cardTitles.length; index += 1) {
+    const row = Math.floor(index / 3);
+    const col = index % 3;
+    const top = cardTop + row * 70;
+    const left = 44 + col * 172;
+    c.rect(top, left, 160, 56, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
+    c.text(top + 12, left + 10, cardTitles[index] || '-', { size: 9, color: [0.4, 0.46, 0.56] });
+    c.text(top + 30, left + 10, cardValues[index] || '-', { font: 'F2', size: 14, color: accent });
   }
 
-  const xrefOffset = Buffer.byteLength(pdf, 'utf8');
-  pdf += `xref\n0 ${objects.length + 1}\n`;
-  pdf += '0000000000 65535 f \n';
-  for (let index = 1; index < offsets.length; index += 1) {
-    pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  c.rect(276, 44, 503, 116, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
+  c.text(288, 54, `Non-qualified leads: ${params.metrics.nonQualifiedLeads}`, { font: 'F2', size: 12, color: textDark });
+  c.text(306, 54, `New sales: ${params.metrics.newSalesCount}`, { font: 'F2', size: 12, color: textDark });
+  c.text(324, 54, `Conversion (sales -> leads): ${params.metrics.conversionPercent.toFixed(2)}%`, { font: 'F2', size: 12, color: textDark });
+  c.text(342, 54, `Calls: ${params.metrics.totalCalls}`, { size: 11, color: textDark });
+  c.text(358, 54, `Talk duration: ${formatDuration(params.metrics.talkDurationSeconds)}`, { size: 11, color: textDark });
+  c.text(374, 54, `Sales online/offline/intensive: ${params.metrics.onlineSalesCount}/${params.metrics.offlineSalesCount}/${params.metrics.intensiveSalesCount}`, { size: 10, color: textDark });
 
-  return Buffer.from(pdf, 'utf8');
+  c.rect(410, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
+  c.text(414, 54, 'Non-qualified lead reasons', { font: 'F2', size: 12, color: white });
+  let y = 438;
+  for (const line of topBreakdownRows(params.metrics.reasonBreakdown, 'No data')) {
+    c.text(y, 54, line, { size: 10, color: textDark });
+    y += 14;
+  }
+
+  c.rect(498, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
+  c.text(502, 54, 'Lead sources', { font: 'F2', size: 12, color: white });
+  y = 526;
+  for (const line of topBreakdownRows(params.metrics.sourceBreakdown, 'No data')) {
+    c.text(y, 54, line, { size: 10, color: textDark });
+    y += 14;
+  }
+
+  c.rect(588, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
+  c.text(592, 54, 'Sales by manager', { font: 'F2', size: 12, color: white });
+
+  const tableTop = 614;
+  const columns = [
+    { key: 'name', title: 'Manager', width: 140 },
+    { key: 'leads', title: 'Leads', width: 65 },
+    { key: 'qualified', title: 'Qualified', width: 70 },
+    { key: 'sales', title: 'Sales', width: 65 },
+    { key: 'conversion', title: 'Conversion', width: 75 },
+    { key: 'amount', title: 'Amount', width: 88 },
+  ] as const;
+  const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
+
+  c.rect(tableTop, 54, tableWidth, 20, { fill: [0.92, 0.94, 0.98], stroke: lightBorder, lineWidth: 0.8 });
+  let x = 56;
+  for (const column of columns) {
+    c.text(tableTop + 5, x, column.title, { font: 'F2', size: 9, color: textDark });
+    x += column.width;
+  }
+
+  const rows = params.metrics.managerRows.length > 0
+    ? params.metrics.managerRows
+    : [{ name: 'No manager data', leads: 0, qualified: 0, sales: 0, conversion: 0, amount: 0 }];
+  const shownRows = rows.slice(0, 9);
+  for (const [index, row] of shownRows.entries()) {
+    const rowTop = tableTop + 20 + index * 18;
+    c.rect(rowTop, 54, tableWidth, 18, {
+      fill: index % 2 === 0 ? ([1, 1, 1] as PdfColor) : ([0.98, 0.99, 1] as PdfColor),
+      stroke: lightBorder,
+      lineWidth: 0.4,
+    });
+
+    const values = [
+      row.name,
+      String(row.leads),
+      String(row.qualified),
+      String(row.sales),
+      `${row.conversion.toFixed(1)}%`,
+      formatCurrency(row.amount),
+    ];
+
+    let currentX = 56;
+    for (const [colIndex, column] of columns.entries()) {
+      c.text(rowTop + 4, currentX, values[colIndex] || '-', { size: 8.5, color: textDark });
+      currentX += column.width;
+    }
+  }
+
+  c.text(808, 44, `Generated by Dashboarduz`, { size: 8, color: [0.5, 0.56, 0.66] });
+  return c.build();
 }
 
 function classifyCourseCategory(value: string | null | undefined): 'online' | 'offline' | 'intensive' | 'other' {
@@ -306,6 +509,12 @@ async function collectMetrics(params: {
   const qualifiedStageIds = Array.isArray(dashboardSettings.qualifiedStageIds)
     ? dashboardSettings.qualifiedStageIds.map((value) => String(value))
     : [];
+  const reasonFieldKey = typeof dashboardSettings.reasonFieldKey === 'string'
+    ? dashboardSettings.reasonFieldKey
+    : null;
+  const sourceFieldKey = typeof dashboardSettings.sourceFieldKey === 'string'
+    ? dashboardSettings.sourceFieldKey
+    : null;
 
   const leadWhere = buildLeadWhere(
     params.tenantId,
@@ -318,7 +527,9 @@ async function collectMetrics(params: {
     newLeads,
     qualifiedLeads,
     callAggregate,
+    leadsDetailed,
     incomes,
+    users,
   ] = await Promise.all([
     prisma.lead.count({ where: leadWhere as any }),
     qualifiedStageIds.length > 0
@@ -340,6 +551,15 @@ async function collectMetrics(params: {
       _count: { id: true },
       _sum: { duration: true },
     }),
+    prisma.lead.findMany({
+      where: leadWhere as any,
+      select: {
+        status: true,
+        responsibleUserId: true,
+        metadata: true,
+      },
+      take: 10000,
+    }),
     prisma.income.findMany({
       where: {
         tenantId: params.tenantId,
@@ -350,6 +570,7 @@ async function collectMetrics(params: {
       },
       select: {
         type: true,
+        managerUserId: true,
         paymentAmount: true,
         coursePriceAmount: true,
         course: {
@@ -358,6 +579,18 @@ async function collectMetrics(params: {
             name: true,
           },
         },
+      },
+    }),
+    prisma.user.findMany({
+      where: {
+        tenantId: params.tenantId,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        amocrmResponsibleUserId: true,
       },
     }),
   ]);
@@ -372,6 +605,7 @@ async function collectMetrics(params: {
   let onlineAgreementTotal = 0;
   let offlineAgreementTotal = 0;
   let intensiveAgreementTotal = 0;
+  const managerSalesByUserId = new Map<string, { sales: number; amount: number }>();
 
   for (const income of incomes) {
     incomeTotal += Number(income.paymentAmount || 0);
@@ -383,6 +617,10 @@ async function collectMetrics(params: {
     newSalesCount += 1;
     const agreementAmount = Number(income.coursePriceAmount || 0);
     agreementTotal += agreementAmount;
+    const managerStats = managerSalesByUserId.get(income.managerUserId) || { sales: 0, amount: 0 };
+    managerStats.sales += 1;
+    managerStats.amount += agreementAmount;
+    managerSalesByUserId.set(income.managerUserId, managerStats);
 
     const category = classifyCourseCategory(income.course?.category || income.course?.name);
     if (category === 'online') {
@@ -397,10 +635,113 @@ async function collectMetrics(params: {
     }
   }
 
+  const reasonMap = new Map<string, number>();
+  const sourceMap = new Map<string, number>();
+  const managerLeadsByAmoId = new Map<string, { leads: number; qualified: number }>();
+  for (const lead of leadsDetailed) {
+    const reasonValue = extractLeadValue(lead.metadata, reasonFieldKey);
+    if (reasonValue) {
+      reasonMap.set(reasonValue, (reasonMap.get(reasonValue) || 0) + 1);
+    }
+
+    const sourceValue = extractLeadValue(lead.metadata, sourceFieldKey);
+    if (sourceValue) {
+      sourceMap.set(sourceValue, (sourceMap.get(sourceValue) || 0) + 1);
+    }
+
+    const responsibleUserId = String(lead.responsibleUserId || '').trim();
+    if (!responsibleUserId) {
+      continue;
+    }
+    const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0 };
+    current.leads += 1;
+    if (qualifiedStageIds.length > 0 && lead.status && qualifiedStageIds.includes(String(lead.status))) {
+      current.qualified += 1;
+    }
+    managerLeadsByAmoId.set(responsibleUserId, current);
+  }
+
+  const usersByAmoId = new Map<string, { id: string; name: string }>();
+  const usersById = new Map<string, { id: string; name: string }>();
+  for (const user of users) {
+    const displayName = (user.name || user.username || user.id).trim();
+    usersById.set(user.id, { id: user.id, name: displayName });
+    if (user.amocrmResponsibleUserId) {
+      usersByAmoId.set(String(user.amocrmResponsibleUserId), { id: user.id, name: displayName });
+    }
+  }
+
+  const managerRowsByUserId = new Map<string, {
+    name: string;
+    leads: number;
+    qualified: number;
+    sales: number;
+    amount: number;
+  }>();
+
+  for (const [amoId, leadStats] of managerLeadsByAmoId.entries()) {
+    const mappedUser = usersByAmoId.get(amoId);
+    if (!mappedUser) {
+      continue;
+    }
+    const existing = managerRowsByUserId.get(mappedUser.id) || {
+      name: mappedUser.name,
+      leads: 0,
+      qualified: 0,
+      sales: 0,
+      amount: 0,
+    };
+    existing.leads += leadStats.leads;
+    existing.qualified += leadStats.qualified;
+    managerRowsByUserId.set(mappedUser.id, existing);
+  }
+
+  for (const [userId, salesStats] of managerSalesByUserId.entries()) {
+    const mappedUser = usersById.get(userId);
+    const name = mappedUser?.name || userId;
+    const existing = managerRowsByUserId.get(userId) || {
+      name,
+      leads: 0,
+      qualified: 0,
+      sales: 0,
+      amount: 0,
+    };
+    existing.sales += salesStats.sales;
+    existing.amount += salesStats.amount;
+    managerRowsByUserId.set(userId, existing);
+  }
+
   const nonQualifiedLeads = Math.max(0, newLeads - qualifiedLeads);
   const qualifiedShare = newLeads > 0 ? normalizePercentage((qualifiedLeads / newLeads) * 100) : 0;
   const nonQualifiedShare = newLeads > 0 ? normalizePercentage((nonQualifiedLeads / newLeads) * 100) : 0;
   const conversionPercent = newLeads > 0 ? normalizePercentage((newSalesCount / newLeads) * 100) : 0;
+
+  const reasonBreakdown = Array.from(reasonMap.entries())
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+
+  const sourceBreakdown = Array.from(sourceMap.entries())
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+
+  const managerRows = Array.from(managerRowsByUserId.values())
+    .map((row) => ({
+      name: row.name,
+      leads: row.leads,
+      qualified: row.qualified,
+      sales: row.sales,
+      conversion: row.leads > 0 ? normalizePercentage((row.sales / row.leads) * 100) : 0,
+      amount: row.amount,
+    }))
+    .filter((row) => row.leads > 0 || row.sales > 0 || row.amount > 0)
+    .sort((a, b) => {
+      if (b.sales !== a.sales) return b.sales - a.sales;
+      if (b.leads !== a.leads) return b.leads - a.leads;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, 10);
 
   return {
     newLeads,
@@ -420,46 +761,10 @@ async function collectMetrics(params: {
     intensiveAgreementTotal,
     totalCalls: Number(callAggregate._count.id || 0),
     talkDurationSeconds: Number(callAggregate._sum.duration || 0),
+    reasonBreakdown,
+    sourceBreakdown,
+    managerRows,
   };
-}
-
-function buildReportLines(params: {
-  tenantName: string;
-  title: string;
-  periodStart: Date;
-  periodEnd: Date;
-  generatedAt: Date;
-  metrics: ReportMetrics;
-}): string[] {
-  const { metrics } = params;
-
-  return [
-    'Dashboarduz CRM Report',
-    `Tenant: ${params.tenantName}`,
-    `Report: ${params.title}`,
-    `Period: ${formatLocalDateTime(params.periodStart)} - ${formatLocalDateTime(params.periodEnd)}`,
-    `Generated: ${formatLocalDateTime(params.generatedAt)}`,
-    '',
-    'LEADS',
-    `- New leads: ${metrics.newLeads}`,
-    `- Qualified leads: ${metrics.qualifiedLeads} (${metrics.qualifiedShare.toFixed(2)}%)`,
-    `- Non-qualified leads: ${metrics.nonQualifiedLeads} (${metrics.nonQualifiedShare.toFixed(2)}%)`,
-    '',
-    'SALES & INCOME',
-    `- New sales: ${metrics.newSalesCount}`,
-    `- Conversion (sales/new leads): ${metrics.conversionPercent.toFixed(2)}%`,
-    `- Agreement amount: ${formatCurrency(metrics.agreementTotal)}`,
-    `- Income received: ${formatCurrency(metrics.incomeTotal)}`,
-    '',
-    'SALES BY CATEGORY',
-    `- Online: ${metrics.onlineSalesCount} sale(s), agreement ${formatCurrency(metrics.onlineAgreementTotal)}`,
-    `- Offline: ${metrics.offlineSalesCount} sale(s), agreement ${formatCurrency(metrics.offlineAgreementTotal)}`,
-    `- Intensive: ${metrics.intensiveSalesCount} sale(s), agreement ${formatCurrency(metrics.intensiveAgreementTotal)}`,
-    '',
-    'CALLS',
-    `- Total calls: ${metrics.totalCalls}`,
-    `- Total talk time: ${formatDuration(metrics.talkDurationSeconds)}`,
-  ];
 }
 
 async function getSelectedPipelineIdsForTenant(tenantId: string): Promise<string[]> {
@@ -501,7 +806,7 @@ async function sendWindowToIntegration(
     selectedPipelineIds,
   });
 
-  const lines = buildReportLines({
+  const pdfBuffer = createStyledReportPdf({
     tenantName: integration.tenant.name || integration.tenantId,
     title: window.title,
     periodStart: window.periodStart,
@@ -509,7 +814,6 @@ async function sendWindowToIntegration(
     generatedAt: nowUtc,
     metrics,
   });
-  const pdfBuffer = createSimplePdf(lines);
   const fileName = `dashboard-report-${window.kind}-${window.periodKey}.pdf`;
   const caption = `${window.title}\n${formatLocalDate(window.periodStart)} - ${formatLocalDate(window.periodEnd)}`;
 
