@@ -2,19 +2,74 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
-import LeadsTable from '@/components/dashboard/leads-table';
 import AnalyticsCharts from '@/components/dashboard/analytics-charts';
 import { trpc } from '@/lib/trpc';
 import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 
-type DashboardRange = 'today' | 'week' | 'month';
+type DashboardRange = 'today' | 'week' | 'month' | 'custom';
+
+function getTashkentToday(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tashkent',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+
+  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
+  return `${year}-${month}-${day}`;
+}
+
+function formatAmount(value?: number | null): string {
+  return `${new Intl.NumberFormat('ru-RU').format(value ?? 0)} so'm`;
+}
+
+function formatDuration(seconds?: number | null): string {
+  if (seconds === null || seconds === undefined) {
+    return '-';
+  }
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const remainingSeconds = safeSeconds % 60;
+  return `${hours}h ${minutes}m ${remainingSeconds}s`;
+}
+
+function renderMetricValue(value?: number | null, suffix = ''): string {
+  if (value === null || value === undefined) {
+    return '-';
+  }
+  return `${value}${suffix}`;
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const roles = user?.roles || [];
   const [range, setRange] = useState<DashboardRange>('today');
+  const [dateFrom, setDateFrom] = useState(getTashkentToday());
+  const [dateTo, setDateTo] = useState(getTashkentToday());
   const [pipelineIds, setPipelineIds] = useState<string[]>([]);
+  const isAdmin = Boolean(roles.includes('Admin'));
+  const isAgentOnly = Boolean(
+    roles.includes('Agent')
+      && !roles.includes('Admin')
+      && !roles.includes('Manager')
+      && !roles.includes('Finance'),
+  );
+  const hasFinanceRole = Boolean(roles.includes('Finance'));
+  const showSalarySection = isAgentOnly || hasFinanceRole;
+  const isFinanceOnly = Boolean(
+    hasFinanceRole
+      && !roles.includes('Admin')
+      && !roles.includes('Manager')
+      && !roles.includes('Agent'),
+  );
+
   const amoPipelinesQuery = trpc.integrations.getAmoCRMPipelines.useQuery(undefined, {
     retry: false,
+    enabled: isAdmin && !isFinanceOnly,
   });
 
   const pipelineOptions = useMemo(() => {
@@ -26,7 +81,7 @@ export default function DashboardPage() {
   }, [amoPipelinesQuery.data]);
 
   useEffect(() => {
-    if (!amoPipelinesQuery.data) {
+    if (!amoPipelinesQuery.data || !isAdmin || isFinanceOnly) {
       return;
     }
 
@@ -36,17 +91,213 @@ export default function DashboardPage() {
     }
 
     setPipelineIds((amoPipelinesQuery.data.pipelines || []).map((pipeline: any) => pipeline.id));
-  }, [amoPipelinesQuery.data]);
+  }, [amoPipelinesQuery.data, isAdmin, isFinanceOnly]);
 
   const summaryQuery = trpc.dashboard.summary.useQuery(
-    { range, pipelineIds },
     {
+      range,
+      pipelineIds: isAdmin ? pipelineIds : undefined,
+      dateFrom: range === 'custom' ? dateFrom : undefined,
+      dateTo: range === 'custom' ? dateTo : undefined,
+    },
+    {
+      enabled: !isFinanceOnly,
       retry: 1,
       refetchInterval: 5 * 60 * 1000,
     },
   );
 
+  const financeSummaryQuery = trpc.dashboard.financeSummary.useQuery(
+    {
+      range,
+      dateFrom: range === 'custom' ? dateFrom : undefined,
+      dateTo: range === 'custom' ? dateTo : undefined,
+    },
+    {
+      enabled: isFinanceOnly,
+      retry: 1,
+      refetchInterval: 5 * 60 * 1000,
+    },
+  );
+  const salarySummaryQuery = trpc.dashboard.salarySummary.useQuery(undefined, {
+    enabled: showSalarySection,
+    retry: 1,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
   const stats = summaryQuery.data?.summary;
+  const sellerPerformance = summaryQuery.data?.sellerPerformance || [];
+  const financeTotals = financeSummaryQuery.data?.totals;
+  const incomeByCourse = financeSummaryQuery.data?.incomeByCourse || [];
+  const salaryByAgent = salarySummaryQuery.data?.byAgent || [];
+  const salaryCurrentUser = salarySummaryQuery.data?.currentUser;
+  const salaryTotals = salarySummaryQuery.data?.totals;
+  const salaryModeLabel = salarySummaryQuery.data?.bonusMode === 'on_debt_closed'
+    ? 'Bonus mode: Sotuv yopilganda (qarz 0 bo\'lganda)'
+    : 'Bonus mode: Tushum (har bir to\'lovdan)';
+  const formatPercent = (value?: number) => `${(value ?? 0).toFixed(1)}%`;
+
+  const metricCards = [
+    {
+      title: 'Sotuv shartnomasi',
+      value: String(stats?.newSalesCount ?? 0),
+      subtitle: formatAmount(stats?.newSalesAgreementAmount),
+    },
+    {
+      title: 'Sotuv - Online',
+      value: String(stats?.onlineSalesCount ?? 0),
+      subtitle: formatAmount(stats?.onlineSalesAgreementAmount),
+    },
+    {
+      title: 'Sotuv - Offline',
+      value: String(stats?.offlineSalesCount ?? 0),
+      subtitle: formatAmount(stats?.offlineSalesAgreementAmount),
+    },
+    {
+      title: 'Sotuv - Intensiv',
+      value: String(stats?.intensiveSalesCount ?? 0),
+      subtitle: formatAmount(stats?.intensiveSalesAgreementAmount),
+    },
+    {
+      title: 'Yangi lidlar',
+      value: String(stats?.totalLeads ?? 0),
+      subtitle: 'Tanlangan davr',
+    },
+    {
+      title: 'Sifatli lidlar',
+      value: String(stats?.qualifiedLeads ?? 0),
+      subtitle: `${formatPercent(stats?.qualifiedLeadSharePercent)} ulush`,
+    },
+    {
+      title: 'Sifatsiz lidlar',
+      value: String(stats?.nonQualifiedLeads ?? 0),
+      subtitle: `${formatPercent(stats?.nonQualifiedLeadSharePercent)} ulush`,
+    },
+    {
+      title: 'Konversiya (sotuv/lid)',
+      value: formatPercent(stats?.conversionPercent),
+      subtitle: 'Sotuvlar soni / lidlar soni',
+    },
+    {
+      title: 'Tushum',
+      value: formatAmount(stats?.totalIncomeAmount),
+      subtitle: 'Tanlangan davr bo\'yicha',
+    },
+  ];
+
+  const financeCards = [
+    {
+      title: 'Jami tushum',
+      value: formatAmount(financeTotals?.totalIncomeAmount),
+    },
+    {
+      title: 'Yangi sotuvlar',
+      value: String(financeTotals?.newSalesCount ?? 0),
+    },
+    {
+      title: 'Qayta to\'lovlar',
+      value: String(financeTotals?.repaymentCount ?? 0),
+    },
+    {
+      title: 'Qarzdor mijozlar',
+      value: String(financeTotals?.debtorsCount ?? 0),
+    },
+    {
+      title: 'Jami qarzdorlik',
+      value: formatAmount(financeTotals?.totalDebtAmount),
+    },
+  ];
+  const salarySection = showSalarySection ? (
+    <div className="rounded-lg bg-white shadow">
+      <div className="px-4 py-5 sm:p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-medium leading-6 text-gray-900">Salary (Current month)</h3>
+            <p className="mt-1 text-sm text-gray-500">{salaryModeLabel}</p>
+          </div>
+        </div>
+
+        {salarySummaryQuery.error && (
+          <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {salarySummaryQuery.error.message || 'Failed to load salary summary.'}
+          </div>
+        )}
+
+        {salarySummaryQuery.isLoading ? (
+          <p className="text-sm text-gray-600">Loading salary data...</p>
+        ) : isAgentOnly ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-gray-500">Fixed salary</p>
+              <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.fixedSalary)}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-gray-500">KPI</p>
+              <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.kpiAmount)}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-gray-500">Bonus</p>
+              <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.bonusAmount)}</p>
+            </div>
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
+              <p className="text-sm text-blue-700">Total salary</p>
+              <p className="mt-2 text-2xl font-semibold text-blue-900">{formatAmount(salaryCurrentUser?.totalSalary)}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <p className="text-sm text-gray-500">Fixed salary total</p>
+                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.fixedSalary)}</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <p className="text-sm text-gray-500">KPI total</p>
+                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.kpi)}</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <p className="text-sm text-gray-500">Bonus total</p>
+                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.bonus)}</p>
+              </div>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
+                <p className="text-sm text-blue-700">Total salary payout</p>
+                <p className="mt-2 text-2xl font-semibold text-blue-900">{formatAmount(salaryTotals?.salary)}</p>
+              </div>
+            </div>
+
+            {salaryByAgent.length ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fixed</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">KPI</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bonus</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {salaryByAgent.map((row: any) => (
+                      <tr key={row.userId}>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.name}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.fixedSalary)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.kpiAmount)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusAmount)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(row.totalSalary)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600">No agent salary data found for current month.</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div className="space-y-6">
@@ -62,75 +313,208 @@ export default function DashboardPage() {
               <h3 className="text-lg font-medium leading-6 text-gray-900">
                 Welcome back, {user?.email?.split('@')[0] || user?.phone || 'User'}!
               </h3>
-              <p className="mt-1 text-sm text-gray-500">Your lead analytics now come live from AmoCRM, while webhooks continue tracking lead changes.</p>
+              <p className="mt-1 text-sm text-gray-500">
+                {isFinanceOnly
+                  ? 'Finance dashboard shows only income, debitors, and income-by-course with selected date range.'
+                  : 'Use the date filter to review performance for the selected period.'}
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
-            <p className="text-sm font-medium text-gray-500">New Leads</p>
-            <p className="mt-2 text-2xl font-semibold text-gray-900">{stats?.totalLeads ?? 0}</p>
-          </div>
-        </div>
+      <div className="rounded-lg bg-white shadow">
+        <div className="px-4 py-5 sm:p-6">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_180px_1fr]">
+            <select
+              value={range}
+              onChange={(event) => setRange(event.target.value as DashboardRange)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="today">Today</option>
+              <option value="week">This week</option>
+              <option value="month">This month</option>
+              <option value="custom">Custom</option>
+            </select>
 
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
-            <p className="text-sm font-medium text-gray-500">Total Calls</p>
-            <p className="mt-2 text-2xl font-semibold text-gray-900">{stats?.totalCalls ?? 0}</p>
-          </div>
-        </div>
+            <input
+              type="date"
+              value={dateFrom}
+              disabled={range !== 'custom'}
+              onChange={(event) => setDateFrom(event.target.value)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+            />
+            <input
+              type="date"
+              value={dateTo}
+              disabled={range !== 'custom'}
+              onChange={(event) => setDateTo(event.target.value)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+            />
 
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
-            <p className="text-sm font-medium text-gray-500">Pending Notifications</p>
-            <p className="mt-2 text-2xl font-semibold text-gray-900">{stats?.pendingNotifications ?? 0}</p>
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
-            <p className="text-sm font-medium text-gray-500">Active Integrations</p>
-            <p className="mt-2 text-2xl font-semibold text-gray-900">{stats?.activeIntegrations ?? 0}</p>
+            {!isFinanceOnly && isAdmin && (
+              <MultiSelectDropdown
+                label="Pipelines Filter"
+                options={pipelineOptions}
+                selectedIds={pipelineIds}
+                onChange={setPipelineIds}
+                placeholder="Select pipelines"
+                disabled={amoPipelinesQuery.isLoading}
+              />
+            )}
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        <div className="rounded-lg bg-white shadow">
-          <div className="px-4 py-5 sm:p-6">
-            <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">Analytics Overview</h3>
-              <div className="w-full max-w-md">
-                <MultiSelectDropdown
-                  label="Pipelines Filter"
-                  options={pipelineOptions}
-                  selectedIds={pipelineIds}
-                  onChange={setPipelineIds}
-                  placeholder="Select pipelines"
-                  disabled={amoPipelinesQuery.isLoading}
+      {isFinanceOnly ? (
+        <div className="space-y-6">
+          {financeSummaryQuery.error && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {financeSummaryQuery.error.message || 'Failed to load finance dashboard data.'}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+            {financeCards.map((card) => (
+              <div
+                key={card.title}
+                className="rounded-xl border border-[#1d3155] bg-[#081734] p-5 text-white shadow-sm"
+              >
+                <p className="text-sm text-blue-100">{card.title}</p>
+                <p className="mt-2 text-4xl font-bold tracking-tight">{card.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {salarySection}
+
+          <div className="rounded-lg bg-white shadow">
+            <div className="px-4 py-5 sm:p-6">
+              <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Income by Course</h3>
+              {financeSummaryQuery.isLoading ? (
+                <p className="text-sm text-gray-600">Loading...</p>
+              ) : incomeByCourse.length ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Course</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sales</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Income</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {incomeByCourse.map((row: any) => (
+                        <tr key={row.courseName}>
+                          <td className="px-3 py-2 text-sm text-gray-900">{row.courseName}</td>
+                          <td className="px-3 py-2 text-sm text-gray-700">{row.count}</td>
+                          <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">No income data for selected date range.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {metricCards.map((card) => (
+              <div
+                key={card.title}
+                className="rounded-xl border border-[#1d3155] bg-[#081734] p-5 text-white shadow-sm"
+              >
+                <p className="text-sm text-blue-100">{card.title}</p>
+                <p className="mt-2 text-4xl font-bold tracking-tight">{card.value}</p>
+                <p className="mt-2 text-sm text-blue-200">{card.subtitle}</p>
+              </div>
+            ))}
+          </div>
+
+          {salarySection}
+
+          <div className="grid grid-cols-1 gap-6">
+            <div className="rounded-lg bg-white shadow">
+              <div className="px-4 py-5 sm:p-6">
+                <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Analytics Overview</h3>
+                <AnalyticsCharts
+                  range={range}
+                  onRangeChange={setRange}
+                  data={summaryQuery.data}
+                  isLoading={summaryQuery.isLoading}
+                  isError={summaryQuery.isError}
                 />
               </div>
             </div>
-            <AnalyticsCharts
-              range={range}
-              onRangeChange={setRange}
-              data={summaryQuery.data}
-              isLoading={summaryQuery.isLoading}
-              isError={summaryQuery.isError}
-            />
-          </div>
-        </div>
 
-        <div className="rounded-lg bg-white shadow">
-          <div className="px-4 py-5 sm:p-6">
-            <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Recent Leads</h3>
-            <LeadsTable pipelineIds={pipelineIds} />
+            <div className="rounded-lg bg-white shadow">
+              <div className="px-4 py-5 sm:p-6">
+                <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Sotuvchilar</h3>
+                {summaryQuery.isLoading ? (
+                  <p className="text-sm text-gray-600">Loading seller performance...</p>
+                ) : sellerPerformance.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Name</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">New leads</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qualified leads</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sale</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Conversion</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agreements sum</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Income sum</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Talked</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {sellerPerformance.map((seller: any) => (
+                          <tr key={seller.userId}>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{seller.name}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {renderMetricValue(seller.newLeads)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {renderMetricValue(seller.qualifiedLeads)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {renderMetricValue(seller.sales)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {seller.conversionPercent === null || seller.conversionPercent === undefined
+                                ? '-'
+                                : `${seller.conversionPercent.toFixed(1)}%`}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {seller.agreementsAmount === null || seller.agreementsAmount === undefined
+                                ? '-'
+                                : formatAmount(seller.agreementsAmount)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {seller.incomeAmount === null || seller.incomeAmount === undefined
+                                ? '-'
+                                : formatAmount(seller.incomeAmount)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {formatDuration(seller.talkedSeconds)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-600">No seller performance data for selected filters.</p>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }
