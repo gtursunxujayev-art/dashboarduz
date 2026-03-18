@@ -7,13 +7,18 @@ import { useAuth } from '@/contexts/auth-context';
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 const AGENT_ALLOWED_PATHS = [
   '/dashboard',
+  '/dashboard/leads',
   '/dashboard/calls',
   '/dashboard/income',
+  '/dashboard/adjustments',
+  '/dashboard/sotuvchilar',
+  '/dashboard/customers',
   '/dashboard/analytics',
   '/dashboard/finance',
 ];
 const FINANCE_ALLOWED_PATHS = [
   '/dashboard',
+  '/dashboard/adjustments',
   '/dashboard/analytics',
   '/dashboard/finance',
 ];
@@ -48,13 +53,16 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
   const router = useRouter();
   const normalizedPath = pathname || '/dashboard';
   const isLeadPath = normalizedPath === '/dashboard/leads' || normalizedPath.startsWith('/dashboard/leads/');
+  const canAccessLeads = Boolean(
+    user?.roles?.includes('Admin') || user?.roles?.includes('Manager') || user?.roles?.includes('Agent'),
+  );
 
   const isAgentRestriction = Boolean(user && isAgentOnly(user.roles));
   const isFinanceRestriction = Boolean(user && isFinanceOnly(user.roles));
   const isManagerRestriction = Boolean(user && isManagerOnly(user.roles));
 
   const isAllowed = isLeadPath
-    ? false
+    ? canAccessLeads
     : isAgentRestriction
     ? isPathAllowed(normalizedPath, AGENT_ALLOWED_PATHS)
     : isFinanceRestriction
