@@ -115,6 +115,249 @@ function normalizeDirection(value: string | null | undefined): 'inbound' | 'outb
   return 'inbound';
 }
 
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function parseUtelDateTimeToUtcIso(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const raw = value.trim();
+  if (!raw) {
+    return null;
+  }
+
+  const withTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(raw);
+  if (withTimezone) {
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  const normalized = raw.replace(' ', 'T');
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/);
+  if (match) {
+    const [, y, m, d, hh, mm, ss] = match;
+    // UTeL sends local time in GMT+5, convert to UTC for storage.
+    const utcMillis = Date.UTC(
+      Number(y),
+      Number(m) - 1,
+      Number(d),
+      Number(hh) - 5,
+      Number(mm),
+      Number(ss),
+    );
+    const parsed = new Date(utcMillis);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  const fallback = new Date(normalized);
+  return Number.isNaN(fallback.getTime()) ? null : fallback.toISOString();
+}
+
+function toInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.floor(value);
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value.trim(), 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+function buildCallHistoryFromFlatPayload(bodyPayload: Record<string, unknown>): Record<string, unknown> | null {
+  const callHistory: Record<string, unknown> = {};
+  let hasAny = false;
+
+  for (const [key, value] of Object.entries(bodyPayload)) {
+    let fieldKey: string | null = null;
+
+    const bracketDataMatch = key.match(/^data\[call_history\]\[([^\]]+)\]$/);
+    if (bracketDataMatch) {
+      fieldKey = bracketDataMatch[1] || null;
+    }
+
+    const bracketDirectMatch = key.match(/^call_history\[([^\]]+)\]$/);
+    if (!fieldKey && bracketDirectMatch) {
+      fieldKey = bracketDirectMatch[1] || null;
+    }
+
+    const dottedDataMatch = key.match(/^data\.call_history\.([^.]+)$/);
+    if (!fieldKey && dottedDataMatch) {
+      fieldKey = dottedDataMatch[1] || null;
+    }
+
+    const dottedDirectMatch = key.match(/^call_history\.([^.]+)$/);
+    if (!fieldKey && dottedDirectMatch) {
+      fieldKey = dottedDirectMatch[1] || null;
+    }
+
+    if (fieldKey) {
+      callHistory[fieldKey] = value;
+      hasAny = true;
+    }
+  }
+
+  return hasAny ? callHistory : null;
+}
+
+function resolveFlatEventName(bodyPayload: Record<string, unknown>): string {
+  const direct = String(
+    bodyPayload.event
+    || bodyPayload.name
+    || bodyPayload.event_type
+    || '',
+  ).trim().toLowerCase();
+  if (direct) {
+    return direct;
+  }
+
+  const fromFlatData = String(bodyPayload['data[name]'] || bodyPayload['data.name'] || '').trim().toLowerCase();
+  return fromFlatData;
+}
+
+function inferUtelDirection(src: string, dst: string, rawDirection: unknown): 'inbound' | 'outbound' {
+  const explicit = normalizeDirection(typeof rawDirection === 'string' ? rawDirection : undefined);
+  if (String(rawDirection || '').trim().length > 0) {
+    return explicit;
+  }
+
+  const srcInternal = isLikelyInternalPhone(src);
+  const dstInternal = isLikelyInternalPhone(dst);
+  const srcExternal = isLikelyExternalPhone(src);
+  const dstExternal = isLikelyExternalPhone(dst);
+
+  if (srcInternal && dstExternal) {
+    return 'outbound';
+  }
+  if (srcExternal && dstInternal) {
+    return 'inbound';
+  }
+  return 'inbound';
+}
+
+function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknown>): {
+  ignored: boolean;
+  reason?: string;
+  payload: Record<string, unknown>;
+  eventType: string;
+} {
+  if (provider !== 'utel') {
+    return {
+      ignored: false,
+      payload: { ...bodyPayload, provider },
+      eventType: typeof bodyPayload.event_type === 'string' && bodyPayload.event_type.trim()
+        ? bodyPayload.event_type
+        : 'call_event',
+    };
+  }
+
+  const dataObj = asObject(bodyPayload.data);
+  const eventName = String(
+    (dataObj?.name as string | undefined)
+    || (bodyPayload.event as string | undefined)
+    || (bodyPayload.name as string | undefined)
+    || (bodyPayload.event_type as string | undefined)
+    || resolveFlatEventName(bodyPayload)
+    || '',
+  ).trim().toLowerCase();
+  const callHistory = asObject((dataObj?.call_history as unknown)
+    || bodyPayload.call_history
+    || bodyPayload.callHistory)
+    || buildCallHistoryFromFlatPayload(bodyPayload);
+
+  if (callHistory) {
+    const src = normalizePhone(String(callHistory.src || callHistory.from || callHistory.source || ''));
+    const dst = normalizePhone(String(callHistory.dst || callHistory.to || callHistory.destination || ''));
+    const direction = inferUtelDirection(src, dst, callHistory.direction || eventName);
+    const externalPhone = normalizePhone(String(
+      callHistory.external_number
+      || callHistory.phone
+      || callHistory.client_phone
+      || (direction === 'outbound' ? dst : src)
+      || '',
+    ));
+    const extension = normalizePhone(String(
+      callHistory.extension
+      || callHistory.ext
+      || (direction === 'outbound' ? src : dst)
+      || '',
+    ));
+    const manager = String(
+      callHistory.manager
+      || callHistory.manager_name
+      || callHistory.user_name
+      || callHistory.agent_name
+      || '',
+    ).trim() || null;
+    const duration = toInt(callHistory.conversation ?? callHistory.duration ?? callHistory.billsec);
+    const startedAtIso = parseUtelDateTimeToUtcIso(
+      callHistory.date_time
+      || callHistory.start_time
+      || callHistory.started_at,
+    );
+
+    const normalizedCall = {
+      call_id: String(
+        callHistory.call_id
+        || callHistory.linkedid
+        || callHistory.uniqueid
+        || callHistory.uuid
+        || callHistory.id
+        || '',
+      ).trim() || undefined,
+      direction,
+      from: src,
+      to: externalPhone || dst,
+      src,
+      dst,
+      extension,
+      phone: externalPhone,
+      external_number: externalPhone || undefined,
+      manager_name: manager || undefined,
+      duration: duration ?? undefined,
+      conversation: duration ?? undefined,
+      start_time: startedAtIso || undefined,
+      date_time: callHistory.date_time || undefined,
+      status: String(callHistory.status || bodyPayload.status || 'completed'),
+      raw_call_history: callHistory,
+    };
+
+    return {
+      ignored: false,
+      eventType: 'call_saved',
+      payload: {
+        ...bodyPayload,
+        provider,
+        event_type: 'call_saved',
+        call: normalizedCall,
+        call_history: callHistory,
+      },
+    };
+  }
+
+  if (eventName && eventName !== 'call_saved') {
+    return {
+      ignored: true,
+      reason: `ignored_utel_event_${eventName}`,
+      payload: { ...bodyPayload, provider },
+      eventType: eventName,
+    };
+  }
+
+  return {
+    ignored: true,
+    reason: 'ignored_utel_event_missing_call_history',
+    payload: { ...bodyPayload, provider },
+    eventType: eventName || 'call_event',
+  };
+}
+
 function isUniqueViolation(error: any): boolean {
   return error?.code === 'P2002';
 }
@@ -363,11 +606,22 @@ async function handleVoipWebhook(req: Request, res: Response) {
       : { raw: req.body as unknown };
     const provider = resolveVoipProvider(req);
     providerForAudit = provider;
+    const preparedPayload = prepareVoipPayload(provider, bodyPayload);
+    if (preparedPayload.ignored) {
+      await writeWebhookRejectionAudit({
+        tenantId: integration.tenantId,
+        reason: preparedPayload.reason || 'ignored_event',
+        metadata: {
+          source: 'voip',
+          provider,
+          eventType: preparedPayload.eventType,
+        },
+      });
+      return res.status(200).json({ received: true, ignored: true, reason: preparedPayload.reason || 'ignored_event' });
+    }
+
     const idempotencyKey = buildIdempotencyKey(`voip:${provider}`, integration.tenantId, rawBody);
-    const eventTypeRaw = bodyPayload['event_type'];
-    const eventType = typeof eventTypeRaw === 'string' && eventTypeRaw.trim().length > 0
-      ? eventTypeRaw
-      : 'call_event';
+    const eventType = preparedPayload.eventType;
 
     let event;
     try {
@@ -377,10 +631,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
           source: 'voip',
           eventType,
           idempotencyKey: `${provider}:${idempotencyKey}`,
-          rawPayload: {
-            ...bodyPayload,
-            provider,
-          },
+          rawPayload: preparedPayload.payload as any,
           signature: signature || null,
           processed: false,
         },
@@ -397,10 +648,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
             tenantId: integration.tenantId,
             source: 'voip',
             eventType,
-            rawPayload: {
-              ...bodyPayload,
-              provider,
-            },
+            rawPayload: preparedPayload.payload as any,
             signature: signature || null,
             processed: false,
           },
