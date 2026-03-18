@@ -263,7 +263,7 @@ function classifyCourseCategoryFromField(
   if (normalized === 'online' || normalized === 'offline' || normalized === 'intensive') {
     return normalized;
   }
-  return 'other';
+  return classifyCourseCategory(category);
 }
 
 function isAgentOnly(roles: string[]): boolean {
@@ -482,7 +482,7 @@ export const dashboardRouter = router({
             managerUserId: true,
             course: {
               select: {
-                category: true,
+                name: true,
               },
             },
           },
@@ -634,7 +634,7 @@ export const dashboardRouter = router({
         const agreementAmount = income.coursePriceAmount ?? income.paymentAmount ?? 0;
         newSalesAgreementAmount += agreementAmount;
 
-        const category = classifyCourseCategoryFromField(income.course?.category);
+        const category = classifyCourseCategoryFromField(income.course?.name);
         if (category === 'online') {
           onlineSalesCount += 1;
           onlineSalesAgreementAmount += agreementAmount;
@@ -871,7 +871,6 @@ export const dashboardRouter = router({
               select: {
                 id: true,
                 name: true,
-                category: true,
               },
             },
             tariff: {
@@ -887,7 +886,6 @@ export const dashboardRouter = router({
           select: {
             id: true,
             name: true,
-            category: true,
           },
         }),
         prisma.user.findMany({
@@ -930,7 +928,7 @@ export const dashboardRouter = router({
         customerId: string;
         customer: { customerNumber: string; name: string };
         manager: { id: string; name: string | null; username: string | null };
-        course: { id: string; name: string; category: string } | null;
+        course: { id: string; name: string } | null;
         tariff: { name: string } | null;
       }>) {
         const paymentAmount = income.paymentAmount || 0;
@@ -1005,7 +1003,10 @@ export const dashboardRouter = router({
             amount: value.amount,
           }))
           .sort((a, b) => b.amount - a.amount),
-        courseOptions: courses,
+        courseOptions: (courses as Array<{ id: string; name: string }>).map((course) => ({
+          ...course,
+          category: classifyCourseCategoryFromField(course.name),
+        })),
         managerOptions: visibleManagerOptions,
         recentIncomes: (incomes as Array<{
           id: string;
@@ -1016,7 +1017,7 @@ export const dashboardRouter = router({
           entryDate: Date;
           customer: { customerNumber: string; name: string };
           manager: { id: string; name: string | null; username: string | null };
-          course: { id: string; name: string; category: string } | null;
+          course: { id: string; name: string } | null;
           tariff: { name: string } | null;
         }>).map((income) => ({
           id: income.id,
@@ -1136,14 +1137,14 @@ export const dashboardRouter = router({
           paymentAmount: true,
           course: {
             select: {
-              category: true,
+              name: true,
             },
           },
           relatedDebtIncome: {
             select: {
               course: {
                 select: {
-                  category: true,
+                  name: true,
                 },
               },
             },
@@ -1153,7 +1154,7 @@ export const dashboardRouter = router({
 
       for (const income of incomes) {
         const category = classifyCourseCategoryFromField(
-          income.course?.category ?? income.relatedDebtIncome?.course?.category,
+          income.course?.name ?? income.relatedDebtIncome?.course?.name,
         );
         if (category === 'other') {
           continue;
@@ -1187,7 +1188,7 @@ export const dashboardRouter = router({
             paymentAmount: true,
             course: {
               select: {
-                category: true,
+                name: true,
               },
             },
           },
@@ -1215,7 +1216,7 @@ export const dashboardRouter = router({
                 paymentAmount: true,
                 course: {
                   select: {
-                    category: true,
+                    name: true,
                   },
                 },
               },
@@ -1230,14 +1231,14 @@ export const dashboardRouter = router({
         managerUserId: string;
         coursePriceAmount: number | null;
         paymentAmount: number;
-        course: { category: string } | null;
+        course: { name: string } | null;
       }) => {
         if (processedSaleIds.has(sale.id)) {
           return;
         }
         processedSaleIds.add(sale.id);
 
-        const category = classifyCourseCategoryFromField(sale.course?.category);
+        const category = classifyCourseCategoryFromField(sale.course?.name);
         if (category === 'other') {
           return;
         }
