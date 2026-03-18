@@ -44,8 +44,8 @@ export default function SellerCard({ seller }: SellerCardProps) {
 
   return (
     <div className="border border-gray-200 rounded-lg p-6 hover:border-gray-300 transition-colors">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center space-x-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="flex items-start space-x-4">
           <div className="flex-shrink-0">
             <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
               <span className="text-blue-600 font-semibold text-lg">
@@ -55,7 +55,7 @@ export default function SellerCard({ seller }: SellerCardProps) {
           </div>
           <div>
             <h3 className="text-lg font-medium text-gray-900">{displayName}</h3>
-            <div className="flex items-center space-x-2 mt-1">
+            <div className="mt-1 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                 {seller.roles.join(', ')}
               </span>
@@ -63,7 +63,7 @@ export default function SellerCard({ seller }: SellerCardProps) {
                 Oxirgi kirish: {lastLogin}
               </span>
             </div>
-            <div className="mt-2 flex space-x-4 text-sm text-gray-500">
+            <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-500">
               {seller.email && (
                 <span className="flex items-center">
                   <svg className="mr-1.5 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -85,7 +85,7 @@ export default function SellerCard({ seller }: SellerCardProps) {
         </div>
         <Link
           href={`/dashboard/sotuvchilar/${seller.id}`}
-          className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          className="inline-flex w-full items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 md:w-auto"
         >
           Batafsil
         </Link>
