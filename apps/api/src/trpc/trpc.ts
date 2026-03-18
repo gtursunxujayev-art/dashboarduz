@@ -1,6 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { Context } from './context';
 import { prisma } from '@dashboarduz/db';
+import { Prisma } from '@prisma/client';
 import superjson from 'superjson';
 
 const t = initTRPC.context<Context>().create({
@@ -19,10 +20,46 @@ const t = initTRPC.context<Context>().create({
 });
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
+
+function isPrismaSchemaMismatchError(error: unknown): boolean {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2021' || error.code === 'P2022') {
+      return true;
+    }
+  }
+
+  const message = String((error as any)?.message || '').toLowerCase();
+  return (
+    message.includes('does not exist in the current database')
+    || (message.includes('column') && message.includes('does not exist'))
+    || (message.includes('table') && message.includes('does not exist'))
+    || (message.includes('relation') && message.includes('does not exist'))
+  );
+}
+
+const baseProcedure = t.procedure.use(async (opts) => {
+  try {
+    return await opts.next();
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      throw error;
+    }
+
+    if (isPrismaSchemaMismatchError(error)) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'Database schema is out of date. Run `npx prisma migrate deploy --schema=packages/db/prisma/schema.prisma` and redeploy API/worker.',
+      });
+    }
+
+    throw error;
+  }
+});
+
+export const publicProcedure = baseProcedure;
 
 // Protected procedure that requires authentication
-export const protectedProcedure = t.procedure.use(async (opts) => {
+export const protectedProcedure = baseProcedure.use(async (opts) => {
   const { ctx } = opts;
   
   if (!ctx.user || !ctx.tenantId) {
