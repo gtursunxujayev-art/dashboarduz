@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -42,10 +42,10 @@ export default function LoginPage() {
           login(result.token, result.user);
           return;
         }
-        setError('Invalid OTP code');
+        setError('OTP kod notoвЂgвЂri');
       }
     } catch (err: any) {
-      setError(err?.message || 'Authentication failed');
+      setError(err?.message || 'Autentifikatsiya muvaffaqiyatsiz');
     } finally {
       setIsLoading(false);
     }
@@ -65,9 +65,9 @@ export default function LoginPage() {
         login(result.token, result.user);
         return;
       }
-      setError('Invalid login or password');
+      setError('Login yoki parol notoвЂgвЂri');
     } catch (err: any) {
-      setError(err?.message || 'Authentication failed');
+      setError(err?.message || 'Autentifikatsiya muvaffaqiyatsiz');
     } finally {
       setIsLoading(false);
     }
@@ -83,9 +83,9 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Sign in to Dashboarduz</h2>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Dashboarduz ga kirish</h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Use Phone OTP or sign in with login and password
+            Telefon OTP yoki login-parol orqali tizimga kiring
           </p>
         </div>
 
@@ -99,7 +99,7 @@ export default function LoginPage() {
               }}
               className={`rounded-md px-3 py-2 text-sm font-medium ${mode === 'otp' ? 'bg-white shadow text-gray-900' : 'text-gray-600'}`}
             >
-              Phone OTP
+              Telefon OTP
             </button>
             <button
               type="button"
@@ -109,7 +109,7 @@ export default function LoginPage() {
               }}
               className={`rounded-md px-3 py-2 text-sm font-medium ${mode === 'password' ? 'bg-white shadow text-gray-900' : 'text-gray-600'}`}
             >
-              Login + Password
+              Login + Parol
             </button>
           </div>
 
@@ -123,7 +123,7 @@ export default function LoginPage() {
             <form onSubmit={handleOtpSubmit} className="space-y-4">
               <div>
                 <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
-                  Phone Number
+                  Telefon raqam
                 </label>
                 <input
                   id="phone"
@@ -140,8 +140,8 @@ export default function LoginPage() {
 
               {otpSent && (
                 <div>
-                  <label htmlFor="otp" className="block text-sm font-medium text-gray-700">
-                    OTP Code
+                    <label htmlFor="otp" className="block text-sm font-medium text-gray-700">
+                    OTP kod
                   </label>
                   <input
                     id="otp"
@@ -151,7 +151,7 @@ export default function LoginPage() {
                     value={otp}
                     onChange={(e) => setOtp(e.target.value)}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    placeholder="Enter 6-digit code"
+                    placeholder="6 xonali kodni kiriting"
                     maxLength={6}
                     disabled={isLoading}
                   />
@@ -163,7 +163,7 @@ export default function LoginPage() {
                 disabled={isLoading}
                 className="w-full py-2 px-4 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
               >
-                {isLoading ? 'Processing...' : otpSent ? 'Verify OTP' : 'Send OTP'}
+                {isLoading ? 'Bajarilmoqda...' : otpSent ? 'OTP ni tasdiqlash' : 'OTP yuborish'}
               </button>
             </form>
           ) : (
@@ -187,7 +187,7 @@ export default function LoginPage() {
 
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                  Password
+                  Parol
                 </label>
                 <input
                   id="password"
@@ -207,18 +207,18 @@ export default function LoginPage() {
                 disabled={isLoading}
                 className="w-full py-2 px-4 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
               >
-                {isLoading ? 'Signing in...' : 'Sign in'}
+                {isLoading ? 'Kirilmoqda...' : 'Kirish'}
               </button>
             </form>
           )}
 
           <p className="mt-4 text-xs text-gray-500 text-center">
-            Telegram account linking is available after login in integrations.
+            Telegram akkauntini bog'lash Integratsiyalar bo'limida kirgandan keyin mavjud.
           </p>
 
           <div className="mt-6 text-center">
             <Link href="/auth/register" className="font-medium text-blue-600 hover:text-blue-500">
-              Create a new tenant account
+              Yangi tenant akkaunt yaratish
             </Link>
           </div>
         </div>
@@ -226,3 +226,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
