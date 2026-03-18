@@ -4,8 +4,8 @@ import { Providers } from './providers';
 import { AuthProvider } from '@/contexts/auth-context';
 
 export const metadata: Metadata = {
-  title: 'Dashboarduz - Multi-Tenant CRM Integrator',
-  description: 'Connect AmoCRM, Telegram, Google Sheets, and VoIP in one platform',
+  title: 'Dashboarduz - Ko\'p ijarachili CRM integratori',
+  description: 'AmoCRM, Telegram, Google Sheets va VoIP xizmatlarini bitta platformada boshqaring',
 };
 
 export default function RootLayout({
@@ -14,7 +14,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="uz">
       <body className="font-sans">
         <Providers>
           <AuthProvider>
