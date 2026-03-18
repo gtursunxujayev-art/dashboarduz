@@ -45,9 +45,9 @@ export default function RegisterPage() {
         return;
       }
 
-      setError('RoвЂyxatdan oвЂtish muvaffaqiyatsiz');
+      setError("Ro'yxatdan o'tish muvaffaqiyatsiz");
     } catch (err: any) {
-      setError(err?.message || 'RoвЂyxatdan oвЂtish muvaffaqiyatsiz');
+      setError(err?.message || "Ro'yxatdan o'tish muvaffaqiyatsiz");
     } finally {
       setIsLoading(false);
     }
@@ -58,7 +58,7 @@ export default function RegisterPage() {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Tenant akkaunt yarating</h2>
-          <p className="mt-2 text-center text-sm text-gray-600">Login va parol bilan roвЂyxatdan oвЂting</p>
+          <p className="mt-2 text-center text-sm text-gray-600">Login va parol bilan ro'yxatdan o'ting</p>
         </div>
 
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
@@ -143,4 +143,5 @@ export default function RegisterPage() {
     </div>
   );
 }
+
 
