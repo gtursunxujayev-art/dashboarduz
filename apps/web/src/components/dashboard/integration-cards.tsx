@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
@@ -24,25 +24,25 @@ const integrationCatalog: Array<{
   {
     id: 'amocrm',
     name: 'AmoCRM',
-    description: 'Connect by long-lived token for leads/contacts sync and webhook ingestion.',
+    description: "Long-lived token orqali ulanadi: lid/contact sinxroni va webhook qabul qilish.",
     color: 'bg-blue-50 border-blue-200',
   },
   {
     id: 'telegram',
     name: 'Telegram Bot',
-    description: 'Connect bot token, auto-register webhook, and send notifications.',
+    description: "Bot token ulanadi, webhook avtomatik ro'yxatdan o'tadi va xabar yuboradi.",
     color: 'bg-cyan-50 border-cyan-200',
   },
   {
     id: 'google_sheets',
     name: 'Google Sheets',
-    description: 'Deferred for MVP (disabled).',
+    description: 'MVP uchun vaqtincha oвЂchirilgan.',
     color: 'bg-gray-50 border-gray-200',
   },
   {
     id: 'voip_utel',
     name: 'VoIP (Webhook)',
-    description: 'Webhook-only mode: ingest call events from UTeL and other operators.',
+    description: "Faqat webhook rejimi: UTeL va boshqa operatorlardan qo'ng'iroqlar qabul qilinadi.",
     color: 'bg-purple-50 border-purple-200',
   },
 ];
@@ -63,13 +63,13 @@ function statusBadge(status: string) {
 function statusText(status: string) {
   switch (status) {
     case 'active':
-      return 'Connected';
+      return 'Ulangan';
     case 'pending':
-      return 'Pending';
+      return 'Kutilmoqda';
     case 'error':
-      return 'Error';
+      return 'Xatolik';
     default:
-      return 'Not Connected';
+      return 'Ulanmagan';
   }
 }
 
@@ -150,7 +150,7 @@ export default function IntegrationCards() {
     try {
       if (integrationId === 'amocrm') {
         if (!amocrmLongLivedToken.trim()) {
-          throw new Error('AmoCRM long-lived token is required');
+          throw new Error('AmoCRM long-lived token majburiy');
         }
         await connectAmoCRM.mutateAsync({
           longLivedToken: amocrmLongLivedToken.trim(),
@@ -164,7 +164,7 @@ export default function IntegrationCards() {
 
       if (integrationId === 'telegram') {
         if (!telegramToken.trim()) {
-          throw new Error('Telegram bot token is required');
+          throw new Error('Telegram bot token majburiy');
         }
         await connectTelegram.mutateAsync({ botToken: telegramToken.trim() });
         setTelegramToken('');
@@ -178,9 +178,9 @@ export default function IntegrationCards() {
         return;
       }
 
-      setError('Google Sheets integration is disabled in MVP');
+      setError('Google Sheets integratsiyasi MVP da oвЂchirilgan');
     } catch (err: any) {
-      setError(err?.message || `Failed to connect ${integrationId}`);
+      setError(err?.message || `${integrationId} ulanishida xatolik`);
     } finally {
       setActionLoading(null);
     }
@@ -198,7 +198,7 @@ export default function IntegrationCards() {
       await disconnectIntegration.mutateAsync({ type: integrationId });
       await listQuery.refetch();
     } catch (err: any) {
-      setError(err?.message || `Failed to disconnect ${integrationId}`);
+      setError(err?.message || `${integrationId} uzishda xatolik`);
     } finally {
       setActionLoading(null);
     }
@@ -215,7 +215,7 @@ export default function IntegrationCards() {
       });
       await Promise.all([listQuery.refetch(), amoPipelinesQuery.refetch()]);
     } catch (err: any) {
-      setError(err?.message || 'Failed to update AmoCRM pipelines');
+      setError(err?.message || 'AmoCRM pipeline saqlashda xatolik');
     } finally {
       setActionLoading(null);
     }
@@ -234,7 +234,7 @@ export default function IntegrationCards() {
       await telegramRecipientsQuery.refetch();
       setTelegramSelectionSavedAt(new Date().toISOString());
     } catch (err: any) {
-      setError(err?.message || 'Failed to save Telegram report recipients');
+      setError(err?.message || 'Telegram hisobot oluvchilarini saqlashda xatolik');
     } finally {
       setActionLoading(null);
     }
@@ -248,9 +248,9 @@ export default function IntegrationCards() {
     try {
       const result = await sendTelegramTodayReportNow.mutateAsync();
       const sentAt = new Date().toLocaleTimeString();
-      setTelegramReportSentMessage(`Today report sent to ${result.recipientCount} user(s) at ${sentAt}.`);
+      setTelegramReportSentMessage(`Bugungi hisobot ${result.recipientCount} ta foydalanuvchiga ${sentAt} da yuborildi.`);
     } catch (err: any) {
-      setError(err?.message || 'Failed to send today report');
+      setError(err?.message || 'Bugungi hisobotni yuborishda xatolik');
     } finally {
       setActionLoading(null);
     }
@@ -287,13 +287,13 @@ export default function IntegrationCards() {
 
               {integration.status === 'active' && (
                 <div className="mt-3 space-y-1 text-xs text-gray-600">
-                  {integration.lastSyncAt && <p>Last sync: {new Date(integration.lastSyncAt).toLocaleString()}</p>}
+                  {integration.lastSyncAt && <p>Oxirgi sinxron: {new Date(integration.lastSyncAt).toLocaleString()}</p>}
                   {(integrationConfig as any).lastValidatedAt && (
-                    <p>Last validation: {new Date(String((integrationConfig as any).lastValidatedAt)).toLocaleString()}</p>
+                    <p>Oxirgi tekshiruv: {new Date(String((integrationConfig as any).lastValidatedAt)).toLocaleString()}</p>
                   )}
                   {webhookUrl && <p className="break-all">Webhook: {webhookUrl}</p>}
                   {(integrationConfig as any).connectionMode && (
-                    <p>Mode: {String((integrationConfig as any).connectionMode)}</p>
+                    <p>Rejim: {String((integrationConfig as any).connectionMode)}</p>
                   )}
                 </div>
               )}
@@ -302,20 +302,20 @@ export default function IntegrationCards() {
                 <div className="mt-4 rounded-md border border-blue-100 bg-white p-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Pipelines Included in Live Reads</p>
+                      <p className="text-sm font-medium text-gray-900">Jonli oвЂqishda ishlatiladigan pipelinelar</p>
                       <p className="text-xs text-gray-500">
-                        Dashboard analytics, live lead pages, and webhook lead ingestion use only checked pipelines.
+                        Dashboard tahlili va webhook orqali qabul qilishda faqat belgilangan pipelinelar ishlatiladi.
                       </p>
                     </div>
                     <span className="text-xs text-gray-500">
-                      {selectedPipelineIds.length}/{pipelines.length} selected
+                      {selectedPipelineIds.length}/{pipelines.length} ta tanlangan
                     </span>
                   </div>
 
                   {amoPipelinesQuery.isLoading ? (
-                    <p className="mt-3 text-sm text-gray-500">Loading pipelines...</p>
+                    <p className="mt-3 text-sm text-gray-500">Pipelinelar yuklanmoqda...</p>
                   ) : pipelines.length === 0 ? (
-                    <p className="mt-3 text-sm text-gray-500">No pipelines returned by AmoCRM.</p>
+                    <p className="mt-3 text-sm text-gray-500">AmoCRM dan pipeline qaytmadi.</p>
                   ) : (
                     <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
                       {pipelines.map((pipeline: any) => (
@@ -337,7 +337,7 @@ export default function IntegrationCards() {
                             <p className="font-medium text-gray-900">{pipeline.name}</p>
                             {Array.isArray(pipeline.statuses) && pipeline.statuses.length > 0 && (
                               <p className="text-xs text-gray-500">
-                                Statuses: {pipeline.statuses.map((status: any) => status.name).join(', ')}
+                                Statuslar: {pipeline.statuses.map((status: any) => status.name).join(', ')}
                               </p>
                             )}
                           </div>
@@ -353,7 +353,7 @@ export default function IntegrationCards() {
                       disabled={loading || amoPipelinesQuery.isLoading}
                       className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {loading ? 'Saving...' : 'Save Pipeline Selection'}
+                      {loading ? 'Saqlanmoqda...' : 'Pipeline tanlovini saqlash'}
                     </button>
                   </div>
                 </div>
@@ -363,21 +363,21 @@ export default function IntegrationCards() {
                 <div className="mt-4 rounded-md border border-cyan-100 bg-white p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Scheduled Report Recipients</p>
+                      <p className="text-sm font-medium text-gray-900">Rejalashtirilgan hisobot oluvchilari</p>
                       <p className="text-xs text-gray-500">
-                        Users appear here after they send <span className="font-mono">/start</span> to your bot. Check who should receive daily/weekly/monthly PDF reports.
+                        Foydalanuvchilar botga <span className="font-mono">/start</span> yuborgandan keyin shu yerda koвЂrinadi. Kunlik/haftalik/oylik hisobot oluvchilarni belgilang.
                       </p>
                     </div>
                     <span className="text-xs text-gray-500">
-                      {selectedTelegramRecipientIds.length}/{telegramRecipients.length} selected
+                      {selectedTelegramRecipientIds.length}/{telegramRecipients.length} ta tanlangan
                     </span>
                   </div>
 
                   {telegramRecipientsQuery.isLoading ? (
-                    <p className="mt-3 text-sm text-gray-500">Loading Telegram users...</p>
+                    <p className="mt-3 text-sm text-gray-500">Telegram foydalanuvchilari yuklanmoqda...</p>
                   ) : telegramRecipients.length === 0 ? (
                     <p className="mt-3 text-sm text-gray-500">
-                      No users yet. Ask users to open your bot and send <span className="font-mono">/start</span>.
+                      Hozircha foydalanuvchi yoвЂq. Foydalanuvchilardan botni ochib <span className="font-mono">/start</span> yuborishni soвЂrang.
                     </p>
                   ) : (
                     <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
@@ -407,7 +407,7 @@ export default function IntegrationCards() {
                             </p>
                             {recipient.lastSeenAt && (
                               <p className="text-xs text-gray-500">
-                                Last seen: {new Date(recipient.lastSeenAt).toLocaleString()}
+                                Oxirgi faollik: {new Date(recipient.lastSeenAt).toLocaleString()}
                               </p>
                             )}
                           </div>
@@ -423,11 +423,11 @@ export default function IntegrationCards() {
                       disabled={loading || telegramRecipientsQuery.isLoading || telegramRecipients.length === 0}
                       className="rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-800 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {loading ? 'Saving...' : 'Save Recipients'}
+                      {loading ? 'Saqlanmoqda...' : 'Qabul qiluvchilarni saqlash'}
                     </button>
                     {telegramSelectionSavedAt && (
                       <span className="text-xs text-green-700">
-                        Saved at {new Date(telegramSelectionSavedAt).toLocaleTimeString()}
+                        Saqlandi: {new Date(telegramSelectionSavedAt).toLocaleTimeString()}
                       </span>
                     )}
                   </div>
@@ -439,7 +439,7 @@ export default function IntegrationCards() {
                       disabled={loading || telegramRecipients.length === 0 || selectedTelegramRecipientIds.length === 0}
                       className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {loading ? 'Sending...' : 'Send Today Report Now'}
+                      {loading ? 'Yuborilmoqda...' : 'Bugungi hisobotni hozir yuborish'}
                     </button>
                     {telegramReportSentMessage && (
                       <span className="text-xs text-green-700">{telegramReportSentMessage}</span>
@@ -451,7 +451,7 @@ export default function IntegrationCards() {
               {integration.id === 'amocrm' && integration.status !== 'active' && (
                 <div className="mt-4 space-y-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700">AmoCRM Long-lived Token</label>
+                    <label className="block text-xs font-medium text-gray-700">AmoCRM Long-lived token</label>
                     <input
                       type="password"
                       value={amocrmLongLivedToken}
@@ -461,7 +461,7 @@ export default function IntegrationCards() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700">AmoCRM Base URL (optional)</label>
+                    <label className="block text-xs font-medium text-gray-700">AmoCRM Base URL (ixtiyoriy)</label>
                     <input
                       type="url"
                       value={amocrmBaseUrl}
@@ -475,7 +475,7 @@ export default function IntegrationCards() {
 
               {integration.id === 'telegram' && integration.status === 'disconnected' && (
                 <div className="mt-4">
-                  <label className="block text-xs font-medium text-gray-700">Telegram Bot Token</label>
+                  <label className="block text-xs font-medium text-gray-700">Telegram bot token</label>
                   <input
                     type="password"
                     value={telegramToken}
@@ -492,9 +492,9 @@ export default function IntegrationCards() {
                     type="button"
                     onClick={() => handleConnect(integration.id)}
                     disabled={loading || integration.id === 'google_sheets'}
-                    className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {loading ? 'Connecting...' : integration.id === 'google_sheets' ? 'Disabled' : integration.id === 'amocrm' ? 'Connect by Token' : 'Connect'}
+                  className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    {loading ? 'Ulanmoqda...' : integration.id === 'google_sheets' ? 'OвЂchirilgan' : integration.id === 'amocrm' ? 'Token orqali ulash' : 'Ulash'}
                   </button>
                 ) : (
                   <button
@@ -503,7 +503,7 @@ export default function IntegrationCards() {
                     disabled={loading}
                     className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {loading ? 'Updating...' : 'Disconnect'}
+                    {loading ? 'Yangilanmoqda...' : 'Uzish'}
                   </button>
                 )}
               </div>
@@ -514,3 +514,4 @@ export default function IntegrationCards() {
     </div>
   );
 }
+
