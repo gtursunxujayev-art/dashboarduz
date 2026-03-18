@@ -1098,6 +1098,16 @@ router.get('/voip', handleVoipWebhookStatus);
 router.post('/utel', handleVoipWebhook);
 router.post('/voip', handleVoipWebhook);
 
+router.get('/telegram', async (_req: Request, res: Response) => {
+  return res.status(200).json({
+    ok: true,
+    endpoint: '/webhooks/telegram',
+    method: 'POST',
+    message: 'Telegram webhook endpoint is alive. Telegram will send POST requests here.',
+    requiredHeader: 'x-telegram-bot-api-secret-token',
+  });
+});
+
 router.post('/telegram', async (req: Request, res: Response) => {
   try {
     const rawBody = getRawBody(req);
