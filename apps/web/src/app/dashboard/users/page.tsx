@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 
 const availableRoles = ['Admin', 'Manager', 'Agent', 'Finance'] as const;
+const roleLabels: Record<(typeof availableRoles)[number], string> = {
+  Admin: 'Admin',
+  Manager: 'Menejer',
+  Agent: 'Agent',
+  Finance: 'Moliya',
+};
 
 type UserRole = (typeof availableRoles)[number];
 
@@ -77,10 +83,10 @@ export default function UsersPage() {
       setNewRole('Agent');
       setNewAmoManagerId('');
       setNewUtelManagerId('');
-      setSuccess('User created successfully.');
+      setSuccess("Foydalanuvchi muvaffaqiyatli yaratildi.");
       await usersQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to create user');
+      setError(mutationError?.message || "Foydalanuvchini yaratishda xatolik");
     }
   };
 
@@ -100,10 +106,10 @@ export default function UsersPage() {
           ? (utelDrafts[userId] || undefined)
           : undefined,
       });
-      setSuccess('User role and manager mapping saved successfully.');
+      setSuccess("Foydalanuvchi roli va menejer bog'lanishi saqlandi.");
       await usersQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to update role');
+      setError(mutationError?.message || "Rolni yangilashda xatolik");
     }
   };
 
@@ -119,10 +125,10 @@ export default function UsersPage() {
         password: passwordDrafts[userId] || undefined,
       });
       setPasswordDrafts((prev) => ({ ...prev, [userId]: '' }));
-      setSuccess('User credentials saved successfully.');
+      setSuccess("Foydalanuvchi login/paroli saqlandi.");
       await usersQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to update credentials');
+      setError(mutationError?.message || "Login/parolni yangilashda xatolik");
     }
   };
 
@@ -138,10 +144,10 @@ export default function UsersPage() {
       });
       if (result.generatedPassword) {
         setGeneratedResetPassword({ userId, password: result.generatedPassword });
-        setSuccess('New password generated successfully.');
+        setSuccess("Yangi parol muvaffaqiyatli yaratildi.");
       }
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to generate password');
+      setError(mutationError?.message || "Parol yaratishda xatolik");
     }
   };
 
@@ -149,8 +155,8 @@ export default function UsersPage() {
     <div className="space-y-6">
       <div className="rounded-lg bg-white shadow">
         <div className="border-b border-gray-100 px-6 py-5">
-          <h1 className="text-xl font-semibold text-gray-900">Users</h1>
-          <p className="mt-1 text-sm text-gray-500">Create users, map agents to AmoCRM sales managers, and manage credentials.</p>
+          <h1 className="text-xl font-semibold text-gray-900">Foydalanuvchilar</h1>
+          <p className="mt-1 text-sm text-gray-500">Foydalanuvchi yarating, agentni AmoCRM/UTeL menejeriga bog'lang va login/parolni boshqaring.</p>
         </div>
 
         <div className="space-y-4 p-6">
@@ -158,17 +164,17 @@ export default function UsersPage() {
           {success && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
           {amocrmManagersQuery.error && (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              AmoCRM managers are unavailable. Connect AmoCRM integration to map Agent users.
+              AmoCRM menejerlari topilmadi. Agentlarni bog'lash uchun AmoCRM integratsiyasini ulang.
             </p>
           )}
           {utelManagersQuery.error && (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              UTeL managers are unavailable. Incoming UTeL calls are required to build the manager list.
+              UTeL menejerlari topilmadi. Ro'yxat uchun UTeL qo'ng'iroqlari kelishi kerak.
             </p>
           )}
           {createdCredentials && (
             <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
-              User created. Login: <strong>{createdCredentials.login}</strong>, Password: <strong>{createdCredentials.password}</strong>
+              Foydalanuvchi yaratildi. Login: <strong>{createdCredentials.login}</strong>, Parol: <strong>{createdCredentials.password}</strong>
             </p>
           )}
 
@@ -176,7 +182,7 @@ export default function UsersPage() {
             <input
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
-              placeholder="User name (optional)"
+              placeholder="Foydalanuvchi ismi (ixtiyoriy)"
               className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <select
@@ -186,7 +192,7 @@ export default function UsersPage() {
             >
               {availableRoles.map((role) => (
                 <option key={role} value={role}>
-                  {role}
+                  {roleLabels[role]}
                 </option>
               ))}
             </select>
@@ -196,7 +202,7 @@ export default function UsersPage() {
               disabled={newRole !== 'Agent'}
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
             >
-              <option value="">{newRole === 'Agent' ? 'Select AmoCRM manager' : 'Not required for this role'}</option>
+              <option value="">{newRole === 'Agent' ? 'AmoCRM menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
               {amocrmManagers.map((manager: any) => (
                 <option key={manager.id} value={manager.id}>
                   {manager.name}
@@ -209,7 +215,7 @@ export default function UsersPage() {
               disabled={newRole !== 'Agent'}
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
             >
-              <option value="">{newRole === 'Agent' ? 'Select UTeL manager' : 'Not required for this role'}</option>
+              <option value="">{newRole === 'Agent' ? 'UTeL menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
               {utelManagers.map((manager: any) => (
                 <option key={manager.id} value={manager.id}>
                   {manager.name}
@@ -222,7 +228,7 @@ export default function UsersPage() {
               disabled={createUser.isLoading}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {createUser.isLoading ? 'Creating...' : 'Add User'}
+              {createUser.isLoading ? 'Yaratilmoqda...' : "Foydalanuvchi qo'shish"}
             </button>
           </div>
         </div>
@@ -230,21 +236,21 @@ export default function UsersPage() {
 
       <div className="rounded-lg bg-white shadow">
         <div className="border-b border-gray-100 px-6 py-5">
-          <h2 className="text-lg font-medium text-gray-900">Workspace Users</h2>
+          <h2 className="text-lg font-medium text-gray-900">Ish maydoni foydalanuvchilari</h2>
         </div>
 
         <div className="p-6">
           {usersQuery.isLoading ? (
-            <p className="text-sm text-gray-600">Loading users...</p>
+            <p className="text-sm text-gray-600">Foydalanuvchilar yuklanmoqda...</p>
           ) : usersQuery.data?.length ? (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">User</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Role + CRM/UTeL manager</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Credentials</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Last Login</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Foydalanuvchi</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Rol + CRM/UTeL menejer</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Login/Parol</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Oxirgi kirish</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -256,7 +262,7 @@ export default function UsersPage() {
                     return (
                     <tr key={user.id}>
                       <td className="px-4 py-3 text-sm text-gray-800">
-                        {user.name || user.email || user.phone || 'User'}
+                        {user.name || user.email || user.phone || 'Foydalanuvchi'}
                         <div className="text-xs text-gray-500">ID: {user.id}</div>
                       </td>
                       <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
@@ -270,7 +276,7 @@ export default function UsersPage() {
                           >
                             {availableRoles.map((role) => (
                               <option key={role} value={role}>
-                                {role}
+                                {roleLabels[role]}
                               </option>
                             ))}
                           </select>
@@ -284,8 +290,8 @@ export default function UsersPage() {
                           >
                             <option value="">
                               {(roleDrafts[user.id] || 'Agent') === 'Agent'
-                                ? 'Select AmoCRM manager'
-                                : 'Not required for this role'}
+                                ? 'AmoCRM menejerini tanlang'
+                                : 'Bu rol uchun shart emas'}
                             </option>
                             {amocrmManagers.map((manager: any) => (
                               <option key={manager.id} value={manager.id}>
@@ -303,8 +309,8 @@ export default function UsersPage() {
                           >
                             <option value="">
                               {(roleDrafts[user.id] || 'Agent') === 'Agent'
-                                ? 'Select UTeL manager'
-                                : 'Not required for this role'}
+                                ? 'UTeL menejerini tanlang'
+                                : 'Bu rol uchun shart emas'}
                             </option>
                             {utelManagers.map((manager: any) => (
                               <option key={manager.id} value={manager.id}>
@@ -317,7 +323,7 @@ export default function UsersPage() {
                             onClick={() => handleRoleSave(user.id)}
                             className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
                           >
-                            Save
+                            Saqlash
                           </button>
                         </div>
                       </td>
@@ -337,7 +343,7 @@ export default function UsersPage() {
                             onChange={(event) =>
                               setPasswordDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
                             }
-                            placeholder="New password"
+                            placeholder="Yangi parol"
                             className="rounded-md border border-gray-300 px-2 py-1 text-sm"
                           />
                           <button
@@ -345,24 +351,24 @@ export default function UsersPage() {
                             onClick={() => handleCredentialsSave(user.id)}
                             className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
                           >
-                            Save
+                            Saqlash
                           </button>
                           <button
                             type="button"
                             onClick={() => handleGeneratePassword(user.id)}
                             className="rounded-md bg-blue-50 px-3 py-1 text-sm text-blue-700 hover:bg-blue-100"
                           >
-                            Generate
+                            Yaratish
                           </button>
                         </div>
                         {generatedPasswordForRow && (
                           <p className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">
-                            New generated password: <strong>{generatedPasswordForRow}</strong>
+                            Yangi yaratilgan parol: <strong>{generatedPasswordForRow}</strong>
                           </p>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">
-                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
+                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Hech qachon'}
                       </td>
                     </tr>
                   );
@@ -371,7 +377,7 @@ export default function UsersPage() {
               </table>
             </div>
           ) : (
-            <p className="text-sm text-gray-600">No users found in this workspace.</p>
+            <p className="text-sm text-gray-600">Bu ish maydonida foydalanuvchi topilmadi.</p>
           )}
         </div>
       </div>
