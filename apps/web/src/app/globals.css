@@ -64,6 +64,24 @@ body {
   background-color: #1f2937 !important;
 }
 
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: var(--surface-muted);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.dark select option {
+  background-color: #111827;
+  color: #f3f4f6;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
