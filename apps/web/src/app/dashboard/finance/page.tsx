@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
@@ -77,9 +77,9 @@ export default function FinancePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Finance</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Moliya</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Income, debtors, and performance by course/agent with custom filters.
+          Kurs, agent va sana boвЂyicha tushum hamda qarzdorlik tahlili.
         </p>
       </div>
 
@@ -90,10 +90,10 @@ export default function FinancePage() {
             onChange={(event) => setRange(event.target.value as DashboardRange)}
             className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
-            <option value="today">Today</option>
-            <option value="week">This week</option>
-            <option value="month">This month</option>
-            <option value="custom">Custom</option>
+            <option value="today">Bugun</option>
+            <option value="week">Hafta</option>
+            <option value="month">Oy</option>
+            <option value="custom">Ixtiyoriy</option>
           </select>
 
           <input
@@ -116,7 +116,7 @@ export default function FinancePage() {
             onChange={(event) => setCourseId(event.target.value)}
             className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
-            <option value="">All courses</option>
+            <option value="">Barcha kurslar</option>
             {courseOptions.map((course: any) => (
               <option key={course.id} value={course.id}>
                 {course.name}
@@ -129,7 +129,7 @@ export default function FinancePage() {
             onChange={(event) => setManagerUserId(event.target.value)}
             className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
-            <option value="">All agents</option>
+            <option value="">Barcha agentlar</option>
             {managerOptions.map((manager: any) => (
               <option key={manager.id} value={manager.id}>
                 {manager.label}
@@ -141,29 +141,29 @@ export default function FinancePage() {
 
       {financeQuery.error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {financeQuery.error.message || 'Failed to load finance data.'}
+          {financeQuery.error.message || 'Moliya ma\'lumotlarini yuklashda xatolik.'}
         </div>
       )}
 
       <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${canSeeRefundAnalytics ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Total Income</p>
+          <p className="text-sm text-gray-500">Jami tushum</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(totals?.totalIncomeAmount)}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">New Sales</p>
+          <p className="text-sm text-gray-500">Yangi sotuvlar</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">{totals?.newSalesCount ?? 0}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Repayments</p>
+          <p className="text-sm text-gray-500">Qayta toвЂlovlar</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">{totals?.repaymentCount ?? 0}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Debitors</p>
+          <p className="text-sm text-gray-500">Qarzdorlar</p>
           <p className="mt-2 text-2xl font-semibold text-amber-700">{totals?.debtorsCount ?? 0}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Total Debt</p>
+          <p className="text-sm text-gray-500">Jami qarzdorlik</p>
           <p className="mt-2 text-2xl font-semibold text-amber-700">{formatAmount(totals?.totalDebtAmount)}</p>
         </div>
         {canSeeRefundAnalytics && (
@@ -177,18 +177,18 @@ export default function FinancePage() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-lg font-semibold text-gray-900">Income by Course</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Kurslar boвЂyicha tushum</h2>
           {financeQuery.isLoading ? (
-            <p className="mt-3 text-sm text-gray-600">Loading...</p>
+            <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
           ) : incomeByCourse.length ? (
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Course</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Count</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Income</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agreement</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Soni</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Shartnoma</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -204,22 +204,22 @@ export default function FinancePage() {
               </table>
             </div>
           ) : (
-            <p className="mt-3 text-sm text-gray-600">No course income data for selected filters.</p>
+            <p className="mt-3 text-sm text-gray-600">Tanlangan filtr boвЂyicha kurs tushumi topilmadi.</p>
           )}
         </div>
 
         <div className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-lg font-semibold text-gray-900">Income by Agent</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Agentlar boвЂyicha tushum</h2>
           {financeQuery.isLoading ? (
-            <p className="mt-3 text-sm text-gray-600">Loading...</p>
+            <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
           ) : incomeByAgent.length ? (
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Count</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Income</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Soni</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -234,28 +234,28 @@ export default function FinancePage() {
               </table>
             </div>
           ) : (
-            <p className="mt-3 text-sm text-gray-600">No agent income data for selected filters.</p>
+            <p className="mt-3 text-sm text-gray-600">Tanlangan filtr boвЂyicha agent tushumi topilmadi.</p>
           )}
         </div>
       </div>
 
       <div className="rounded-lg bg-white p-6 shadow">
-        <h2 className="text-lg font-semibold text-gray-900">Recent Income Records</h2>
+        <h2 className="text-lg font-semibold text-gray-900">SoвЂnggi tushumlar</h2>
         {financeQuery.isLoading ? (
-          <p className="mt-3 text-sm text-gray-600">Loading...</p>
+          <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
         ) : recentIncomes.length ? (
           <div className="mt-3 overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Type</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Customer</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sana</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Turi</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Mijoz</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Course/Tariff</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs/Tarif</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Holat</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Payment</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Debt left</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">ToвЂlov</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qoldiq qarz</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
@@ -265,7 +265,7 @@ export default function FinancePage() {
                       {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {income.type === 'repayment' ? 'Repayment' : 'New sale'}
+                      {income.type === 'repayment' ? 'Qarzdorlik' : 'Yangi sotuv'}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                       {income.customerNumber} - {income.customerName}
@@ -287,9 +287,10 @@ export default function FinancePage() {
             </table>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-gray-600">No income records for selected filters.</p>
+          <p className="mt-3 text-sm text-gray-600">Tanlangan filtr boвЂyicha tushum yoвЂq.</p>
         )}
       </div>
     </div>
   );
 }
+
