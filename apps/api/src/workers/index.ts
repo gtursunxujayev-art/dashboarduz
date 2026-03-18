@@ -208,6 +208,15 @@ function isInternalNumber(value: string): boolean {
   return digits.length > 0 && digits.length <= 6;
 }
 
+function isAllowedUtelManagerExtension(value: string): boolean {
+  const digits = value.replace(/\D/g, '');
+  if (!digits) {
+    return false;
+  }
+  const parsed = Number.parseInt(digits, 10);
+  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
+}
+
 function isLikelyExternalPhone(value: string): boolean {
   const digits = value.replace(/\D/g, '');
   return digits.length >= 7;
@@ -455,6 +464,32 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     }
   }
 
+  const pickLikelyExternal = (values: unknown[]): string | null => {
+    for (const value of values) {
+      const candidate = normalizePhone(textFromUnknown(value) || '');
+      if (isLikelyExternalPhone(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  };
+
+  const inboundExternalPhone = pickLikelyExternal([
+    pickVoipValue(entry, ['caller', 'caller_number', 'customer_phone', 'client_phone', 'number', 'cid_num']),
+    from,
+    phone,
+    to,
+  ]);
+  const outboundExternalPhone = pickLikelyExternal([
+    from,
+    pickVoipValue(entry, ['external_number', 'phone', 'client_phone', 'number', 'caller', 'caller_number']),
+    to,
+    phone,
+  ]);
+  const externalPhone = direction === 'inbound'
+    ? (inboundExternalPhone || outboundExternalPhone)
+    : (outboundExternalPhone || inboundExternalPhone);
+
   const startedAt = parseCallDate(pickVoipValue(entry, [
     'date_time',
     'start_time',
@@ -511,9 +546,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     endedAt,
     duration,
     directionConfidence,
-    externalPhone: isLikelyExternalPhone(phone)
-      ? phone
-      : (isLikelyExternalPhone(direction === 'outbound' ? to : from) ? (direction === 'outbound' ? to : from) : null),
+    externalPhone,
     extension: extension || (isInternalNumber(direction === 'outbound' ? from : to)
       ? (direction === 'outbound' ? from : to)
       : null),
@@ -528,9 +561,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     })(),
     metadata: {
       ...entry,
-      normalized_phone: isLikelyExternalPhone(phone)
-        ? phone
-        : (isLikelyExternalPhone(direction === 'outbound' ? to : from) ? (direction === 'outbound' ? to : from) : null),
+      normalized_phone: externalPhone,
       normalized_extension: extension || (isInternalNumber(direction === 'outbound' ? from : to)
         ? (direction === 'outbound' ? from : to)
         : null),
@@ -819,8 +850,13 @@ async function processVoIPWebhook(event: any, tenantId: string) {
     utelManagersByKey = new Map(
       (mappedUsers as Array<{ utelManagerExternalId: string | null; name: string | null; username: string | null }>)
         .filter((user) => Boolean(user.utelManagerExternalId))
+        .map((user) => ({
+          ...user,
+          normalizedExtension: normalizePhone(String(user.utelManagerExternalId || '')),
+        }))
+        .filter((user) => isAllowedUtelManagerExtension(user.normalizedExtension))
         .map((user) => [
-          String(user.utelManagerExternalId || '').trim().toLowerCase(),
+          user.normalizedExtension.toLowerCase(),
           (user.name || user.username || String(user.utelManagerExternalId || '')).trim(),
         ]),
     );
@@ -834,8 +870,9 @@ async function processVoIPWebhook(event: any, tenantId: string) {
       continue;
     }
     const normalizedCall = normalizeVoipCall(entry, `${provider}-${event.id}-${index}`);
-    const managerFromMap = normalizedCall.extension
-      ? utelManagersByKey.get(normalizedCall.extension.toLowerCase())
+    const normalizedExtension = normalizePhone(normalizedCall.extension || '').toLowerCase();
+    const managerFromMap = normalizedExtension && isAllowedUtelManagerExtension(normalizedExtension)
+      ? utelManagersByKey.get(normalizedExtension)
       : null;
     const finalManager = normalizedCall.manager || managerFromMap || null;
     const finalMetadata = {
