@@ -41,6 +41,11 @@ function isUniqueViolation(error: any): boolean {
   return error?.code === 'P2002';
 }
 
+function isMissingWebhookIdempotencyColumnError(error: unknown): boolean {
+  const message = String((error as any)?.message || '').toLowerCase();
+  return message.includes('idempotencykey') && message.includes('does not exist');
+}
+
 async function enqueueWebhookJob(params: {
   jobName: string;
   eventId: string;
@@ -150,7 +155,21 @@ router.post('/amocrm', async (req: Request, res: Response) => {
         logger.info({ msg: 'Duplicate AmoCRM webhook ignored', idempotencyKey });
         return res.status(200).json({ received: true, duplicate: true });
       }
-      throw error;
+      if (isMissingWebhookIdempotencyColumnError(error)) {
+        logger.warn({ msg: 'WebhookEvent.idempotencyKey column missing, creating event without idempotency key' });
+        event = await prisma.webhookEvent.create({
+          data: {
+            tenantId: integration.tenantId,
+            source: 'amocrm',
+            eventType,
+            rawPayload: req.body,
+            signature: signature || null,
+            processed: false,
+          },
+        });
+      } else {
+        throw error;
+      }
     }
 
     await enqueueWebhookJob({
@@ -293,7 +312,24 @@ async function handleVoipWebhook(req: Request, res: Response) {
         logger.info({ msg: 'Duplicate VoIP webhook ignored', idempotencyKey, provider });
         return res.status(200).json({ received: true, duplicate: true });
       }
-      throw error;
+      if (isMissingWebhookIdempotencyColumnError(error)) {
+        logger.warn({ msg: 'WebhookEvent.idempotencyKey column missing, creating VoIP event without idempotency key' });
+        event = await prisma.webhookEvent.create({
+          data: {
+            tenantId: integration.tenantId,
+            source: 'voip',
+            eventType,
+            rawPayload: {
+              ...bodyPayload,
+              provider,
+            },
+            signature: signature || null,
+            processed: false,
+          },
+        });
+      } else {
+        throw error;
+      }
     }
 
     await enqueueWebhookJob({
@@ -606,7 +642,20 @@ router.post('/telegram', async (req: Request, res: Response) => {
         logger.info({ msg: 'Duplicate Telegram webhook ignored', idempotencyKey });
         return res.status(200).json({ received: true, duplicate: true });
       }
-      throw error;
+      if (isMissingWebhookIdempotencyColumnError(error)) {
+        logger.warn({ msg: 'WebhookEvent.idempotencyKey column missing, creating Telegram event without idempotency key' });
+        event = await prisma.webhookEvent.create({
+          data: {
+            tenantId: integration.tenantId,
+            source: 'telegram',
+            eventType,
+            rawPayload: req.body,
+            processed: false,
+          },
+        });
+      } else {
+        throw error;
+      }
     }
 
     await enqueueWebhookJob({
