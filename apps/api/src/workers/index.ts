@@ -5,12 +5,68 @@ import { telegramService } from '../services/integrations/telegram';
 import { decryptIntegrationTokens } from '../services/security/encryption';
 import { rateLimiter } from '../services/security/rate-limiter';
 import { asObject, getSelectedPipelineIds } from '../services/integrations/amocrm-live';
+import { upsertTelegramRecipient } from '../services/integrations/telegram-recipients';
 
 function normalizePhone(phone?: string | null): string {
   if (!phone) {
     return '';
   }
   return phone.replace(/[^\d+]/g, '');
+}
+
+type TelegramRecipientFromWebhook = {
+  chatId: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  started: boolean;
+};
+
+function normalizeTelegramText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function extractTelegramRecipientFromWebhook(payload: any): TelegramRecipientFromWebhook | null {
+  const message = payload?.message
+    || payload?.edited_message
+    || payload?.channel_post
+    || payload?.edited_channel_post
+    || payload?.callback_query?.message
+    || null;
+
+  const chat = message?.chat || null;
+  if (!chat || chat.id === null || chat.id === undefined) {
+    return null;
+  }
+
+  const chatType = normalizeTelegramText(chat.type || 'private').toLowerCase();
+  if (chatType && chatType !== 'private') {
+    return null;
+  }
+
+  const from = payload?.message?.from
+    || payload?.edited_message?.from
+    || payload?.callback_query?.from
+    || payload?.channel_post?.from
+    || payload?.edited_channel_post?.from
+    || null;
+
+  const messageText = normalizeTelegramText(
+    message?.text
+    || message?.caption
+    || payload?.callback_query?.data
+    || '',
+  );
+
+  const isStarted = /^\/start\b/i.test(messageText) || Boolean(from || message);
+
+  return {
+    chatId: String(chat.id),
+    username: normalizeTelegramText(from?.username || chat.username || '') || null,
+    firstName: normalizeTelegramText(from?.first_name || chat.first_name || '') || null,
+    lastName: normalizeTelegramText(from?.last_name || chat.last_name || '') || null,
+    started: isStarted,
+  };
 }
 
 function textFromUnknown(value: unknown): string {
@@ -993,15 +1049,40 @@ async function processTelegramWebhook(event: any, tenantId: string) {
   const integration = await prisma.integration.findFirst({
     where: { tenantId, type: 'telegram' },
   });
+  if (!integration) {
+    return;
+  }
 
-  await prisma.integration.updateMany({
-    where: { tenantId, type: 'telegram' },
+  const recipient = extractTelegramRecipientFromWebhook(payload);
+  const updateId = payload?.update_id ? String(payload.update_id) : null;
+
+  let nextConfig = {
+    ...((integration.config as Record<string, unknown> | null) || {}),
+    lastInboundUpdateId: updateId,
+    lastInboundAt: new Date().toISOString(),
+  };
+
+  if (recipient) {
+    const upserted = upsertTelegramRecipient(nextConfig, {
+      chatId: recipient.chatId,
+      username: recipient.username,
+      firstName: recipient.firstName,
+      lastName: recipient.lastName,
+      started: recipient.started,
+      lastSeenAt: new Date().toISOString(),
+    });
+    nextConfig = {
+      ...upserted.config,
+      lastInboundUpdateId: updateId,
+      lastInboundAt: new Date().toISOString(),
+    };
+  }
+
+  await prisma.integration.update({
+    where: { id: integration.id },
     data: {
       lastSyncAt: new Date(),
-      config: {
-        ...((integration?.config as Record<string, unknown> | null) || {}),
-        lastInboundUpdateId: payload?.update_id ? String(payload.update_id) : null,
-      },
+      config: nextConfig as any,
     },
   });
 }
