@@ -24,7 +24,7 @@ const integrationCatalog: Array<{
   {
     id: 'amocrm',
     name: 'AmoCRM',
-    description: "Long-lived token orqali ulanadi: lid/contact sinxroni va webhook qabul qilish.",
+    description: "Uzoq muddatli token orqali ulanadi: lid/contact sinxroni va webhook qabul qilish.",
     color: 'bg-blue-50 border-blue-200',
   },
   {
@@ -36,7 +36,7 @@ const integrationCatalog: Array<{
   {
     id: 'google_sheets',
     name: 'Google Sheets',
-    description: 'MVP uchun vaqtincha oвЂchirilgan.',
+    description: "MVP uchun vaqtincha o'chirilgan.",
     color: 'bg-gray-50 border-gray-200',
   },
   {
@@ -150,7 +150,7 @@ export default function IntegrationCards() {
     try {
       if (integrationId === 'amocrm') {
         if (!amocrmLongLivedToken.trim()) {
-          throw new Error('AmoCRM long-lived token majburiy');
+          throw new Error("AmoCRM uzoq muddatli tokeni majburiy");
         }
         await connectAmoCRM.mutateAsync({
           longLivedToken: amocrmLongLivedToken.trim(),
@@ -178,7 +178,7 @@ export default function IntegrationCards() {
         return;
       }
 
-      setError('Google Sheets integratsiyasi MVP da oвЂchirilgan');
+      setError("Google Sheets integratsiyasi MVP da o'chirilgan");
     } catch (err: any) {
       setError(err?.message || `${integrationId} ulanishida xatolik`);
     } finally {
@@ -276,7 +276,7 @@ export default function IntegrationCards() {
 
           return (
             <div key={integration.id} className={`rounded-lg border p-4 ${integration.color}`}>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <h4 className="text-base font-semibold text-gray-900">{integration.name}</h4>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusBadge(integration.status)}`}>
                   {statusText(integration.status)}
@@ -291,7 +291,7 @@ export default function IntegrationCards() {
                   {(integrationConfig as any).lastValidatedAt && (
                     <p>Oxirgi tekshiruv: {new Date(String((integrationConfig as any).lastValidatedAt)).toLocaleString()}</p>
                   )}
-                  {webhookUrl && <p className="break-all">Webhook: {webhookUrl}</p>}
+                  {webhookUrl && <p className="break-all">Webhook manzili: {webhookUrl}</p>}
                   {(integrationConfig as any).connectionMode && (
                     <p>Rejim: {String((integrationConfig as any).connectionMode)}</p>
                   )}
@@ -300,11 +300,11 @@ export default function IntegrationCards() {
 
               {isAmoActive && (
                 <div className="mt-4 rounded-md border border-blue-100 bg-white p-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Jonli oвЂqishda ishlatiladigan pipelinelar</p>
+                      <p className="text-sm font-medium text-gray-900">Jonli o'qishda ishlatiladigan pipeline'lar</p>
                       <p className="text-xs text-gray-500">
-                        Dashboard tahlili va webhook orqali qabul qilishda faqat belgilangan pipelinelar ishlatiladi.
+                        Boshqaruv tahlili va webhook orqali qabul qilishda faqat belgilangan pipeline'lar ishlatiladi.
                       </p>
                     </div>
                     <span className="text-xs text-gray-500">
@@ -313,9 +313,9 @@ export default function IntegrationCards() {
                   </div>
 
                   {amoPipelinesQuery.isLoading ? (
-                    <p className="mt-3 text-sm text-gray-500">Pipelinelar yuklanmoqda...</p>
+                    <p className="mt-3 text-sm text-gray-500">Pipeline'lar yuklanmoqda...</p>
                   ) : pipelines.length === 0 ? (
-                    <p className="mt-3 text-sm text-gray-500">AmoCRM dan pipeline qaytmadi.</p>
+                    <p className="mt-3 text-sm text-gray-500">AmoCRM dan pipeline ma'lumoti kelmadi.</p>
                   ) : (
                     <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
                       {pipelines.map((pipeline: any) => (
@@ -337,7 +337,7 @@ export default function IntegrationCards() {
                             <p className="font-medium text-gray-900">{pipeline.name}</p>
                             {Array.isArray(pipeline.statuses) && pipeline.statuses.length > 0 && (
                               <p className="text-xs text-gray-500">
-                                Statuslar: {pipeline.statuses.map((status: any) => status.name).join(', ')}
+                                Bosqichlar: {pipeline.statuses.map((status: any) => status.name).join(', ')}
                               </p>
                             )}
                           </div>
@@ -353,7 +353,7 @@ export default function IntegrationCards() {
                       disabled={loading || amoPipelinesQuery.isLoading}
                       className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {loading ? 'Saqlanmoqda...' : 'Pipeline tanlovini saqlash'}
+                      {loading ? 'Saqlanmoqda...' : "Pipeline tanlovini saqlash"}
                     </button>
                   </div>
                 </div>
@@ -361,11 +361,11 @@ export default function IntegrationCards() {
 
               {isTelegramActive && (
                 <div className="mt-4 rounded-md border border-cyan-100 bg-white p-3">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-medium text-gray-900">Rejalashtirilgan hisobot oluvchilari</p>
                       <p className="text-xs text-gray-500">
-                        Foydalanuvchilar botga <span className="font-mono">/start</span> yuborgandan keyin shu yerda koвЂrinadi. Kunlik/haftalik/oylik hisobot oluvchilarni belgilang.
+                        Foydalanuvchilar botga <span className="font-mono">/start</span> yuborgandan keyin shu yerda ko'rinadi. Kunlik/haftalik/oylik hisobot oluvchilarni belgilang.
                       </p>
                     </div>
                     <span className="text-xs text-gray-500">
@@ -377,7 +377,7 @@ export default function IntegrationCards() {
                     <p className="mt-3 text-sm text-gray-500">Telegram foydalanuvchilari yuklanmoqda...</p>
                   ) : telegramRecipients.length === 0 ? (
                     <p className="mt-3 text-sm text-gray-500">
-                      Hozircha foydalanuvchi yoвЂq. Foydalanuvchilardan botni ochib <span className="font-mono">/start</span> yuborishni soвЂrang.
+                      Hozircha foydalanuvchi yo'q. Foydalanuvchilardan botni ochib <span className="font-mono">/start</span> yuborishni so'rang.
                     </p>
                   ) : (
                     <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
@@ -416,7 +416,7 @@ export default function IntegrationCards() {
                     </div>
                   )}
 
-                  <div className="mt-3 flex items-center gap-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
                     <button
                       type="button"
                       onClick={handleSaveTelegramRecipients}
@@ -432,7 +432,7 @@ export default function IntegrationCards() {
                     )}
                   </div>
 
-                  <div className="mt-3 flex items-center gap-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
                     <button
                       type="button"
                       onClick={handleSendTelegramTodayReportNow}
@@ -451,17 +451,17 @@ export default function IntegrationCards() {
               {integration.id === 'amocrm' && integration.status !== 'active' && (
                 <div className="mt-4 space-y-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700">AmoCRM Long-lived token</label>
+                    <label className="block text-xs font-medium text-gray-700">AmoCRM uzoq muddatli tokeni</label>
                     <input
                       type="password"
                       value={amocrmLongLivedToken}
                       onChange={(e) => setAmocrmLongLivedToken(e.target.value)}
-                      placeholder="Long-lived token"
+                      placeholder="Uzoq muddatli token"
                       className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700">AmoCRM Base URL (ixtiyoriy)</label>
+                    <label className="block text-xs font-medium text-gray-700">AmoCRM asosiy manzil (ixtiyoriy)</label>
                     <input
                       type="url"
                       value={amocrmBaseUrl}
@@ -494,7 +494,7 @@ export default function IntegrationCards() {
                     disabled={loading || integration.id === 'google_sheets'}
                   className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                    {loading ? 'Ulanmoqda...' : integration.id === 'google_sheets' ? 'OвЂchirilgan' : integration.id === 'amocrm' ? 'Token orqali ulash' : 'Ulash'}
+                    {loading ? "Ulanmoqda..." : integration.id === 'google_sheets' ? "O'chirilgan" : integration.id === 'amocrm' ? 'Token orqali ulash' : 'Ulash'}
                   </button>
                 ) : (
                   <button
@@ -514,4 +514,5 @@ export default function IntegrationCards() {
     </div>
   );
 }
+
 
