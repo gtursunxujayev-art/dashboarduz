@@ -4,21 +4,19 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
-import { trpc } from '@/lib/trpc';
 
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 const AGENT_ALLOWED_HREFS = new Set([
   '/dashboard',
-  '/dashboard/leads',
-  '/dashboard/calls',
   '/dashboard/income',
-  '/dashboard/adjustments',
+  '/dashboard/sotuvchilar',
+  '/dashboard/calls',
+  '/dashboard/customers',
   '/dashboard/analytics',
   '/dashboard/finance',
 ]);
 const FINANCE_ALLOWED_HREFS = new Set([
   '/dashboard',
-  '/dashboard/adjustments',
   '/dashboard/analytics',
   '/dashboard/finance',
 ]);
@@ -28,39 +26,27 @@ const ADMIN_ONLY_HREFS = new Set([
 ]);
 
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-  { name: 'Leads', href: '/dashboard/leads', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
-  { name: 'Calls', href: '/dashboard/calls', icon: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z' },
-  { name: 'Income', href: '/dashboard/income', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
-  { name: "Qaytarish/O'zgarish", href: '/dashboard/adjustments', icon: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' },
-  { name: 'Mijozlar', href: '/dashboard/customers', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
+  { name: 'Boshqaruv', href: '/dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+  { name: 'Tushum', href: '/dashboard/income', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
   { name: 'Sotuvchilar', href: '/dashboard/sotuvchilar', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
-  { name: 'Integrations', href: '/dashboard/integrations', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
-  { name: 'Notifications', href: '/dashboard/notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
-  { name: 'Analytics', href: '/dashboard/analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-  { name: 'Finance', href: '/dashboard/finance', icon: 'M3 10h18M7 15h1m4 0h5M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z' },
-];
-
-const adminNavigation = [
+  { name: "Qo'ng'iroqlar", href: '/dashboard/calls', icon: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z' },
+  { name: 'Mijozlar', href: '/dashboard/customers', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
+  { name: 'Tahlil', href: '/dashboard/analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+  { name: 'Moliya', href: '/dashboard/finance', icon: 'M3 10h18M7 15h1m4 0h5M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z' },
   { name: 'Kurslar', href: '/dashboard/courses', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5 4.462 5 2 6.567 2 8.5v9.75A1.75 1.75 0 003.75 20H9m3-13.747C13.168 5.477 14.754 5 16.5 5 19.538 5 22 6.567 22 8.5v9.75A1.75 1.75 0 0120.25 20H15m-3-13.747v13' },
-  { name: 'Settings', href: '/dashboard/settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
-  { name: 'Users', href: '/dashboard/users', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13 5.197v-1a6 6 0 00-4.5-5.799M12 11a3 3 0 100-6 3 3 0 000 6z' },
+  { name: 'Sozlamalar', href: '/dashboard/settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
+  { name: 'Foydalanuvchilar', href: '/dashboard/users', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13 5.197v-1a6 6 0 00-4.5-5.799M12 11a3 3 0 100-6 3 3 0 000 6z' },
+  { name: 'Integratsiyalar', href: '/dashboard/integrations', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
+  { name: 'Bildirishnomalar', href: '/dashboard/notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
 ];
 
 export default function Sidebar() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const adjustmentBadgeQuery = trpc.customerIncome.adjustmentBadgeCount.useQuery(undefined, {
-    enabled: Boolean(user),
-    retry: false,
-    refetchInterval: 20000,
-  });
-  const pendingAdjustmentCount = adjustmentBadgeQuery.data?.pendingTotal ?? 0;
 
   const roles = user?.roles || [];
   const isAdmin = user?.roles.includes('Admin');
-  const isManager = Boolean(roles.includes('Manager') && !roles.includes('Admin'));
   const isAgentOnly = Boolean(user?.roles.includes('Agent') && !user?.roles.some((role: string) => PRIVILEGED_ROLES.has(role)));
   const isFinanceOnly = Boolean(
     user?.roles.includes('Finance')
@@ -76,28 +62,6 @@ export default function Sidebar() {
         ? navigation
         : navigation.filter((item) => !ADMIN_ONLY_HREFS.has(item.href));
 
-const managementNavigation = isAdmin
-  ? adminNavigation
-  : isManager
-      ? adminNavigation
-      : [];
-
-  const renderNavLabel = (item: { name: string; href: string }) => {
-    const showBadge = item.href === '/dashboard/adjustments' && pendingAdjustmentCount > 0;
-    if (!showBadge) {
-      return <>{item.name}</>;
-    }
-
-    return (
-      <span className="flex items-center gap-2">
-        <span>{item.name}</span>
-        <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[11px] font-semibold leading-4 text-white">
-          {pendingAdjustmentCount > 99 ? '99+' : pendingAdjustmentCount}
-        </span>
-      </span>
-    );
-  };
-
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
@@ -110,7 +74,7 @@ const managementNavigation = isAdmin
           onClick={() => setSidebarOpen(true)}
           className="rounded-md border border-gray-200 bg-white p-2 text-gray-500 shadow-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
         >
-          <span className="sr-only">Open sidebar</span>
+          <span className="sr-only">Menyuni ochish</span>
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
@@ -128,7 +92,7 @@ const managementNavigation = isAdmin
                   onClick={() => setSidebarOpen(false)}
                   className="ml-1 flex items-center justify-center h-10 w-10 rounded-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
                 >
-                  <span className="sr-only">Close sidebar</span>
+                  <span className="sr-only">Menyuni yopish</span>
                   <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -160,31 +124,7 @@ const managementNavigation = isAdmin
                       >
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
                       </svg>
-                      {renderNavLabel(item)}
-                    </Link>
-                  ))}
-                  {managementNavigation.map((item) => (
-                    <Link
-                      key={item.name}
-                      href={item.href}
-                      onClick={() => setSidebarOpen(false)}
-                      className={`group flex items-center px-2 py-2 text-base font-medium rounded-md ${
-                        pathname === item.href
-                          ? 'bg-gray-100 text-gray-900'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                    >
-                      <svg
-                        className={`mr-4 h-6 w-6 ${
-                          pathname === item.href ? 'text-gray-500' : 'text-gray-400 group-hover:text-gray-500'
-                        }`}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
-                      </svg>
-                      {renderNavLabel(item)}
+                      {item.name}
                     </Link>
                   ))}
                 </nav>
@@ -232,30 +172,7 @@ const managementNavigation = isAdmin
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
                     </svg>
-                    {renderNavLabel(item)}
-                  </Link>
-                ))}
-                {managementNavigation.map((item) => (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                      pathname === item.href
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                    }`}
-                  >
-                    <svg
-                      className={`mr-3 h-6 w-6 ${
-                        pathname === item.href ? 'text-gray-500' : 'text-gray-400 group-hover:text-gray-500'
-                      }`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
-                    </svg>
-                    {renderNavLabel(item)}
+                    {item.name}
                   </Link>
                 ))}
               </nav>
@@ -269,7 +186,7 @@ const managementNavigation = isAdmin
                     onClick={logout}
                     className="mt-1 text-xs text-red-600 hover:text-red-800"
                   >
-                    Sign out
+                    Chiqish
                   </button>
                 </div>
               </div>
