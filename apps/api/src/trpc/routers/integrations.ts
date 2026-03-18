@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { router, protectedProcedure } from '../trpc';
+import { adminProcedure, router } from '../trpc';
 import { z } from 'zod';
 import { amocrmConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
 import { prisma } from '@dashboarduz/db';
@@ -54,14 +54,14 @@ async function fetchAmoCRMAccountByToken(accessToken: string, baseUrl: string) {
 }
 
 export const integrationsRouter = router({
-  list: protectedProcedure.query(async ({ ctx }) => {
+  list: adminProcedure.query(async ({ ctx }) => {
     return prisma.integration.findMany({
       where: { tenantId: ctx.tenantId },
       orderBy: { createdAt: 'desc' },
     });
   }),
 
-  getByType: protectedProcedure
+  getByType: adminProcedure
     .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel']) }))
     .query(async ({ input, ctx }) => {
       return prisma.integration.findUnique({
@@ -74,7 +74,7 @@ export const integrationsRouter = router({
       });
     }),
 
-  connectAmoCRM: protectedProcedure
+  connectAmoCRM: adminProcedure
     .input(amocrmConnectSchema)
     .mutation(async ({ input, ctx }) => {
       const resolvedBaseUrl = normalizeBaseUrl(input.baseUrl || process.env.AMOCRM_BASE_URL || 'https://www.amocrm.ru');
@@ -166,7 +166,7 @@ export const integrationsRouter = router({
       };
     }),
 
-  getAmoCRMPipelines: protectedProcedure.query(async ({ ctx }) => {
+  getAmoCRMPipelines: adminProcedure.query(async ({ ctx }) => {
     const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
     if (!amoContext) {
       throw new TRPCError({
@@ -194,7 +194,7 @@ export const integrationsRouter = router({
     };
   }),
 
-  updateAmoCRMPipelines: protectedProcedure
+  updateAmoCRMPipelines: adminProcedure
     .input(z.object({ pipelineIds: z.array(z.string()) }))
     .mutation(async ({ input, ctx }) => {
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
@@ -263,7 +263,7 @@ export const integrationsRouter = router({
       };
     }),
 
-  connectTelegram: protectedProcedure
+  connectTelegram: adminProcedure
     .input(telegramBotConnectSchema)
     .mutation(async ({ input, ctx }) => {
       const { telegramService } = await import('../../services/integrations/telegram');
@@ -343,14 +343,14 @@ export const integrationsRouter = router({
       };
     }),
 
-  connectGoogleSheets: protectedProcedure.mutation(async () => {
+  connectGoogleSheets: adminProcedure.mutation(async () => {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
       message: 'Google Sheets integration is disabled in MVP',
     });
   }),
 
-  connectVoIP: protectedProcedure
+  connectVoIP: adminProcedure
     .input(voipConnectSchema)
     .mutation(async ({ ctx }) => {
       const webhookKey = crypto.randomBytes(24).toString('hex');
@@ -412,7 +412,7 @@ export const integrationsRouter = router({
       };
     }),
 
-  disconnect: protectedProcedure
+  disconnect: adminProcedure
     .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel']) }))
     .mutation(async ({ input, ctx }) => {
       await prisma.integration.updateMany({
