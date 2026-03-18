@@ -136,6 +136,14 @@ export default function IncomePage() {
 
   const managers = useMemo(() => formOptionsQuery.data?.managers || [], [formOptionsQuery.data]);
   const courseOptions = useMemo(() => formOptionsQuery.data?.courses || [], [formOptionsQuery.data]);
+  const groupedCourseOptions = useMemo(
+    () => [
+      { key: 'online', label: 'Online', courses: courseOptions.filter((course: any) => course.category === 'online') },
+      { key: 'offline', label: 'Offline', courses: courseOptions.filter((course: any) => course.category === 'offline') },
+      { key: 'intensive', label: 'Intensive', courses: courseOptions.filter((course: any) => course.category === 'intensive') },
+    ],
+    [courseOptions],
+  );
   const debtOptions = useMemo(() => formOptionsQuery.data?.outstandingDebts || [], [formOptionsQuery.data]);
 
   const customers = useMemo<CustomerOption[]>(() => {
@@ -714,11 +722,17 @@ export default function IncomePage() {
                       className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     >
                       <option value="">Select course</option>
-                      {courseOptions.map((course: any) => (
-                        <option key={course.id} value={course.id}>
-                          {course.name}
-                        </option>
-                      ))}
+                      {groupedCourseOptions.map((group) =>
+                        group.courses.length ? (
+                          <optgroup key={group.key} label={group.label}>
+                            {group.courses.map((course: any) => (
+                              <option key={course.id} value={course.id}>
+                                {course.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : null,
+                      )}
                     </select>
                   </div>
 
