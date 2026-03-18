@@ -64,3 +64,18 @@ export const adminProcedure = protectedProcedure.use(async (opts) => {
 
   return opts.next();
 });
+
+// Admin or Manager procedure
+export const managerProcedure = protectedProcedure.use(async (opts) => {
+  const { ctx } = opts;
+
+  const roles = ctx.user?.roles || [];
+  if (!roles.includes('Admin') && !roles.includes('Manager')) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Manager or Admin access required',
+    });
+  }
+
+  return opts.next();
+});
