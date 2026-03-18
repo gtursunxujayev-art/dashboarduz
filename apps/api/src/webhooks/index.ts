@@ -204,9 +204,15 @@ async function handleVoipWebhook(req: Request, res: Response) {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
 
+    const bodyPayload: Record<string, unknown> = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body as Record<string, unknown>
+      : { raw: req.body as unknown };
     const provider = resolveVoipProvider(req);
     const idempotencyKey = buildIdempotencyKey(`voip:${provider}`, integration.tenantId, rawBody);
-    const eventType = req.body?.event_type || 'call_event';
+    const eventTypeRaw = bodyPayload['event_type'];
+    const eventType = typeof eventTypeRaw === 'string' && eventTypeRaw.trim().length > 0
+      ? eventTypeRaw
+      : 'call_event';
 
     let event;
     try {
@@ -217,7 +223,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
           eventType,
           idempotencyKey: `${provider}:${idempotencyKey}`,
           rawPayload: {
-            ...req.body,
+            ...bodyPayload,
             provider,
           },
           signature: signature || null,
@@ -289,12 +295,77 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       return res.status(404).json({ ok: false, error: 'Integration not found' });
     }
 
+    const [totalCalls, recentCalls, receivedEvents] = await Promise.all([
+      prisma.call.count({
+        where: {
+          tenantId: integration.tenantId,
+        },
+      }),
+      prisma.call.findMany({
+        where: {
+          tenantId: integration.tenantId,
+        },
+        orderBy: { startedAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          direction: true,
+          startedAt: true,
+          duration: true,
+          from: true,
+          to: true,
+          provider: true,
+          status: true,
+          metadata: true,
+        },
+      }),
+      prisma.webhookEvent.count({
+        where: {
+          tenantId: integration.tenantId,
+          source: 'voip',
+        },
+      }),
+    ]);
+
     return res.status(200).json({
       ok: true,
       endpoint: '/webhooks/utel',
       method: 'POST',
       integration: 'active',
       tenantId: integration.tenantId,
+      totalCalls,
+      totalWebhookEvents: receivedEvents,
+      recentCalls: recentCalls.map((call) => {
+        const metadata = (call.metadata && typeof call.metadata === 'object')
+          ? call.metadata as Record<string, unknown>
+          : {};
+
+        const manager = String(
+          metadata.manager
+          || metadata.agent
+          || metadata.operator
+          || metadata.user
+          || '',
+        ).trim();
+        const extension = String(
+          metadata.extension
+          || metadata.ext
+          || metadata.internal
+          || '',
+        ).trim();
+
+        return {
+          id: call.id,
+          provider: call.provider,
+          status: call.status,
+          direction: call.direction,
+          date: call.startedAt,
+          duration: call.duration,
+          phone: call.direction === 'outbound' ? call.to : call.from,
+          extension: extension || null,
+          manager: manager || null,
+        };
+      }),
     });
   } catch (err) {
     logger.error({ err }, 'VoIP webhook status handler failed');
