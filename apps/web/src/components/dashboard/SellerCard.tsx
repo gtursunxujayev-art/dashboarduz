@@ -97,12 +97,12 @@ export default function SellerCard({ seller }: SellerCardProps) {
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-green-100 rounded-md p-2">
               <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-900">{seller.metrics.wonLeads}</p>
-              <p className="text-xs text-gray-500">Yutuqli Leadlar</p>
+              <p className="text-sm font-medium text-gray-900">{seller.metrics.totalCalls}</p>
+              <p className="text-xs text-gray-500">Jami qo&apos;ng&apos;iroqlar</p>
             </div>
           </div>
         </div>
@@ -111,12 +111,12 @@ export default function SellerCard({ seller }: SellerCardProps) {
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-blue-100 rounded-md p-2">
               <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
               </svg>
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-900">{seller.metrics.totalLeads}</p>
-              <p className="text-xs text-gray-500">Jami Leadlar</p>
+              <p className="text-sm font-medium text-gray-900">{seller.metrics.inboundCalls}</p>
+              <p className="text-xs text-gray-500">Kiruvchi qo&apos;ng&apos;iroqlar</p>
             </div>
           </div>
         </div>
@@ -125,12 +125,12 @@ export default function SellerCard({ seller }: SellerCardProps) {
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-purple-100 rounded-md p-2">
               <svg className="h-5 w-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-900">{seller.metrics.totalCalls}</p>
-              <p className="text-xs text-gray-500">Qo'ng'iroqlar</p>
+              <p className="text-sm font-medium text-gray-900">{seller.metrics.outboundCalls}</p>
+              <p className="text-xs text-gray-500">Chiquvchi qo&apos;ng&apos;iroqlar</p>
             </div>
           </div>
         </div>
@@ -148,35 +148,6 @@ export default function SellerCard({ seller }: SellerCardProps) {
               </p>
               <p className="text-xs text-gray-500">O'rtacha Sotuv</p>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Progress Bars */}
-      <div className="mt-6 space-y-4">
-        <div>
-          <div className="flex justify-between text-sm text-gray-600 mb-1">
-            <span>Konversiya darajasi</span>
-            <span>{seller.metrics.conversionRate}%</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div
-              className="bg-green-600 h-2 rounded-full"
-              style={{ width: `${Math.min(seller.metrics.conversionRate, 100)}%` }}
-            ></div>
-          </div>
-        </div>
-
-        <div>
-          <div className="flex justify-between text-sm text-gray-600 mb-1">
-            <span>Faol leadlar</span>
-            <span>{seller.metrics.activeLeads} / {seller.metrics.totalLeads}</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div
-              className="bg-blue-600 h-2 rounded-full"
-              style={{ width: `${seller.metrics.totalLeads > 0 ? (seller.metrics.activeLeads / seller.metrics.totalLeads) * 100 : 0}%` }}
-            ></div>
           </div>
         </div>
       </div>
