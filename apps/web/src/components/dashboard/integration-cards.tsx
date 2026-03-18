@@ -82,6 +82,7 @@ export default function IntegrationCards() {
   const [selectedPipelineIds, setSelectedPipelineIds] = useState<string[]>([]);
   const [selectedTelegramRecipientIds, setSelectedTelegramRecipientIds] = useState<string[]>([]);
   const [telegramSelectionSavedAt, setTelegramSelectionSavedAt] = useState<string | null>(null);
+  const [telegramReportSentMessage, setTelegramReportSentMessage] = useState<string | null>(null);
 
   const listQuery = trpc.integrations.list.useQuery();
   const telegramConnected = Boolean(listQuery.data?.find((it: any) => it.type === 'telegram' && it.status === 'active'));
@@ -98,6 +99,7 @@ export default function IntegrationCards() {
   const connectVoIP = trpc.integrations.connectVoIP.useMutation();
   const updateAmoCRMPipelines = trpc.integrations.updateAmoCRMPipelines.useMutation();
   const updateTelegramReportRecipients = trpc.integrations.updateTelegramReportRecipients.useMutation();
+  const sendTelegramTodayReportNow = trpc.integrations.sendTelegramTodayReportNow.useMutation();
   const disconnectIntegration = trpc.integrations.disconnect.useMutation();
 
   const integrations = useMemo(() => {
@@ -142,6 +144,7 @@ export default function IntegrationCards() {
   const handleConnect = async (integrationId: IntegrationId) => {
     setError(null);
     setTelegramSelectionSavedAt(null);
+    setTelegramReportSentMessage(null);
     setActionLoading(integrationId);
 
     try {
@@ -189,6 +192,7 @@ export default function IntegrationCards() {
     }
     setError(null);
     setTelegramSelectionSavedAt(null);
+    setTelegramReportSentMessage(null);
     setActionLoading(integrationId);
     try {
       await disconnectIntegration.mutateAsync({ type: integrationId });
@@ -203,6 +207,7 @@ export default function IntegrationCards() {
   const handleSavePipelines = async () => {
     setError(null);
     setTelegramSelectionSavedAt(null);
+    setTelegramReportSentMessage(null);
     setActionLoading('amocrm');
     try {
       await updateAmoCRMPipelines.mutateAsync({
@@ -220,6 +225,7 @@ export default function IntegrationCards() {
     setError(null);
     setActionLoading('telegram');
     setTelegramSelectionSavedAt(null);
+    setTelegramReportSentMessage(null);
 
     try {
       await updateTelegramReportRecipients.mutateAsync({
@@ -229,6 +235,22 @@ export default function IntegrationCards() {
       setTelegramSelectionSavedAt(new Date().toISOString());
     } catch (err: any) {
       setError(err?.message || 'Failed to save Telegram report recipients');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSendTelegramTodayReportNow = async () => {
+    setError(null);
+    setActionLoading('telegram');
+    setTelegramReportSentMessage(null);
+
+    try {
+      const result = await sendTelegramTodayReportNow.mutateAsync();
+      const sentAt = new Date().toLocaleTimeString();
+      setTelegramReportSentMessage(`Today report sent to ${result.recipientCount} user(s) at ${sentAt}.`);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to send today report');
     } finally {
       setActionLoading(null);
     }
@@ -407,6 +429,20 @@ export default function IntegrationCards() {
                       <span className="text-xs text-green-700">
                         Saved at {new Date(telegramSelectionSavedAt).toLocaleTimeString()}
                       </span>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleSendTelegramTodayReportNow}
+                      disabled={loading || telegramRecipients.length === 0 || selectedTelegramRecipientIds.length === 0}
+                      className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading ? 'Sending...' : 'Send Today Report Now'}
+                    </button>
+                    {telegramReportSentMessage && (
+                      <span className="text-xs text-green-700">{telegramReportSentMessage}</span>
                     )}
                   </div>
                 </div>
