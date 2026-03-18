@@ -18,6 +18,79 @@ const clickToCallSchema = z.object({
 });
 
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+const UTEL_MIN_EXTENSION = 100;
+const UTEL_MAX_EXTENSION = 150;
+
+function normalizeDigits(value: unknown): string {
+  return String(value || '').replace(/[^\d]/g, '');
+}
+
+function isAllowedUtelManagerExtension(value: unknown): boolean {
+  const digits = normalizeDigits(value);
+  if (!digits) {
+    return false;
+  }
+  const parsed = Number.parseInt(digits, 10);
+  return Number.isFinite(parsed) && parsed >= UTEL_MIN_EXTENSION && parsed <= UTEL_MAX_EXTENSION;
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function resolveCallExtension(call: {
+  from: string;
+  to: string;
+  direction: string;
+  metadata: unknown;
+}): string | null {
+  const metadata = asObject(call.metadata);
+  const metadataExtension = normalizeDigits(
+    metadata?.normalized_extension
+    || metadata?.extension
+    || metadata?.ext
+    || metadata?.internal
+    || metadata?.line,
+  );
+  if (isAllowedUtelManagerExtension(metadataExtension)) {
+    return metadataExtension;
+  }
+
+  const fromDigits = normalizeDigits(call.from);
+  const toDigits = normalizeDigits(call.to);
+  const direction = String(call.direction || '').toLowerCase();
+
+  if (direction === 'outbound') {
+    if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
+    if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
+  }
+
+  if (direction === 'inbound') {
+    if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
+    if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
+  }
+
+  if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
+  if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
+  return null;
+}
+
+function getTashkentDayKey(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tashkent',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
+  return `${year}-${month}-${day}`;
+}
 
 async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
   const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
