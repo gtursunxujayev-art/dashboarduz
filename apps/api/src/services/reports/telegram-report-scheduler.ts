@@ -4,12 +4,14 @@ import { telegramService } from '../integrations/telegram';
 import { parseTelegramRecipients } from '../integrations/telegram-recipients';
 import { decryptIntegrationTokens } from '../security/encryption';
 import { getRedisClient } from '../queue/redis-client';
-import { extractLeadValue, humanizeKey } from '../integrations/amocrm-live';
+import { amocrmService } from '../integrations/amocrm';
+import { extractLeadValue, getTenantAmoCRMContext, humanizeKey } from '../integrations/amocrm-live';
 
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
 const POLL_INTERVAL_MS = 30_000;
 const LOCK_TTL_SECONDS = 60 * 60 * 24 * 14; // 14 days
+const MIN_DAILY_REPORT_PREP_MS = 10_000;
 
 type ReportKind = 'daily' | 'weekly' | 'monthly';
 
@@ -117,6 +119,10 @@ function normalizePercentage(value: number): number {
     return 0;
   }
   return Number(value.toFixed(2));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function escapePdfText(value: string): string {
@@ -523,23 +529,7 @@ async function collectMetrics(params: {
     params.selectedPipelineIds,
   );
 
-  const [
-    newLeads,
-    qualifiedLeads,
-    callAggregate,
-    leadsDetailed,
-    incomes,
-    users,
-  ] = await Promise.all([
-    prisma.lead.count({ where: leadWhere as any }),
-    qualifiedStageIds.length > 0
-      ? prisma.lead.count({
-          where: {
-            ...(leadWhere as any),
-            status: { in: qualifiedStageIds },
-          },
-        })
-      : Promise.resolve(0),
+  const [callAggregate, incomes, users] = await Promise.all([
     prisma.call.aggregate({
       where: {
         tenantId: params.tenantId,
@@ -550,15 +540,6 @@ async function collectMetrics(params: {
       },
       _count: { id: true },
       _sum: { duration: true },
-    }),
-    prisma.lead.findMany({
-      where: leadWhere as any,
-      select: {
-        status: true,
-        responsibleUserId: true,
-        metadata: true,
-      },
-      take: 10000,
     }),
     prisma.income.findMany({
       where: {
@@ -594,6 +575,115 @@ async function collectMetrics(params: {
       },
     }),
   ]);
+
+  let newLeads = 0;
+  let qualifiedLeads = 0;
+  const reasonMap = new Map<string, number>();
+  const sourceMap = new Map<string, number>();
+  const managerLeadsByAmoId = new Map<string, { leads: number; qualified: number }>();
+
+  let usedLiveAmoLeads = false;
+  const amoContext = await getTenantAmoCRMContext(params.tenantId);
+  if (amoContext) {
+    try {
+      const liveLeads = await amocrmService.fetchAllLeads(
+        amoContext.accessToken,
+        {
+          pipelineIds: params.selectedPipelineIds.length > 0 ? params.selectedPipelineIds : undefined,
+          createdAtFrom: params.periodStart,
+          createdAtTo: params.periodEnd,
+          limit: 250,
+        },
+        amoContext.baseUrl,
+      );
+
+      usedLiveAmoLeads = true;
+      newLeads = liveLeads.length;
+      for (const lead of liveLeads) {
+        const statusId = String((lead as Record<string, unknown>).status_id || '').trim();
+        if (qualifiedStageIds.length > 0 && statusId && qualifiedStageIds.includes(statusId)) {
+          qualifiedLeads += 1;
+        }
+
+        const reasonValue = extractLeadValue(lead, reasonFieldKey);
+        if (reasonValue) {
+          reasonMap.set(reasonValue, (reasonMap.get(reasonValue) || 0) + 1);
+        }
+
+        const sourceValue = extractLeadValue(lead, sourceFieldKey);
+        if (sourceValue) {
+          sourceMap.set(sourceValue, (sourceMap.get(sourceValue) || 0) + 1);
+        }
+
+        const responsibleUserId = String((lead as Record<string, unknown>).responsible_user_id || '').trim();
+        if (!responsibleUserId) {
+          continue;
+        }
+
+        const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0 };
+        current.leads += 1;
+        if (qualifiedStageIds.length > 0 && statusId && qualifiedStageIds.includes(statusId)) {
+          current.qualified += 1;
+        }
+        managerLeadsByAmoId.set(responsibleUserId, current);
+      }
+    } catch (error: any) {
+      usedLiveAmoLeads = false;
+      log(LogLevel.WARN, 'Falling back to local lead metrics for report generation', {
+        tenantId: params.tenantId,
+        error: error?.message || 'Unknown error',
+      });
+    }
+  }
+
+  if (!usedLiveAmoLeads) {
+    const [dbNewLeads, dbQualifiedLeads, leadsDetailed] = await Promise.all([
+      prisma.lead.count({ where: leadWhere as any }),
+      qualifiedStageIds.length > 0
+        ? prisma.lead.count({
+            where: {
+              ...(leadWhere as any),
+              status: { in: qualifiedStageIds },
+            },
+          })
+        : Promise.resolve(0),
+      prisma.lead.findMany({
+        where: leadWhere as any,
+        select: {
+          status: true,
+          responsibleUserId: true,
+          metadata: true,
+        },
+        take: 10000,
+      }),
+    ]);
+
+    newLeads = dbNewLeads;
+    qualifiedLeads = dbQualifiedLeads;
+
+    for (const lead of leadsDetailed) {
+      const reasonValue = extractLeadValue(lead.metadata, reasonFieldKey);
+      if (reasonValue) {
+        reasonMap.set(reasonValue, (reasonMap.get(reasonValue) || 0) + 1);
+      }
+
+      const sourceValue = extractLeadValue(lead.metadata, sourceFieldKey);
+      if (sourceValue) {
+        sourceMap.set(sourceValue, (sourceMap.get(sourceValue) || 0) + 1);
+      }
+
+      const responsibleUserId = String(lead.responsibleUserId || '').trim();
+      if (!responsibleUserId) {
+        continue;
+      }
+      const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0 };
+      current.leads += 1;
+      if (qualifiedStageIds.length > 0 && lead.status && qualifiedStageIds.includes(String(lead.status))) {
+        current.qualified += 1;
+      }
+      managerLeadsByAmoId.set(responsibleUserId, current);
+    }
+  }
 
   let incomeTotal = 0;
   let newSalesCount = 0;
@@ -633,32 +723,6 @@ async function collectMetrics(params: {
       intensiveSalesCount += 1;
       intensiveAgreementTotal += agreementAmount;
     }
-  }
-
-  const reasonMap = new Map<string, number>();
-  const sourceMap = new Map<string, number>();
-  const managerLeadsByAmoId = new Map<string, { leads: number; qualified: number }>();
-  for (const lead of leadsDetailed) {
-    const reasonValue = extractLeadValue(lead.metadata, reasonFieldKey);
-    if (reasonValue) {
-      reasonMap.set(reasonValue, (reasonMap.get(reasonValue) || 0) + 1);
-    }
-
-    const sourceValue = extractLeadValue(lead.metadata, sourceFieldKey);
-    if (sourceValue) {
-      sourceMap.set(sourceValue, (sourceMap.get(sourceValue) || 0) + 1);
-    }
-
-    const responsibleUserId = String(lead.responsibleUserId || '').trim();
-    if (!responsibleUserId) {
-      continue;
-    }
-    const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0 };
-    current.leads += 1;
-    if (qualifiedStageIds.length > 0 && lead.status && qualifiedStageIds.includes(String(lead.status))) {
-      current.qualified += 1;
-    }
-    managerLeadsByAmoId.set(responsibleUserId, current);
   }
 
   const usersByAmoId = new Map<string, { id: string; name: string }>();
@@ -790,6 +854,7 @@ async function sendWindowToIntegration(
   window: ReportWindow,
   nowUtc: Date,
 ): Promise<{ recipientCount: number; fileName: string }> {
+  const reportStartedAt = Date.now();
   const recipients = parseTelegramRecipients(integration.config).filter(
     (recipient) => recipient.started && recipient.selectedForReports,
   );
@@ -805,6 +870,12 @@ async function sendWindowToIntegration(
     periodEnd: window.periodEnd,
     selectedPipelineIds,
   });
+  if (window.kind === 'daily') {
+    const elapsed = Date.now() - reportStartedAt;
+    if (elapsed < MIN_DAILY_REPORT_PREP_MS) {
+      await sleep(MIN_DAILY_REPORT_PREP_MS - elapsed);
+    }
+  }
 
   const pdfBuffer = createStyledReportPdf({
     tenantName: integration.tenant.name || integration.tenantId,
