@@ -92,7 +92,7 @@ function PieCard({
                       <Cell key={`cell-${index}`} fill={point.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => [value, 'Count']} />
+                  <Tooltip formatter={(value: number) => [value, 'Soni']} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -133,50 +133,50 @@ export default function AnalyticsCharts({
     <div className="space-y-6">
       {isError && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          Failed to load dashboard analytics.
+          Boshqaruv tahlillarini yuklashda xatolik yuz berdi.
         </div>
       )}
 
       {isLoading && (
         <div className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm text-gray-600">
-          Loading analytics...
+          Tahlillar yuklanmoqda...
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <PieCard
-          title="Non-Qualified Leads by Reason"
+          title="Sifatsiz lidlar sababi bo'yicha"
           subtitle={
             reasonChart?.fieldLabel
-              ? `Grouped by "${reasonChart.fieldLabel}" field in selected period.`
-              : 'Choose a reason field in Settings to render this chart.'
+              ? `Tanlangan davrda "${reasonChart.fieldLabel}" maydoni bo'yicha guruhlandi.`
+              : "Diagramma uchun Sozlamalarda sabab maydonini tanlang."
           }
           points={reasonChart?.data ?? []}
           emptyText={
             reasonChart?.fieldKey
-              ? 'No non-qualified lead reasons found for this period.'
-              : 'Configure Reason Field in Settings first.'
+              ? 'Tanlangan davrda sifatsiz lid sabablari topilmadi.'
+              : "Avval Sozlamalarda sabab maydonini sozlang."
           }
         />
 
         <PieCard
-          title="New Leads by Source"
+          title="Yangi lidlar manba bo'yicha"
           subtitle={
             sourceChart?.fieldLabel
-              ? `Grouped by "${sourceChart.fieldLabel}" field in selected period.`
-              : 'Choose a source field in Settings to render this chart.'
+              ? `Tanlangan davrda "${sourceChart.fieldLabel}" maydoni bo'yicha guruhlandi.`
+              : "Diagramma uchun Sozlamalarda manba maydonini tanlang."
           }
           points={sourceChart?.data ?? []}
           emptyText={
             sourceChart?.fieldKey
-              ? 'No source data found for this period.'
-              : 'Configure Source Field in Settings first.'
+              ? "Tanlangan davr uchun manba ma'lumoti topilmadi."
+              : "Avval Sozlamalarda manba maydonini sozlang."
           }
         />
       </div>
 
       <p className="text-center text-xs text-gray-500">
-        Data updated: {data?.updatedAt ? new Date(data.updatedAt).toLocaleString() : 'Not available'}
+        Ma'lumot yangilangan vaqt: {data?.updatedAt ? new Date(data.updatedAt).toLocaleString('uz-UZ') : "Mavjud emas"}
       </p>
     </div>
   );
