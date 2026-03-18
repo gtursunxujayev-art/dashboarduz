@@ -79,7 +79,7 @@ export default function FinancePage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Moliya</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Kurs, agent va sana boвЂyicha tushum hamda qarzdorlik tahlili.
+          Kurs, agent va sana bo'yicha tushum hamda qarzdorlik tahlili.
         </p>
       </div>
 
@@ -155,7 +155,7 @@ export default function FinancePage() {
           <p className="mt-2 text-2xl font-semibold text-gray-900">{totals?.newSalesCount ?? 0}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Qayta toвЂlovlar</p>
+          <p className="text-sm text-gray-500">Qayta to'lovlar</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">{totals?.repaymentCount ?? 0}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -177,7 +177,7 @@ export default function FinancePage() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-lg font-semibold text-gray-900">Kurslar boвЂyicha tushum</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Kurslar bo'yicha tushum</h2>
           {financeQuery.isLoading ? (
             <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
           ) : incomeByCourse.length ? (
@@ -204,12 +204,12 @@ export default function FinancePage() {
               </table>
             </div>
           ) : (
-            <p className="mt-3 text-sm text-gray-600">Tanlangan filtr boвЂyicha kurs tushumi topilmadi.</p>
+            <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha kurs tushumi topilmadi.</p>
           )}
         </div>
 
         <div className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-lg font-semibold text-gray-900">Agentlar boвЂyicha tushum</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Agentlar bo'yicha tushum</h2>
           {financeQuery.isLoading ? (
             <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
           ) : incomeByAgent.length ? (
@@ -234,13 +234,13 @@ export default function FinancePage() {
               </table>
             </div>
           ) : (
-            <p className="mt-3 text-sm text-gray-600">Tanlangan filtr boвЂyicha agent tushumi topilmadi.</p>
+            <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha agent tushumi topilmadi.</p>
           )}
         </div>
       </div>
 
       <div className="rounded-lg bg-white p-6 shadow">
-        <h2 className="text-lg font-semibold text-gray-900">SoвЂnggi tushumlar</h2>
+        <h2 className="text-lg font-semibold text-gray-900">So'nggi tushumlar</h2>
         {financeQuery.isLoading ? (
           <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
         ) : recentIncomes.length ? (
@@ -254,7 +254,7 @@ export default function FinancePage() {
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs/Tarif</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Holat</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">ToвЂlov</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">To'lov</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qoldiq qarz</th>
                 </tr>
               </thead>
@@ -287,10 +287,11 @@ export default function FinancePage() {
             </table>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-gray-600">Tanlangan filtr boвЂyicha tushum yoвЂq.</p>
+          <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha tushum yo'q.</p>
         )}
       </div>
     </div>
   );
 }
+
 
