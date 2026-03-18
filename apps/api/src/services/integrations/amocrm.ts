@@ -196,6 +196,10 @@ export class AmoCRMService {
     with?: string;
     query?: string;
     pipelineIds?: string[];
+    statusFilters?: Array<{
+      pipelineId: string;
+      statusId: string;
+    }>;
     responsibleUserIds?: string[];
     createdAtFrom?: Date;
     createdAtTo?: Date;
@@ -209,6 +213,12 @@ export class AmoCRMService {
       if (params?.pipelineIds) {
         params.pipelineIds.forEach((pipelineId) => {
           queryParams.append('filter[pipeline_id][]', pipelineId);
+        });
+      }
+      if (params?.statusFilters) {
+        params.statusFilters.forEach((statusFilter, index) => {
+          queryParams.append(`filter[statuses][${index}][pipeline_id]`, statusFilter.pipelineId);
+          queryParams.append(`filter[statuses][${index}][status_id]`, statusFilter.statusId);
         });
       }
       if (params?.responsibleUserIds) {
@@ -354,6 +364,10 @@ export class AmoCRMService {
 
   async fetchAllLeads(accessToken: string, params?: {
     pipelineIds?: string[] | null;
+    statusFilters?: Array<{
+      pipelineId: string;
+      statusId: string;
+    }> | null;
     responsibleUserIds?: string[] | null;
     query?: string;
     createdAtFrom?: Date;
@@ -378,6 +392,7 @@ export class AmoCRMService {
           with: params?.with,
           query: params?.query,
           pipelineIds: params?.pipelineIds || undefined,
+          statusFilters: params?.statusFilters || undefined,
           responsibleUserIds: params?.responsibleUserIds || undefined,
           createdAtFrom: params?.createdAtFrom,
           createdAtTo: params?.createdAtTo,
