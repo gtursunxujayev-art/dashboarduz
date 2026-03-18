@@ -6,7 +6,11 @@ import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { encryptIntegrationTokens } from '../../services/security/encryption';
 import { amocrmService } from '../../services/integrations/amocrm';
-import { asObject, getSelectedPipelineIds, getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
+import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
+import {
+  parseTelegramRecipients,
+  updateTelegramReportSelection,
+} from '../../services/integrations/telegram-recipients';
 
 function normalizeBaseUrl(url?: string): string | null {
   if (!url) {
@@ -279,6 +283,19 @@ export const integrationsRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Failed to register Telegram webhook' });
       }
 
+      const existing = await prisma.integration.findUnique({
+        where: {
+          tenantId_type: {
+            tenantId: ctx.tenantId,
+            type: 'telegram',
+          },
+        },
+        select: {
+          config: true,
+        },
+      });
+      const existingRecipients = parseTelegramRecipients(existing?.config);
+
       const validatedAt = new Date();
       const integration = await prisma.integration.upsert({
         where: {
@@ -296,6 +313,10 @@ export const integrationsRouter = router({
             botName: verification.bot.first_name || null,
             webhookUrl,
             webhookSecret,
+            telegramReportRecipients: existingRecipients,
+            reportRecipientChatIds: existingRecipients
+              .filter((recipient) => recipient.started && recipient.selectedForReports)
+              .map((recipient) => recipient.chatId),
             lastValidatedAt: validatedAt.toISOString(),
           },
           lastSyncAt: validatedAt,
@@ -311,6 +332,10 @@ export const integrationsRouter = router({
             botName: verification.bot.first_name || null,
             webhookUrl,
             webhookSecret,
+            telegramReportRecipients: existingRecipients,
+            reportRecipientChatIds: existingRecipients
+              .filter((recipient) => recipient.started && recipient.selectedForReports)
+              .map((recipient) => recipient.chatId),
             lastValidatedAt: validatedAt.toISOString(),
           },
           lastSyncAt: validatedAt,
@@ -340,6 +365,113 @@ export const integrationsRouter = router({
           },
           webhookUrl,
         },
+      };
+    }),
+
+  getTelegramReportRecipients: adminProcedure.query(async ({ ctx }) => {
+    const integration = await prisma.integration.findUnique({
+      where: {
+        tenantId_type: {
+          tenantId: ctx.tenantId,
+          type: 'telegram',
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+        config: true,
+      },
+    });
+
+    if (!integration || integration.status !== 'active') {
+      return {
+        connected: false,
+        recipients: [] as Array<{
+          chatId: string;
+          displayName: string;
+          username: string | null;
+          firstName: string | null;
+          lastName: string | null;
+          selectedForReports: boolean;
+          startedAt: string | null;
+          lastSeenAt: string | null;
+        }>,
+      };
+    }
+
+    const recipients = parseTelegramRecipients(integration.config)
+      .filter((recipient) => recipient.started)
+      .map((recipient) => ({
+        chatId: recipient.chatId,
+        displayName: recipient.displayName,
+        username: recipient.username,
+        firstName: recipient.firstName,
+        lastName: recipient.lastName,
+        selectedForReports: recipient.selectedForReports,
+        startedAt: recipient.startedAt,
+        lastSeenAt: recipient.lastSeenAt,
+      }));
+
+    return {
+      connected: true,
+      recipients,
+    };
+  }),
+
+  updateTelegramReportRecipients: adminProcedure
+    .input(z.object({ chatIds: z.array(z.string()) }))
+    .mutation(async ({ input, ctx }) => {
+      const integration = await prisma.integration.findUnique({
+        where: {
+          tenantId_type: {
+            tenantId: ctx.tenantId,
+            type: 'telegram',
+          },
+        },
+      });
+
+      if (!integration || integration.status !== 'active') {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Telegram integration is not connected.',
+        });
+      }
+
+      const recipients = parseTelegramRecipients(integration.config).filter((recipient) => recipient.started);
+      const availableChatIds = new Set(recipients.map((recipient) => recipient.chatId));
+      for (const chatId of input.chatIds) {
+        const normalized = String(chatId || '').trim();
+        if (!normalized || !availableChatIds.has(normalized)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Unknown Telegram recipient chat id: ${chatId}`,
+          });
+        }
+      }
+
+      const { config: nextConfig, selectedChatIds } = updateTelegramReportSelection(integration.config, input.chatIds);
+      await prisma.integration.update({
+        where: { id: integration.id },
+        data: { config: nextConfig as any },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'integration_update',
+          resource: 'integration',
+          resourceId: integration.id,
+          metadata: {
+            type: 'telegram',
+            reportRecipientChatIds: selectedChatIds,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        selectedChatIds,
       };
     }),
 
