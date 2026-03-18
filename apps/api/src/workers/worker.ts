@@ -5,16 +5,19 @@ import { initializeWorkers } from '../services/queue/queues';
 import { log, LogLevel } from '../services/observability';
 import { initSentry } from '../services/observability';
 import { startTelegramReportScheduler, stopTelegramReportScheduler } from '../services/reports/telegram-report-scheduler';
+import { ensureSchemaCompatibility } from '../services/db/schema-compatibility';
 
 // Initialize observability
 initSentry();
 
-// Initialize queue workers
-try {
+async function startWorkerService() {
+  await ensureSchemaCompatibility();
   initializeWorkers();
   startTelegramReportScheduler();
   log(LogLevel.INFO, 'Worker service started');
-} catch (error: any) {
+}
+
+startWorkerService().catch((error: any) => {
   const details = {
     error: error?.message || String(error),
     stack: error?.stack || null,
@@ -22,7 +25,7 @@ try {
   log(LogLevel.ERROR, 'Failed to start worker service', details);
   console.error('[Worker] Startup failed:', details);
   process.exit(1);
-}
+});
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
