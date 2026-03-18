@@ -5,14 +5,43 @@ import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
 import { usePathname } from 'next/navigation';
 
+type ThemeMode = 'light' | 'dark';
+const THEME_STORAGE_KEY = 'dashboarduz-theme';
+
 export default function Header() {
   const { user } = useAuth();
   const tenantQuery = trpc.tenant.get.useQuery(undefined, {
     retry: 1,
   });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<ThemeMode>('light');
   const menuRef = useRef<HTMLDivElement | null>(null);
   const pathname = usePathname();
+
+  useEffect(() => {
+    const getInitialTheme = (): ThemeMode => {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem(THEME_STORAGE_KEY) : null;
+      if (stored === 'dark' || stored === 'light') {
+        return stored;
+      }
+      if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+      }
+      return 'light';
+    };
+
+    const initialTheme = getInitialTheme();
+    setTheme(initialTheme);
+    document.documentElement.classList.toggle('dark', initialTheme === 'dark');
+    document.documentElement.setAttribute('data-theme', initialTheme);
+  }, []);
+
+  const handleThemeChange = (nextTheme: ThemeMode) => {
+    setTheme(nextTheme);
+    localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    document.documentElement.classList.toggle('dark', nextTheme === 'dark');
+    document.documentElement.setAttribute('data-theme', nextTheme);
+  };
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -42,6 +71,25 @@ export default function Header() {
           <h2 className="text-lg font-semibold text-gray-900">Dashboard</h2>
 
           <div className="flex items-center gap-4">
+            <div className="inline-flex rounded-md border border-gray-300 bg-white shadow-sm">
+              <button
+                type="button"
+                onClick={() => handleThemeChange('light')}
+                className={`px-3 py-1.5 text-xs font-medium ${theme === 'light' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+                aria-label="Switch to light theme"
+              >
+                Light
+              </button>
+              <button
+                type="button"
+                onClick={() => handleThemeChange('dark')}
+                className={`border-l border-gray-300 px-3 py-1.5 text-xs font-medium ${theme === 'dark' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+                aria-label="Switch to dark theme"
+              >
+                Dark
+              </button>
+            </div>
+
             <div ref={menuRef} className="relative">
               <button
                 type="button"
