@@ -13,18 +13,18 @@ export default function IntegrationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Integrations</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Integratsiyalar</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Connect your CRM, messaging, and VoIP services to Dashboarduz
+          CRM, xabarnoma va VoIP xizmatlarini Dashboarduz ga ulang
         </p>
       </div>
 
       <div className="bg-white shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <div className="mb-6">
-            <h2 className="text-lg font-medium text-gray-900">Available Integrations</h2>
+            <h2 className="text-lg font-medium text-gray-900">Mavjud integratsiyalar</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Connect these services to sync data and automate workflows
+              Ma'lumotlarni sinxronlash va jarayonlarni avtomatlashtirish uchun xizmatlarni ulang
             </p>
           </div>
           
@@ -34,7 +34,7 @@ export default function IntegrationsPage() {
 
       <div className="bg-white shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Webhook Configuration</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Webhook sozlamalari</h3>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">
@@ -51,11 +51,11 @@ export default function IntegrationsPage() {
                   onClick={() => navigator.clipboard.writeText(amocrmWebhook)}
                   className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-r-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  Copy
+                  Nusxalash
                 </button>
               </div>
               <p className="mt-1 text-xs text-gray-500">
-                Add this URL in AmoCRM webhook settings after token connection.
+                Token orqali ulanganidan keyin shu URL ni AmoCRM webhook sozlamasiga qo'shing.
               </p>
             </div>
 
@@ -74,11 +74,11 @@ export default function IntegrationsPage() {
                   onClick={() => navigator.clipboard.writeText(utelWebhook)}
                   className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-r-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  Copy
+                  Nusxalash
                 </button>
               </div>
               <p className="mt-1 text-xs text-gray-500">
-                Use the full URL (including integration key) in UTeL webhook settings.
+                UTeL webhook sozlamasida to'liq URL dan foydalaning (integration key bilan).
               </p>
             </div>
           </div>
