@@ -37,6 +37,57 @@ function resolveVoipProvider(req: Request): string {
   return provider || 'utel';
 }
 
+function getMetadataCandidates(value: unknown): Record<string, unknown>[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return [];
+  }
+
+  const metadata = value as Record<string, unknown>;
+  const candidates: Record<string, unknown>[] = [metadata];
+  const nestedKeys = ['call', 'data', 'payload', 'event', 'params', 'meta', 'details', 'call_data'];
+
+  for (const nestedKey of nestedKeys) {
+    const nested = metadata[nestedKey];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      candidates.push(nested as Record<string, unknown>);
+    }
+  }
+
+  return candidates;
+}
+
+function getCaseInsensitiveMetadataValue(source: Record<string, unknown>, key: string): unknown {
+  if (key in source) {
+    return source[key];
+  }
+
+  const normalizedKey = key.toLowerCase();
+  for (const [currentKey, currentValue] of Object.entries(source)) {
+    if (currentKey.toLowerCase() === normalizedKey) {
+      return currentValue;
+    }
+  }
+
+  return undefined;
+}
+
+function pickMetadataValue(metadata: unknown, keys: string[]): string | null {
+  const candidates = getMetadataCandidates(metadata);
+  for (const candidate of candidates) {
+    for (const key of keys) {
+      const value = getCaseInsensitiveMetadataValue(candidate, key);
+      if (value !== null && value !== undefined) {
+        const normalized = String(value).trim();
+        if (normalized) {
+          return normalized;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 function isUniqueViolation(error: any): boolean {
   return error?.code === 'P2002';
 }
@@ -548,23 +599,35 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       totalWebhookEvents: receivedEvents,
       ...(diagnostics ? { diagnostics } : {}),
       recentCalls: recentCalls.map((call) => {
-        const metadata = (call.metadata && typeof call.metadata === 'object')
-          ? call.metadata as Record<string, unknown>
-          : {};
-
-        const manager = String(
-          metadata.manager
-          || metadata.agent
-          || metadata.operator
-          || metadata.user
-          || '',
-        ).trim();
-        const extension = String(
-          metadata.extension
-          || metadata.ext
-          || metadata.internal
-          || '',
-        ).trim();
+        const manager = pickMetadataValue(call.metadata, [
+          'manager',
+          'manager_name',
+          'agent',
+          'agent_name',
+          'operator',
+          'user',
+          'employee',
+          'responsible',
+        ]);
+        const extension = pickMetadataValue(call.metadata, [
+          'extension',
+          'ext',
+          'internal',
+          'line',
+          'internal_number',
+          'agent_extension',
+          'src',
+        ]);
+        const phone = pickMetadataValue(call.metadata, [
+          'phone',
+          'client_phone',
+          'customer_phone',
+          'external_phone',
+          'number',
+          'dst',
+          'to',
+          'callee',
+        ]);
 
         return {
           id: call.id,
@@ -573,7 +636,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
           direction: call.direction,
           date: call.startedAt,
           duration: call.duration,
-          phone: call.direction === 'outbound' ? call.to : call.from,
+          phone: phone || (call.direction === 'outbound' ? call.to : call.from),
           extension: extension || null,
           manager: manager || null,
         };
