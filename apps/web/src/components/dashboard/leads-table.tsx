@@ -27,7 +27,7 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
         <div className="flex space-x-2">
           <input
             type="text"
-            placeholder="Search live AmoCRM leads..."
+            placeholder="Jonli AmoCRM lidlarini qidirish..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="block w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
@@ -41,22 +41,22 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
           <thead className="bg-gray-50">
             <tr>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Lead
+                Lid
               </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Contact
+                Kontakt
               </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
+                Holat
               </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Source
+                Manba
               </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Created
+                Yaratilgan sana
               </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
+                Amal
               </th>
             </tr>
           </thead>
@@ -84,12 +84,12 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
                       <div className="text-xs text-gray-500">{lead.contact.phone || lead.contact.email}</div>
                     </div>
                   ) : (
-                    <span className="text-sm text-gray-500">No contact</span>
+                    <span className="text-sm text-gray-500">Kontakt yo&apos;q</span>
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(lead.status || '')}`}>
-                    {lead.status || 'Unknown'}
+                    {lead.status || "Noma'lum"}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -106,7 +106,7 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
                     href={`/dashboard/leads/${lead.id}`}
                     className="text-blue-600 hover:text-blue-900"
                   >
-                    View
+                    Ko&apos;rish
                   </Link>
                 </td>
               </tr>
@@ -124,27 +124,27 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
               disabled={page === 1}
               className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Previous
+              Oldingi
             </button>
             <button
               onClick={() => setPage(page + 1)}
               disabled={!pagination.hasMore}
               className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Next
+              Keyingi
             </button>
           </div>
           <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <div>
               <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">{leads.length === 0 ? 0 : (page - 1) * 10 + 1}</span> to{' '}
+                <span className="font-medium">{leads.length === 0 ? 0 : (page - 1) * 10 + 1}</span> dan{' '}
                 <span className="font-medium">{(page - 1) * 10 + leads.length}</span>
                 {typeof pagination.total === 'number' ? (
                   <>
-                    {' '}of <span className="font-medium">{pagination.total}</span> results
+                    {' '} / <span className="font-medium">{pagination.total}</span> ta natija
                   </>
                 ) : (
-                  ' from live AmoCRM data'
+                  " (jonli AmoCRM ma'lumotlari)"
                 )}
               </p>
             </div>
@@ -155,7 +155,7 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
                   disabled={page === 1}
                   className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span className="sr-only">Previous</span>
+                  <span className="sr-only">Oldingi</span>
                   <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
@@ -165,7 +165,7 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
                   disabled={!pagination.hasMore}
                   className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span className="sr-only">Next</span>
+                  <span className="sr-only">Keyingi</span>
                   <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                   </svg>
@@ -182,9 +182,9 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
           <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No leads</h3>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">Lidlar topilmadi</h3>
           <p className="mt-1 text-sm text-gray-500">
-            Connect AmoCRM and send webhooks to start receiving leads.
+            Lidlarni ko'rish uchun AmoCRM ni ulang va webhook yuborishni yoqing.
           </p>
         </div>
       )}
@@ -193,7 +193,7 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
       {leadsQuery.isLoading && (
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading leads...</p>
+          <p className="mt-4 text-gray-600">Lidlar yuklanmoqda...</p>
         </div>
       )}
     </div>
