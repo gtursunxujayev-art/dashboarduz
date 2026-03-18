@@ -107,6 +107,14 @@ function isLikelyInternalPhone(value: string | null): boolean {
   return digits.length > 0 && digits.length <= 6;
 }
 
+function normalizeDirection(value: string | null | undefined): 'inbound' | 'outbound' {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['out', 'outbound', 'dial_out', 'outgoing'].includes(normalized)) {
+    return 'outbound';
+  }
+  return 'inbound';
+}
+
 function isUniqueViolation(error: any): boolean {
   return error?.code === 'P2002';
 }
@@ -504,6 +512,106 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       }),
     ]);
 
+    const mappedRows = recentCalls.map((call) => {
+      const manager = pickMetadataValue(call.metadata, [
+        'normalized_manager',
+        'manager',
+        'manager_name',
+        'agent',
+        'agent_name',
+        'operator',
+        'user',
+        'employee',
+        'responsible',
+      ]);
+      const extensionFromMetadata = pickMetadataValue(call.metadata, [
+        'normalized_extension',
+        'extension',
+        'ext',
+        'internal',
+        'line',
+        'internal_number',
+        'agent_extension',
+        'src',
+      ]);
+      const phoneFromMetadata = pickMetadataValue(call.metadata, [
+        'normalized_phone',
+        'phone',
+        'phone_number',
+        'client_phone',
+        'customer_phone',
+        'external_phone',
+        'number',
+        'dst',
+        'to',
+        'callee',
+      ]);
+      const callFrom = normalizePhone(call.from || '');
+      const callTo = normalizePhone(call.to || '');
+      const fallbackExternalPhone = [callFrom, callTo].find((candidate) => isLikelyExternalPhone(candidate)) || '';
+      const metadataExternalPhone = isLikelyExternalPhone(phoneFromMetadata) ? normalizePhone(phoneFromMetadata) : '';
+      const displayPhone = metadataExternalPhone || fallbackExternalPhone || '';
+      const displayExtension = extensionFromMetadata
+        || (isLikelyInternalPhone(call.direction === 'outbound' ? call.from : call.to)
+          ? normalizePhone(call.direction === 'outbound' ? call.from : call.to)
+          : null);
+      const durationFromMetadataRaw = pickMetadataValue(call.metadata, ['normalized_duration', 'duration', 'billsec']);
+      const durationFromMetadata = durationFromMetadataRaw && !Number.isNaN(Number(durationFromMetadataRaw))
+        ? Number(durationFromMetadataRaw)
+        : null;
+      const directionFromMetadata = pickMetadataValue(call.metadata, ['normalized_direction', 'direction', 'call_direction', 'type']);
+
+      return {
+        id: call.id,
+        provider: call.provider,
+        status: call.status,
+        direction: normalizeDirection(directionFromMetadata || call.direction),
+        date: call.startedAt,
+        duration: call.duration ?? durationFromMetadata,
+        phone: displayPhone,
+        extension: displayExtension || null,
+        manager: manager || null,
+      };
+    });
+
+    const extensionKeys = Array.from(
+      new Set(
+        mappedRows
+          .map((row) => normalizePhone(row.extension || ''))
+          .filter((value) => Boolean(value)),
+      ),
+    );
+
+    let managerByExtension = new Map<string, string>();
+    if (extensionKeys.length > 0) {
+      try {
+        const mappedUsers = await prisma.user.findMany({
+          where: {
+            tenantId: integration.tenantId,
+            isActive: true,
+            utelManagerExternalId: {
+              in: extensionKeys,
+            },
+          },
+          select: {
+            utelManagerExternalId: true,
+            name: true,
+            username: true,
+          },
+        });
+        managerByExtension = new Map(
+          mappedUsers
+            .filter((user) => Boolean(user.utelManagerExternalId))
+            .map((user) => [
+              normalizePhone(String(user.utelManagerExternalId || '')),
+              String(user.name || user.username || user.utelManagerExternalId || '').trim(),
+            ]),
+        );
+      } catch {
+        managerByExtension = new Map();
+      }
+    }
+
     let diagnostics: Record<string, unknown> | null = null;
     if (debugEnabled) {
       const [
@@ -617,66 +725,10 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       totalCalls,
       totalWebhookEvents: receivedEvents,
       ...(diagnostics ? { diagnostics } : {}),
-      recentCalls: recentCalls.map((call) => {
-        const manager = pickMetadataValue(call.metadata, [
-          'normalized_manager',
-          'manager',
-          'manager_name',
-          'agent',
-          'agent_name',
-          'operator',
-          'user',
-          'employee',
-          'responsible',
-        ]);
-        const extensionFromMetadata = pickMetadataValue(call.metadata, [
-          'normalized_extension',
-          'extension',
-          'ext',
-          'internal',
-          'line',
-          'internal_number',
-          'agent_extension',
-          'src',
-        ]);
-        const phoneFromMetadata = pickMetadataValue(call.metadata, [
-          'normalized_phone',
-          'phone',
-          'phone_number',
-          'client_phone',
-          'customer_phone',
-          'external_phone',
-          'number',
-          'dst',
-          'to',
-          'callee',
-        ]);
-        const callFrom = normalizePhone(call.from || '');
-        const callTo = normalizePhone(call.to || '');
-        const fallbackExternalPhone = [callFrom, callTo].find((candidate) => isLikelyExternalPhone(candidate)) || '';
-        const metadataExternalPhone = isLikelyExternalPhone(phoneFromMetadata) ? normalizePhone(phoneFromMetadata) : '';
-        const displayPhone = metadataExternalPhone || fallbackExternalPhone || '';
-        const displayExtension = extensionFromMetadata
-          || (isLikelyInternalPhone(call.direction === 'outbound' ? call.from : call.to)
-            ? normalizePhone(call.direction === 'outbound' ? call.from : call.to)
-            : null);
-        const durationFromMetadataRaw = pickMetadataValue(call.metadata, ['normalized_duration', 'duration', 'billsec']);
-        const durationFromMetadata = durationFromMetadataRaw && !Number.isNaN(Number(durationFromMetadataRaw))
-          ? Number(durationFromMetadataRaw)
-          : null;
-
-        return {
-          id: call.id,
-          provider: call.provider,
-          status: call.status,
-          direction: call.direction,
-          date: call.startedAt,
-          duration: call.duration ?? durationFromMetadata,
-          phone: displayPhone,
-          extension: displayExtension || null,
-          manager: manager || null,
-        };
-      }),
+      recentCalls: mappedRows.map((row) => ({
+        ...row,
+        manager: row.manager || managerByExtension.get(normalizePhone(row.extension || '')) || null,
+      })),
     });
   } catch (err) {
     logger.error({ err }, 'VoIP webhook status handler failed');
