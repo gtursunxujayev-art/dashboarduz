@@ -12,6 +12,8 @@ const REPORT_TIMEZONE_LABEL = 'GMT+5';
 const POLL_INTERVAL_MS = 30_000;
 const LOCK_TTL_SECONDS = 60 * 60 * 24 * 14; // 14 days
 const MIN_DAILY_REPORT_PREP_MS = 10_000;
+const MIN_WEEKLY_REPORT_PREP_MS = 20_000;
+const MIN_MONTHLY_REPORT_PREP_MS = 30_000;
 
 type ReportKind = 'daily' | 'weekly' | 'monthly';
 
@@ -50,6 +52,7 @@ type ReportMetrics = {
     sales: number;
     conversion: number;
     amount: number;
+    callDurationSeconds: number;
   }>;
 };
 
@@ -123,6 +126,24 @@ function normalizePercentage(value: number): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeDigits(value: unknown): string {
+  return String(value || '').replace(/[^\d]/g, '');
+}
+
+function isAllowedUtelManagerExtension(value: unknown): boolean {
+  const digits = normalizeDigits(value);
+  if (!digits) {
+    return false;
+  }
+  const parsed = Number.parseInt(digits, 10);
+  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
+}
+
+function getReportTenantName(value: string | null | undefined): string {
+  const normalized = String(value || '').trim();
+  return normalized || 'Workspace';
 }
 
 function escapePdfText(value: string): string {
@@ -259,16 +280,16 @@ function createStyledReportPdf(params: {
   c.rect(16, 24, 547, 62, { fill: dark });
   c.text(28, 44, params.tenantName, { font: 'F2', size: 20, color: white });
   c.text(52, 270, params.title, { font: 'F1', size: 12, color: [0.76, 0.82, 0.92] });
-  c.text(92, 44, `Period: ${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`, { size: 10, color: textDark });
-  c.text(106, 44, `Generated: ${formatLocalDateTime(params.generatedAt)}`, { size: 10, color: textDark });
+  c.text(92, 44, `Davr: ${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`, { size: 10, color: textDark });
+  c.text(106, 44, `Tayyorlangan: ${formatLocalDateTime(params.generatedAt)}`, { size: 10, color: textDark });
 
   const cardTitles = [
-    'Income',
-    'Agreement',
-    'Online income',
-    'Offline income',
-    'New leads',
-    'Qualified leads',
+    'Tushum',
+    'Kelishuv summasi',
+    'Online tushum',
+    'Offline tushum',
+    'Yangi lidlar',
+    'Sifatli lidlar',
   ];
   const cardValues = [
     formatCurrency(params.metrics.incomeTotal),
@@ -291,40 +312,41 @@ function createStyledReportPdf(params: {
   }
 
   c.rect(276, 44, 503, 116, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
-  c.text(288, 54, `Non-qualified leads: ${params.metrics.nonQualifiedLeads}`, { font: 'F2', size: 12, color: textDark });
-  c.text(306, 54, `New sales: ${params.metrics.newSalesCount}`, { font: 'F2', size: 12, color: textDark });
-  c.text(324, 54, `Conversion (sales -> leads): ${params.metrics.conversionPercent.toFixed(2)}%`, { font: 'F2', size: 12, color: textDark });
-  c.text(342, 54, `Calls: ${params.metrics.totalCalls}`, { size: 11, color: textDark });
-  c.text(358, 54, `Talk duration: ${formatDuration(params.metrics.talkDurationSeconds)}`, { size: 11, color: textDark });
-  c.text(374, 54, `Sales online/offline/intensive: ${params.metrics.onlineSalesCount}/${params.metrics.offlineSalesCount}/${params.metrics.intensiveSalesCount}`, { size: 10, color: textDark });
+  c.text(288, 54, `Sifatsiz lidlar: ${params.metrics.nonQualifiedLeads}`, { font: 'F2', size: 12, color: textDark });
+  c.text(306, 54, `Yangi sotuvlar: ${params.metrics.newSalesCount}`, { font: 'F2', size: 12, color: textDark });
+  c.text(324, 54, `Coversion (sotuv -> lid): ${params.metrics.conversionPercent.toFixed(2)}%`, { font: 'F2', size: 12, color: textDark });
+  c.text(342, 54, `Qo'ng'iroqlar: ${params.metrics.totalCalls}`, { size: 11, color: textDark });
+  c.text(358, 54, `Suhbat davomiyligi: ${formatDuration(params.metrics.talkDurationSeconds)}`, { size: 11, color: textDark });
+  c.text(374, 54, `Online/Offline/Intensiv sotuvlar: ${params.metrics.onlineSalesCount}/${params.metrics.offlineSalesCount}/${params.metrics.intensiveSalesCount}`, { size: 10, color: textDark });
 
   c.rect(410, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
-  c.text(414, 54, 'Non-qualified lead reasons', { font: 'F2', size: 12, color: white });
+  c.text(414, 54, 'Sifatsiz lid sabablari', { font: 'F2', size: 12, color: white });
   let y = 438;
-  for (const line of topBreakdownRows(params.metrics.reasonBreakdown, 'No data')) {
+  for (const line of topBreakdownRows(params.metrics.reasonBreakdown, "Ma'lumot yo'q")) {
     c.text(y, 54, line, { size: 10, color: textDark });
     y += 14;
   }
 
   c.rect(498, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
-  c.text(502, 54, 'Lead sources', { font: 'F2', size: 12, color: white });
+  c.text(502, 54, 'Lid manbalari', { font: 'F2', size: 12, color: white });
   y = 526;
-  for (const line of topBreakdownRows(params.metrics.sourceBreakdown, 'No data')) {
+  for (const line of topBreakdownRows(params.metrics.sourceBreakdown, "Ma'lumot yo'q")) {
     c.text(y, 54, line, { size: 10, color: textDark });
     y += 14;
   }
 
   c.rect(588, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
-  c.text(592, 54, 'Sales by manager', { font: 'F2', size: 12, color: white });
+  c.text(592, 54, "Menejerlar bo'yicha sotuvlar", { font: 'F2', size: 12, color: white });
 
   const tableTop = 614;
   const columns = [
-    { key: 'name', title: 'Manager', width: 140 },
-    { key: 'leads', title: 'Leads', width: 65 },
-    { key: 'qualified', title: 'Qualified', width: 70 },
-    { key: 'sales', title: 'Sales', width: 65 },
-    { key: 'conversion', title: 'Conversion', width: 75 },
-    { key: 'amount', title: 'Amount', width: 88 },
+    { key: 'name', title: 'Menejer', width: 110 },
+    { key: 'leads', title: 'Lidlar', width: 55 },
+    { key: 'qualified', title: 'Sifatli', width: 60 },
+    { key: 'sales', title: 'Sotuv', width: 55 },
+    { key: 'conversion', title: 'Coversion', width: 70 },
+    { key: 'amount', title: 'Summasi', width: 85 },
+    { key: 'duration', title: 'Suhbat', width: 68 },
   ] as const;
   const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
 
@@ -337,7 +359,7 @@ function createStyledReportPdf(params: {
 
   const rows = params.metrics.managerRows.length > 0
     ? params.metrics.managerRows
-    : [{ name: 'No manager data', leads: 0, qualified: 0, sales: 0, conversion: 0, amount: 0 }];
+    : [{ name: "Menejer ma'lumoti yo'q", leads: 0, qualified: 0, sales: 0, conversion: 0, amount: 0, callDurationSeconds: 0 }];
   const shownRows = rows.slice(0, 9);
   for (const [index, row] of shownRows.entries()) {
     const rowTop = tableTop + 20 + index * 18;
@@ -354,6 +376,7 @@ function createStyledReportPdf(params: {
       String(row.sales),
       `${row.conversion.toFixed(1)}%`,
       formatCurrency(row.amount),
+      formatDuration(row.callDurationSeconds),
     ];
 
     let currentX = 56;
@@ -363,7 +386,7 @@ function createStyledReportPdf(params: {
     }
   }
 
-  c.text(808, 44, `Generated by Dashboarduz`, { size: 8, color: [0.5, 0.56, 0.66] });
+  c.text(808, 44, 'Dashboarduz tomonidan yaratildi', { size: 8, color: [0.5, 0.56, 0.66] });
   return c.build();
 }
 
@@ -401,7 +424,7 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
     const periodEnd = new Date(todayStart.getTime() - 1);
     windows.push({
       kind: 'daily',
-      title: 'Daily Report (Yesterday)',
+      title: 'Kunlik hisobot (Kecha)',
       periodStart,
       periodEnd,
       periodKey: formatLocalDate(periodStart),
@@ -417,7 +440,7 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
       const periodEnd = new Date(mondayStart.getTime() - 1);
       windows.push({
         kind: 'weekly',
-        title: 'Weekly Report (Last Week)',
+        title: 'Haftalik hisobot (O`tgan hafta)',
         periodStart,
         periodEnd,
         periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(periodEnd)}`,
@@ -443,7 +466,7 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
       );
       windows.push({
         kind: 'monthly',
-        title: 'Monthly Report (Last Month)',
+        title: 'Oylik hisobot (O`tgan oy)',
         periodStart,
         periodEnd,
         periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(periodEnd)}`,
@@ -463,7 +486,7 @@ function buildTodayWindow(nowUtc: Date): ReportWindow {
 
   return {
     kind: 'daily',
-    title: 'Immediate Report (Today)',
+    title: 'Tezkor hisobot (Bugun)',
     periodStart,
     periodEnd: nowUtc,
     periodKey: formatLocalDate(periodStart),
@@ -544,6 +567,7 @@ async function collectMetrics(params: {
     prisma.income.findMany({
       where: {
         tenantId: params.tenantId,
+        lifecycleStatus: 'active',
         entryDate: {
           gte: params.periodStart,
           lte: params.periodEnd,
@@ -572,6 +596,7 @@ async function collectMetrics(params: {
         name: true,
         username: true,
         amocrmResponsibleUserId: true,
+        utelManagerExternalId: true,
       },
     }),
   ]);
@@ -727,15 +752,62 @@ async function collectMetrics(params: {
 
   const usersByAmoId = new Map<string, { id: string; name: string }>();
   const usersById = new Map<string, { id: string; name: string }>();
+  const managerByExtension = new Map<string, string>();
   for (const user of users) {
     const displayName = (user.name || user.username || user.id).trim();
     usersById.set(user.id, { id: user.id, name: displayName });
     if (user.amocrmResponsibleUserId) {
       usersByAmoId.set(String(user.amocrmResponsibleUserId), { id: user.id, name: displayName });
     }
+    const extension = normalizeDigits(user.utelManagerExternalId || '');
+    if (isAllowedUtelManagerExtension(extension)) {
+      managerByExtension.set(extension, user.id);
+    }
+  }
+
+  const extensionValues = Array.from(managerByExtension.keys());
+  const managerCallDurationByUserId = new Map<string, number>();
+  if (extensionValues.length > 0) {
+    const managerCalls = await prisma.call.findMany({
+      where: {
+        tenantId: params.tenantId,
+        provider: 'utel',
+        startedAt: {
+          gte: params.periodStart,
+          lte: params.periodEnd,
+        },
+        OR: [
+          { from: { in: extensionValues } },
+          { to: { in: extensionValues } },
+        ],
+      },
+      select: {
+        from: true,
+        to: true,
+        duration: true,
+      },
+    });
+
+    for (const call of managerCalls) {
+      const fromExtension = normalizeDigits(call.from);
+      const toExtension = normalizeDigits(call.to);
+      const extension = isAllowedUtelManagerExtension(fromExtension)
+        ? fromExtension
+        : (isAllowedUtelManagerExtension(toExtension) ? toExtension : null);
+      if (!extension) {
+        continue;
+      }
+      const managerUserId = managerByExtension.get(extension);
+      if (!managerUserId) {
+        continue;
+      }
+      const currentDuration = managerCallDurationByUserId.get(managerUserId) || 0;
+      managerCallDurationByUserId.set(managerUserId, currentDuration + Math.max(0, Number(call.duration || 0)));
+    }
   }
 
   const managerRowsByUserId = new Map<string, {
+    userId: string;
     name: string;
     leads: number;
     qualified: number;
@@ -749,6 +821,7 @@ async function collectMetrics(params: {
       continue;
     }
     const existing = managerRowsByUserId.get(mappedUser.id) || {
+      userId: mappedUser.id,
       name: mappedUser.name,
       leads: 0,
       qualified: 0,
@@ -764,6 +837,7 @@ async function collectMetrics(params: {
     const mappedUser = usersById.get(userId);
     const name = mappedUser?.name || userId;
     const existing = managerRowsByUserId.get(userId) || {
+      userId,
       name,
       leads: 0,
       qualified: 0,
@@ -798,6 +872,7 @@ async function collectMetrics(params: {
       sales: row.sales,
       conversion: row.leads > 0 ? normalizePercentage((row.sales / row.leads) * 100) : 0,
       amount: row.amount,
+      callDurationSeconds: managerCallDurationByUserId.get(row.userId) || 0,
     }))
     .filter((row) => row.leads > 0 || row.sales > 0 || row.amount > 0)
     .sort((a, b) => {
@@ -870,15 +945,18 @@ async function sendWindowToIntegration(
     periodEnd: window.periodEnd,
     selectedPipelineIds,
   });
-  if (window.kind === 'daily') {
-    const elapsed = Date.now() - reportStartedAt;
-    if (elapsed < MIN_DAILY_REPORT_PREP_MS) {
-      await sleep(MIN_DAILY_REPORT_PREP_MS - elapsed);
-    }
+  const elapsed = Date.now() - reportStartedAt;
+  const minWaitMs = window.kind === 'weekly'
+    ? MIN_WEEKLY_REPORT_PREP_MS
+    : window.kind === 'monthly'
+      ? MIN_MONTHLY_REPORT_PREP_MS
+      : MIN_DAILY_REPORT_PREP_MS;
+  if (elapsed < minWaitMs) {
+    await sleep(minWaitMs - elapsed);
   }
 
   const pdfBuffer = createStyledReportPdf({
-    tenantName: integration.tenant.name || integration.tenantId,
+    tenantName: getReportTenantName(integration.tenant.name || integration.tenantId),
     title: window.title,
     periodStart: window.periodStart,
     periodEnd: window.periodEnd,
