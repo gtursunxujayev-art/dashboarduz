@@ -46,7 +46,7 @@ export default function CustomersPage() {
       <div className="rounded-lg bg-white shadow">
         <div className="border-b border-gray-100 px-6 py-5">
           <h1 className="text-xl font-semibold text-gray-900">Mijozlar</h1>
-          <p className="mt-1 text-sm text-gray-500">Kurs va qarzdorlik boвЂyicha filtrlangan mijozlar roвЂyxati.</p>
+          <p className="mt-1 text-sm text-gray-500">Kurs va qarzdorlik bo'yicha filtrlangan mijozlar ro'yxati.</p>
         </div>
 
         <div className="space-y-4 p-6">
@@ -54,7 +54,7 @@ export default function CustomersPage() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Raqam, ism yoki telegram boвЂyicha qidirish"
+              placeholder="Raqam, ism yoki telegram bo'yicha qidirish"
               className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
 
@@ -105,7 +105,7 @@ export default function CustomersPage() {
             <p className="text-sm text-gray-600">Mijozlar yuklanmoqda...</p>
           ) : customersQuery.error ? (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-              {customersQuery.error.message || 'Mijozlarni yuklab boвЂlmadi.'}
+              {customersQuery.error.message || "Mijozlarni yuklab bo'lmadi."}
             </p>
           ) : customers.length ? (
             <div className="overflow-x-auto">
@@ -117,7 +117,7 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Telegram</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Kurslar</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Qarz</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Jami toвЂlangan</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Jami to'langan</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Oxirgi faollik</th>
                   </tr>
                 </thead>
@@ -143,11 +143,12 @@ export default function CustomersPage() {
               </table>
             </div>
           ) : (
-            <p className="text-sm text-gray-600">Tanlangan filtr boвЂyicha mijoz topilmadi.</p>
+            <p className="text-sm text-gray-600">Tanlangan filtr bo'yicha mijoz topilmadi.</p>
           )}
         </div>
       </div>
     </div>
   );
 }
+
 
