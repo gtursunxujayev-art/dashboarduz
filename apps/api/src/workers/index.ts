@@ -74,12 +74,34 @@ function parseCallDate(value: unknown): Date | null {
   }
 
   if (typeof value === 'string') {
-    const asNumber = Number(value);
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const asNumber = Number(trimmed);
     if (!Number.isNaN(asNumber)) {
       return parseCallDate(asNumber);
     }
 
-    const parsed = new Date(value);
+    // UTeL often sends local date_time without timezone in GMT+5.
+    const normalized = trimmed.replace(' ', 'T');
+    const localDateMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/);
+    if (localDateMatch) {
+      const [, y, m, d, hh, mm, ss] = localDateMatch;
+      const utcMillis = Date.UTC(
+        Number(y),
+        Number(m) - 1,
+        Number(d),
+        Number(hh) - 5,
+        Number(mm),
+        Number(ss),
+      );
+      const parsedFromLocal = new Date(utcMillis);
+      return Number.isNaN(parsedFromLocal.getTime()) ? null : parsedFromLocal;
+    }
+
+    const parsed = new Date(trimmed);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
@@ -87,13 +109,37 @@ function parseCallDate(value: unknown): Date | null {
 }
 
 function getObjectCandidates(entry: Record<string, unknown>): Record<string, unknown>[] {
-  const candidates: Record<string, unknown>[] = [entry];
-  const nestedKeys = ['call', 'data', 'payload', 'event', 'params', 'meta', 'details', 'call_data', 'cdr', 'record', 'event_data'];
+  const candidates: Record<string, unknown>[] = [];
+  const nestedKeys = [
+    'call',
+    'data',
+    'payload',
+    'event',
+    'params',
+    'meta',
+    'details',
+    'call_data',
+    'call_history',
+    'cdr',
+    'record',
+    'event_data',
+  ];
+  const queue: Record<string, unknown>[] = [entry];
+  const seen = new Set<Record<string, unknown>>();
 
-  for (const nestedKey of nestedKeys) {
-    const nested = entry[nestedKey];
-    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-      candidates.push(nested as Record<string, unknown>);
+  while (queue.length > 0) {
+    const current = queue.shift() as Record<string, unknown>;
+    if (seen.has(current)) {
+      continue;
+    }
+    seen.add(current);
+    candidates.push(current);
+
+    for (const nestedKey of nestedKeys) {
+      const nested = current[nestedKey];
+      if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+        queue.push(nested as Record<string, unknown>);
+      }
     }
   }
 
@@ -382,6 +428,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
   }
 
   const startedAt = parseCallDate(pickVoipValue(entry, [
+    'date_time',
     'start_time',
     'started_at',
     'startedAt',
@@ -398,6 +445,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'hangup_time',
   ]));
   const parsedDuration = parseDurationSeconds(pickVoipValue(entry, [
+    'conversation',
     'duration',
     'call_duration',
     'total_duration',
