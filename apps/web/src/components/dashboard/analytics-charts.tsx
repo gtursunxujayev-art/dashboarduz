@@ -9,7 +9,7 @@ import {
   Tooltip,
 } from 'recharts';
 
-type DashboardRange = 'today' | 'week' | 'month';
+type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
 type PieDatum = {
   name: string;
@@ -133,24 +133,30 @@ export default function AnalyticsCharts({
   const reasonChart = data?.pieCharts.nonQualifiedByReason;
   const sourceChart = data?.pieCharts.newLeadsBySource;
 
-  const rangeOptions: DashboardRange[] = ['today', 'week', 'month'];
+  const rangeOptions: DashboardRange[] = ['today', 'week', 'month', 'custom'];
 
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
         <div className="inline-flex rounded-md shadow-sm">
-          {rangeOptions.map((option) => (
+          {rangeOptions.map((option, index) => (
             <button
               key={option}
               type="button"
               onClick={() => onRangeChange(option)}
               className={`border border-gray-300 px-4 py-2 text-sm font-medium capitalize ${
                 range === option ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
-              } ${option === 'today' ? 'rounded-l-md' : ''} ${
-                option === 'month' ? 'rounded-r-md' : ''
-              } ${option !== 'today' ? 'border-l-0' : ''}`}
+              } ${index === 0 ? 'rounded-l-md' : ''} ${
+                index === rangeOptions.length - 1 ? 'rounded-r-md' : ''
+              } ${index !== 0 ? 'border-l-0' : ''}`}
             >
-              {option === 'week' ? 'This week' : option === 'month' ? 'This month' : 'Today'}
+              {option === 'week'
+                ? 'This week'
+                : option === 'month'
+                  ? 'This month'
+                  : option === 'custom'
+                    ? 'Custom'
+                    : 'Today'}
             </button>
           ))}
         </div>
