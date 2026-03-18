@@ -7,6 +7,12 @@ import { usePathname } from 'next/navigation';
 
 type ThemeMode = 'light' | 'dark';
 const THEME_STORAGE_KEY = 'dashboarduz-theme';
+const ROLE_LABELS: Record<string, string> = {
+  Admin: 'Admin',
+  Manager: 'Menejer',
+  Agent: 'Agent',
+  Finance: 'Moliya',
+};
 
 export default function Header() {
   const { user } = useAuth();
@@ -66,7 +72,7 @@ export default function Header() {
 
   return (
     <header className="relative z-30 border-b border-gray-200 bg-white">
-      <div className="px-4 sm:px-6 lg:px-8">
+      <div className="pl-14 pr-4 sm:px-6 lg:px-8">
         <div className="flex min-h-16 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Boshqaruv paneli</h2>
 
@@ -138,7 +144,7 @@ export default function Header() {
             <div className="text-right sm:block">
               <p className="text-sm font-medium text-gray-800">{user?.email?.split('@')[0] || user?.phone || 'Akkaunt'}</p>
               <p className="text-xs text-gray-500">
-                {user?.roles?.map((role: string) => role.charAt(0).toUpperCase() + role.slice(1)).join(', ')}
+                {user?.roles?.map((role: string) => ROLE_LABELS[role] || role).join(', ')}
               </p>
             </div>
           </div>
