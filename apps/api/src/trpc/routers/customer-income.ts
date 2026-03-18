@@ -1087,24 +1087,47 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course name is required.' });
       }
 
-      return prisma.course.upsert({
-        where: {
-          tenantId_name: {
+      try {
+        return await prisma.course.upsert({
+          where: {
+            tenantId_name: {
+              tenantId: ctx.tenantId,
+              name,
+            },
+          },
+          create: {
             tenantId: ctx.tenantId,
             name,
+            category: input.category,
+            isActive: true,
           },
-        },
-        create: {
-          tenantId: ctx.tenantId,
-          name,
-          category: input.category,
-          isActive: true,
-        },
-        update: {
-          category: input.category,
-          isActive: true,
-        },
-      });
+          update: {
+            category: input.category,
+            isActive: true,
+          },
+        });
+      } catch (error) {
+        if (!isMissingCourseCategoryColumnError(error)) {
+          throw error;
+        }
+
+        return prisma.course.upsert({
+          where: {
+            tenantId_name: {
+              tenantId: ctx.tenantId,
+              name,
+            },
+          },
+          create: {
+            tenantId: ctx.tenantId,
+            name,
+            isActive: true,
+          },
+          update: {
+            isActive: true,
+          },
+        });
+      }
     }),
 
   createTariff: managerProcedure
@@ -1238,10 +1261,36 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
       }
 
-      return prisma.course.update({
-        where: { id: input.courseId },
-        data,
-      });
+      try {
+        return await prisma.course.update({
+          where: { id: input.courseId },
+          data,
+        });
+      } catch (error) {
+        if (!isMissingCourseCategoryColumnError(error) || typeof input.category !== 'string') {
+          throw error;
+        }
+
+        const fallbackData: { name?: string; isActive?: boolean } = {};
+        if (typeof input.name === 'string') {
+          fallbackData.name = input.name.trim();
+        }
+        if (typeof input.isActive === 'boolean') {
+          fallbackData.isActive = input.isActive;
+        }
+
+        if (!Object.keys(fallbackData).length) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'Course category field is unavailable until database migrations are applied.',
+          });
+        }
+
+        return prisma.course.update({
+          where: { id: input.courseId },
+          data: fallbackData,
+        });
+      }
     }),
 
   updateTariff: managerProcedure
