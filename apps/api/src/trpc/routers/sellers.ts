@@ -4,6 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { amocrmService, type AmoCRMLead, type AmoCRMUser } from '../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
+import { log, LogLevel } from '../../services/observability';
 
 const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
@@ -134,8 +135,15 @@ function buildMetrics(leads: AmoCRMLead[], calls: Array<{ duration: number | nul
 
 export const sellersRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
+    const startedAtMs = Date.now();
+    const timings: Record<string, number> = {};
     const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+    timings.scopeMs = Date.now() - startedAtMs;
+
+    const amoContextStartedMs = Date.now();
     const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+    timings.amoContextMs = Date.now() - amoContextStartedMs;
+
     if (!amoContext) {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
@@ -143,18 +151,30 @@ export const sellersRouter = router({
       });
     }
 
-    const [amocrmUsers, allLeads] = await Promise.all([
-      amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl),
-      amocrmService.fetchAllLeads(
+    const amocrmUsersPromise = (async () => {
+      const stepStartedMs = Date.now();
+      const result = await amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl);
+      timings.amocrmUsersMs = Date.now() - stepStartedMs;
+      return result;
+    })();
+
+    const amocrmLeadsPromise = (async () => {
+      const stepStartedMs = Date.now();
+      const result = await amocrmService.fetchAllLeads(
         amoContext.accessToken,
         {
           pipelineIds: amoContext.selectedPipelineIds,
           limit: 250,
         },
         amoContext.baseUrl,
-      ),
-    ]);
+      );
+      timings.amocrmLeadsMs = Date.now() - stepStartedMs;
+      return result;
+    })();
 
+    const [amocrmUsers, allLeads] = await Promise.all([amocrmUsersPromise, amocrmLeadsPromise]);
+
+    const managerPreparationStartedMs = Date.now();
     const managers = amocrmUsers
       .filter((user) => user.is_active !== false)
       .filter((user) => {
@@ -169,7 +189,9 @@ export const sellersRouter = router({
         .map((manager) => asString(manager.id))
         .filter(Boolean) as string[],
     );
+    timings.managerPreparationMs = Date.now() - managerPreparationStartedMs;
 
+    const leadsGroupingStartedMs = Date.now();
     const leadsByManager = new Map<string, AmoCRMLead[]>();
     for (const lead of allLeads) {
       const responsibleUserId = getLeadResponsibleId(lead);
@@ -180,7 +202,9 @@ export const sellersRouter = router({
       current.push(lead);
       leadsByManager.set(responsibleUserId, current);
     }
+    timings.leadsGroupingMs = Date.now() - leadsGroupingStartedMs;
 
+    const callsFetchStartedMs = Date.now();
     const calls = managerIds.size > 0
       ? await prisma.call.findMany({
           where: {
@@ -203,7 +227,9 @@ export const sellersRouter = router({
           },
         })
       : [];
+    timings.callsFetchMs = Date.now() - callsFetchStartedMs;
 
+    const callsGroupingStartedMs = Date.now();
     const callsByManager = new Map<string, Array<{ duration: number | null; direction: string; status: string }>>();
     for (const call of calls) {
       const managerId = asString(call.lead?.responsibleUserId);
@@ -218,8 +244,10 @@ export const sellersRouter = router({
       });
       callsByManager.set(managerId, current);
     }
+    timings.callsGroupingMs = Date.now() - callsGroupingStartedMs;
 
-    return managers
+    const buildResponseStartedMs = Date.now();
+    const result = managers
       .map((manager) => {
         const managerId = asString(manager.id) || '';
         const leads = leadsByManager.get(managerId) || [];
@@ -237,6 +265,19 @@ export const sellersRouter = router({
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
+    timings.buildResponseMs = Date.now() - buildResponseStartedMs;
+    timings.totalMs = Date.now() - startedAtMs;
+
+    log(LogLevel.INFO, 'Sellers list timings', {
+      tenantId: ctx.tenantId,
+      userId: ctx.user.userId,
+      managerCount: managers.length,
+      allLeadsCount: allLeads.length,
+      callsCount: calls.length,
+      timings,
+    });
+
+    return result;
   }),
 
   getById: protectedProcedure
