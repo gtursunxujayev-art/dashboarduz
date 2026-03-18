@@ -9,6 +9,7 @@ export const customerSearchSchema = z.object({
 
 export const createCourseSchema = z.object({
   name: z.string().min(1).max(120),
+  category: z.enum(['online', 'offline', 'intensive']),
 });
 
 export const createTariffSchema = z.object({
