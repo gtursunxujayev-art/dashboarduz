@@ -122,6 +122,44 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function textFromUnknown(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized || null;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const objectValue = value as Record<string, unknown>;
+    const preferredKeys = ['name', 'title', 'label', 'value', 'status', 'state', 'code', 'text'];
+    for (const key of preferredKeys) {
+      const nested = textFromUnknown(objectValue[key]);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
+}
+
+function firstTextValue(values: unknown[]): string | null {
+  for (const value of values) {
+    const parsed = textFromUnknown(value);
+    if (parsed) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
 function parseUtelDateTimeToUtcIso(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
@@ -222,8 +260,9 @@ function resolveFlatEventName(bodyPayload: Record<string, unknown>): string {
 }
 
 function inferUtelDirection(src: string, dst: string, rawDirection: unknown): 'inbound' | 'outbound' {
-  const explicit = normalizeDirection(typeof rawDirection === 'string' ? rawDirection : undefined);
-  if (String(rawDirection || '').trim().length > 0) {
+  const explicitRaw = textFromUnknown(rawDirection);
+  const explicit = normalizeDirection(explicitRaw || undefined);
+  if (explicitRaw) {
     return explicit;
   }
 
@@ -274,7 +313,15 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
   if (callHistory) {
     const src = normalizePhone(String(callHistory.src || callHistory.from || callHistory.source || ''));
     const dst = normalizePhone(String(callHistory.dst || callHistory.to || callHistory.destination || ''));
-    const direction = inferUtelDirection(src, dst, callHistory.direction || eventName);
+    const direction = inferUtelDirection(
+      src,
+      dst,
+      callHistory.direction
+      || callHistory.call_direction
+      || dataObj?.direction
+      || bodyPayload.direction
+      || bodyPayload.call_direction,
+    );
     const externalPhone = normalizePhone(String(
       callHistory.external_number
       || callHistory.phone
@@ -288,13 +335,14 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
       || (direction === 'outbound' ? src : dst)
       || '',
     ));
-    const manager = String(
-      callHistory.manager
-      || callHistory.manager_name
-      || callHistory.user_name
-      || callHistory.agent_name
-      || '',
-    ).trim() || null;
+    const manager = firstTextValue([
+      callHistory.manager,
+      callHistory.manager_name,
+      callHistory.user_name,
+      callHistory.agent_name,
+      callHistory.operator_name,
+      callHistory.employee_name,
+    ]);
     const duration = toInt(callHistory.conversation ?? callHistory.duration ?? callHistory.billsec);
     const startedAtIso = parseUtelDateTimeToUtcIso(
       callHistory.date_time
@@ -324,7 +372,7 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
       conversation: duration ?? undefined,
       start_time: startedAtIso || undefined,
       date_time: callHistory.date_time || undefined,
-      status: String(callHistory.status || bodyPayload.status || 'completed'),
+      status: firstTextValue([callHistory.status, callHistory.state, bodyPayload.status, bodyPayload.state]) || 'completed',
       raw_call_history: callHistory,
     };
 
@@ -812,6 +860,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       return {
         id: call.id,
         provider: call.provider,
+        source: 'webhook',
         status: call.status,
         direction: normalizeDirection(directionFromMetadata || call.direction),
         date: call.startedAt,
