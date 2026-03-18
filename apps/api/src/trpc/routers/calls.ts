@@ -20,6 +20,8 @@ const clickToCallSchema = z.object({
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 const UTEL_MIN_EXTENSION = 100;
 const UTEL_MAX_EXTENSION = 150;
+const AGENT_MOTIVATION_ABOVE = "Bugungi harakatlaringizga baraka bersin, ko'proq suhbat ko'proq savdo degani";
+const AGENT_MOTIVATION_BELOW = "Bugun qolganlardan ortda qolyapsiz, qo'ng'iroqlarni ko'paytiring, ko'proq bonus ko'proq harakat qilganlarga nasib qiladi ";
 
 function normalizeDigits(value: unknown): string {
   return String(value || '').replace(/[^\d]/g, '');
@@ -40,6 +42,92 @@ function asObject(value: unknown): Record<string, unknown> | null {
   }
   return value as Record<string, unknown>;
 }
+
+function textFromUnknown(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
+
+function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): unknown {
+  if (key in source) {
+    return source[key];
+  }
+
+  const normalizedKey = key.toLowerCase();
+  for (const [entryKey, entryValue] of Object.entries(source)) {
+    if (entryKey.toLowerCase() === normalizedKey) {
+      return entryValue;
+    }
+  }
+
+  return undefined;
+}
+
+function parseDuration(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+    const parsed = Number.parseInt(normalized, 10);
+    if (!Number.isNaN(parsed)) {
+      return Math.max(0, parsed);
+    }
+  }
+
+  return null;
+}
+
+function resolveCallDuration(duration: number | null, metadata: unknown): number {
+  if (duration !== null && duration !== undefined) {
+    return Math.max(0, duration);
+  }
+
+  const metadataObject = asObject(metadata);
+  if (!metadataObject) {
+    return 0;
+  }
+
+  const candidates: Record<string, unknown>[] = [metadataObject];
+  const rawHistory = asObject(metadataObject.raw_call_history);
+  if (rawHistory) {
+    candidates.push(rawHistory);
+  }
+
+  const keys = ['normalized_duration', 'duration', 'billsec', 'conversation', 'talk_duration'];
+  for (const candidate of candidates) {
+    for (const key of keys) {
+      const parsed = parseDuration(getCaseInsensitiveValue(candidate, key));
+      if (parsed !== null) {
+        return parsed;
+      }
+    }
+  }
+
+  return 0;
+}
+
+type AnalyticsAccumulator = {
+  totalCalls: number;
+  incomingCalls: number;
+  outgoingCalls: number;
+  callsToday: number;
+  totalDurationSeconds: number;
+  activeDayKeys: Set<string>;
+};
 
 function resolveCallExtension(call: {
   from: string;
@@ -226,4 +314,200 @@ export const callsRouter = router({
         message: 'Click-to-call is disabled in webhook-only VoIP mode.',
       });
     }),
+
+  analytics: protectedProcedure.query(async ({ ctx }) => {
+    const roles = ctx.user.roles || [];
+    const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+
+    const [agentUsers, currentUser] = await Promise.all([
+      prisma.user.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          isActive: true,
+          roles: { has: 'Agent' },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          utelManagerExternalId: true,
+        },
+      }),
+      isAgentOnly
+        ? prisma.user.findFirst({
+            where: {
+              id: ctx.user.userId,
+              tenantId: ctx.tenantId,
+            },
+            select: {
+              id: true,
+              utelManagerExternalId: true,
+            },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    const mappedAgents = agentUsers
+      .map((user) => {
+        const extension = normalizeDigits(user.utelManagerExternalId || '');
+        return {
+          id: user.id,
+          name: textFromUnknown(user.name) || textFromUnknown(user.username) || extension || 'Agent',
+          extension,
+        };
+      })
+      .filter((user) => isAllowedUtelManagerExtension(user.extension));
+
+    const extensionToAgent = new Map<string, { id: string; name: string; extension: string }>();
+    for (const agent of mappedAgents) {
+      if (!extensionToAgent.has(agent.extension)) {
+        extensionToAgent.set(agent.extension, agent);
+      }
+    }
+
+    const extensionValues = Array.from(extensionToAgent.keys());
+    const calls = extensionValues.length > 0
+      ? await prisma.call.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            provider: 'utel',
+            OR: [
+              { from: { in: extensionValues } },
+              { to: { in: extensionValues } },
+            ],
+          },
+          select: {
+            from: true,
+            to: true,
+            direction: true,
+            startedAt: true,
+            duration: true,
+            metadata: true,
+          },
+        })
+      : [];
+
+    const todayKey = getTashkentDayKey(new Date());
+    const byAgent = new Map<string, AnalyticsAccumulator>();
+
+    for (const agent of extensionToAgent.values()) {
+      byAgent.set(agent.id, {
+        totalCalls: 0,
+        incomingCalls: 0,
+        outgoingCalls: 0,
+        callsToday: 0,
+        totalDurationSeconds: 0,
+        activeDayKeys: new Set<string>(),
+      });
+    }
+
+    for (const call of calls) {
+      const extension = resolveCallExtension({
+        from: call.from,
+        to: call.to,
+        direction: call.direction,
+        metadata: call.metadata,
+      });
+      if (!extension) {
+        continue;
+      }
+
+      const mappedAgent = extensionToAgent.get(extension);
+      if (!mappedAgent) {
+        continue;
+      }
+
+      const stat = byAgent.get(mappedAgent.id);
+      if (!stat) {
+        continue;
+      }
+
+      stat.totalCalls += 1;
+      if (String(call.direction || '').toLowerCase() === 'outbound') {
+        stat.outgoingCalls += 1;
+      } else {
+        stat.incomingCalls += 1;
+      }
+      stat.totalDurationSeconds += resolveCallDuration(call.duration, call.metadata);
+
+      const dayKey = getTashkentDayKey(call.startedAt);
+      stat.activeDayKeys.add(dayKey);
+      if (dayKey === todayKey) {
+        stat.callsToday += 1;
+      }
+    }
+
+    const rows = mappedAgents
+      .map((agent) => {
+        const stat = byAgent.get(agent.id);
+        const totalCalls = stat?.totalCalls || 0;
+        const activeDays = stat?.activeDayKeys.size || 0;
+        const averageDailyCalls = activeDays > 0
+          ? Number((totalCalls / activeDays).toFixed(1))
+          : 0;
+
+        return {
+          userId: agent.id,
+          extension: agent.extension,
+          agentName: agent.name,
+          totalCalls,
+          averageDailyCalls,
+          callsToday: stat?.callsToday || 0,
+          incomingCalls: stat?.incomingCalls || 0,
+          outgoingCalls: stat?.outgoingCalls || 0,
+          totalDurationSeconds: stat?.totalDurationSeconds || 0,
+        };
+      })
+      .sort((a, b) => (
+        b.totalDurationSeconds - a.totalDurationSeconds
+        || b.totalCalls - a.totalCalls
+        || a.agentName.localeCompare(b.agentName)
+      ))
+      .map((row, index) => ({
+        ...row,
+        rank: index + 1,
+      }));
+
+    const teamAverageTodayCalls = rows.length > 0
+      ? Number((rows.reduce((sum, row) => sum + row.callsToday, 0) / rows.length).toFixed(1))
+      : 0;
+
+    if (isAgentOnly) {
+      const scopedExtension = normalizeDigits(currentUser?.utelManagerExternalId || '');
+      const ownRow = rows.find((row) => row.userId === currentUser?.id)
+        || rows.find((row) => row.extension === scopedExtension);
+      const aboveAverage = ownRow ? ownRow.callsToday >= teamAverageTodayCalls : false;
+
+      return {
+        rows: ownRow ? [ownRow] : [],
+        teamAverageTodayCalls,
+        totals: {
+          totalAgents: rows.length,
+          totalCalls: rows.reduce((sum, row) => sum + row.totalCalls, 0),
+          totalDurationSeconds: rows.reduce((sum, row) => sum + row.totalDurationSeconds, 0),
+        },
+        agentInsight: {
+          isAgentOnly: true,
+          aboveAverage: ownRow ? aboveAverage : null,
+          callsToday: ownRow?.callsToday ?? 0,
+          teamAverageTodayCalls,
+          message: ownRow
+            ? (aboveAverage ? AGENT_MOTIVATION_ABOVE : AGENT_MOTIVATION_BELOW)
+            : null,
+        },
+      };
+    }
+
+    return {
+      rows,
+      teamAverageTodayCalls,
+      totals: {
+        totalAgents: rows.length,
+        totalCalls: rows.reduce((sum, row) => sum + row.totalCalls, 0),
+        totalDurationSeconds: rows.reduce((sum, row) => sum + row.totalDurationSeconds, 0),
+      },
+      agentInsight: null,
+    };
+  }),
 });
