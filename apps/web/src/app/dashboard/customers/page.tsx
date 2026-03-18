@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
@@ -46,7 +46,7 @@ export default function CustomersPage() {
       <div className="rounded-lg bg-white shadow">
         <div className="border-b border-gray-100 px-6 py-5">
           <h1 className="text-xl font-semibold text-gray-900">Mijozlar</h1>
-          <p className="mt-1 text-sm text-gray-500">Customer list with filters by course and debt.</p>
+          <p className="mt-1 text-sm text-gray-500">Kurs va qarzdorlik boвЂyicha filtrlangan mijozlar roвЂyxati.</p>
         </div>
 
         <div className="space-y-4 p-6">
@@ -54,7 +54,7 @@ export default function CustomersPage() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by number, name, telegram"
+              placeholder="Raqam, ism yoki telegram boвЂyicha qidirish"
               className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
 
@@ -63,7 +63,7 @@ export default function CustomersPage() {
               onChange={(event) => setCourseId(event.target.value)}
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              <option value="">All courses</option>
+              <option value="">Barcha kurslar</option>
               {courseOptions.map((course: any) => (
                 <option key={course.id} value={course.id}>
                   {course.name}
@@ -76,23 +76,23 @@ export default function CustomersPage() {
               onChange={(event) => setDebtFilter(event.target.value as DebtFilter)}
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              <option value="all">All debt statuses</option>
-              <option value="with_debt">With debt</option>
-              <option value="without_debt">Without debt</option>
+              <option value="all">Barcha qarz holatlari</option>
+              <option value="with_debt">Qarzdorlar</option>
+              <option value="without_debt">Qarzsizlar</option>
             </select>
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs uppercase text-gray-500">Total customers</p>
+              <p className="text-xs uppercase text-gray-500">Jami mijozlar</p>
               <p className="text-lg font-semibold text-gray-900">{customers.length}</p>
             </div>
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs uppercase text-gray-500">Customers with debt</p>
+              <p className="text-xs uppercase text-gray-500">Qarzdor mijozlar</p>
               <p className="text-lg font-semibold text-amber-700">{withDebtCount}</p>
             </div>
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs uppercase text-gray-500">Customers without debt</p>
+              <p className="text-xs uppercase text-gray-500">Qarzsiz mijozlar</p>
               <p className="text-lg font-semibold text-green-700">{Math.max(customers.length - withDebtCount, 0)}</p>
             </div>
           </div>
@@ -102,10 +102,10 @@ export default function CustomersPage() {
       <div className="rounded-lg bg-white shadow">
         <div className="px-6 py-5">
           {customersQuery.isLoading ? (
-            <p className="text-sm text-gray-600">Loading customers...</p>
+            <p className="text-sm text-gray-600">Mijozlar yuklanmoqda...</p>
           ) : customersQuery.error ? (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-              {customersQuery.error.message || 'Failed to load customers.'}
+              {customersQuery.error.message || 'Mijozlarni yuklab boвЂlmadi.'}
             </p>
           ) : customers.length ? (
             <div className="overflow-x-auto">
@@ -115,10 +115,10 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Mijoz raqami</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Mijoz ismi</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Telegram</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Courses</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Debt</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Total Paid</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Last Activity</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Kurslar</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Qarz</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Jami toвЂlangan</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Oxirgi faollik</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -143,10 +143,11 @@ export default function CustomersPage() {
               </table>
             </div>
           ) : (
-            <p className="text-sm text-gray-600">No customers found for the selected filters.</p>
+            <p className="text-sm text-gray-600">Tanlangan filtr boвЂyicha mijoz topilmadi.</p>
           )}
         </div>
       </div>
     </div>
   );
 }
+
