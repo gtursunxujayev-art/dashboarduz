@@ -3,8 +3,11 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import * as XLSX from 'xlsx';
+import { useAuth } from '@/contexts/auth-context';
 
 type IncomeType = 'new_sale' | 'repayment';
+type IncomeTypeChoice = '' | IncomeType;
+type FieldErrors = Record<string, string>;
 
 type CustomerOption = {
   id: string;
@@ -99,13 +102,25 @@ function summarizeBulkResult(result: BulkImportResult): string {
   return `Imported ${result.importedCount}/${result.totalRows} rows. Failed: ${result.failedCount}. ${preview}`;
 }
 
+function buildFieldClass(fieldErrors: FieldErrors, field: string, extra = ''): string {
+  const base =
+    'mt-1 w-full rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1';
+  const normal =
+    'border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400';
+  const invalid =
+    'border-red-500 bg-red-50 text-gray-900 ring-1 ring-red-300 focus:border-red-500 focus:ring-red-400 animate-pulse dark:border-red-400 dark:bg-red-950/30 dark:text-slate-100';
+  return `${base} ${fieldErrors[field] ? invalid : normal} ${extra}`.trim();
+}
+
 export default function IncomePage() {
+  const { user } = useAuth();
+  const isAdmin = Boolean(user?.roles?.includes('Admin'));
   const [entryDate, setEntryDate] = useState(getTashkentToday());
   const [managerUserId, setManagerUserId] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [telegramUsername, setTelegramUsername] = useState('');
-  const [type, setType] = useState<IncomeType>('new_sale');
+  const [type, setType] = useState<IncomeTypeChoice>('');
   const [debtSourceIncomeId, setDebtSourceIncomeId] = useState('');
   const [courseId, setCourseId] = useState('');
   const [tariffId, setTariffId] = useState('');
@@ -118,11 +133,13 @@ export default function IncomePage() {
   const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
   const [googleSheetUrl, setGoogleSheetUrl] = useState('');
   const [bulkFallbackManagerUserId, setBulkFallbackManagerUserId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [recentLimit, setRecentLimit] = useState(10);
 
   const formOptionsQuery = trpc.customerIncome.formOptions.useQuery(undefined, {
     retry: false,
   });
-  const incomesQuery = trpc.customerIncome.listIncomes.useQuery({ limit: 30 }, { retry: false });
+  const incomesQuery = trpc.customerIncome.listIncomes.useQuery({ limit: recentLimit }, { retry: false });
   const searchCustomersQuery = trpc.customerIncome.searchCustomers.useQuery(
     { query: customerNumber.trim(), limit: 30 },
     {
@@ -191,6 +208,17 @@ export default function IncomePage() {
     return debtOptions.find((debt: any) => debt.id === debtSourceIncomeId) || null;
   }, [debtOptions, debtSourceIncomeId]);
 
+  const clearFieldError = (field: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
   const tariffOptions = useMemo(() => {
     if (!courseId) {
       return [];
@@ -204,7 +232,9 @@ export default function IncomePage() {
   const sourceDebtAmount = selectedDebt?.remainingDebtAmount || 0;
   const remainingDebtAmount = type === 'new_sale'
     ? Math.max(coursePriceAmount - paymentAmount, 0)
-    : Math.max(sourceDebtAmount - paymentAmount, 0);
+    : type === 'repayment'
+      ? Math.max(sourceDebtAmount - paymentAmount, 0)
+      : 0;
 
   useEffect(() => {
     if (!managerUserId && managers.length > 0) {
@@ -231,6 +261,13 @@ export default function IncomePage() {
       setDebtSourceIncomeId('');
       return;
     }
+    if (type === 'repayment') {
+      setCourseId('');
+      setTariffId('');
+      setCoursePriceInput('');
+      return;
+    }
+    setDebtSourceIncomeId('');
     setCourseId('');
     setTariffId('');
     setCoursePriceInput('');
@@ -374,57 +411,35 @@ export default function IncomePage() {
     event.preventDefault();
     setError(null);
     setSuccess(null);
+    const nextErrors: FieldErrors = {};
 
-    if (!entryDate) {
-      setError('Sana is required.');
-      return;
-    }
-
-    if (!managerUserId) {
-      setError('Sales manager is required.');
-      return;
-    }
+    if (!entryDate) nextErrors.entryDate = 'Sana majburiy.';
+    if (!managerUserId) nextErrors.managerUserId = 'Sales manager majburiy.';
 
     const customerNumberValue = customerNumber.trim();
-    if (!customerNumberValue) {
-      setError('Mijoz raqami is required.');
-      return;
-    }
-
-    if (!isExistingCustomer && !customerName.trim()) {
-      setError('Mijoz ismi is required for a new customer.');
-      return;
-    }
+    if (!customerNumberValue) nextErrors.customerNumber = 'Mijoz raqami majburiy.';
+    if (!isExistingCustomer && !customerName.trim()) nextErrors.customerName = 'Mijoz ismi majburiy.';
+    if (!type) nextErrors.type = "To'lov turi majburiy.";
 
     if (type === 'new_sale') {
-      if (!courseId || !tariffId) {
-        setError('Please select both course and tariff.');
-        return;
-      }
-      if (coursePriceAmount <= 0) {
-        setError('Kurs narxi must be greater than zero.');
-        return;
-      }
-      if (paymentAmount < 0) {
-        setError("To'lov cannot be negative.");
-        return;
-      }
+      if (!courseId) nextErrors.courseId = 'Kurs tanlang.';
+      if (!tariffId) nextErrors.tariffId = 'Tarif tanlang.';
+      if (coursePriceAmount <= 0) nextErrors.coursePriceInput = 'Kurs narxi 0 dan katta bo‘lsin.';
+      if (paymentAmount < 0) nextErrors.paymentInput = "To'lov manfiy bo'lishi mumkin emas.";
     }
 
     if (type === 'repayment') {
-      if (!debtSourceIncomeId) {
-        setError('Please select current debt source.');
-        return;
-      }
-      if (paymentAmount <= 0) {
-        setError("To'lov must be greater than zero for repayment.");
-        return;
-      }
-      if (paymentAmount > sourceDebtAmount) {
-        setError("To'lov cannot exceed current debt.");
-        return;
-      }
+      if (!debtSourceIncomeId) nextErrors.debtSourceIncomeId = 'Joriy qarzni tanlang.';
+      if (paymentAmount <= 0) nextErrors.paymentInput = "To'lov 0 dan katta bo'lishi kerak.";
+      if (paymentAmount > sourceDebtAmount) nextErrors.paymentInput = "To'lov joriy qarzdan katta bo'lmasin.";
     }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      setError("Majburiy maydonlarni to'ldiring.");
+      return;
+    }
+    setFieldErrors({});
 
     try {
       await createIncomeMutation.mutateAsync({
@@ -433,7 +448,7 @@ export default function IncomePage() {
         customerNumber: customerNumberValue,
         customerName: isExistingCustomer ? undefined : customerName.trim(),
         telegramUsername: isExistingCustomer ? undefined : (telegramUsername.trim() || undefined),
-        type,
+        type: type as IncomeType,
         debtSourceIncomeId: type === 'repayment' ? debtSourceIncomeId : undefined,
         courseId: type === 'new_sale' ? courseId : undefined,
         tariffId: type === 'new_sale' ? tariffId : undefined,
@@ -462,112 +477,143 @@ export default function IncomePage() {
     return incomeType === 'repayment' ? 'Qarzdorlik' : 'Yangi sotuv';
   };
 
+  const getLifecycleStatusBadge = (status: string) => {
+    if (status === 'pending_refund') {
+      return {
+        label: "Sariq: Qaytarish so'rovi",
+        className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200',
+      };
+    }
+    if (status === 'refunded') {
+      return {
+        label: 'Qizil: Qaytarilgan',
+        className: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
+      };
+    }
+    return {
+      label: 'Aktiv',
+      className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+    };
+  };
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Customer & Income</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">Customer & Income</h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
           Add new sales and debt repayments by customer.
         </p>
       </div>
 
-      <div className="rounded-lg bg-white shadow">
-        <div className="border-b border-gray-100 px-6 py-5">
-          <h2 className="text-lg font-medium text-gray-900">Bulk Upload</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Download the template first, then upload Excel/CSV or import directly from Google Sheets.
-          </p>
-        </div>
-
-        <div className="space-y-4 p-6">
-          {bulkError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{bulkError}</p>}
-          {bulkSuccess && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{bulkSuccess}</p>}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Fallback Sales Manager (for unmatched names)</label>
-            <select
-              value={bulkFallbackManagerUserId}
-              onChange={(event) => setBulkFallbackManagerUserId(event.target.value)}
-              className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="">No fallback manager</option>
-              {managers.map((manager: any) => (
-                <option key={`bulk-fallback-${manager.id}`} value={manager.id}>
-                  {manager.label}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-gray-500">
-              If a name in Excel/Sheets does not match a system user, import will use this manager.
+      {isAdmin && (
+        <div className="rounded-lg bg-white shadow dark:bg-slate-900">
+          <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
+            <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">Bulk Upload</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+              Download the template first, then upload Excel/CSV or import directly from Google Sheets.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleDownloadTemplate}
-              className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
-            >
-              Download Excel Template
-            </button>
-            <label className="cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-              Upload Excel/CSV
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleFileImport}
-                className="hidden"
-                disabled={bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading}
-              />
-            </label>
-          </div>
+          <div className="space-y-4 p-6">
+            {bulkError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{bulkError}</p>}
+            {bulkSuccess && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{bulkSuccess}</p>}
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
-            <input
-              value={googleSheetUrl}
-              onChange={(event) => setGoogleSheetUrl(event.target.value)}
-              placeholder="Google Sheets URL or Spreadsheet ID"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <button
-              type="button"
-              onClick={handleGoogleSheetImport}
-              disabled={bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {bulkImportFromSheetMutation.isLoading ? 'Importing...' : 'Import from Google Sheets'}
-            </button>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Fallback Sales Manager (for unmatched names)</label>
+              <select
+                value={bulkFallbackManagerUserId}
+                onChange={(event) => {
+                  setBulkFallbackManagerUserId(event.target.value);
+                  clearFieldError('bulkFallbackManagerUserId');
+                }}
+                className={buildFieldClass(fieldErrors, 'bulkFallbackManagerUserId')}
+              >
+                <option value="">No fallback manager</option>
+                {managers.map((manager: any) => (
+                  <option key={`bulk-fallback-${manager.id}`} value={manager.id}>
+                    {manager.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                If a name in Excel/Sheets does not match a system user, import will use this manager.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+              >
+                Download Excel Template
+              </button>
+              <label className="cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+                Upload Excel/CSV
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleFileImport}
+                  className="hidden"
+                  disabled={bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading}
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
+              <input
+                value={googleSheetUrl}
+                onChange={(event) => setGoogleSheetUrl(event.target.value)}
+                placeholder="Google Sheets URL or Spreadsheet ID"
+                className={buildFieldClass(fieldErrors, 'googleSheetUrl', 'mt-0')}
+              />
+              <button
+                type="button"
+                onClick={handleGoogleSheetImport}
+                disabled={bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {bulkImportFromSheetMutation.isLoading ? 'Importing...' : 'Import from Google Sheets'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="rounded-lg bg-white shadow">
-        <div className="border-b border-gray-100 px-6 py-5">
-          <h2 className="text-lg font-medium text-gray-900">Income Entry Form</h2>
+      <div className="rounded-lg bg-white shadow dark:bg-slate-900">
+        <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
+          <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">Income Entry Form</h2>
         </div>
 
         <div className="p-6">
-          {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-          {success && <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
+          {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
+          {success && <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-300">{success}</p>}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Sana</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Sana <span className="text-red-500">*</span></label>
                 <input
                   type="date"
                   value={entryDate}
-                  onChange={(event) => setEntryDate(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  onChange={(event) => {
+                    setEntryDate(event.target.value);
+                    clearFieldError('entryDate');
+                  }}
+                  className={buildFieldClass(fieldErrors, 'entryDate')}
                 />
+                {fieldErrors.entryDate && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.entryDate}</p>}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">Sales Manager</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Sales Manager <span className="text-red-500">*</span></label>
                 <select
                   value={managerUserId}
-                  onChange={(event) => setManagerUserId(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  onChange={(event) => {
+                    setManagerUserId(event.target.value);
+                    clearFieldError('managerUserId');
+                  }}
+                  className={buildFieldClass(fieldErrors, 'managerUserId')}
                 >
                   <option value="">Select manager</option>
                   {managers.map((manager: any) => (
@@ -576,20 +622,25 @@ export default function IncomePage() {
                     </option>
                   ))}
                 </select>
+                {fieldErrors.managerUserId && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.managerUserId}</p>}
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Mijoz raqami</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mijoz raqami <span className="text-red-500">*</span></label>
                 <input
                   list="customer-number-options"
                   value={customerNumber}
-                  onChange={(event) => setCustomerNumber(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  onChange={(event) => {
+                    setCustomerNumber(event.target.value);
+                    clearFieldError('customerNumber');
+                  }}
+                  className={buildFieldClass(fieldErrors, 'customerNumber')}
                   placeholder="998901234567"
                   autoComplete="off"
                 />
+                {fieldErrors.customerNumber && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.customerNumber}</p>}
                 <datalist id="customer-number-options">
                   {customers.map((customer) => (
                     <option
@@ -602,16 +653,20 @@ export default function IncomePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">Mijoz ismi</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mijoz ismi {!isExistingCustomer && <span className="text-red-500">*</span>}</label>
                 <input
                   list="customer-name-options"
                   value={customerName}
-                  onChange={(event) => setCustomerName(event.target.value)}
+                  onChange={(event) => {
+                    setCustomerName(event.target.value);
+                    clearFieldError('customerName');
+                  }}
                   readOnly={isExistingCustomer}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 read-only:bg-gray-100 read-only:text-gray-600"
+                  className={buildFieldClass(fieldErrors, 'customerName', 'read-only:bg-gray-100 read-only:text-gray-600 dark:read-only:bg-slate-700 dark:read-only:text-slate-300')}
                   placeholder="Customer name"
                   autoComplete="off"
                 />
+                {fieldErrors.customerName && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.customerName}</p>}
                 <datalist id="customer-name-options">
                   {customers.map((customer) => (
                     <option key={`${customer.id}-name`} value={customer.name} />
@@ -620,13 +675,13 @@ export default function IncomePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">Telegram username</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Telegram username</label>
                 <input
                   list="customer-telegram-options"
                   value={telegramUsername}
                   onChange={(event) => setTelegramUsername(event.target.value)}
                   readOnly={isExistingCustomer}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 read-only:bg-gray-100 read-only:text-gray-600"
+                  className={buildFieldClass(fieldErrors, 'telegramUsername', 'read-only:bg-gray-100 read-only:text-gray-600 dark:read-only:bg-slate-700 dark:read-only:text-slate-300')}
                   placeholder="@username"
                   autoComplete="off"
                 />
@@ -642,36 +697,44 @@ export default function IncomePage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Income type</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Income type <span className="text-red-500">*</span></label>
                 <select
                   value={type}
-                  onChange={(event) => setType(event.target.value as IncomeType)}
-                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  onChange={(event) => {
+                    setType(event.target.value as IncomeTypeChoice);
+                    clearFieldError('type');
+                  }}
+                  className={buildFieldClass(fieldErrors, 'type')}
                 >
+                  <option value="">Select income type</option>
                   <option value="new_sale">Yangi sotuv</option>
                   <option value="repayment">Qarzdorlik</option>
                 </select>
+                {fieldErrors.type && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.type}</p>}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">Deadline</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Deadline</label>
                 <input
                   type="date"
                   value={deadline}
                   onChange={(event) => setDeadline(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={buildFieldClass(fieldErrors, 'deadline')}
                 />
               </div>
             </div>
 
             {type === 'repayment' ? (
-              <div className="space-y-4 rounded-md border border-blue-100 bg-blue-50/40 p-4">
+              <div className="space-y-4 rounded-md border border-blue-100 bg-blue-50/40 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Current debt</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Current debt <span className="text-red-500">*</span></label>
                   <select
                     value={debtSourceIncomeId}
-                    onChange={(event) => setDebtSourceIncomeId(event.target.value)}
-                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    onChange={(event) => {
+                      setDebtSourceIncomeId(event.target.value);
+                      clearFieldError('debtSourceIncomeId');
+                    }}
+                    className={buildFieldClass(fieldErrors, 'debtSourceIncomeId')}
                   >
                     <option value="">Select debt</option>
                     {debtOptionsForCustomer.map((debt: any) => (
@@ -680,46 +743,54 @@ export default function IncomePage() {
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.debtSourceIncomeId && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.debtSourceIncomeId}</p>}
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Qarz summasi</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Qarz summasi</label>
                     <input
                       value={formatAmount(sourceDebtAmount)}
                       readOnly
-                      className="mt-1 w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700"
+                      className={buildFieldClass(fieldErrors, 'sourceDebtAmount', 'read-only:bg-gray-100 read-only:text-gray-700 dark:read-only:bg-slate-700 dark:read-only:text-slate-300')}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">To&apos;lov</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">To&apos;lov <span className="text-red-500">*</span></label>
                     <input
                       value={paymentInput}
-                      onChange={(event) => setPaymentInput(formatDigits(toDigits(event.target.value)))}
+                      onChange={(event) => {
+                        setPaymentInput(formatDigits(toDigits(event.target.value)));
+                        clearFieldError('paymentInput');
+                      }}
                       inputMode="numeric"
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className={buildFieldClass(fieldErrors, 'paymentInput')}
                       placeholder="0"
                     />
+                    {fieldErrors.paymentInput && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.paymentInput}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Qarzdorlik</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Qarzdorlik</label>
                     <input
                       value={formatAmount(remainingDebtAmount)}
                       readOnly
-                      className="mt-1 w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700"
+                      className={buildFieldClass(fieldErrors, 'remainingDebtAmount', 'read-only:bg-gray-100 read-only:text-gray-700 dark:read-only:bg-slate-700 dark:read-only:text-slate-300')}
                     />
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-4 rounded-md border border-green-100 bg-green-50/30 p-4">
+            ) : type === 'new_sale' ? (
+              <div className="space-y-4 rounded-md border border-green-100 bg-green-50/30 p-4 dark:border-green-900/60 dark:bg-green-950/20">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Kurs</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Kurs <span className="text-red-500">*</span></label>
                     <select
                       value={courseId}
-                      onChange={(event) => setCourseId(event.target.value)}
-                      className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      onChange={(event) => {
+                        setCourseId(event.target.value);
+                        clearFieldError('courseId');
+                      }}
+                      className={buildFieldClass(fieldErrors, 'courseId')}
                     >
                       <option value="">Select course</option>
                       {groupedCourseOptions.map((group) =>
@@ -734,15 +805,19 @@ export default function IncomePage() {
                         ) : null,
                       )}
                     </select>
+                    {fieldErrors.courseId && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.courseId}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Tarif</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Tarif <span className="text-red-500">*</span></label>
                     <select
                       value={tariffId}
-                      onChange={(event) => setTariffId(event.target.value)}
+                      onChange={(event) => {
+                        setTariffId(event.target.value);
+                        clearFieldError('tariffId');
+                      }}
                       disabled={!courseId}
-                      className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                      className={buildFieldClass(fieldErrors, 'tariffId', 'disabled:bg-gray-100 disabled:text-gray-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400')}
                     >
                       <option value="">Select tariff</option>
                       {tariffOptions.map((tariff: any) => (
@@ -751,39 +826,52 @@ export default function IncomePage() {
                         </option>
                       ))}
                     </select>
+                    {fieldErrors.tariffId && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.tariffId}</p>}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Kurs narxi</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Kurs narxi <span className="text-red-500">*</span></label>
                     <input
                       value={coursePriceInput}
-                      onChange={(event) => setCoursePriceInput(formatDigits(toDigits(event.target.value)))}
+                      onChange={(event) => {
+                        setCoursePriceInput(formatDigits(toDigits(event.target.value)));
+                        clearFieldError('coursePriceInput');
+                      }}
                       inputMode="numeric"
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className={buildFieldClass(fieldErrors, 'coursePriceInput')}
                       placeholder="0"
                     />
+                    {fieldErrors.coursePriceInput && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.coursePriceInput}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">To&apos;lov</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">To&apos;lov</label>
                     <input
                       value={paymentInput}
-                      onChange={(event) => setPaymentInput(formatDigits(toDigits(event.target.value)))}
+                      onChange={(event) => {
+                        setPaymentInput(formatDigits(toDigits(event.target.value)));
+                        clearFieldError('paymentInput');
+                      }}
                       inputMode="numeric"
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className={buildFieldClass(fieldErrors, 'paymentInput')}
                       placeholder="0"
                     />
+                    {fieldErrors.paymentInput && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.paymentInput}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Qarzdorlik</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Qarzdorlik</label>
                     <input
                       value={formatAmount(remainingDebtAmount)}
                       readOnly
-                      className="mt-1 w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700"
+                      className={buildFieldClass(fieldErrors, 'remainingDebtAmount', 'read-only:bg-gray-100 read-only:text-gray-700 dark:read-only:bg-slate-700 dark:read-only:text-slate-300')}
                     />
                   </div>
                 </div>
+              </div>
+            ) : (
+              <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                Income type tanlangandan keyin Kurs yoki Qarzdorlik maydonlari chiqadi.
               </div>
             )}
 
@@ -798,55 +886,75 @@ export default function IncomePage() {
         </div>
       </div>
 
-      <div className="rounded-lg bg-white shadow">
-        <div className="border-b border-gray-100 px-6 py-5">
-          <h2 className="text-lg font-medium text-gray-900">Recent Incomes</h2>
+      <div className="rounded-lg bg-white shadow dark:bg-slate-900">
+        <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
+          <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">Recent Incomes</h2>
         </div>
 
         <div className="p-6">
           {incomesQuery.isLoading ? (
-            <p className="text-sm text-gray-600">Loading incomes...</p>
+            <p className="text-sm text-gray-600 dark:text-slate-300">Loading incomes...</p>
           ) : incomesQuery.data?.length ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+            <div className="space-y-4">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+                  <thead className="bg-gray-50 dark:bg-slate-800">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Sana</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Customer</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Manager</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Course/Tariff</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Payment</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Remaining debt</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Sana</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Type</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Customer</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Manager</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Course/Tariff</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Holat</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Payment</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Remaining debt</th>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {incomesQuery.data.map((income: any) => (
-                    <tr key={income.id}>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
-                        {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
-                        {formatIncomeType(income.type)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
-                        {income.customer?.customerNumber} - {income.customer?.name}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
-                        {income.manager?.name || income.manager?.username || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
-                        {[income.course?.name, income.tariff?.name].filter(Boolean).join(' / ') || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{formatAmount(income.paymentAmount)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{formatAmount(income.remainingDebtAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
+                    {incomesQuery.data.map((income: any) => (
+                      <tr key={income.id}>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
+                          {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
+                          {formatIncomeType(income.type)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
+                          {income.customer?.customerNumber} - {income.customer?.name}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
+                          {income.manager?.name || income.manager?.username || '-'}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
+                          {[income.course?.name, income.tariff?.name].filter(Boolean).join(' / ') || '-'}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
+                          <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getLifecycleStatusBadge(income.lifecycleStatus).className}`}>
+                            {getLifecycleStatusBadge(income.lifecycleStatus).label}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(income.paymentAmount)}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(income.remainingDebtAmount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {incomesQuery.data.length >= recentLimit && recentLimit < 200 && (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setRecentLimit((prev) => Math.min(prev + 20, 200))}
+                    className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    Load more (+20)
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
-            <p className="text-sm text-gray-600">No income entries yet.</p>
+            <p className="text-sm text-gray-600 dark:text-slate-300">No income entries yet.</p>
           )}
         </div>
       </div>
