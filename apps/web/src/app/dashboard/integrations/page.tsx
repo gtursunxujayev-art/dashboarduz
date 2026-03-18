@@ -38,18 +38,18 @@ export default function IntegrationsPage() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                AmoCRM Webhook URL
+                AmoCRM webhook manzili
               </label>
-              <div className="mt-1 flex rounded-md shadow-sm">
+              <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:gap-0 rounded-md shadow-sm">
                 <input
                   type="text"
                   readOnly
                   value={amocrmWebhook}
-                  className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-l-md border border-gray-300 bg-gray-50 text-gray-500 sm:text-sm"
+                  className="flex-1 min-w-0 block w-full px-3 py-2 rounded-md sm:rounded-none sm:rounded-l-md border border-gray-300 bg-gray-50 text-gray-500 sm:text-sm"
                 />
                 <button
                   onClick={() => navigator.clipboard.writeText(amocrmWebhook)}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-r-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md sm:rounded-r-md sm:rounded-l-none text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 >
                   Nusxalash
                 </button>
@@ -61,18 +61,18 @@ export default function IntegrationsPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                UTeL Webhook URL
+                UTeL webhook manzili
               </label>
-              <div className="mt-1 flex rounded-md shadow-sm">
+              <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:gap-0 rounded-md shadow-sm">
                 <input
                   type="text"
                   readOnly
                   value={utelWebhook}
-                  className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-l-md border border-gray-300 bg-gray-50 text-gray-500 sm:text-sm"
+                  className="flex-1 min-w-0 block w-full px-3 py-2 rounded-md sm:rounded-none sm:rounded-l-md border border-gray-300 bg-gray-50 text-gray-500 sm:text-sm"
                 />
                 <button
                   onClick={() => navigator.clipboard.writeText(utelWebhook)}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-r-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md sm:rounded-r-md sm:rounded-l-none text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 >
                   Nusxalash
                 </button>
