@@ -88,7 +88,7 @@ function parseCallDate(value: unknown): Date | null {
 
 function getObjectCandidates(entry: Record<string, unknown>): Record<string, unknown>[] {
   const candidates: Record<string, unknown>[] = [entry];
-  const nestedKeys = ['call', 'data', 'payload', 'event', 'params', 'meta', 'details', 'call_data'];
+  const nestedKeys = ['call', 'data', 'payload', 'event', 'params', 'meta', 'details', 'call_data', 'cdr', 'record', 'event_data'];
 
   for (const nestedKey of nestedKeys) {
     const nested = entry[nestedKey];
@@ -248,6 +248,9 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'dialed_number',
     'destination',
     'dst',
+    'dst_num',
+    'did',
+    'cid_num',
   ]) || ''));
   const extension = normalizePhone(String(pickVoipValue(entry, [
     'extension',
@@ -260,18 +263,26 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'agent_ext',
     'internal_number',
     'src',
+    'src_num',
+    'callerid',
   ]) || ''));
   const manager = String(pickVoipValue(entry, [
     'manager',
     'managerName',
     'manager_name',
+    'manager_full_name',
     'agent',
     'agent_name',
+    'agent_full_name',
     'responsible_name',
     'operator',
+    'operator_name',
     'user',
     'user_name',
+    'user_display_name',
     'employee_name',
+    'extension_name',
+    'ext_name',
     'employee',
     'responsible',
   ]) || '').trim() || null;
@@ -295,18 +306,34 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
   ]) || ''));
 
   let direction = normalizeDirection(rawDirection);
+  const hasExplicitDirection = String(rawDirection || '').trim().length > 0;
   if (!from && !to) {
     from = direction === 'outbound' ? extension : phone;
     to = direction === 'outbound' ? phone : extension;
   }
 
-  if (!rawDirection && from && to) {
+  if (!hasExplicitDirection && from && to) {
     const fromInternal = isInternalNumber(from);
     const toInternal = isInternalNumber(to);
     if (fromInternal && !toInternal) {
       direction = 'outbound';
     } else if (!fromInternal && toInternal) {
       direction = 'inbound';
+    }
+  }
+
+  if (!hasExplicitDirection && phone && extension) {
+    const fromInternal = isInternalNumber(from);
+    const toInternal = isInternalNumber(to);
+    const fromExternal = isLikelyExternalPhone(from);
+    const toExternal = isLikelyExternalPhone(to);
+
+    if ((fromInternal && !toInternal) || (fromInternal && toExternal)) {
+      direction = 'outbound';
+    } else if ((toInternal && !fromInternal) || (toInternal && fromExternal)) {
+      direction = 'inbound';
+    } else if (!from && extension) {
+      direction = 'outbound';
     }
   }
 
@@ -361,11 +388,12 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
   const callIdExternal = String(
     pickVoipValue(entry, [
       'call_id',
-      'id',
-      'uuid',
-      'uniqueid',
       'linkedid',
       'session_id',
+      'uuid',
+      'call_uuid',
+      'uniqueid',
+      'id',
       'record_id',
       'cdr_id',
     ]) || fallbackCallId,
@@ -713,7 +741,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
       normalized_duration: normalizedCall.duration,
     } as any;
 
-    const upsertedCall = await prisma.call.upsert({
+    const existingCall = await prisma.call.findUnique({
       where: {
         tenantId_provider_callIdExternal: {
           tenantId,
@@ -721,35 +749,62 @@ async function processVoIPWebhook(event: any, tenantId: string) {
           callIdExternal: normalizedCall.callIdExternal,
         },
       },
-      update: {
-        provider,
-        from: normalizedCall.from,
-        to: normalizedCall.to,
-        direction: normalizedCall.direction,
-        status: normalizedCall.status,
-        duration: normalizedCall.duration,
-        recordingUrl: normalizedCall.recordingUrl,
-        recordingId: normalizedCall.recordingId,
-        metadata: finalMetadata,
-        startedAt: normalizedCall.startedAt,
-        endedAt: normalizedCall.endedAt,
-      },
-      create: {
-        tenantId,
-        provider,
-        callIdExternal: normalizedCall.callIdExternal,
-        from: normalizedCall.from,
-        to: normalizedCall.to,
-        direction: normalizedCall.direction,
-        status: normalizedCall.status,
-        duration: normalizedCall.duration,
-        recordingUrl: normalizedCall.recordingUrl,
-        recordingId: normalizedCall.recordingId,
-        metadata: finalMetadata,
-        startedAt: normalizedCall.startedAt,
-        endedAt: normalizedCall.endedAt,
+      select: {
+        id: true,
+        from: true,
+        to: true,
+        direction: true,
+        duration: true,
+        metadata: true,
+        startedAt: true,
+        endedAt: true,
       },
     });
+
+    const mergedMetadata = {
+      ...((existingCall?.metadata && typeof existingCall.metadata === 'object')
+        ? existingCall.metadata as Record<string, unknown>
+        : {}),
+      ...finalMetadata,
+    } as any;
+
+    let upsertedCall;
+    if (existingCall) {
+      upsertedCall = await prisma.call.update({
+        where: { id: existingCall.id },
+        data: {
+          provider,
+          ...(normalizedCall.from ? { from: normalizedCall.from } : {}),
+          ...(normalizedCall.to ? { to: normalizedCall.to } : {}),
+          ...(normalizedCall.status ? { status: normalizedCall.status } : {}),
+          ...(normalizedCall.duration !== null ? { duration: normalizedCall.duration } : {}),
+          ...(normalizedCall.recordingUrl ? { recordingUrl: normalizedCall.recordingUrl } : {}),
+          ...(normalizedCall.recordingId ? { recordingId: normalizedCall.recordingId } : {}),
+          ...(normalizedCall.startedAt ? { startedAt: normalizedCall.startedAt } : {}),
+          ...(normalizedCall.endedAt ? { endedAt: normalizedCall.endedAt } : {}),
+          ...(normalizedCall.direction ? { direction: normalizedCall.direction } : {}),
+          metadata: mergedMetadata,
+        },
+      });
+    } else {
+      upsertedCall = await prisma.call.create({
+        data: {
+          tenantId,
+          provider,
+          callIdExternal: normalizedCall.callIdExternal,
+          from: normalizedCall.from,
+          to: normalizedCall.to,
+          direction: normalizedCall.direction,
+          status: normalizedCall.status,
+          duration: normalizedCall.duration,
+          recordingUrl: normalizedCall.recordingUrl,
+          recordingId: normalizedCall.recordingId,
+          metadata: finalMetadata,
+          startedAt: normalizedCall.startedAt,
+          endedAt: normalizedCall.endedAt,
+        },
+      });
+    }
 
     const matchedContact = (contacts as Array<{ id: string; phone: string | null }>).find((contact) => {
       const normalized = normalizePhone(contact.phone);
