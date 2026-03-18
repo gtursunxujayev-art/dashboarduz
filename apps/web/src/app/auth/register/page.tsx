@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -28,7 +28,7 @@ export default function RegisterPage() {
     setError('');
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError('Parollar mos emas');
       return;
     }
 
@@ -45,9 +45,9 @@ export default function RegisterPage() {
         return;
       }
 
-      setError('Registration failed');
+      setError('RoвЂyxatdan oвЂtish muvaffaqiyatsiz');
     } catch (err: any) {
-      setError(err?.message || 'Registration failed');
+      setError(err?.message || 'RoвЂyxatdan oвЂtish muvaffaqiyatsiz');
     } finally {
       setIsLoading(false);
     }
@@ -57,8 +57,8 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Create your tenant account</h2>
-          <p className="mt-2 text-center text-sm text-gray-600">Register with login and password</p>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Tenant akkaunt yarating</h2>
+          <p className="mt-2 text-center text-sm text-gray-600">Login va parol bilan roвЂyxatdan oвЂting</p>
         </div>
 
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
@@ -86,8 +86,8 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                Parol
               </label>
               <input
                 id="password"
@@ -96,14 +96,14 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="At least 8 characters"
+                placeholder="Kamida 8 ta belgi"
                 disabled={isLoading}
               />
             </div>
 
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                Confirm Password
+                Parolni tasdiqlang
               </label>
               <input
                 id="confirmPassword"
@@ -112,13 +112,13 @@ export default function RegisterPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="Repeat password"
+                placeholder="Parolni qayta kiriting"
                 disabled={isLoading}
               />
             </div>
 
             <p className="text-xs text-gray-500">
-              Enter the same password twice to confirm it before account creation.
+              Akkaunt yaratishdan oldin bir xil parolni ikki marta kiriting.
             </p>
 
             <button
@@ -126,15 +126,15 @@ export default function RegisterPage() {
               disabled={isLoading}
               className="w-full py-2 px-4 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
             >
-              {isLoading ? 'Creating account...' : 'Create account'}
+              {isLoading ? 'Akkaunt yaratilmoqda...' : 'Akkaunt yaratish'}
             </button>
           </form>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
-              Already have an account?{' '}
+              Akkauntingiz bormi?{' '}
               <Link href="/auth/login" className="font-medium text-blue-600 hover:text-blue-500">
-                Sign in
+                Kirish
               </Link>
             </p>
           </div>
@@ -143,3 +143,4 @@ export default function RegisterPage() {
     </div>
   );
 }
+
