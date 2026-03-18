@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/contexts/auth-context';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
@@ -23,7 +24,29 @@ function formatAmount(value: number | null | undefined): string {
   return `${new Intl.NumberFormat('ru-RU').format(value ?? 0)} so'm`;
 }
 
+function getIncomeStatusBadge(status: string) {
+  if (status === 'pending_refund') {
+    return {
+      label: "Sariq: Qaytarish so'rovi",
+      className: 'bg-yellow-100 text-yellow-800',
+    };
+  }
+  if (status === 'refunded') {
+    return {
+      label: 'Qizil: Qaytarilgan',
+      className: 'bg-red-100 text-red-800',
+    };
+  }
+  return {
+    label: 'Aktiv',
+    className: 'bg-emerald-100 text-emerald-800',
+  };
+}
+
 export default function FinancePage() {
+  const { user } = useAuth();
+  const roles = user?.roles || [];
+  const canSeeRefundAnalytics = roles.includes('Admin') || roles.includes('Finance');
   const [range, setRange] = useState<DashboardRange>('month');
   const [dateFrom, setDateFrom] = useState(getTashkentToday());
   const [dateTo, setDateTo] = useState(getTashkentToday());
@@ -122,7 +145,7 @@ export default function FinancePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${canSeeRefundAnalytics ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">Total Income</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(totals?.totalIncomeAmount)}</p>
@@ -143,6 +166,13 @@ export default function FinancePage() {
           <p className="text-sm text-gray-500">Total Debt</p>
           <p className="mt-2 text-2xl font-semibold text-amber-700">{formatAmount(totals?.totalDebtAmount)}</p>
         </div>
+        {canSeeRefundAnalytics && (
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-sm text-gray-500">Qaytarilgan tushum</p>
+            <p className="mt-2 text-2xl font-semibold text-red-700">{formatAmount(totals?.refundAmount)}</p>
+            <p className="mt-1 text-xs text-gray-500">{totals?.refundCount ?? 0} ta qaytarish</p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -223,6 +253,7 @@ export default function FinancePage() {
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Customer</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Course/Tariff</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Holat</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Payment</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Debt left</th>
                 </tr>
@@ -242,6 +273,11 @@ export default function FinancePage() {
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{income.managerLabel}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                       {[income.courseName, income.tariffName].filter(Boolean).join(' / ') || '-'}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getIncomeStatusBadge(income.lifecycleStatus).className}`}>
+                        {getIncomeStatusBadge(income.lifecycleStatus).label}
+                      </span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(income.paymentAmount)}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(income.remainingDebtAmount)}</td>
