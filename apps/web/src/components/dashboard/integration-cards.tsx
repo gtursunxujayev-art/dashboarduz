@@ -4,6 +4,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 
 type IntegrationId = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel';
+type TelegramReportRecipient = {
+  chatId: string;
+  displayName: string;
+  username?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  selectedForReports: boolean;
+  startedAt?: string | null;
+  lastSeenAt?: string | null;
+};
 
 const integrationCatalog: Array<{
   id: IntegrationId;
@@ -70,16 +80,24 @@ export default function IntegrationCards() {
   const [amocrmBaseUrl, setAmocrmBaseUrl] = useState('');
   const [telegramToken, setTelegramToken] = useState('');
   const [selectedPipelineIds, setSelectedPipelineIds] = useState<string[]>([]);
+  const [selectedTelegramRecipientIds, setSelectedTelegramRecipientIds] = useState<string[]>([]);
+  const [telegramSelectionSavedAt, setTelegramSelectionSavedAt] = useState<string | null>(null);
 
   const listQuery = trpc.integrations.list.useQuery();
+  const telegramConnected = Boolean(listQuery.data?.find((it: any) => it.type === 'telegram' && it.status === 'active'));
   const amoPipelinesQuery = trpc.integrations.getAmoCRMPipelines.useQuery(undefined, {
     enabled: Boolean(listQuery.data?.find((it: any) => it.type === 'amocrm' && it.status === 'active')),
+    retry: false,
+  });
+  const telegramRecipientsQuery = trpc.integrations.getTelegramReportRecipients.useQuery(undefined, {
+    enabled: telegramConnected,
     retry: false,
   });
   const connectAmoCRM = trpc.integrations.connectAmoCRM.useMutation();
   const connectTelegram = trpc.integrations.connectTelegram.useMutation();
   const connectVoIP = trpc.integrations.connectVoIP.useMutation();
   const updateAmoCRMPipelines = trpc.integrations.updateAmoCRMPipelines.useMutation();
+  const updateTelegramReportRecipients = trpc.integrations.updateTelegramReportRecipients.useMutation();
   const disconnectIntegration = trpc.integrations.disconnect.useMutation();
 
   const integrations = useMemo(() => {
@@ -108,8 +126,22 @@ export default function IntegrationCards() {
     setSelectedPipelineIds(availableIds);
   }, [amoPipelinesQuery.data]);
 
+  useEffect(() => {
+    if (!telegramRecipientsQuery.data?.connected) {
+      setSelectedTelegramRecipientIds([]);
+      return;
+    }
+
+    const selected = (telegramRecipientsQuery.data.recipients || [])
+      .filter((recipient: TelegramReportRecipient) => recipient.selectedForReports)
+      .map((recipient: TelegramReportRecipient) => recipient.chatId);
+
+    setSelectedTelegramRecipientIds(selected);
+  }, [telegramRecipientsQuery.data]);
+
   const handleConnect = async (integrationId: IntegrationId) => {
     setError(null);
+    setTelegramSelectionSavedAt(null);
     setActionLoading(integrationId);
 
     try {
@@ -156,6 +188,7 @@ export default function IntegrationCards() {
       return;
     }
     setError(null);
+    setTelegramSelectionSavedAt(null);
     setActionLoading(integrationId);
     try {
       await disconnectIntegration.mutateAsync({ type: integrationId });
@@ -169,6 +202,7 @@ export default function IntegrationCards() {
 
   const handleSavePipelines = async () => {
     setError(null);
+    setTelegramSelectionSavedAt(null);
     setActionLoading('amocrm');
     try {
       await updateAmoCRMPipelines.mutateAsync({
@@ -177,6 +211,24 @@ export default function IntegrationCards() {
       await Promise.all([listQuery.refetch(), amoPipelinesQuery.refetch()]);
     } catch (err: any) {
       setError(err?.message || 'Failed to update AmoCRM pipelines');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSaveTelegramRecipients = async () => {
+    setError(null);
+    setActionLoading('telegram');
+    setTelegramSelectionSavedAt(null);
+
+    try {
+      await updateTelegramReportRecipients.mutateAsync({
+        chatIds: selectedTelegramRecipientIds,
+      });
+      await telegramRecipientsQuery.refetch();
+      setTelegramSelectionSavedAt(new Date().toISOString());
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save Telegram report recipients');
     } finally {
       setActionLoading(null);
     }
@@ -197,6 +249,8 @@ export default function IntegrationCards() {
           const loading = actionLoading === integration.id;
           const pipelines = amoPipelinesQuery.data?.pipelines || [];
           const isAmoActive = integration.id === 'amocrm' && integration.status === 'active';
+          const isTelegramActive = integration.id === 'telegram' && integration.status === 'active';
+          const telegramRecipients = (telegramRecipientsQuery.data?.recipients || []) as TelegramReportRecipient[];
 
           return (
             <div key={integration.id} className={`rounded-lg border p-4 ${integration.color}`}>
@@ -279,6 +333,81 @@ export default function IntegrationCards() {
                     >
                       {loading ? 'Saving...' : 'Save Pipeline Selection'}
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {isTelegramActive && (
+                <div className="mt-4 rounded-md border border-cyan-100 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Scheduled Report Recipients</p>
+                      <p className="text-xs text-gray-500">
+                        Users appear here after they send <span className="font-mono">/start</span> to your bot. Check who should receive daily/weekly/monthly PDF reports.
+                      </p>
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      {selectedTelegramRecipientIds.length}/{telegramRecipients.length} selected
+                    </span>
+                  </div>
+
+                  {telegramRecipientsQuery.isLoading ? (
+                    <p className="mt-3 text-sm text-gray-500">Loading Telegram users...</p>
+                  ) : telegramRecipients.length === 0 ? (
+                    <p className="mt-3 text-sm text-gray-500">
+                      No users yet. Ask users to open your bot and send <span className="font-mono">/start</span>.
+                    </p>
+                  ) : (
+                    <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+                      {telegramRecipients.map((recipient) => (
+                        <label
+                          key={recipient.chatId}
+                          className="flex items-start gap-3 rounded-md border border-gray-100 px-3 py-2 text-sm text-gray-700"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedTelegramRecipientIds.includes(recipient.chatId)}
+                            onChange={(event) => {
+                              setSelectedTelegramRecipientIds((current) => {
+                                if (event.target.checked) {
+                                  return Array.from(new Set([...current, recipient.chatId]));
+                                }
+                                return current.filter((chatId) => chatId !== recipient.chatId);
+                              });
+                            }}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-900">{recipient.displayName}</p>
+                            <p className="text-xs text-gray-500">
+                              Chat ID: {recipient.chatId}
+                              {recipient.username ? ` | @${recipient.username}` : ''}
+                            </p>
+                            {recipient.lastSeenAt && (
+                              <p className="text-xs text-gray-500">
+                                Last seen: {new Date(recipient.lastSeenAt).toLocaleString()}
+                              </p>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleSaveTelegramRecipients}
+                      disabled={loading || telegramRecipientsQuery.isLoading || telegramRecipients.length === 0}
+                      className="rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-800 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading ? 'Saving...' : 'Save Recipients'}
+                    </button>
+                    {telegramSelectionSavedAt && (
+                      <span className="text-xs text-green-700">
+                        Saved at {new Date(telegramSelectionSavedAt).toLocaleTimeString()}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
