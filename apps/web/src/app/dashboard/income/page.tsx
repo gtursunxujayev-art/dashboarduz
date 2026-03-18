@@ -424,7 +424,7 @@ export default function IncomePage() {
     if (type === 'new_sale') {
       if (!courseId) nextErrors.courseId = 'Kurs tanlang.';
       if (!tariffId) nextErrors.tariffId = 'Tarif tanlang.';
-      if (coursePriceAmount <= 0) nextErrors.coursePriceInput = 'Kurs narxi 0 dan katta boвЂlsin.';
+      if (coursePriceAmount <= 0) nextErrors.coursePriceInput = "Kurs narxi 0 dan katta bo'lsin.";
       if (paymentAmount < 0) nextErrors.paymentInput = "To'lov manfiy bo'lishi mumkin emas.";
     }
 
@@ -501,7 +501,7 @@ export default function IncomePage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">Mijoz va tushum</h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-          Mijoz boвЂyicha yangi sotuv va qarz toвЂlovlarini qoвЂshing.
+          Mijoz bo'yicha yangi sotuv va qarz to'lovlarini qo'shing.
         </p>
       </div>
 
@@ -510,7 +510,7 @@ export default function IncomePage() {
           <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
             <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">Ommaviy yuklash</h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-              Avval namunani yuklab oling, soвЂng Excel/CSV yuklang yoki Google Sheets dan import qiling.
+              Avval namunani yuklab oling, so'ng Excel/CSV yuklang yoki Google Sheets dan import qiling.
             </p>
           </div>
 
@@ -528,7 +528,7 @@ export default function IncomePage() {
                 }}
                 className={buildFieldClass(fieldErrors, 'bulkFallbackManagerUserId')}
               >
-                <option value="">Zaxira menedjer yoвЂq</option>
+                <option value="">Zaxira menedjer yo'q</option>
                 {managers.map((manager: any) => (
                   <option key={`bulk-fallback-${manager.id}`} value={manager.id}>
                     {manager.label}
@@ -697,7 +697,7 @@ export default function IncomePage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">ToвЂlov turi <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">To'lov turi <span className="text-red-500">*</span></label>
                 <select
                   value={type}
                   onChange={(event) => {
@@ -706,7 +706,7 @@ export default function IncomePage() {
                   }}
                   className={buildFieldClass(fieldErrors, 'type')}
                 >
-                  <option value="">ToвЂlov turini tanlang</option>
+                  <option value="">To'lov turini tanlang</option>
                   <option value="new_sale">Yangi sotuv</option>
                   <option value="repayment">Qarzdorlik</option>
                 </select>
@@ -739,7 +739,7 @@ export default function IncomePage() {
                     <option value="">Qarzni tanlang</option>
                     {debtOptionsForCustomer.map((debt: any) => (
                       <option key={debt.id} value={debt.id}>
-                        {debt.customerNumber} - {debt.customerName} | {debt.courseName || 'Kurs yoвЂq'} / {debt.tariffName || 'Tarif yoвЂq'} | Qarz: {formatAmount(debt.remainingDebtAmount)}
+                        {debt.customerNumber} - {debt.customerName} | {debt.courseName || "Kurs yo'q"} / {debt.tariffName || "Tarif yo'q"} | Qarz: {formatAmount(debt.remainingDebtAmount)}
                       </option>
                     ))}
                   </select>
@@ -871,7 +871,7 @@ export default function IncomePage() {
               </div>
             ) : (
               <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                Income type tanlangandan keyin Kurs yoki Qarzdorlik maydonlari chiqadi.
+                To'lov turi tanlangandan keyin Kurs yoki Qarzdorlik maydonlari chiqadi.
               </div>
             )}
 
@@ -888,7 +888,7 @@ export default function IncomePage() {
 
       <div className="rounded-lg bg-white shadow dark:bg-slate-900">
         <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">SoвЂnggi tushumlar</h2>
+          <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">So'nggi tushumlar</h2>
         </div>
 
         <div className="p-6">
@@ -906,7 +906,7 @@ export default function IncomePage() {
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Menedjer</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Kurs/Tarif</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Holat</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">ToвЂlov</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">To'lov</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Qoldiq qarz</th>
                   </tr>
                   </thead>
@@ -954,11 +954,12 @@ export default function IncomePage() {
               )}
             </div>
           ) : (
-            <p className="text-sm text-gray-600 dark:text-slate-300">Hozircha tushum yozuvlari yoвЂq.</p>
+            <p className="text-sm text-gray-600 dark:text-slate-300">Hozircha tushum yozuvlari yo'q.</p>
           )}
         </div>
       </div>
     </div>
   );
 }
+
 
