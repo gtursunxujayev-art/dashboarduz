@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { FormEvent, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/auth-context';
 type TariffItem = {
   id: string;
   name: string;
-  isActive: boolean;
+  isFaol: boolean;
   courseId: string;
   subTariffs: SubTariffItem[];
 };
@@ -15,7 +15,7 @@ type TariffItem = {
 type SubTariffItem = {
   id: string;
   name: string;
-  isActive: boolean;
+  isFaol: boolean;
   tariffId: string;
 };
 
@@ -23,21 +23,21 @@ type CourseItem = {
   id: string;
   name: string;
   category: 'online' | 'offline' | 'intensive';
-  isActive: boolean;
+  isFaol: boolean;
   tariffs: TariffItem[];
 };
 
 const COURSE_CATEGORY_OPTIONS: Array<{ value: CourseItem['category']; label: string }> = [
-  { value: 'online', label: 'Online' },
-  { value: 'offline', label: 'Offline' },
-  { value: 'intensive', label: 'Intensive' },
+  { value: 'online', label: 'Onlayn' },
+  { value: 'offline', label: 'Oflayn' },
+  { value: 'intensive', label: 'Intensiv' },
 ];
 
 function getCategoryLabel(category: CourseItem['category']): string {
   return COURSE_CATEGORY_OPTIONS.find((option) => option.value === category)?.label || category;
 }
 
-export default function CoursesPage() {
+export default function kurslariPage() {
   const { user } = useAuth();
   const canManageCourses = Boolean(user?.roles?.includes('Admin') || user?.roles?.includes('Manager'));
 
@@ -52,8 +52,8 @@ export default function CoursesPage() {
   const [courseEditCategory, setCourseEditCategory] = useState<Record<string, CourseItem['category']>>({});
   const [tariffEditName, setTariffEditName] = useState<Record<string, string>>({});
   const [subTariffEditName, setSubTariffEditName] = useState<Record<string, string>>({});
-  const [openCourseIds, setOpenCourseIds] = useState<Record<string, boolean>>({});
-  const [openTariffIds, setOpenTariffIds] = useState<Record<string, boolean>>({});
+  const [openCourseIds, setOchishCourseIds] = useState<Record<string, boolean>>({});
+  const [openTariffIds, setOchishTariffIds] = useState<Record<string, boolean>>({});
   const [showSubTariffForm, setShowSubTariffForm] = useState<Record<string, boolean>>({});
 
   const catalogQuery = trpc.customerIncome.courseCatalog.useQuery(undefined, {
@@ -83,12 +83,12 @@ export default function CoursesPage() {
     setSuccess(null);
   };
 
-  const toggleCourseOpen = (courseId: string) => {
-    setOpenCourseIds((prev) => ({ [courseId]: !prev[courseId] }));
+  const toggleCourseOchish = (courseId: string) => {
+    setOchishCourseIds((prev) => ({ [courseId]: !prev[courseId] }));
   };
 
-  const toggleTariffOpen = (tariffId: string) => {
-    setOpenTariffIds((prev) => ({ [tariffId]: !prev[tariffId] }));
+  const toggleTariffOchish = (tariffId: string) => {
+    setOchishTariffIds((prev) => ({ [tariffId]: !prev[tariffId] }));
   };
 
   const toggleSubTariffForm = (tariffId: string) => {
@@ -100,13 +100,13 @@ export default function CoursesPage() {
     resetMessages();
 
     if (!canManageCourses) {
-      setError('Only admin or manager can add or edit courses.');
+      setError("Faqat admin yoki manager kurslarni boshqara oladi.");
       return;
     }
 
     const name = newCourseName.trim();
     if (!name) {
-      setError('Course name is required.');
+      setError('Kurs nomi majburiy.');
       return;
     }
 
@@ -114,10 +114,10 @@ export default function CoursesPage() {
       await createCourse.mutateAsync({ name, category: newCourseCategory });
       setNewCourseName('');
       setNewCourseCategory('offline');
-      setSuccess('Course saved successfully.');
+      setSuccess('Kurs muvaffaqiyatli saqlandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to save course.');
+      setError(mutationError?.message || 'Kursni saqlashda xatolik.');
     }
   };
 
@@ -126,17 +126,17 @@ export default function CoursesPage() {
     resetMessages();
 
     if (!canManageCourses) {
-      setError('Only admin or manager can add or edit tariffs.');
+      setError("Faqat admin yoki manager tariflarni boshqara oladi.");
       return;
     }
 
     const name = newTariffName.trim();
     if (!selectedCourseId) {
-      setError('Select a course first.');
+      setError('Avval kursni tanlang.');
       return;
     }
     if (!name) {
-      setError('Tariff name is required.');
+      setError('Tarif nomi majburiy.');
       return;
     }
 
@@ -146,17 +146,17 @@ export default function CoursesPage() {
         name,
       });
       setNewTariffName('');
-      setSuccess('Tariff saved successfully.');
+      setSuccess('Tarif muvaffaqiyatli saqlandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to save tariff.');
+      setError(mutationError?.message || 'Tarifni saqlashda xatolik.');
     }
   };
 
   const handleUpdateCourse = async (course: CourseItem) => {
     resetMessages();
     if (!canManageCourses) {
-      setError('Only admin or manager can add or edit courses.');
+      setError("Faqat admin yoki manager kurslarni boshqara oladi.");
       return;
     }
 
@@ -168,36 +168,36 @@ export default function CoursesPage() {
         name: nextName,
         category: nextCategory,
       });
-      setSuccess('Course updated.');
+      setSuccess('Kurs yangilandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to update course.');
+      setError(mutationError?.message || 'Kursni yangilashda xatolik.');
     }
   };
 
   const handleToggleCourse = async (course: CourseItem) => {
     resetMessages();
     if (!canManageCourses) {
-      setError('Only admin or manager can add or edit courses.');
+      setError("Faqat admin yoki manager kurslarni boshqara oladi.");
       return;
     }
 
     try {
       await updateCourse.mutateAsync({
         courseId: course.id,
-        isActive: !course.isActive,
+        isFaol: !course.isFaol,
       });
-      setSuccess('Course status updated.');
+      setSuccess('Kurs holati yangilandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to update course status.');
+      setError(mutationError?.message || 'Kurs holatini yangilashda xatolik.');
     }
   };
 
   const handleUpdateTariff = async (tariff: TariffItem) => {
     resetMessages();
     if (!canManageCourses) {
-      setError('Only admin or manager can add or edit tariffs.');
+      setError("Faqat admin yoki manager tariflarni boshqara oladi.");
       return;
     }
 
@@ -207,42 +207,42 @@ export default function CoursesPage() {
         tariffId: tariff.id,
         name: nextName,
       });
-      setSuccess('Tariff updated.');
+      setSuccess('Tarif yangilandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to update tariff.');
+      setError(mutationError?.message || 'Tarifni yangilashda xatolik.');
     }
   };
 
   const handleToggleTariff = async (tariff: TariffItem) => {
     resetMessages();
     if (!canManageCourses) {
-      setError('Only admin or manager can add or edit tariffs.');
+      setError("Faqat admin yoki manager tariflarni boshqara oladi.");
       return;
     }
 
     try {
       await updateTariff.mutateAsync({
         tariffId: tariff.id,
-        isActive: !tariff.isActive,
+        isFaol: !tariff.isFaol,
       });
-      setSuccess('Tariff status updated.');
+      setSuccess('Tarif holati yangilandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to update tariff status.');
+      setError(mutationError?.message || 'Tarif holatini yangilashda xatolik.');
     }
   };
 
   const handleCreateSubTariff = async (tariffId: string) => {
     resetMessages();
     if (!canManageCourses) {
-      setError('Only admin or manager can add or edit sub-tariffs.');
+      setError("Faqat admin yoki manager sub-tariflarni boshqara oladi.");
       return;
     }
 
     const name = (newSubTariffName[tariffId] || '').trim();
     if (!name) {
-      setError('Sub-tariff name is required.');
+      setError('Sub-tarif nomi majburiy.');
       return;
     }
 
@@ -253,17 +253,17 @@ export default function CoursesPage() {
       });
       setNewSubTariffName((prev) => ({ ...prev, [tariffId]: '' }));
       setShowSubTariffForm((prev) => ({ ...prev, [tariffId]: false }));
-      setSuccess('Sub-tariff saved successfully.');
+      setSuccess('Sub-tarif muvaffaqiyatli saqlandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to save sub-tariff.');
+      setError(mutationError?.message || 'Sub-tarifni saqlashda xatolik.');
     }
   };
 
   const handleUpdateSubTariff = async (subTariff: SubTariffItem) => {
     resetMessages();
     if (!canManageCourses) {
-      setError('Only admin or manager can add or edit sub-tariffs.');
+      setError("Faqat admin yoki manager sub-tariflarni boshqara oladi.");
       return;
     }
 
@@ -273,29 +273,29 @@ export default function CoursesPage() {
         subTariffId: subTariff.id,
         name: nextName,
       });
-      setSuccess('Sub-tariff updated.');
+      setSuccess('Sub-tarif yangilandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to update sub-tariff.');
+      setError(mutationError?.message || 'Sub-tarifni yangilashda xatolik.');
     }
   };
 
   const handleToggleSubTariff = async (subTariff: SubTariffItem) => {
     resetMessages();
     if (!canManageCourses) {
-      setError('Only admin or manager can add or edit sub-tariffs.');
+      setError("Faqat admin yoki manager sub-tariflarni boshqara oladi.");
       return;
     }
 
     try {
       await updateSubTariff.mutateAsync({
         subTariffId: subTariff.id,
-        isActive: !subTariff.isActive,
+        isFaol: !subTariff.isFaol,
       });
-      setSuccess('Sub-tariff status updated.');
+      setSuccess('Sub-tarif holati yangilandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to update sub-tariff status.');
+      setError(mutationError?.message || 'Sub-tarif holatini yangilashda xatolik.');
     }
   };
 
@@ -303,7 +303,7 @@ export default function CoursesPage() {
     return (
       <div className="rounded-lg bg-white p-6 shadow">
         <h1 className="text-xl font-semibold text-gray-900">Kurslar</h1>
-        <p className="mt-2 text-sm text-red-700">Only admin or manager can change course and tariff options.</p>
+        <p className="mt-2 text-sm text-red-700">Kurs va tarif sozlamalarini faqat admin yoki manager o'zgartiradi.</p>
       </div>
     );
   }
@@ -313,7 +313,7 @@ export default function CoursesPage() {
       <div className="rounded-lg bg-white shadow">
         <div className="border-b border-gray-100 px-6 py-5">
           <h1 className="text-xl font-semibold text-gray-900">Kurslar</h1>
-          <p className="mt-1 text-sm text-gray-500">Add courses, attach tariffs, and edit both options.</p>
+          <p className="mt-1 text-sm text-gray-500">Kurs qo'shing, tarif biriktiring va ularni tahrirlang.</p>
         </div>
 
         <div className="space-y-4 p-6">
@@ -324,7 +324,7 @@ export default function CoursesPage() {
             <input
               value={newCourseName}
               onChange={(event) => setNewCourseName(event.target.value)}
-              placeholder="New course name"
+              placeholder="Yangi kurs nomi"
               className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <select
@@ -343,7 +343,7 @@ export default function CoursesPage() {
               disabled={createCourse.isLoading}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {createCourse.isLoading ? 'Saving...' : 'Add Course'}
+              {createCourse.isLoading ? "Saqlanmoqda..." : "Kurs qo'shish"}
             </button>
           </form>
 
@@ -353,7 +353,7 @@ export default function CoursesPage() {
               onChange={(event) => setSelectedCourseId(event.target.value)}
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              <option value="">Select course</option>
+              <option value="">Kursni tanlang</option>
               {groupedCourses.map((group) =>
                 group.courses.length > 0 ? (
                   <optgroup key={`group-select-${group.value}`} label={group.label}>
@@ -369,7 +369,7 @@ export default function CoursesPage() {
             <input
               value={newTariffName}
               onChange={(event) => setNewTariffName(event.target.value)}
-              placeholder="New tariff name"
+              placeholder="Yangi tarif nomi"
               className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button
@@ -377,7 +377,7 @@ export default function CoursesPage() {
               disabled={createTariff.isLoading}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {createTariff.isLoading ? 'Saving...' : 'Add Tariff'}
+              {createTariff.isLoading ? "Saqlanmoqda..." : "Tarif qo'shish"}
             </button>
           </form>
         </div>
@@ -385,22 +385,22 @@ export default function CoursesPage() {
 
       <div className="rounded-lg bg-white shadow">
         <div className="border-b border-gray-100 px-6 py-5">
-          <h2 className="text-lg font-medium text-gray-900">Course Catalog</h2>
+          <h2 className="text-lg font-medium text-gray-900">Kurslar katalogi</h2>
         </div>
 
         <div className="p-6">
           {catalogQuery.isLoading ? (
-            <p className="text-sm text-gray-600">Loading courses...</p>
+            <p className="text-sm text-gray-600">Kurslar yuklanmoqda...</p>
           ) : courses.length === 0 ? (
-            <p className="text-sm text-gray-600">No courses yet.</p>
+            <p className="text-sm text-gray-600">Hozircha kurslar yo'q.</p>
           ) : (
             <div className="space-y-5">
               {groupedCourses.map((group) => (
                 <section key={`group-section-${group.value}`} className="space-y-3">
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">{group.label} Courses</h3>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">{group.label} kurslari</h3>
                   {group.courses.length === 0 ? (
                     <p className="rounded-md border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500">
-                      No {group.label.toLowerCase()} courses yet.
+                      Hozircha {group.label.toLowerCase()} kurslari yo'q.
                     </p>
                   ) : (
                     <div className="space-y-3">
@@ -408,16 +408,16 @@ export default function CoursesPage() {
                         <div key={course.id} className="overflow-hidden rounded-md border border-gray-200">
                           <button
                             type="button"
-                            onClick={() => toggleCourseOpen(course.id)}
+                            onClick={() => toggleCourseOchish(course.id)}
                             className="flex w-full items-center justify-between bg-gray-50 px-4 py-3 text-left hover:bg-gray-100"
                           >
                             <div>
                               <p className="text-base font-medium text-gray-900">{course.name}</p>
                               <p className="text-xs text-gray-500">
-                                {course.tariffs.length} tariff{course.tariffs.length === 1 ? '' : 's'} - {course.isActive ? 'Active' : 'Inactive'} - {getCategoryLabel(course.category)}
+                                {course.tariffs.length} ta tarif - {course.isFaol ? 'Faol' : 'Faolsiz'} - {getCategoryLabel(course.category)}
                               </p>
                             </div>
-                            <span className="text-sm text-blue-600">{openCourseIds[course.id] ? 'Close' : 'Open'}</span>
+                            <span className="text-sm text-blue-600">{openCourseIds[course.id] ? 'Yopish' : 'Ochish'}</span>
                           </button>
 
                           {openCourseIds[course.id] && (
@@ -451,39 +451,39 @@ export default function CoursesPage() {
                                   onClick={() => handleUpdateCourse(course)}
                                   className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                 >
-                                  Save
+                                  Saqlash
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleToggleCourse(course)}
                                   className={`rounded-md px-3 py-2 text-sm font-medium ${
-                                    course.isActive
+                                    course.isFaol
                                       ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                                       : 'bg-green-100 text-green-700 hover:bg-green-200'
                                   }`}
                                 >
-                                  {course.isActive ? 'Deactivate' : 'Activate'}
+                                  {course.isFaol ? 'Faolsizlantirish' : 'Faollashtirish'}
                                 </button>
                               </div>
 
                               {course.tariffs.length === 0 ? (
-                                <p className="text-sm text-gray-500">No tariffs attached.</p>
+                                <p className="text-sm text-gray-500">Tarif biriktirilmagan.</p>
                               ) : (
                                 <div className="space-y-2">
                                   {course.tariffs.map((tariff) => (
                                     <div key={tariff.id} className="overflow-hidden rounded-md border border-gray-200 bg-gray-50">
                                       <button
                                         type="button"
-                                        onClick={() => toggleTariffOpen(tariff.id)}
+                                        onClick={() => toggleTariffOchish(tariff.id)}
                                         className="flex w-full items-center justify-between bg-white px-3 py-2 text-left hover:bg-gray-50"
                                       >
                                         <div>
                                           <p className="text-sm font-medium text-gray-900">{tariff.name}</p>
                                           <p className="text-xs text-gray-500">
-                                            {tariff.subTariffs?.length || 0} sub tariff{(tariff.subTariffs?.length || 0) === 1 ? '' : 's'} - {tariff.isActive ? 'Active' : 'Inactive'}
+                                            {tariff.subTariffs?.length || 0} ta sub-tarif - {tariff.isFaol ? 'Faol' : 'Faolsiz'}
                                           </p>
                                         </div>
-                                        <span className="text-xs text-blue-600">{openTariffIds[tariff.id] ? 'Close' : 'Open'}</span>
+                                        <span className="text-xs text-blue-600">{openTariffIds[tariff.id] ? 'Yopish' : 'Ochish'}</span>
                                       </button>
 
                                       {openTariffIds[tariff.id] && (
@@ -501,30 +501,30 @@ export default function CoursesPage() {
                                               onClick={() => handleUpdateTariff(tariff)}
                                               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                             >
-                                              Save
+                                              Saqlash
                                             </button>
                                             <button
                                               type="button"
                                               onClick={() => handleToggleTariff(tariff)}
                                               className={`rounded-md px-3 py-2 text-sm font-medium ${
-                                                tariff.isActive
+                                                tariff.isFaol
                                                   ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                                                   : 'bg-green-100 text-green-700 hover:bg-green-200'
                                               }`}
                                             >
-                                              {tariff.isActive ? 'Deactivate' : 'Activate'}
+                                              {tariff.isFaol ? 'Faolsizlantirish' : 'Faollashtirish'}
                                             </button>
                                           </div>
 
                                           <div className="rounded-md border border-gray-200 bg-white p-3">
                                             <div className="mb-3 flex items-center justify-between">
-                                              <p className="text-xs font-semibold uppercase text-gray-500">Sub Tariffs (Optional)</p>
+                                              <p className="text-xs font-semibold uppercase text-gray-500">Sub-tariflar (ixtiyoriy)</p>
                                               <button
                                                 type="button"
                                                 onClick={() => toggleSubTariffForm(tariff.id)}
                                                 className="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
                                               >
-                                                {showSubTariffForm[tariff.id] ? 'Cancel' : 'Add Sub Tariff'}
+                                                {showSubTariffForm[tariff.id] ? "Bekor qilish" : "Sub-tarif qo'shish"}
                                               </button>
                                             </div>
 
@@ -535,7 +535,7 @@ export default function CoursesPage() {
                                                   onChange={(event) =>
                                                     setNewSubTariffName((prev) => ({ ...prev, [tariff.id]: event.target.value }))
                                                   }
-                                                  placeholder="Add sub tariff"
+                                                  placeholder="Yangi sub-tarif"
                                                   className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                                 />
                                                 <button
@@ -543,7 +543,7 @@ export default function CoursesPage() {
                                                   onClick={() => handleCreateSubTariff(tariff.id)}
                                                   className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
                                                 >
-                                                  Save Sub Tariff
+                                                  Sub-tarifni saqlash
                                                 </button>
                                               </div>
                                             )}
@@ -564,24 +564,24 @@ export default function CoursesPage() {
                                                       onClick={() => handleUpdateSubTariff(subTariff)}
                                                       className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                                     >
-                                                      Save
+                                                      Saqlash
                                                     </button>
                                                     <button
                                                       type="button"
                                                       onClick={() => handleToggleSubTariff(subTariff)}
                                                       className={`rounded-md px-3 py-2 text-sm font-medium ${
-                                                        subTariff.isActive
+                                                        subTariff.isFaol
                                                           ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                                                           : 'bg-green-100 text-green-700 hover:bg-green-200'
                                                       }`}
                                                     >
-                                                      {subTariff.isActive ? 'Deactivate' : 'Activate'}
+                                                      {subTariff.isFaol ? 'Faolsizlantirish' : 'Faollashtirish'}
                                                     </button>
                                                   </div>
                                                 ))}
                                               </div>
                                             ) : (
-                                              <p className="text-sm text-gray-500">No sub tariffs yet.</p>
+                                              <p className="text-sm text-gray-500">Hozircha sub-tariflar yo'q.</p>
                                             )}
                                           </div>
                                         </div>
@@ -605,3 +605,4 @@ export default function CoursesPage() {
     </div>
   );
 }
+
