@@ -20,38 +20,26 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">{seller.name || seller.email || seller.phone || 'Seller'}</h1>
-        <p className="mt-1 text-sm text-gray-500">Detailed metrics, leads, and call activity.</p>
+        <p className="mt-1 text-sm text-gray-500">Detailed call metrics and sales activity.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="rounded-lg bg-white p-4 shadow">
-          <p className="text-xs uppercase text-gray-500">Total Leads</p>
-          <p className="text-2xl font-semibold text-gray-900">{data.metrics.totalLeads}</p>
-        </div>
-        <div className="rounded-lg bg-white p-4 shadow">
-          <p className="text-xs uppercase text-gray-500">Won Leads</p>
-          <p className="text-2xl font-semibold text-gray-900">{data.metrics.wonLeads}</p>
-        </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <div className="rounded-lg bg-white p-4 shadow">
           <p className="text-xs uppercase text-gray-500">Total Calls</p>
           <p className="text-2xl font-semibold text-gray-900">{data.metrics.totalCalls}</p>
         </div>
-      </div>
-
-      <div className="rounded-lg bg-white p-4 shadow">
-        <h2 className="text-lg font-semibold text-gray-900">Recent Leads</h2>
-        {data.recentLeads.length ? (
-          <ul className="mt-3 space-y-2">
-            {data.recentLeads.map((lead: any) => (
-              <li key={lead.id} className="rounded-md border border-gray-200 px-3 py-2 text-sm">
-                <p className="font-medium text-gray-800">{lead.title}</p>
-                <p className="text-xs text-gray-500">Status: {lead.status || '-'}</p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-gray-600">No recent leads.</p>
-        )}
+        <div className="rounded-lg bg-white p-4 shadow">
+          <p className="text-xs uppercase text-gray-500">Inbound Calls</p>
+          <p className="text-2xl font-semibold text-gray-900">{data.metrics.inboundCalls}</p>
+        </div>
+        <div className="rounded-lg bg-white p-4 shadow">
+          <p className="text-xs uppercase text-gray-500">Outbound Calls</p>
+          <p className="text-2xl font-semibold text-gray-900">{data.metrics.outboundCalls}</p>
+        </div>
+        <div className="rounded-lg bg-white p-4 shadow">
+          <p className="text-xs uppercase text-gray-500">Call Duration</p>
+          <p className="text-2xl font-semibold text-gray-900">{Math.round(data.metrics.totalCallDuration || 0)}s</p>
+        </div>
       </div>
     </div>
   );
