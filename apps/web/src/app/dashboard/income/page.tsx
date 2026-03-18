@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
@@ -90,16 +90,16 @@ function parseBulkImportError(error: unknown): string {
       return message;
     }
   }
-  return 'Bulk import failed.';
+  return 'Bulk import muvaffaqiyatsiz.';
 }
 
 function summarizeBulkResult(result: BulkImportResult): string {
   if (result.failedCount === 0) {
-    return `Imported ${result.importedCount}/${result.totalRows} rows successfully.`;
+    return `${result.importedCount}/${result.totalRows} qator muvaffaqiyatli import qilindi.`;
   }
 
   const preview = result.failures.slice(0, 5).map((item) => `Row ${item.rowNumber}: ${item.message}`).join(' | ');
-  return `Imported ${result.importedCount}/${result.totalRows} rows. Failed: ${result.failedCount}. ${preview}`;
+  return `${result.importedCount}/${result.totalRows} qator import qilindi. Xato: ${result.failedCount}. ${preview}`;
 }
 
 function buildFieldClass(fieldErrors: FieldErrors, field: string, extra = ''): string {
@@ -336,7 +336,7 @@ export default function IncomePage() {
 
   const runBulkImport = async (rows: Array<Record<string, string | number | boolean | null>>) => {
     if (!rows.length) {
-      setBulkError('No data rows found in file.');
+      setBulkError("Faylda import uchun qatorlar topilmadi.");
       return;
     }
 
@@ -369,7 +369,7 @@ export default function IncomePage() {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const firstSheetName = workbook.SheetNames[0];
       if (!firstSheetName) {
-        setBulkError('The selected file does not contain a worksheet.');
+        setBulkError("Tanlangan faylda worksheet yo'q.");
         return;
       }
 
@@ -388,7 +388,7 @@ export default function IncomePage() {
   const handleGoogleSheetImport = async () => {
     const trimmedUrl = googleSheetUrl.trim();
     if (!trimmedUrl) {
-      setBulkError('Google Sheets URL is required.');
+      setBulkError('Google Sheets URL majburiy.');
       return;
     }
 
@@ -414,7 +414,7 @@ export default function IncomePage() {
     const nextErrors: FieldErrors = {};
 
     if (!entryDate) nextErrors.entryDate = 'Sana majburiy.';
-    if (!managerUserId) nextErrors.managerUserId = 'Sales manager majburiy.';
+    if (!managerUserId) nextErrors.managerUserId = 'Sotuv menedjeri majburiy.';
 
     const customerNumberValue = customerNumber.trim();
     if (!customerNumberValue) nextErrors.customerNumber = 'Mijoz raqami majburiy.';
@@ -424,7 +424,7 @@ export default function IncomePage() {
     if (type === 'new_sale') {
       if (!courseId) nextErrors.courseId = 'Kurs tanlang.';
       if (!tariffId) nextErrors.tariffId = 'Tarif tanlang.';
-      if (coursePriceAmount <= 0) nextErrors.coursePriceInput = 'Kurs narxi 0 dan katta bo‘lsin.';
+      if (coursePriceAmount <= 0) nextErrors.coursePriceInput = 'Kurs narxi 0 dan katta boвЂlsin.';
       if (paymentAmount < 0) nextErrors.paymentInput = "To'lov manfiy bo'lishi mumkin emas.";
     }
 
@@ -457,7 +457,7 @@ export default function IncomePage() {
         deadline: deadline || undefined,
       });
 
-      setSuccess('Income entry saved successfully.');
+      setSuccess("Tushum yozuvi muvaffaqiyatli saqlandi.");
       setPaymentInput('');
       setDeadline('');
       if (type === 'new_sale') {
@@ -469,7 +469,7 @@ export default function IncomePage() {
       }
       await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
     } catch (mutationError: any) {
-      setError(mutationError?.message || 'Failed to save income entry.');
+      setError(mutationError?.message || "Tushum yozuvini saqlab bo'lmadi.");
     }
   };
 
@@ -499,18 +499,18 @@ export default function IncomePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">Customer & Income</h1>
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">Mijoz va tushum</h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-          Add new sales and debt repayments by customer.
+          Mijoz boвЂyicha yangi sotuv va qarz toвЂlovlarini qoвЂshing.
         </p>
       </div>
 
       {isAdmin && (
         <div className="rounded-lg bg-white shadow dark:bg-slate-900">
           <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
-            <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">Bulk Upload</h2>
+            <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">Ommaviy yuklash</h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-              Download the template first, then upload Excel/CSV or import directly from Google Sheets.
+              Avval namunani yuklab oling, soвЂng Excel/CSV yuklang yoki Google Sheets dan import qiling.
             </p>
           </div>
 
@@ -519,7 +519,7 @@ export default function IncomePage() {
             {bulkSuccess && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{bulkSuccess}</p>}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Fallback Sales Manager (for unmatched names)</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Zaxira sotuv menedjeri (mos kelmagan ism uchun)</label>
               <select
                 value={bulkFallbackManagerUserId}
                 onChange={(event) => {
@@ -528,7 +528,7 @@ export default function IncomePage() {
                 }}
                 className={buildFieldClass(fieldErrors, 'bulkFallbackManagerUserId')}
               >
-                <option value="">No fallback manager</option>
+                <option value="">Zaxira menedjer yoвЂq</option>
                 {managers.map((manager: any) => (
                   <option key={`bulk-fallback-${manager.id}`} value={manager.id}>
                     {manager.label}
@@ -536,7 +536,7 @@ export default function IncomePage() {
                 ))}
               </select>
               <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-                If a name in Excel/Sheets does not match a system user, import will use this manager.
+                Excel/Sheets dagi ism tizim foydalanuvchisiga mos kelmasa, shu menedjer ishlatiladi.
               </p>
             </div>
 
@@ -546,10 +546,10 @@ export default function IncomePage() {
                 onClick={handleDownloadTemplate}
                 className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
               >
-                Download Excel Template
+                Excel namunasini yuklash
               </button>
               <label className="cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
-                Upload Excel/CSV
+                Excel/CSV yuklash
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
@@ -564,7 +564,7 @@ export default function IncomePage() {
               <input
                 value={googleSheetUrl}
                 onChange={(event) => setGoogleSheetUrl(event.target.value)}
-                placeholder="Google Sheets URL or Spreadsheet ID"
+                placeholder="Google Sheets URL yoki Spreadsheet ID"
                 className={buildFieldClass(fieldErrors, 'googleSheetUrl', 'mt-0')}
               />
               <button
@@ -573,7 +573,7 @@ export default function IncomePage() {
                 disabled={bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading}
                 className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {bulkImportFromSheetMutation.isLoading ? 'Importing...' : 'Import from Google Sheets'}
+                {bulkImportFromSheetMutation.isLoading ? 'Import qilinmoqda...' : 'Google Sheets dan import'}
               </button>
             </div>
           </div>
@@ -582,7 +582,7 @@ export default function IncomePage() {
 
       <div className="rounded-lg bg-white shadow dark:bg-slate-900">
         <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">Income Entry Form</h2>
+          <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">Tushum kiritish formasi</h2>
         </div>
 
         <div className="p-6">
@@ -606,7 +606,7 @@ export default function IncomePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Sales Manager <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Sotuv menedjeri <span className="text-red-500">*</span></label>
                 <select
                   value={managerUserId}
                   onChange={(event) => {
@@ -615,7 +615,7 @@ export default function IncomePage() {
                   }}
                   className={buildFieldClass(fieldErrors, 'managerUserId')}
                 >
-                  <option value="">Select manager</option>
+                  <option value="">Menedjerni tanlang</option>
                   {managers.map((manager: any) => (
                     <option key={manager.id} value={manager.id}>
                       {manager.label}
@@ -663,7 +663,7 @@ export default function IncomePage() {
                   }}
                   readOnly={isExistingCustomer}
                   className={buildFieldClass(fieldErrors, 'customerName', 'read-only:bg-gray-100 read-only:text-gray-600 dark:read-only:bg-slate-700 dark:read-only:text-slate-300')}
-                  placeholder="Customer name"
+                  placeholder="Mijoz ismi"
                   autoComplete="off"
                 />
                 {fieldErrors.customerName && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.customerName}</p>}
@@ -697,7 +697,7 @@ export default function IncomePage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Income type <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">ToвЂlov turi <span className="text-red-500">*</span></label>
                 <select
                   value={type}
                   onChange={(event) => {
@@ -706,7 +706,7 @@ export default function IncomePage() {
                   }}
                   className={buildFieldClass(fieldErrors, 'type')}
                 >
-                  <option value="">Select income type</option>
+                  <option value="">ToвЂlov turini tanlang</option>
                   <option value="new_sale">Yangi sotuv</option>
                   <option value="repayment">Qarzdorlik</option>
                 </select>
@@ -736,10 +736,10 @@ export default function IncomePage() {
                     }}
                     className={buildFieldClass(fieldErrors, 'debtSourceIncomeId')}
                   >
-                    <option value="">Select debt</option>
+                    <option value="">Qarzni tanlang</option>
                     {debtOptionsForCustomer.map((debt: any) => (
                       <option key={debt.id} value={debt.id}>
-                        {debt.customerNumber} - {debt.customerName} | {debt.courseName || 'No course'} / {debt.tariffName || 'No tariff'} | Debt: {formatAmount(debt.remainingDebtAmount)}
+                        {debt.customerNumber} - {debt.customerName} | {debt.courseName || 'Kurs yoвЂq'} / {debt.tariffName || 'Tarif yoвЂq'} | Qarz: {formatAmount(debt.remainingDebtAmount)}
                       </option>
                     ))}
                   </select>
@@ -792,7 +792,7 @@ export default function IncomePage() {
                       }}
                       className={buildFieldClass(fieldErrors, 'courseId')}
                     >
-                      <option value="">Select course</option>
+                      <option value="">Kursni tanlang</option>
                       {groupedCourseOptions.map((group) =>
                         group.courses.length ? (
                           <optgroup key={group.key} label={group.label}>
@@ -819,7 +819,7 @@ export default function IncomePage() {
                       disabled={!courseId}
                       className={buildFieldClass(fieldErrors, 'tariffId', 'disabled:bg-gray-100 disabled:text-gray-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400')}
                     >
-                      <option value="">Select tariff</option>
+                      <option value="">Tarifni tanlang</option>
                       {tariffOptions.map((tariff: any) => (
                         <option key={tariff.id} value={tariff.id}>
                           {tariff.name}
@@ -880,7 +880,7 @@ export default function IncomePage() {
               disabled={createIncomeMutation.isLoading || formOptionsQuery.isLoading}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {createIncomeMutation.isLoading ? 'Saving...' : 'Save Income'}
+              {createIncomeMutation.isLoading ? 'Saqlanmoqda...' : 'Tushumni saqlash'}
             </button>
           </form>
         </div>
@@ -888,12 +888,12 @@ export default function IncomePage() {
 
       <div className="rounded-lg bg-white shadow dark:bg-slate-900">
         <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">Recent Incomes</h2>
+          <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">SoвЂnggi tushumlar</h2>
         </div>
 
         <div className="p-6">
           {incomesQuery.isLoading ? (
-            <p className="text-sm text-gray-600 dark:text-slate-300">Loading incomes...</p>
+            <p className="text-sm text-gray-600 dark:text-slate-300">Tushumlar yuklanmoqda...</p>
           ) : incomesQuery.data?.length ? (
             <div className="space-y-4">
               <div className="overflow-x-auto">
@@ -901,13 +901,13 @@ export default function IncomePage() {
                   <thead className="bg-gray-50 dark:bg-slate-800">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Sana</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Type</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Customer</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Manager</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Course/Tariff</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Turi</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Mijoz</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Menedjer</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Kurs/Tarif</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Holat</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Payment</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Remaining debt</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">ToвЂlov</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Qoldiq qarz</th>
                   </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
@@ -948,16 +948,17 @@ export default function IncomePage() {
                     onClick={() => setRecentLimit((prev) => Math.min(prev + 20, 200))}
                     className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   >
-                    Load more (+20)
+                    Yana yuklash (+20)
                   </button>
                 </div>
               )}
             </div>
           ) : (
-            <p className="text-sm text-gray-600 dark:text-slate-300">No income entries yet.</p>
+            <p className="text-sm text-gray-600 dark:text-slate-300">Hozircha tushum yozuvlari yoвЂq.</p>
           )}
         </div>
       </div>
     </div>
   );
 }
+
