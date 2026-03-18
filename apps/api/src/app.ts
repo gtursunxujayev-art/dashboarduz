@@ -56,6 +56,16 @@ app.use(express.json({
   },
 }));
 
+app.use(express.urlencoded({
+  extended: true,
+  limit: process.env.JSON_BODY_LIMIT || '10mb',
+  verify: (req: any, _res, buf) => {
+    if (!req.rawBody) {
+      req.rawBody = buf.toString('utf8');
+    }
+  },
+}));
+
 app.use((error: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (error?.type === 'entity.too.large') {
     return res.status(413).json({
