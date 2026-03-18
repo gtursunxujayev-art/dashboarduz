@@ -149,6 +149,7 @@ type NormalizedVoipCall = {
   startedAt: Date;
   endedAt: Date | null;
   duration: number | null;
+  directionConfidence: 'high' | 'low';
   externalPhone: string | null;
   extension: string | null;
   manager: string | null;
@@ -163,6 +164,28 @@ function normalizeDirection(value: unknown): 'inbound' | 'outbound' {
     return 'outbound';
   }
   return 'inbound';
+}
+
+function choosePreferredNumber(existing: string | null | undefined, incoming: string | null | undefined): string {
+  const existingNormalized = normalizePhone(existing || '');
+  const incomingNormalized = normalizePhone(incoming || '');
+
+  if (!existingNormalized && incomingNormalized) {
+    return incomingNormalized;
+  }
+
+  if (!incomingNormalized) {
+    return existingNormalized;
+  }
+
+  const existingInternal = isInternalNumber(existingNormalized);
+  const incomingInternal = isInternalNumber(incomingNormalized);
+
+  if (existingInternal && !incomingInternal) {
+    return incomingNormalized;
+  }
+
+  return existingNormalized || incomingNormalized;
 }
 
 function parseDurationSeconds(value: unknown): number | null {
@@ -336,6 +359,11 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
       direction = 'outbound';
     }
   }
+  const directionConfidence: 'high' | 'low' = hasExplicitDirection
+    || (from && to && (isInternalNumber(from) !== isInternalNumber(to)))
+    || Boolean(isLikelyExternalPhone(phone))
+    ? 'high'
+    : 'low';
 
   if (direction === 'outbound') {
     if (!isLikelyExternalPhone(to) && isLikelyExternalPhone(phone)) {
@@ -408,6 +436,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     startedAt,
     endedAt,
     duration,
+    directionConfidence,
     externalPhone: isLikelyExternalPhone(phone)
       ? phone
       : (isLikelyExternalPhone(direction === 'outbound' ? to : from) ? (direction === 'outbound' ? to : from) : null),
@@ -433,6 +462,8 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
         : null),
       normalized_manager: manager,
       normalized_duration: duration,
+      normalized_direction: direction,
+      normalized_direction_confidence: directionConfidence,
     },
   };
 }
@@ -770,19 +801,31 @@ async function processVoIPWebhook(event: any, tenantId: string) {
 
     let upsertedCall;
     if (existingCall) {
+      const existingFrom = existingCall.from || '';
+      const existingTo = existingCall.to || '';
+      const mergedFrom = choosePreferredNumber(existingFrom, normalizedCall.from);
+      const mergedTo = choosePreferredNumber(existingTo, normalizedCall.to);
+      const currentDirection = existingCall.direction || 'inbound';
+      const shouldUpdateDirection = normalizedCall.directionConfidence === 'high'
+        || !currentDirection;
+      const existingDuration = existingCall.duration;
+      const nextDuration = normalizedCall.duration !== null
+        ? normalizedCall.duration
+        : existingDuration;
+
       upsertedCall = await prisma.call.update({
         where: { id: existingCall.id },
         data: {
           provider,
-          ...(normalizedCall.from ? { from: normalizedCall.from } : {}),
-          ...(normalizedCall.to ? { to: normalizedCall.to } : {}),
+          from: mergedFrom,
+          to: mergedTo,
           ...(normalizedCall.status ? { status: normalizedCall.status } : {}),
-          ...(normalizedCall.duration !== null ? { duration: normalizedCall.duration } : {}),
+          ...(nextDuration !== null ? { duration: nextDuration } : {}),
           ...(normalizedCall.recordingUrl ? { recordingUrl: normalizedCall.recordingUrl } : {}),
           ...(normalizedCall.recordingId ? { recordingId: normalizedCall.recordingId } : {}),
           ...(normalizedCall.startedAt ? { startedAt: normalizedCall.startedAt } : {}),
           ...(normalizedCall.endedAt ? { endedAt: normalizedCall.endedAt } : {}),
-          ...(normalizedCall.direction ? { direction: normalizedCall.direction } : {}),
+          ...(shouldUpdateDirection ? { direction: normalizedCall.direction } : {}),
           metadata: mergedMetadata,
         },
       });
