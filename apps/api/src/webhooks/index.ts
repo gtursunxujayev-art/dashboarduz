@@ -107,6 +107,16 @@ function isLikelyInternalPhone(value: string | null): boolean {
   return digits.length > 0 && digits.length <= 6;
 }
 
+function isAllowedUtelManagerExtension(value: string | null): boolean {
+  const normalized = normalizePhone(value);
+  const digits = normalized.replace(/\D/g, '');
+  if (!digits) {
+    return false;
+  }
+  const parsed = Number.parseInt(digits, 10);
+  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
+}
+
 function normalizeDirection(value: string | null | undefined): 'inbound' | 'outbound' {
   const normalized = String(value || '').trim().toLowerCase();
   if (['out', 'outbound', 'dial_out', 'outgoing'].includes(normalized)) {
@@ -311,6 +321,15 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
     || buildCallHistoryFromFlatPayload(bodyPayload);
 
   if (callHistory) {
+    const pickExternal = (values: unknown[]): string => {
+      for (const value of values) {
+        const normalized = normalizePhone(String(value || ''));
+        if (isLikelyExternalPhone(normalized)) {
+          return normalized;
+        }
+      }
+      return '';
+    };
     const src = normalizePhone(String(callHistory.src || callHistory.from || callHistory.source || ''));
     const dst = normalizePhone(String(callHistory.dst || callHistory.to || callHistory.destination || ''));
     const direction = inferUtelDirection(
@@ -322,13 +341,43 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
       || bodyPayload.direction
       || bodyPayload.call_direction,
     );
-    const externalPhone = normalizePhone(String(
-      callHistory.external_number
-      || callHistory.phone
-      || callHistory.client_phone
-      || (direction === 'outbound' ? dst : src)
-      || '',
-    ));
+    const inboundPhoneCandidate = pickExternal([
+      callHistory.caller,
+      callHistory.caller_number,
+      callHistory.client_phone,
+      callHistory.client_number,
+      callHistory.customer_phone,
+      callHistory.number,
+      callHistory.cid_num,
+      callHistory.from,
+      callHistory.src,
+      callHistory.phone,
+      callHistory.external_number,
+    ]);
+    const outboundPhoneCandidate = pickExternal([
+      callHistory.src,
+      callHistory.from,
+      callHistory.caller,
+      callHistory.caller_number,
+      callHistory.phone,
+      callHistory.external_number,
+      callHistory.number,
+      callHistory.dst,
+      callHistory.to,
+    ]);
+    const destinationExternalCandidate = pickExternal([
+      callHistory.dst,
+      callHistory.to,
+      callHistory.destination,
+      callHistory.callee,
+      callHistory.callee_number,
+      callHistory.client_phone,
+      callHistory.external_number,
+      callHistory.phone,
+    ]);
+    const externalPhone = direction === 'inbound'
+      ? (inboundPhoneCandidate || destinationExternalCandidate || outboundPhoneCandidate)
+      : (outboundPhoneCandidate || destinationExternalCandidate || inboundPhoneCandidate);
     const extensionCandidate = normalizePhone(String(
       callHistory.extension
       || callHistory.ext
@@ -886,7 +935,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       new Set(
         mappedRows
           .map((row) => normalizePhone(row.extension || ''))
-          .filter((value) => Boolean(value)),
+          .filter((value) => isAllowedUtelManagerExtension(value)),
       ),
     );
 
