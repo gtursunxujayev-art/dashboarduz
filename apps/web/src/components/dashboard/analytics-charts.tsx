@@ -41,8 +41,6 @@ type DashboardSummaryResponse = {
 };
 
 interface AnalyticsChartsProps {
-  range: DashboardRange;
-  onRangeChange: (range: DashboardRange) => void;
   data?: DashboardSummaryResponse;
   isLoading?: boolean;
   isError?: boolean;
@@ -124,8 +122,6 @@ function PieCard({
 }
 
 export default function AnalyticsCharts({
-  range,
-  onRangeChange,
   data,
   isLoading = false,
   isError = false,
@@ -133,35 +129,8 @@ export default function AnalyticsCharts({
   const reasonChart = data?.pieCharts.nonQualifiedByReason;
   const sourceChart = data?.pieCharts.newLeadsBySource;
 
-  const rangeOptions: DashboardRange[] = ['today', 'week', 'month', 'custom'];
-
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
-        <div className="inline-flex rounded-md shadow-sm">
-          {rangeOptions.map((option, index) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => onRangeChange(option)}
-              className={`border border-gray-300 px-4 py-2 text-sm font-medium capitalize ${
-                range === option ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
-              } ${index === 0 ? 'rounded-l-md' : ''} ${
-                index === rangeOptions.length - 1 ? 'rounded-r-md' : ''
-              } ${index !== 0 ? 'border-l-0' : ''}`}
-            >
-              {option === 'week'
-                ? 'This week'
-                : option === 'month'
-                  ? 'This month'
-                  : option === 'custom'
-                    ? 'Custom'
-                    : 'Today'}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {isError && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           Failed to load dashboard analytics.
