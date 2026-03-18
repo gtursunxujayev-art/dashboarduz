@@ -10,9 +10,15 @@ import {
   customerSearchSchema,
 } from '@dashboarduz/shared';
 import { z } from 'zod';
-import { adminProcedure, protectedProcedure, router } from '../trpc';
+import { managerProcedure, protectedProcedure, router } from '../trpc';
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'Agent'] as const;
+const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive'] as const;
+const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+
+function isAgentOnly(roles: string[]): boolean {
+  return roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+}
 
 function parseDateInput(input: string): Date {
   const value = input.trim();
@@ -750,6 +756,8 @@ async function createIncomeEntry(params: {
 
 export const customerIncomeRouter = router({
   formOptions: protectedProcedure.query(async ({ ctx }) => {
+    const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+
     const [managers, customers, courses, outstandingDebts] = await Promise.all([
       prisma.user.findMany({
         where: {
@@ -758,6 +766,11 @@ export const customerIncomeRouter = router({
           roles: {
             hasSome: [...SALES_MANAGER_ROLES],
           },
+          ...(scopedManagerUserId
+            ? {
+                id: scopedManagerUserId,
+              }
+            : {}),
         },
         orderBy: { name: 'asc' },
         select: {
@@ -768,7 +781,18 @@ export const customerIncomeRouter = router({
         },
       }),
       prisma.customer.findMany({
-        where: { tenantId: ctx.tenantId },
+        where: {
+          tenantId: ctx.tenantId,
+          ...(scopedManagerUserId
+            ? {
+                incomes: {
+                  some: {
+                    managerUserId: scopedManagerUserId,
+                  },
+                },
+              }
+            : {}),
+        },
         orderBy: { createdAt: 'desc' },
         take: 300,
         select: {
@@ -797,6 +821,11 @@ export const customerIncomeRouter = router({
           tenantId: ctx.tenantId,
           type: 'new_sale',
           remainingDebtAmount: { gt: 0 },
+          ...(scopedManagerUserId
+            ? {
+                managerUserId: scopedManagerUserId,
+              }
+            : {}),
         },
         orderBy: { entryDate: 'desc' },
         take: 300,
@@ -835,10 +864,12 @@ export const customerIncomeRouter = router({
       courses: (courses as Array<{
         id: string;
         name: string;
+        category: string;
         tariffs: Array<{ id: string; name: string }>;
       }>).map((course) => ({
         id: course.id,
         name: course.name,
+        category: course.category,
         tariffs: course.tariffs,
       })),
       outstandingDebts: (outstandingDebts as Array<{
@@ -863,10 +894,20 @@ export const customerIncomeRouter = router({
   searchCustomers: protectedProcedure
     .input(customerSearchSchema)
     .query(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
       const query = input.query?.trim();
       return prisma.customer.findMany({
         where: {
           tenantId: ctx.tenantId,
+          ...(scopedManagerUserId
+            ? {
+                incomes: {
+                  some: {
+                    managerUserId: scopedManagerUserId,
+                  },
+                },
+              }
+            : {}),
           ...(query
             ? {
                 OR: [
@@ -888,7 +929,7 @@ export const customerIncomeRouter = router({
       });
     }),
 
-  createCourse: adminProcedure
+  createCourse: managerProcedure
     .input(createCourseSchema)
     .mutation(async ({ ctx, input }) => {
       const name = input.name.trim();
@@ -906,15 +947,17 @@ export const customerIncomeRouter = router({
         create: {
           tenantId: ctx.tenantId,
           name,
+          category: input.category,
           isActive: true,
         },
         update: {
+          category: input.category,
           isActive: true,
         },
       });
     }),
 
-  createTariff: adminProcedure
+  createTariff: managerProcedure
     .input(createTariffSchema)
     .mutation(async ({ ctx, input }) => {
       const course = await prisma.course.findFirst({
@@ -955,7 +998,7 @@ export const customerIncomeRouter = router({
       });
     }),
 
-  createSubTariff: adminProcedure
+  createSubTariff: managerProcedure
     .input(
       z.object({
         tariffId: z.string().uuid(),
@@ -1008,6 +1051,7 @@ export const customerIncomeRouter = router({
       select: {
         id: true,
         name: true,
+        category: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
@@ -1037,11 +1081,12 @@ export const customerIncomeRouter = router({
     });
   }),
 
-  updateCourse: adminProcedure
+  updateCourse: managerProcedure
     .input(
       z.object({
         courseId: z.string().uuid(),
         name: z.string().min(1).max(120).optional(),
+        category: z.enum(COURSE_CATEGORY_VALUES).optional(),
         isActive: z.boolean().optional(),
       }),
     )
@@ -1058,9 +1103,12 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found.' });
       }
 
-      const data: { name?: string; isActive?: boolean } = {};
+      const data: { name?: string; category?: string; isActive?: boolean } = {};
       if (typeof input.name === 'string') {
         data.name = input.name.trim();
+      }
+      if (typeof input.category === 'string') {
+        data.category = input.category;
       }
       if (typeof input.isActive === 'boolean') {
         data.isActive = input.isActive;
@@ -1076,7 +1124,7 @@ export const customerIncomeRouter = router({
       });
     }),
 
-  updateTariff: adminProcedure
+  updateTariff: managerProcedure
     .input(
       z.object({
         tariffId: z.string().uuid(),
@@ -1115,7 +1163,7 @@ export const customerIncomeRouter = router({
       });
     }),
 
-  updateSubTariff: adminProcedure
+  updateSubTariff: managerProcedure
     .input(
       z.object({
         subTariffId: z.string().uuid(),
@@ -1157,6 +1205,13 @@ export const customerIncomeRouter = router({
   createIncome: protectedProcedure
     .input(createIncomeSchema)
     .mutation(async ({ ctx, input }) => {
+      if (isAgentOnly(ctx.user.roles) && input.managerUserId !== ctx.user.userId) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Agents can create income records only for themselves.',
+        });
+      }
+
       const result = await createIncomeEntry({
         tenantId: ctx.tenantId,
         userId: ctx.user.userId,
@@ -1169,7 +1224,14 @@ export const customerIncomeRouter = router({
   bulkImportRows: protectedProcedure
     .input(bulkIncomeImportSchema)
     .mutation(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
       if (input.fallbackManagerUserId) {
+        if (scopedManagerUserId && input.fallbackManagerUserId !== scopedManagerUserId) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Agents can import income only for themselves.',
+          });
+        }
         await assertManagerBelongsToTenant(ctx.tenantId, input.fallbackManagerUserId);
       }
 
@@ -1190,8 +1252,13 @@ export const customerIncomeRouter = router({
             rawRow,
             rowNumber,
             lookupContext,
-            input.fallbackManagerUserId,
+            scopedManagerUserId || input.fallbackManagerUserId,
           );
+
+          if (scopedManagerUserId) {
+            createInput.managerUserId = scopedManagerUserId;
+          }
+
           await createIncomeEntry({
             tenantId: ctx.tenantId,
             userId: ctx.user.userId,
@@ -1220,7 +1287,7 @@ export const customerIncomeRouter = router({
             importedCount,
             failedCount: failures.length,
             totalRows: input.rows.length,
-            fallbackManagerUserId: input.fallbackManagerUserId || null,
+            fallbackManagerUserId: scopedManagerUserId || input.fallbackManagerUserId || null,
           },
         },
       });
@@ -1236,7 +1303,14 @@ export const customerIncomeRouter = router({
   bulkImportFromGoogleSheet: protectedProcedure
     .input(bulkIncomeImportFromGoogleSheetSchema)
     .mutation(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
       if (input.fallbackManagerUserId) {
+        if (scopedManagerUserId && input.fallbackManagerUserId !== scopedManagerUserId) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Agents can import income only for themselves.',
+          });
+        }
         await assertManagerBelongsToTenant(ctx.tenantId, input.fallbackManagerUserId);
       }
 
@@ -1290,8 +1364,13 @@ export const customerIncomeRouter = router({
             rawRow,
             rowNumber,
             lookupContext,
-            input.fallbackManagerUserId,
+            scopedManagerUserId || input.fallbackManagerUserId,
           );
+
+          if (scopedManagerUserId) {
+            createInput.managerUserId = scopedManagerUserId;
+          }
+
           await createIncomeEntry({
             tenantId: ctx.tenantId,
             userId: ctx.user.userId,
@@ -1321,7 +1400,7 @@ export const customerIncomeRouter = router({
             importedCount,
             failedCount: failures.length,
             totalRows: rows.length,
-            fallbackManagerUserId: input.fallbackManagerUserId || null,
+            fallbackManagerUserId: scopedManagerUserId || input.fallbackManagerUserId || null,
           },
         },
       });
@@ -1337,8 +1416,16 @@ export const customerIncomeRouter = router({
   listIncomes: protectedProcedure
     .input(z.object({ limit: z.number().int().positive().max(200).default(30) }).optional())
     .query(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
       return prisma.income.findMany({
-        where: { tenantId: ctx.tenantId },
+        where: {
+          tenantId: ctx.tenantId,
+          ...(scopedManagerUserId
+            ? {
+                managerUserId: scopedManagerUserId,
+              }
+            : {}),
+        },
         orderBy: { createdAt: 'desc' },
         take: input?.limit ?? 30,
         include: {
@@ -1365,5 +1452,212 @@ export const customerIncomeRouter = router({
           },
         },
       });
+    }),
+
+  listCustomers: protectedProcedure
+    .input(
+      z
+        .object({
+          query: z.string().optional(),
+          courseId: z.string().uuid().optional(),
+          debtFilter: z.enum(['all', 'with_debt', 'without_debt']).default('all'),
+          limit: z.number().int().positive().max(1000).default(300),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const trimmedQuery = input?.query?.trim();
+      const andConditions: Prisma.CustomerWhereInput[] = [];
+
+      if (scopedManagerUserId) {
+        andConditions.push({
+          incomes: {
+            some: {
+              managerUserId: scopedManagerUserId,
+            },
+          },
+        });
+      }
+
+      if (trimmedQuery) {
+        andConditions.push({
+          OR: [
+            { customerNumber: { contains: trimmedQuery, mode: 'insensitive' } },
+            { name: { contains: trimmedQuery, mode: 'insensitive' } },
+            { telegramUsername: { contains: trimmedQuery, mode: 'insensitive' } },
+          ],
+        });
+      }
+
+      if (input?.courseId) {
+        andConditions.push({
+          incomes: {
+            some: {
+              ...(scopedManagerUserId
+                ? {
+                    managerUserId: scopedManagerUserId,
+                  }
+                : {}),
+              courseId: input.courseId,
+            },
+          },
+        });
+      }
+
+      if (input?.debtFilter === 'with_debt') {
+        andConditions.push({
+          incomes: {
+            some: {
+              ...(scopedManagerUserId
+                ? {
+                    managerUserId: scopedManagerUserId,
+                  }
+                : {}),
+              type: 'new_sale',
+              remainingDebtAmount: { gt: 0 },
+            },
+          },
+        });
+      } else if (input?.debtFilter === 'without_debt') {
+        andConditions.push({
+          NOT: {
+            incomes: {
+              some: {
+                ...(scopedManagerUserId
+                  ? {
+                      managerUserId: scopedManagerUserId,
+                    }
+                  : {}),
+                type: 'new_sale',
+                remainingDebtAmount: { gt: 0 },
+              },
+            },
+          },
+        });
+      }
+
+      const where: Prisma.CustomerWhereInput = {
+        tenantId: ctx.tenantId,
+        ...(andConditions.length ? { AND: andConditions } : {}),
+      };
+
+      const [customers, courseOptions] = await Promise.all([
+        prisma.customer.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: input?.limit ?? 300,
+          select: {
+            id: true,
+            customerNumber: true,
+            name: true,
+            telegramUsername: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        }),
+        prisma.course.findMany({
+          where: { tenantId: ctx.tenantId, isActive: true },
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            category: true,
+          },
+        }),
+      ]);
+
+      if (!customers.length) {
+        return {
+          customers: [],
+          courseOptions,
+        };
+      }
+
+      const customerIds = customers.map((customer) => customer.id);
+      const relatedIncomes = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          customerId: { in: customerIds },
+          ...(scopedManagerUserId
+            ? {
+                managerUserId: scopedManagerUserId,
+              }
+            : {}),
+        },
+        orderBy: { entryDate: 'desc' },
+        select: {
+          customerId: true,
+          type: true,
+          paymentAmount: true,
+          remainingDebtAmount: true,
+          entryDate: true,
+          course: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      const aggregatesByCustomer = new Map<
+        string,
+        {
+          totalDebtAmount: number;
+          totalPaidAmount: number;
+          hasDebt: boolean;
+          lastActivityAt: Date | null;
+          courses: Set<string>;
+        }
+      >();
+
+      for (const income of relatedIncomes as Array<{
+        customerId: string;
+        type: string;
+        paymentAmount: number;
+        remainingDebtAmount: number;
+        entryDate: Date;
+        course: { id: string; name: string } | null;
+      }>) {
+        const current = aggregatesByCustomer.get(income.customerId) || {
+          totalDebtAmount: 0,
+          totalPaidAmount: 0,
+          hasDebt: false,
+          lastActivityAt: null as Date | null,
+          courses: new Set<string>(),
+        };
+
+        current.totalPaidAmount += income.paymentAmount || 0;
+        if (income.type === 'new_sale' && income.remainingDebtAmount > 0) {
+          current.totalDebtAmount += income.remainingDebtAmount;
+          current.hasDebt = true;
+        }
+
+        if (!current.lastActivityAt || income.entryDate > current.lastActivityAt) {
+          current.lastActivityAt = income.entryDate;
+        }
+
+        if (income.course?.name) {
+          current.courses.add(income.course.name);
+        }
+
+        aggregatesByCustomer.set(income.customerId, current);
+      }
+
+      return {
+        customers: customers.map((customer) => {
+          const aggregate = aggregatesByCustomer.get(customer.id);
+          return {
+            ...customer,
+            totalDebtAmount: aggregate?.totalDebtAmount ?? 0,
+            totalPaidAmount: aggregate?.totalPaidAmount ?? 0,
+            hasDebt: aggregate?.hasDebt ?? false,
+            lastActivityAt: aggregate?.lastActivityAt ?? null,
+            courses: aggregate ? Array.from(aggregate.courses) : [],
+          };
+        }),
+        courseOptions,
+      };
     }),
 });
