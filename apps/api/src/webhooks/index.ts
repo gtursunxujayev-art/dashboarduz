@@ -159,8 +159,25 @@ async function handleVoipWebhook(req: Request, res: Response) {
   try {
     const rawBody = getRawBody(req);
     const signature = req.headers['x-signature'] as string | undefined;
-    const integrationKey = (req.query.integration_key as string | undefined)
-      || (req.headers['x-integration-key'] as string | undefined);
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body as Record<string, unknown>
+      : {};
+    const authHeader = req.headers.authorization;
+    const bearerToken = typeof authHeader === 'string' && authHeader.toLowerCase().startsWith('bearer ')
+      ? authHeader.slice(7).trim()
+      : undefined;
+    const integrationKey = String(
+      (req.query.integration_key as string | undefined)
+      || (req.query.integrationKey as string | undefined)
+      || (req.headers['x-integration-key'] as string | undefined)
+      || (req.headers['x-webhook-key'] as string | undefined)
+      || (typeof body.integration_key === 'string' ? body.integration_key : undefined)
+      || (typeof body.integrationKey === 'string' ? body.integrationKey : undefined)
+      || (typeof body.webhook_key === 'string' ? body.webhook_key : undefined)
+      || (typeof body.key === 'string' ? body.key : undefined)
+      || bearerToken
+      || '',
+    ).trim();
 
     if (!integrationKey) {
       return res.status(400).json({ error: 'Missing integration key' });
@@ -183,14 +200,13 @@ async function handleVoipWebhook(req: Request, res: Response) {
     }
 
     const webhookSecret = process.env.UTEL_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      if (!signature) {
-        return res.status(403).json({ error: 'Missing signature' });
-      }
+    if (webhookSecret && signature) {
       const isValidSignature = EncryptionService.verifyHMAC(rawBody, signature, webhookSecret);
       if (!isValidSignature) {
         return res.status(403).json({ error: 'Invalid signature' });
       }
+    } else if (webhookSecret && !signature) {
+      logger.warn({ msg: 'VoIP webhook received without signature; accepted via integration key auth only' });
     } else if (process.env.NODE_ENV === 'production') {
       logger.warn({ msg: 'UTEL_WEBHOOK_SECRET is not configured in production' });
     }
