@@ -88,6 +88,25 @@ function pickMetadataValue(metadata: unknown, keys: string[]): string | null {
   return null;
 }
 
+function normalizePhone(value: string | null): string {
+  if (!value) {
+    return '';
+  }
+  return String(value).replace(/[^\d+]/g, '');
+}
+
+function isLikelyExternalPhone(value: string | null): boolean {
+  const normalized = normalizePhone(value);
+  const digits = normalized.replace(/\D/g, '');
+  return digits.length >= 7;
+}
+
+function isLikelyInternalPhone(value: string | null): boolean {
+  const normalized = normalizePhone(value);
+  const digits = normalized.replace(/\D/g, '');
+  return digits.length > 0 && digits.length <= 6;
+}
+
 function isUniqueViolation(error: any): boolean {
   return error?.code === 'P2002';
 }
@@ -600,6 +619,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       ...(diagnostics ? { diagnostics } : {}),
       recentCalls: recentCalls.map((call) => {
         const manager = pickMetadataValue(call.metadata, [
+          'normalized_manager',
           'manager',
           'manager_name',
           'agent',
@@ -609,7 +629,8 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
           'employee',
           'responsible',
         ]);
-        const extension = pickMetadataValue(call.metadata, [
+        const extensionFromMetadata = pickMetadataValue(call.metadata, [
+          'normalized_extension',
           'extension',
           'ext',
           'internal',
@@ -618,8 +639,10 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
           'agent_extension',
           'src',
         ]);
-        const phone = pickMetadataValue(call.metadata, [
+        const phoneFromMetadata = pickMetadataValue(call.metadata, [
+          'normalized_phone',
           'phone',
+          'phone_number',
           'client_phone',
           'customer_phone',
           'external_phone',
@@ -628,6 +651,19 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
           'to',
           'callee',
         ]);
+        const callFrom = normalizePhone(call.from || '');
+        const callTo = normalizePhone(call.to || '');
+        const fallbackExternalPhone = [callFrom, callTo].find((candidate) => isLikelyExternalPhone(candidate)) || '';
+        const metadataExternalPhone = isLikelyExternalPhone(phoneFromMetadata) ? normalizePhone(phoneFromMetadata) : '';
+        const displayPhone = metadataExternalPhone || fallbackExternalPhone || '';
+        const displayExtension = extensionFromMetadata
+          || (isLikelyInternalPhone(call.direction === 'outbound' ? call.from : call.to)
+            ? normalizePhone(call.direction === 'outbound' ? call.from : call.to)
+            : null);
+        const durationFromMetadataRaw = pickMetadataValue(call.metadata, ['normalized_duration', 'duration', 'billsec']);
+        const durationFromMetadata = durationFromMetadataRaw && !Number.isNaN(Number(durationFromMetadataRaw))
+          ? Number(durationFromMetadataRaw)
+          : null;
 
         return {
           id: call.id,
@@ -635,9 +671,9 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
           status: call.status,
           direction: call.direction,
           date: call.startedAt,
-          duration: call.duration,
-          phone: phone || (call.direction === 'outbound' ? call.to : call.from),
-          extension: extension || null,
+          duration: call.duration ?? durationFromMetadata,
+          phone: displayPhone,
+          extension: displayExtension || null,
           manager: manager || null,
         };
       }),
