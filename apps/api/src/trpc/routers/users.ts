@@ -19,6 +19,19 @@ function toNormalizedText(value: unknown): string {
   return String(value || '').trim();
 }
 
+function normalizeDigits(value: unknown): string {
+  return String(value || '').replace(/[^\d]/g, '');
+}
+
+function isAllowedUtelManagerExtension(value: unknown): boolean {
+  const digits = normalizeDigits(value);
+  if (!digits) {
+    return false;
+  }
+  const parsed = Number.parseInt(digits, 10);
+  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
+}
+
 function extractUtelManagerFromMetadata(metadata: unknown): { key: string; label: string } | null {
   if (!metadata || typeof metadata !== 'object') {
     return null;
@@ -26,16 +39,30 @@ function extractUtelManagerFromMetadata(metadata: unknown): { key: string; label
 
   const data = metadata as Record<string, unknown>;
   const managerName = toNormalizedText(
-    data.manager || data.agent || data.user || data.operator || data.responsible || data.employee,
+    data.normalized_manager
+    || data.manager
+    || data.manager_name
+    || data.agent
+    || data.user
+    || data.operator
+    || data.responsible
+    || data.employee,
   );
-  const extension = toNormalizedText(data.extension || data.ext || data.internal || data.line);
+  const extensionRaw = toNormalizedText(
+    data.normalized_extension
+    || data.extension
+    || data.ext
+    || data.internal
+    || data.line,
+  );
+  const extensionDigits = normalizeDigits(extensionRaw);
 
-  if (!managerName && !extension) {
+  if (!isAllowedUtelManagerExtension(extensionDigits)) {
     return null;
   }
 
-  const key = extension || managerName;
-  const label = extension && managerName ? `${managerName} (${extension})` : (managerName || extension);
+  const key = extensionDigits;
+  const label = managerName ? `${managerName} (${extensionDigits})` : extensionDigits;
   return {
     key,
     label,
@@ -107,9 +134,7 @@ export const usersRouter = router({
     const calls = await prisma.call.findMany({
       where: {
         tenantId: ctx.tenantId,
-        provider: {
-          in: ['utel', 'voip', 'unknown'],
-        },
+        provider: 'utel',
       },
       orderBy: { startedAt: 'desc' },
       take: 3000,
@@ -126,6 +151,30 @@ export const usersRouter = router({
       }
       if (!uniqueManagers.has(extracted.key)) {
         uniqueManagers.set(extracted.key, extracted.label);
+      }
+    }
+
+    const mappedUsers = await prisma.user.findMany({
+      where: {
+        tenantId: ctx.tenantId,
+        utelManagerExternalId: { not: null },
+      },
+      select: {
+        name: true,
+        username: true,
+        utelManagerExternalId: true,
+      },
+      take: 1000,
+    });
+
+    for (const user of mappedUsers) {
+      const extensionDigits = normalizeDigits(user.utelManagerExternalId || '');
+      if (!isAllowedUtelManagerExtension(extensionDigits)) {
+        continue;
+      }
+      if (!uniqueManagers.has(extensionDigits)) {
+        const labelSource = toNormalizedText(user.name || user.username || '');
+        uniqueManagers.set(extensionDigits, labelSource ? `${labelSource} (${extensionDigits})` : extensionDigits);
       }
     }
 
