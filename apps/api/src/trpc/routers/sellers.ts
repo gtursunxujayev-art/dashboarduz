@@ -2,7 +2,7 @@ import { router, protectedProcedure } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { amocrmService, type AmoCRMLead, type AmoCRMUser } from '../../services/integrations/amocrm';
+import { amocrmService, type AmoCRMLead, type AmoCRMLeadPipeline, type AmoCRMUser } from '../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { log, LogLevel } from '../../services/observability';
 
@@ -56,15 +56,26 @@ function getLeadResponsibleId(lead: AmoCRMLead): string | null {
   return asString(lead.responsible_user_id);
 }
 
-function isWonLead(lead: AmoCRMLead): boolean {
-  return asString(lead.status_id) === WON_STATUS_ID;
+function normalizeDigits(value: unknown): string {
+  return String(value || '').replace(/[^\d]/g, '');
 }
 
-function isLostLead(lead: AmoCRMLead): boolean {
-  if (asString(lead.status_id) === LOST_STATUS_ID) {
-    return true;
+function isAllowedUtelManagerExtension(value: unknown): boolean {
+  const digits = normalizeDigits(value);
+  if (!digits) {
+    return false;
   }
-  return lead.loss_reason_id !== undefined && lead.loss_reason_id !== null;
+  const parsed = Number.parseInt(digits, 10);
+  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
+}
+
+function isMissingUserMappingColumnError(error: unknown) {
+  const message = String((error as any)?.message || '');
+  return message.includes('amocrmResponsibleUserId') || message.includes('utelManagerExternalId');
+}
+
+function isWonLead(lead: AmoCRMLead): boolean {
+  return asString(lead.status_id) === WON_STATUS_ID;
 }
 
 function toManagerRole(user: AmoCRMUser): string[] {
@@ -101,14 +112,18 @@ async function getAgentResponsibleScope(tenantId: string, userId: string, roles:
   };
 }
 
-function buildMetrics(leads: AmoCRMLead[], calls: Array<{ duration: number | null; direction: string; status: string }>) {
-  const totalLeads = leads.length;
-  const wonLeads = leads.filter(isWonLead).length;
-  const lostLeads = leads.filter(isLostLead).length;
-  const activeLeads = Math.max(totalLeads - wonLeads - lostLeads, 0);
+function buildMetrics(
+  activeLeads: AmoCRMLead[],
+  wonLeadsData: AmoCRMLead[],
+  calls: Array<{ duration: number | null; direction: string; status: string }>,
+) {
+  const activeLeadsCount = activeLeads.length;
+  const wonLeads = wonLeadsData.length;
+  const lostLeads = 0;
+  const totalLeads = activeLeadsCount + wonLeads;
   const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
 
-  const totalDealAmount = leads.reduce((sum, lead) => sum + getDealAmount(lead), 0);
+  const totalDealAmount = wonLeadsData.reduce((sum, lead) => sum + getDealAmount(lead), 0);
   const averageDealAmount = wonLeads > 0 ? totalDealAmount / wonLeads : 0;
 
   const totalCalls = calls.length;
@@ -119,7 +134,7 @@ function buildMetrics(leads: AmoCRMLead[], calls: Array<{ duration: number | nul
 
   return {
     totalLeads,
-    activeLeads,
+    activeLeads: activeLeadsCount,
     wonLeads,
     lostLeads,
     conversionRate: Number(conversionRate.toFixed(2)),
@@ -131,6 +146,169 @@ function buildMetrics(leads: AmoCRMLead[], calls: Array<{ duration: number | nul
     totalCallDuration,
     averageCallDuration: Number(averageCallDuration.toFixed(2)),
   };
+}
+
+function getSelectedPipelines(
+  selectedPipelineIds: string[] | null,
+  pipelines: AmoCRMLeadPipeline[],
+): string[] {
+  if (selectedPipelineIds !== null) {
+    return selectedPipelineIds.map((id) => String(id).trim()).filter(Boolean);
+  }
+
+  return pipelines
+    .map((pipeline) => asString(pipeline.id))
+    .filter(Boolean) as string[];
+}
+
+function buildStatusFilters(
+  selectedPipelineIds: string[],
+  pipelines: AmoCRMLeadPipeline[],
+  statusIds: string[],
+): Array<{ pipelineId: string; statusId: string }> {
+  if (selectedPipelineIds.length === 0 || statusIds.length === 0) {
+    return [];
+  }
+
+  const selected = new Set(selectedPipelineIds);
+  const unique = new Set<string>();
+  const filters: Array<{ pipelineId: string; statusId: string }> = [];
+
+  for (const pipeline of pipelines) {
+    const pipelineId = asString(pipeline.id);
+    if (!pipelineId || !selected.has(pipelineId)) {
+      continue;
+    }
+
+    const statuses = Array.isArray(pipeline._embedded?.statuses) ? pipeline._embedded.statuses : [];
+    const availableStatusIds = new Set(
+      statuses
+        .map((status) => asString(status.id))
+        .filter(Boolean) as string[],
+    );
+
+    for (const statusId of statusIds) {
+      if (!availableStatusIds.has(statusId)) {
+        continue;
+      }
+
+      const key = `${pipelineId}:${statusId}`;
+      if (unique.has(key)) {
+        continue;
+      }
+      unique.add(key);
+      filters.push({ pipelineId, statusId });
+    }
+  }
+
+  return filters;
+}
+
+function buildStatusFilterSet(filters: Array<{ pipelineId: string; statusId: string }>): Set<string> {
+  return new Set(filters.map((filter) => `${filter.pipelineId}:${filter.statusId}`));
+}
+
+function isLeadInStatusSet(lead: AmoCRMLead, statusSet: Set<string>) {
+  const pipelineId = asString(lead.pipeline_id);
+  const statusId = asString(lead.status_id);
+  if (!pipelineId || !statusId) {
+    return false;
+  }
+  return statusSet.has(`${pipelineId}:${statusId}`);
+}
+
+async function fetchLeadsByStatusFilters(
+  accessToken: string,
+  baseUrl: string | undefined,
+  pipelineIds: string[],
+  statusFilters: Array<{ pipelineId: string; statusId: string }>,
+  responsibleUserIds: string[],
+  withContacts = false,
+): Promise<AmoCRMLead[]> {
+  if (pipelineIds.length === 0 || statusFilters.length === 0 || responsibleUserIds.length === 0) {
+    return [];
+  }
+
+  const statusSet = buildStatusFilterSet(statusFilters);
+  try {
+    return await amocrmService.fetchAllLeads(
+      accessToken,
+      {
+        pipelineIds,
+        statusFilters,
+        responsibleUserIds,
+        with: withContacts ? 'contacts' : undefined,
+        limit: 250,
+      },
+      baseUrl,
+    );
+  } catch {
+    const fallback = await amocrmService.fetchAllLeads(
+      accessToken,
+      {
+        pipelineIds,
+        responsibleUserIds,
+        with: withContacts ? 'contacts' : undefined,
+        limit: 250,
+      },
+      baseUrl,
+    );
+    return fallback.filter((lead) => isLeadInStatusSet(lead, statusSet));
+  }
+}
+
+async function getManagerExtensionsMap(tenantId: string, managerIds: string[]): Promise<Map<string, string[]>> {
+  if (managerIds.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const mappedUsers = await prisma.user.findMany({
+      where: {
+        tenantId,
+        isActive: true,
+        amocrmResponsibleUserId: { in: managerIds },
+        utelManagerExternalId: { not: null },
+      },
+      select: {
+        amocrmResponsibleUserId: true,
+        utelManagerExternalId: true,
+      },
+    });
+
+    const byManager = new Map<string, Set<string>>();
+    for (const mappedUser of mappedUsers as Array<{ amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>) {
+      const managerId = asString(mappedUser.amocrmResponsibleUserId);
+      const extension = normalizeDigits(mappedUser.utelManagerExternalId || '');
+      if (!managerId || !isAllowedUtelManagerExtension(extension)) {
+        continue;
+      }
+      const current = byManager.get(managerId) || new Set<string>();
+      current.add(extension);
+      byManager.set(managerId, current);
+    }
+
+    return new Map(
+      Array.from(byManager.entries()).map(([managerId, extensions]) => [managerId, Array.from(extensions)]),
+    );
+  } catch (error) {
+    if (!isMissingUserMappingColumnError(error)) {
+      throw error;
+    }
+    return new Map();
+  }
+}
+
+function resolveCallExtension(call: { from: string; to: string }): string | null {
+  const fromExtension = normalizeDigits(call.from);
+  if (isAllowedUtelManagerExtension(fromExtension)) {
+    return fromExtension;
+  }
+  const toExtension = normalizeDigits(call.to);
+  if (isAllowedUtelManagerExtension(toExtension)) {
+    return toExtension;
+  }
+  return null;
 }
 
 export const sellersRouter = router({
@@ -158,21 +336,16 @@ export const sellersRouter = router({
       return result;
     })();
 
-    const amocrmLeadsPromise = (async () => {
+    const pipelinesPromise = (async () => {
       const stepStartedMs = Date.now();
-      const result = await amocrmService.fetchAllLeads(
-        amoContext.accessToken,
-        {
-          pipelineIds: amoContext.selectedPipelineIds,
-          limit: 250,
-        },
-        amoContext.baseUrl,
-      );
-      timings.amocrmLeadsMs = Date.now() - stepStartedMs;
+      const result = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+      timings.amocrmPipelinesMs = Date.now() - stepStartedMs;
       return result;
     })();
 
-    const [amocrmUsers, allLeads] = await Promise.all([amocrmUsersPromise, amocrmLeadsPromise]);
+    const [amocrmUsers, pipelinesResponse] = await Promise.all([amocrmUsersPromise, pipelinesPromise]);
+    const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
+    const selectedPipelineIds = getSelectedPipelines(amoContext.selectedPipelineIds, pipelines);
 
     const managerPreparationStartedMs = Date.now();
     const managers = amocrmUsers
@@ -191,39 +364,87 @@ export const sellersRouter = router({
     );
     timings.managerPreparationMs = Date.now() - managerPreparationStartedMs;
 
+    const managerIdList = Array.from(managerIds);
+    const activeStatusFilters = buildStatusFilters(
+      selectedPipelineIds,
+      pipelines,
+      pipelines
+        .flatMap((pipeline) => (Array.isArray(pipeline._embedded?.statuses) ? pipeline._embedded.statuses : []))
+        .map((status) => asString(status.id))
+        .filter((statusId): statusId is string => Boolean(statusId) && statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID),
+    );
+    const wonStatusFilters = buildStatusFilters(selectedPipelineIds, pipelines, [WON_STATUS_ID]);
+
+    const leadsFetchStartedMs = Date.now();
+    const [activeLeads, wonLeads] = await Promise.all([
+      fetchLeadsByStatusFilters(
+        amoContext.accessToken,
+        amoContext.baseUrl,
+        selectedPipelineIds,
+        activeStatusFilters,
+        managerIdList,
+      ),
+      fetchLeadsByStatusFilters(
+        amoContext.accessToken,
+        amoContext.baseUrl,
+        selectedPipelineIds,
+        wonStatusFilters,
+        managerIdList,
+      ),
+    ]);
+    timings.amocrmLeadsMs = Date.now() - leadsFetchStartedMs;
+
     const leadsGroupingStartedMs = Date.now();
-    const leadsByManager = new Map<string, AmoCRMLead[]>();
-    for (const lead of allLeads) {
+    const activeLeadsByManager = new Map<string, AmoCRMLead[]>();
+    for (const lead of activeLeads) {
       const responsibleUserId = getLeadResponsibleId(lead);
       if (!responsibleUserId || !managerIds.has(responsibleUserId)) {
         continue;
       }
-      const current = leadsByManager.get(responsibleUserId) || [];
+      const current = activeLeadsByManager.get(responsibleUserId) || [];
       current.push(lead);
-      leadsByManager.set(responsibleUserId, current);
+      activeLeadsByManager.set(responsibleUserId, current);
+    }
+    const wonLeadsByManager = new Map<string, AmoCRMLead[]>();
+    for (const lead of wonLeads) {
+      const responsibleUserId = getLeadResponsibleId(lead);
+      if (!responsibleUserId || !managerIds.has(responsibleUserId)) {
+        continue;
+      }
+      const current = wonLeadsByManager.get(responsibleUserId) || [];
+      current.push(lead);
+      wonLeadsByManager.set(responsibleUserId, current);
     }
     timings.leadsGroupingMs = Date.now() - leadsGroupingStartedMs;
 
+    const extensionMappingStartedMs = Date.now();
+    const extensionsByManager = await getManagerExtensionsMap(ctx.tenantId, managerIdList);
+    const managerByExtension = new Map<string, string>();
+    for (const [managerId, extensions] of extensionsByManager.entries()) {
+      for (const extension of extensions) {
+        managerByExtension.set(extension, managerId);
+      }
+    }
+    timings.extensionMappingMs = Date.now() - extensionMappingStartedMs;
+
     const callsFetchStartedMs = Date.now();
-    const calls = managerIds.size > 0
+    const extensionValues = Array.from(new Set(Array.from(extensionsByManager.values()).flat()));
+    const calls = extensionValues.length > 0
       ? await prisma.call.findMany({
           where: {
             tenantId: ctx.tenantId,
-            lead: {
-              responsibleUserId: {
-                in: Array.from(managerIds),
-              },
-            },
+            provider: 'utel',
+            OR: [
+              { from: { in: extensionValues } },
+              { to: { in: extensionValues } },
+            ],
           },
           select: {
+            from: true,
+            to: true,
             duration: true,
             direction: true,
             status: true,
-            lead: {
-              select: {
-                responsibleUserId: true,
-              },
-            },
           },
         })
       : [];
@@ -232,10 +453,19 @@ export const sellersRouter = router({
     const callsGroupingStartedMs = Date.now();
     const callsByManager = new Map<string, Array<{ duration: number | null; direction: string; status: string }>>();
     for (const call of calls) {
-      const managerId = asString(call.lead?.responsibleUserId);
+      const extension = resolveCallExtension({
+        from: call.from,
+        to: call.to,
+      });
+      if (!extension) {
+        continue;
+      }
+
+      const managerId = managerByExtension.get(extension);
       if (!managerId) {
         continue;
       }
+
       const current = callsByManager.get(managerId) || [];
       current.push({
         duration: call.duration,
@@ -250,7 +480,8 @@ export const sellersRouter = router({
     const result = managers
       .map((manager) => {
         const managerId = asString(manager.id) || '';
-        const leads = leadsByManager.get(managerId) || [];
+        const managerActiveLeads = activeLeadsByManager.get(managerId) || [];
+        const managerWonLeads = wonLeadsByManager.get(managerId) || [];
         const managerCalls = callsByManager.get(managerId) || [];
 
         return {
@@ -261,7 +492,7 @@ export const sellersRouter = router({
           roles: toManagerRole(manager),
           lastLoginAt: null,
           createdAt: new Date(0),
-          metrics: buildMetrics(leads, managerCalls),
+          metrics: buildMetrics(managerActiveLeads, managerWonLeads, managerCalls),
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -272,7 +503,9 @@ export const sellersRouter = router({
       tenantId: ctx.tenantId,
       userId: ctx.user.userId,
       managerCount: managers.length,
-      allLeadsCount: allLeads.length,
+      selectedPipelineIds,
+      activeLeadsCount: activeLeads.length,
+      wonLeadsCount: wonLeads.length,
       callsCount: calls.length,
       timings,
     });
@@ -296,45 +529,39 @@ export const sellersRouter = router({
         });
       }
 
-      const [amocrmUsers, leads, calls] = await Promise.all([
+      const [amocrmUsers, pipelinesResponse] = await Promise.all([
         amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl),
-        amocrmService.fetchAllLeads(
+        amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl),
+      ]);
+      const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
+      const selectedPipelineIds = getSelectedPipelines(amoContext.selectedPipelineIds, pipelines);
+
+      const activeStatusFilters = buildStatusFilters(
+        selectedPipelineIds,
+        pipelines,
+        pipelines
+          .flatMap((pipeline) => (Array.isArray(pipeline._embedded?.statuses) ? pipeline._embedded.statuses : []))
+          .map((status) => asString(status.id))
+          .filter((statusId): statusId is string => Boolean(statusId) && statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID),
+      );
+      const wonStatusFilters = buildStatusFilters(selectedPipelineIds, pipelines, [WON_STATUS_ID]);
+
+      const [activeLeads, wonLeads] = await Promise.all([
+        fetchLeadsByStatusFilters(
           amoContext.accessToken,
-          {
-            pipelineIds: amoContext.selectedPipelineIds,
-            responsibleUserIds: [input.id],
-            with: 'contacts',
-            limit: 250,
-          },
           amoContext.baseUrl,
+          selectedPipelineIds,
+          activeStatusFilters,
+          [input.id],
+          true,
         ),
-        prisma.call.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            lead: {
-              responsibleUserId: input.id,
-            },
-          },
-          select: {
-            id: true,
-            from: true,
-            to: true,
-            duration: true,
-            status: true,
-            direction: true,
-            startedAt: true,
-            lead: {
-              select: {
-                id: true,
-                title: true,
-              },
-            },
-          },
-          orderBy: {
-            startedAt: 'desc',
-          },
-          take: 50,
-        }),
+        fetchLeadsByStatusFilters(
+          amoContext.accessToken,
+          amoContext.baseUrl,
+          selectedPipelineIds,
+          wonStatusFilters,
+          [input.id],
+        ),
       ]);
 
       const sellerUser = amocrmUsers.find((user) => asString(user.id) === input.id);
@@ -342,8 +569,38 @@ export const sellersRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 
+      const extensionsByManager = await getManagerExtensionsMap(ctx.tenantId, [input.id]);
+      const extensions = extensionsByManager.get(input.id) || [];
+
+      const calls = extensions.length > 0
+        ? await prisma.call.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              provider: 'utel',
+              OR: [
+                { from: { in: extensions } },
+                { to: { in: extensions } },
+              ],
+            },
+            select: {
+              id: true,
+              from: true,
+              to: true,
+              duration: true,
+              status: true,
+              direction: true,
+              startedAt: true,
+            },
+            orderBy: {
+              startedAt: 'desc',
+            },
+            take: 50,
+          })
+      : [];
+
       const metrics = buildMetrics(
-        leads,
+        activeLeads,
+        wonLeads,
         (calls as Array<{ duration: number | null; direction: string; status: string }>).map((call) => ({
           duration: call.duration,
           direction: call.direction,
@@ -351,7 +608,7 @@ export const sellersRouter = router({
         })),
       );
 
-      const recentLeads = leads
+      const recentLeads = activeLeads
         .slice()
         .sort((a, b) => parseAmoDate(b.created_at).getTime() - parseAmoDate(a.created_at).getTime())
         .slice(0, 50)
