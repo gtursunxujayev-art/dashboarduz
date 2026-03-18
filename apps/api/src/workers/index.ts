@@ -135,6 +135,11 @@ function isInternalNumber(value: string): boolean {
   return digits.length > 0 && digits.length <= 6;
 }
 
+function isLikelyExternalPhone(value: string): boolean {
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 7;
+}
+
 type NormalizedVoipCall = {
   callIdExternal: string;
   from: string;
@@ -144,6 +149,9 @@ type NormalizedVoipCall = {
   startedAt: Date;
   endedAt: Date | null;
   duration: number | null;
+  externalPhone: string | null;
+  extension: string | null;
+  manager: string | null;
   recordingUrl: string | null;
   recordingId: string | null;
   metadata: Record<string, unknown>;
@@ -227,23 +235,46 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
 
   const phone = normalizePhone(String(pickVoipValue(entry, [
     'phone',
+    'phone_number',
     'client_phone',
+    'client_number',
     'customer_phone',
+    'customer_number',
     'external_phone',
+    'external_number',
     'number',
     'callee_number',
+    'destination_number',
+    'dialed_number',
     'destination',
     'dst',
   ]) || ''));
   const extension = normalizePhone(String(pickVoipValue(entry, [
     'extension',
+    'extension_number',
     'ext',
     'internal',
     'line',
+    'line_number',
     'agent_extension',
+    'agent_ext',
     'internal_number',
     'src',
   ]) || ''));
+  const manager = String(pickVoipValue(entry, [
+    'manager',
+    'managerName',
+    'manager_name',
+    'agent',
+    'agent_name',
+    'responsible_name',
+    'operator',
+    'user',
+    'user_name',
+    'employee_name',
+    'employee',
+    'responsible',
+  ]) || '').trim() || null;
 
   let from = normalizePhone(String(pickVoipValue(entry, [
     'from',
@@ -279,6 +310,22 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     }
   }
 
+  if (direction === 'outbound') {
+    if (!isLikelyExternalPhone(to) && isLikelyExternalPhone(phone)) {
+      to = phone;
+    }
+    if (!from && extension) {
+      from = extension;
+    }
+  } else {
+    if (!isLikelyExternalPhone(from) && isLikelyExternalPhone(phone)) {
+      from = phone;
+    }
+    if (!to && extension) {
+      to = extension;
+    }
+  }
+
   const startedAt = parseCallDate(pickVoipValue(entry, [
     'start_time',
     'started_at',
@@ -297,8 +344,13 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
   ]));
   const parsedDuration = parseDurationSeconds(pickVoipValue(entry, [
     'duration',
+    'call_duration',
+    'total_duration',
     'billsec',
+    'bill_sec',
     'talk_duration',
+    'conversation_duration',
+    'talk_seconds',
     'talk_time',
     'duration_sec',
   ]));
@@ -328,6 +380,13 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     startedAt,
     endedAt,
     duration,
+    externalPhone: isLikelyExternalPhone(phone)
+      ? phone
+      : (isLikelyExternalPhone(direction === 'outbound' ? to : from) ? (direction === 'outbound' ? to : from) : null),
+    extension: extension || (isInternalNumber(direction === 'outbound' ? from : to)
+      ? (direction === 'outbound' ? from : to)
+      : null),
+    manager,
     recordingUrl: (() => {
       const value = pickVoipValue(entry, ['recording_url', 'record_url', 'record_url_mp3', 'recording_link']);
       return value ? String(value) : null;
@@ -336,7 +395,17 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
       const value = pickVoipValue(entry, ['recording_id', 'record_id']);
       return value ? String(value) : null;
     })(),
-    metadata: entry,
+    metadata: {
+      ...entry,
+      normalized_phone: isLikelyExternalPhone(phone)
+        ? phone
+        : (isLikelyExternalPhone(direction === 'outbound' ? to : from) ? (direction === 'outbound' ? to : from) : null),
+      normalized_extension: extension || (isInternalNumber(direction === 'outbound' ? from : to)
+        ? (direction === 'outbound' ? from : to)
+        : null),
+      normalized_manager: manager,
+      normalized_duration: duration,
+    },
   };
 }
 
@@ -600,6 +669,31 @@ async function processVoIPWebhook(event: any, tenantId: string) {
     select: { id: true, phone: true },
     take: 5000,
   });
+  let utelManagersByKey = new Map<string, string>();
+  try {
+    const mappedUsers = await prisma.user.findMany({
+      where: {
+        tenantId,
+        isActive: true,
+        utelManagerExternalId: { not: null },
+      },
+      select: {
+        utelManagerExternalId: true,
+        name: true,
+        username: true,
+      },
+    });
+    utelManagersByKey = new Map(
+      (mappedUsers as Array<{ utelManagerExternalId: string | null; name: string | null; username: string | null }>)
+        .filter((user) => Boolean(user.utelManagerExternalId))
+        .map((user) => [
+          String(user.utelManagerExternalId || '').trim().toLowerCase(),
+          (user.name || user.username || String(user.utelManagerExternalId || '')).trim(),
+        ]),
+    );
+  } catch {
+    utelManagersByKey = new Map();
+  }
 
   for (let index = 0; index < callEntries.length; index += 1) {
     const entry = callEntries[index];
@@ -607,6 +701,17 @@ async function processVoIPWebhook(event: any, tenantId: string) {
       continue;
     }
     const normalizedCall = normalizeVoipCall(entry, `${provider}-${event.id}-${index}`);
+    const managerFromMap = normalizedCall.extension
+      ? utelManagersByKey.get(normalizedCall.extension.toLowerCase())
+      : null;
+    const finalManager = normalizedCall.manager || managerFromMap || null;
+    const finalMetadata = {
+      ...(normalizedCall.metadata || {}),
+      normalized_manager: finalManager,
+      normalized_extension: normalizedCall.extension,
+      normalized_phone: normalizedCall.externalPhone,
+      normalized_duration: normalizedCall.duration,
+    } as any;
 
     const upsertedCall = await prisma.call.upsert({
       where: {
@@ -625,7 +730,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
         duration: normalizedCall.duration,
         recordingUrl: normalizedCall.recordingUrl,
         recordingId: normalizedCall.recordingId,
-        metadata: normalizedCall.metadata as any,
+        metadata: finalMetadata,
         startedAt: normalizedCall.startedAt,
         endedAt: normalizedCall.endedAt,
       },
@@ -640,7 +745,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
         duration: normalizedCall.duration,
         recordingUrl: normalizedCall.recordingUrl,
         recordingId: normalizedCall.recordingId,
-        metadata: normalizedCall.metadata as any,
+        metadata: finalMetadata,
         startedAt: normalizedCall.startedAt,
         endedAt: normalizedCall.endedAt,
       },
@@ -648,7 +753,11 @@ async function processVoIPWebhook(event: any, tenantId: string) {
 
     const matchedContact = (contacts as Array<{ id: string; phone: string | null }>).find((contact) => {
       const normalized = normalizePhone(contact.phone);
-      return normalized && (normalized === normalizedCall.from || normalized === normalizedCall.to);
+      return normalized && (
+        normalized === normalizedCall.externalPhone
+        || normalized === normalizedCall.from
+        || normalized === normalizedCall.to
+      );
     });
 
     if (!matchedContact) {
