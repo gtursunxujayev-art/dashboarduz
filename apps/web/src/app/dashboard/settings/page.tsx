@@ -261,20 +261,19 @@ export default function SettingsPage() {
           )}
           {showLeadSettings && fieldOptionsQuery.error && isAdmin && (
             <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              AmoCRM field catalog is unavailable. Connect and validate AmoCRM to configure live analytics fields.
               AmoCRM maydonlar katalogi mavjud emas. Jonli tahlil maydonlarini sozlash uchun AmoCRM ni ulang va tekshiring.
             </p>
           )}
           {showLeadSettings && amoPipelinesQuery.error && isAdmin && (
             <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              AmoCRM pipelinelari mavjud emas. Avval Integratsiyalar boвЂlimida AmoCRM ni ulang va pipeline tanlovini saqlang.
+              AmoCRM pipelinelari mavjud emas. Avval Integratsiyalar bo'limida AmoCRM ni ulang va pipeline tanlovini saqlang.
             </p>
           )}
           {success && <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
 
           {!isAdmin && (
             <p className="mb-4 rounded-md bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
-              Admin boвЂlmagan foydalanuvchilar uchun bu sahifa faqat oвЂqish rejimida.
+              Admin bo'lmagan foydalanuvchilar uchun bu sahifa faqat o'qish rejimida.
             </p>
           )}
 
@@ -346,7 +345,7 @@ export default function SettingsPage() {
                   options={qualifiedStageOptions}
                   selectedIds={qualifiedStageIds}
                   onChange={setQualifiedStageIds}
-                  placeholder="Select stages from checked pipelines"
+                  placeholder="Belgilangan pipelinelardan bosqichlarni tanlang"
                   disabled={!isAdmin || amoPipelinesQuery.isLoading}
                 />
 
@@ -356,11 +355,11 @@ export default function SettingsPage() {
                     options={reasonValueOptions}
                     selectedIds={qualifiedValues}
                     onChange={setQualifiedValues}
-                    placeholder={reasonFieldKey ? 'Choose values from selected reason field' : 'Select reason field first'}
+                    placeholder={reasonFieldKey ? "Tanlangan sabab maydonidan qiymatlarni tanlang" : "Avval sabab maydonini tanlang"}
                     disabled={!isAdmin || !reasonFieldKey}
                     loading={reasonValueOptionsQuery.isLoading}
-                    loadingText="Loading values from selected reason field..."
-                    emptyText="No values found yet for this reason field."
+                    loadingText="Tanlangan sabab maydoni qiymatlari yuklanmoqda..."
+                    emptyText="Bu sabab maydoni uchun hozircha qiymatlar topilmadi."
                   />
 
                   <MultiSelectDropdown
@@ -368,11 +367,11 @@ export default function SettingsPage() {
                     options={reasonValueOptions}
                     selectedIds={nonQualifiedValues}
                     onChange={setNonQualifiedValues}
-                    placeholder={reasonFieldKey ? 'Choose values from selected reason field' : 'Select reason field first'}
+                    placeholder={reasonFieldKey ? "Tanlangan sabab maydonidan qiymatlarni tanlang" : "Avval sabab maydonini tanlang"}
                     disabled={!isAdmin || !reasonFieldKey}
                     loading={reasonValueOptionsQuery.isLoading}
-                    loadingText="Loading values from selected reason field..."
-                    emptyText="No values found yet for this reason field."
+                    loadingText="Tanlangan sabab maydoni qiymatlari yuklanmoqda..."
+                    emptyText="Bu sabab maydoni uchun hozircha qiymatlar topilmadi."
                   />
                 </div>
               </>
@@ -381,12 +380,12 @@ export default function SettingsPage() {
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
               <h3 className="text-base font-semibold text-gray-900">Maosh sozlamalari</h3>
               <p className="mt-1 text-sm text-gray-600">
-                Maosh formulasi: <span className="font-medium">Fiks maosh + KPI + Bonus</span>. KPI qoidalari kiritilmaguncha 0 boвЂladi.
+                Maosh formulasi: <span className="font-medium">Fiks maosh + KPI + Bonus</span>. KPI qoidalari kiritilmaguncha 0 bo'ladi.
               </p>
 
               {usersQuery.error && canViewSalarySettings && (
                 <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
-                  Agentlar roвЂyxatini yuklab boвЂlmadi.
+                  Agentlar ro'yxatini yuklab bo'lmadi.
                 </p>
               )}
 
@@ -399,8 +398,8 @@ export default function SettingsPage() {
                     disabled={!isAdmin}
                     className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                   >
-                    <option value="on_income">Tushum boвЂyicha - har bir toвЂlovda</option>
-                    <option value="on_debt_closed">Sotuv yopilganda - qarz 0 boвЂlganda</option>
+                    <option value="on_income">Tushum bo'yicha - har bir to'lovda</option>
+                    <option value="on_debt_closed">Sotuv yopilganda - qarz 0 bo'lganda</option>
                   </select>
                 </div>
               </div>
@@ -442,9 +441,9 @@ export default function SettingsPage() {
               </div>
 
               <div className="mt-4">
-                <p className="text-sm font-medium text-gray-700">Agentlar boвЂyicha fiks maosh</p>
+                <p className="text-sm font-medium text-gray-700">Agentlar bo'yicha fiks maosh</p>
                 <p className="mt-1 text-xs text-gray-500">
-                  Har bir agent uchun oylik fiks maoshni kiriting. BoвЂsh yoki 0 boвЂlsa, fiks maosh berilmaydi.
+                  Har bir agent uchun oylik fiks maoshni kiriting. Bo'sh yoki 0 bo'lsa, fiks maosh berilmaydi.
                 </p>
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                   {agentUsers.length ? (
@@ -485,7 +484,7 @@ export default function SettingsPage() {
           <div className="mt-8 border-t border-gray-100 pt-6">
             <h2 className="text-base font-semibold text-gray-900">Mening login va parolim</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Bu yerda oвЂzingizning login va parolingizni oвЂzgartirasiz.
+              Bu yerda o'zingizning login va parolingizni o'zgartirasiz.
             </p>
 
             {credentialMessage && (
@@ -527,4 +526,5 @@ export default function SettingsPage() {
     </div>
   );
 }
+
 
