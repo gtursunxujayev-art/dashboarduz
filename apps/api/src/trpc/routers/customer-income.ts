@@ -38,6 +38,18 @@ const OFFLINE_PAYMENT_GROUP_ENV_KEYS = [
   'OFLINE_GROUP_IDS',
   'OFFLINE_GROUP_IDS',
 ] as const;
+const ONLINE_PAYMENT_GROUP_ENV_KEYS = [
+  'ONLINE_GROUP_ID',
+  'ONLINE_GROUP_IDS',
+] as const;
+const REFUND_PAYMENT_GROUP_ENV_KEYS = [
+  'PAYMENT_RETURN_GROUP_ID',
+  'PAYMENT_RETURN_GROUP_IDS',
+  'REFUND_GROUP_ID',
+  'REFUND_GROUP_IDS',
+  'RETURN_GROUP_ID',
+  'RETURN_GROUP_IDS',
+] as const;
 
 function isAdminUser(roles: string[]): boolean {
   return roles.includes('Admin');
@@ -299,6 +311,12 @@ function normalizeTelegramSecret(rawValue: string | undefined): string | null {
   return normalized || null;
 }
 
+function parseTelegramGroupIdsFromEnvKeys(keys: readonly string[]): string[] {
+  return Array.from(
+    new Set(keys.flatMap((key) => parseTelegramGroupIds(process.env[key]))),
+  );
+}
+
 function toHashtag(value: string | null | undefined): string | null {
   if (!value) {
     return null;
@@ -331,6 +349,50 @@ function isOfflineOrIntensive(category: string | null | undefined): boolean {
   return normalized === 'offline' || normalized === 'intensive';
 }
 
+function isOnlineCategory(category: string | null | undefined): boolean {
+  return String(category || '').trim().toLowerCase() === 'online';
+}
+
+function resolvePaymentGroupEnvKeysByCategory(category: string | null | undefined): readonly string[] | null {
+  if (isOfflineOrIntensive(category)) {
+    return OFFLINE_PAYMENT_GROUP_ENV_KEYS;
+  }
+  if (isOnlineCategory(category)) {
+    return ONLINE_PAYMENT_GROUP_ENV_KEYS;
+  }
+  return null;
+}
+
+async function resolveTelegramBotTokenForTenant(tenantId: string): Promise<string | null> {
+  const integration = await prisma.integration.findUnique({
+    where: {
+      tenantId_type: {
+        tenantId,
+        type: 'telegram',
+      },
+    },
+    select: {
+      tokensEncrypted: true,
+    },
+  });
+
+  let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
+  if (integration?.tokensEncrypted) {
+    try {
+      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
+      const integrationBotToken = normalizeTelegramSecret(tokens.botToken || tokens.token);
+      botToken = integrationBotToken || botToken;
+    } catch (error) {
+      console.warn('[Income][Telegram] Failed to decrypt integration bot token, using TELEGRAM_BOT_TOKEN fallback if provided.', {
+        tenantId,
+        error: String((error as any)?.message || error),
+      });
+    }
+  }
+
+  return botToken;
+}
+
 async function sendOfflineOrIntensivePaymentTelegram(params: {
   tenantId: string;
   incomeId: string;
@@ -345,48 +407,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     errors?: string[];
   };
 
-  const groupIds = Array.from(new Set(
-    OFFLINE_PAYMENT_GROUP_ENV_KEYS.flatMap((key) => parseTelegramGroupIds(process.env[key])),
-  ));
-
-  if (!groupIds.length) {
-    console.warn('[Income][Telegram] Group ID is missing. Set OFLINE_GROUP_ID (or OFFLINE_GROUP_ID).');
-    return {
-      attempted: false,
-      delivered: false,
-      sentCount: 0,
-      failedCount: 0,
-      reason: 'groups_missing',
-    } satisfies TelegramPaymentDispatchResult;
-  }
-
-  const integration = await prisma.integration.findUnique({
-    where: {
-      tenantId_type: {
-        tenantId: params.tenantId,
-        type: 'telegram',
-      },
-    },
-    select: {
-      status: true,
-      tokensEncrypted: true,
-    },
-  });
-
-  let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
-  if (integration?.tokensEncrypted) {
-    try {
-      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
-      const integrationBotToken = normalizeTelegramSecret(tokens.botToken || tokens.token);
-      botToken = integrationBotToken || botToken;
-    } catch (error) {
-      console.warn('[Income][Telegram] Failed to decrypt integration bot token, using TELEGRAM_BOT_TOKEN fallback if provided.', {
-        tenantId: params.tenantId,
-        error: String((error as any)?.message || error),
-      });
-    }
-  }
-
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
   if (!botToken) {
     console.warn('[Income][Telegram] Bot token is missing. Connect Telegram integration or set TELEGRAM_BOT_TOKEN.');
     return {
@@ -564,13 +585,41 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     }
   }
 
-  if (!saleIncome?.course || !saleIncome.customer || !isOfflineOrIntensive(saleIncome.course.category)) {
+  if (!saleIncome?.course || !saleIncome.customer) {
     return {
       attempted: false,
       delivered: false,
       sentCount: 0,
       failedCount: 0,
       reason: 'course_not_eligible',
+    } satisfies TelegramPaymentDispatchResult;
+  }
+
+  const categoryGroupKeys = resolvePaymentGroupEnvKeysByCategory(saleIncome.course.category);
+  if (!categoryGroupKeys) {
+    return {
+      attempted: false,
+      delivered: false,
+      sentCount: 0,
+      failedCount: 0,
+      reason: 'course_not_eligible',
+    } satisfies TelegramPaymentDispatchResult;
+  }
+
+  const groupIds = parseTelegramGroupIdsFromEnvKeys(categoryGroupKeys);
+  if (!groupIds.length) {
+    const normalizedCategory = String(saleIncome.course.category || '').trim().toLowerCase() || 'unknown';
+    console.warn('[Income][Telegram] Group ID is missing for payment category', {
+      tenantId: params.tenantId,
+      category: normalizedCategory,
+      expectedEnv: categoryGroupKeys,
+    });
+    return {
+      attempted: false,
+      delivered: false,
+      sentCount: 0,
+      failedCount: 0,
+      reason: 'groups_missing',
     } satisfies TelegramPaymentDispatchResult;
   }
 
@@ -705,6 +754,124 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   }
 
   return dispatchResult;
+}
+
+async function sendRefundApprovedTelegram(params: {
+  tenantId: string;
+  requestId: string;
+  reviewedByUserId: string;
+}) {
+  const groupIds = parseTelegramGroupIdsFromEnvKeys(REFUND_PAYMENT_GROUP_ENV_KEYS);
+  if (!groupIds.length) {
+    console.warn('[Income][Telegram] Refund group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
+    return;
+  }
+
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  if (!botToken) {
+    console.warn('[Income][Telegram] Bot token is missing for refund message.');
+    return;
+  }
+
+  const request = await prisma.incomeAdjustmentRequest.findFirst({
+    where: {
+      id: params.requestId,
+      tenantId: params.tenantId,
+      type: ADJUSTMENT_TYPE_REFUND,
+      status: ADJUSTMENT_STATUS_APPROVED,
+    },
+    select: {
+      id: true,
+      reason: true,
+      requestedAmount: true,
+      income: {
+        select: {
+          id: true,
+          entryDate: true,
+          paymentAmount: true,
+          customer: {
+            select: {
+              name: true,
+              customerNumber: true,
+              telegramUsername: true,
+            },
+          },
+          manager: {
+            select: {
+              name: true,
+              username: true,
+            },
+          },
+          course: {
+            select: {
+              name: true,
+            },
+          },
+          tariff: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      reviewedBy: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+        },
+      },
+      reviewedAt: true,
+    },
+  });
+
+  if (!request?.income?.customer) {
+    return;
+  }
+
+  const customer = request.income.customer;
+  const managerLabel = request.income.manager?.name || request.income.manager?.username || null;
+  const reviewerLabel = request.reviewedBy?.name || request.reviewedBy?.username || params.reviewedByUserId;
+  const telegramUsername = customer.telegramUsername
+    ? (customer.telegramUsername.startsWith('@') ? customer.telegramUsername : `@${customer.telegramUsername}`)
+    : '-';
+
+  const messageLines = [
+    '#Pul_qaytarish',
+    ...(toHashtag(request.income.course?.name) ? [toHashtag(request.income.course?.name)] : []),
+    ...(toHashtag(request.income.tariff?.name) ? [toHashtag(request.income.tariff?.name)] : []),
+    ...(toHashtag(managerLabel) ? [toHashtag(managerLabel)] : []),
+    '',
+    `1.Mijoz: ${customer.name}`,
+    `2.Tel: ${customer.customerNumber}`,
+    `3.Tg: ${telegramUsername}`,
+    '',
+    `Qaytarilgan summa: ${formatAmountUz(request.requestedAmount ?? request.income.paymentAmount ?? 0)}`,
+    `To'lov sanasi: ${formatDateGmt5(request.income.entryDate)}`,
+    `Tasdiqlagan: ${reviewerLabel}`,
+    `Tasdiqlangan vaqt: ${request.reviewedAt ? formatDateGmt5(request.reviewedAt) : '-'}`,
+    ...(request.reason ? [`Izoh: ${request.reason}`] : []),
+    '',
+    '@Moliya_b0limi',
+    '@najotnur_oflayn',
+  ];
+
+  const message = messageLines.join('\n');
+
+  for (const groupId of groupIds) {
+    try {
+      await telegramService.sendMessage(botToken, groupId, message, {
+        disable_web_page_preview: true,
+      });
+    } catch (error) {
+      console.error('[Income][Telegram] Failed to send refund message', {
+        tenantId: params.tenantId,
+        requestId: params.requestId,
+        groupId,
+        error: String((error as any)?.message || error),
+      });
+    }
+  }
 }
 
 async function assertManagerBelongsToTenant(tenantId: string, managerUserId: string) {
@@ -2905,6 +3072,22 @@ export const customerIncomeRouter = router({
           },
         },
       });
+
+      if (request.type === ADJUSTMENT_TYPE_REFUND) {
+        try {
+          await sendRefundApprovedTelegram({
+            tenantId: ctx.tenantId,
+            requestId: request.id,
+            reviewedByUserId: ctx.user.userId,
+          });
+        } catch (error) {
+          console.error('[Income][Telegram] Refund notification failed (non-blocking)', {
+            tenantId: ctx.tenantId,
+            requestId: request.id,
+            error: String((error as any)?.message || error),
+          });
+        }
+      }
 
       return { success: true };
     }),
