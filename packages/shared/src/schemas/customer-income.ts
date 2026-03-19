@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
 export const incomeTypeSchema = z.enum(['new_sale', 'repayment']);
+const customerNumberSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^\d+$/, 'Customer number must contain only digits.');
+const telegramUsernameSchema = z
+  .string()
+  .max(160)
+  .regex(/^@?[A-Za-z0-9_]+$/, 'Telegram username may contain only letters, digits, "_" and optional "@".');
 
 export const customerSearchSchema = z.object({
   query: z.string().optional(),
@@ -20,9 +29,9 @@ export const createTariffSchema = z.object({
 export const createIncomeSchema = z.object({
   entryDate: z.string().min(1),
   managerUserId: z.string().uuid(),
-  customerNumber: z.string().min(1).max(64),
+  customerNumber: customerNumberSchema,
   customerName: z.string().min(1).max(160).optional(),
-  telegramUsername: z.string().max(160).optional(),
+  telegramUsername: telegramUsernameSchema.optional(),
   type: incomeTypeSchema,
   debtSourceIncomeId: z.string().uuid().optional(),
   courseId: z.string().uuid().optional(),
