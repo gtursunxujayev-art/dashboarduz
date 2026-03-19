@@ -4,7 +4,11 @@ import { trpc } from '@/lib/trpc';
 import SellersList from '@/components/dashboard/SellersList';
 
 export default function SotuvchilarPage() {
-  const { data: sellers, isLoading, error } = trpc.sellers.list.useQuery();
+  const { data: sellers, isLoading, error } = trpc.sellers.list.useQuery(undefined, {
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
   if (isLoading) {
     return (
