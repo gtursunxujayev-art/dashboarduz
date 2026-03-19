@@ -104,6 +104,48 @@ export interface AmoCRMLeadListResponse {
   };
 }
 
+export interface AmoCRMTask {
+  id?: number | string;
+  responsible_user_id?: number | string;
+  entity_type?: string;
+  is_completed?: boolean | number;
+  complete_till?: number | string;
+  updated_at?: number | string;
+  created_at?: number | string;
+  [key: string]: unknown;
+}
+
+export interface AmoCRMTaskListResponse {
+  _embedded?: {
+    tasks?: AmoCRMTask[];
+  };
+  _links?: {
+    next?: {
+      href?: string;
+    };
+  };
+}
+
+export interface AmoCRMEvent {
+  id?: number | string;
+  type?: string;
+  created_at?: number | string;
+  created_by?: number | string;
+  entity_type?: string;
+  [key: string]: unknown;
+}
+
+export interface AmoCRMEventListResponse {
+  _embedded?: {
+    events?: AmoCRMEvent[];
+  };
+  _links?: {
+    next?: {
+      href?: string;
+    };
+  };
+}
+
 export class AmoCRMService {
   private defaultBaseUrl: string;
   private webhookSecret: string;
@@ -462,6 +504,178 @@ export class AmoCRMService {
     }
 
     return allUsers;
+  }
+
+  async fetchTasks(accessToken: string, params?: {
+    page?: number;
+    limit?: number;
+    responsibleUserIds?: string[];
+    completedOnly?: boolean;
+    dateFrom?: Date;
+    dateTo?: Date;
+    entityType?: string;
+  }, baseUrl?: string): Promise<AmoCRMTaskListResponse> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.set('page', params.page.toString());
+    if (params?.limit) queryParams.set('limit', params.limit.toString());
+    if (params?.responsibleUserIds?.length) {
+      params.responsibleUserIds.forEach((responsibleUserId) => {
+        queryParams.append('filter[responsible_user_id][]', responsibleUserId);
+      });
+    }
+    if (params?.completedOnly) {
+      queryParams.set('filter[is_completed]', '1');
+    }
+    if (params?.dateFrom) {
+      queryParams.set('filter[complete_till][from]', Math.floor(params.dateFrom.getTime() / 1000).toString());
+    }
+    if (params?.dateTo) {
+      queryParams.set('filter[complete_till][to]', Math.floor(params.dateTo.getTime() / 1000).toString());
+    }
+    if (params?.entityType) {
+      queryParams.set('filter[entity_type]', params.entityType);
+    }
+
+    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
+    const url = `${resolvedBaseUrl}/api/v4/tasks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ error: errorText, status: response.status }, 'AmoCRM tasks fetch error');
+      throw new Error(`Failed to fetch AmoCRM tasks: ${response.status} ${response.statusText}`);
+    }
+
+    return (await response.json()) as AmoCRMTaskListResponse;
+  }
+
+  async fetchAllTasks(accessToken: string, params?: {
+    responsibleUserIds?: string[] | null;
+    completedOnly?: boolean;
+    dateFrom?: Date;
+    dateTo?: Date;
+    entityType?: string;
+    limit?: number;
+    maxPages?: number;
+  }, baseUrl?: string): Promise<AmoCRMTask[]> {
+    const pageSize = Math.min(Math.max(params?.limit || 250, 1), 250);
+    const maxPages = Math.max(params?.maxPages || 100, 1);
+    const allTasks: AmoCRMTask[] = [];
+
+    let page = 1;
+    while (page <= maxPages) {
+      const response = await this.fetchTasks(
+        accessToken,
+        {
+          page,
+          limit: pageSize,
+          responsibleUserIds: params?.responsibleUserIds || undefined,
+          completedOnly: params?.completedOnly,
+          dateFrom: params?.dateFrom,
+          dateTo: params?.dateTo,
+          entityType: params?.entityType,
+        },
+        baseUrl,
+      );
+      const tasks = Array.isArray(response._embedded?.tasks) ? response._embedded.tasks : [];
+      allTasks.push(...tasks);
+
+      const hasNext = Boolean(response._links?.next?.href);
+      if (!hasNext || tasks.length < pageSize) {
+        break;
+      }
+      page += 1;
+    }
+
+    return allTasks;
+  }
+
+  async fetchEvents(accessToken: string, params?: {
+    page?: number;
+    limit?: number;
+    dateFrom?: Date;
+    dateTo?: Date;
+    userIds?: string[];
+    entityType?: string;
+  }, baseUrl?: string): Promise<AmoCRMEventListResponse> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.set('page', params.page.toString());
+    if (params?.limit) queryParams.set('limit', params.limit.toString());
+    if (params?.dateFrom) {
+      queryParams.set('filter[created_at][from]', Math.floor(params.dateFrom.getTime() / 1000).toString());
+    }
+    if (params?.dateTo) {
+      queryParams.set('filter[created_at][to]', Math.floor(params.dateTo.getTime() / 1000).toString());
+    }
+    if (params?.userIds?.length) {
+      params.userIds.forEach((userId) => {
+        queryParams.append('filter[created_by][]', userId);
+      });
+    }
+    if (params?.entityType) {
+      queryParams.set('filter[entity]', params.entityType);
+    }
+
+    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
+    const url = `${resolvedBaseUrl}/api/v4/events${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ error: errorText, status: response.status }, 'AmoCRM events fetch error');
+      throw new Error(`Failed to fetch AmoCRM events: ${response.status} ${response.statusText}`);
+    }
+
+    return (await response.json()) as AmoCRMEventListResponse;
+  }
+
+  async fetchAllEvents(accessToken: string, params?: {
+    dateFrom?: Date;
+    dateTo?: Date;
+    userIds?: string[] | null;
+    entityType?: string;
+    limit?: number;
+    maxPages?: number;
+  }, baseUrl?: string): Promise<AmoCRMEvent[]> {
+    const pageSize = Math.min(Math.max(params?.limit || 250, 1), 250);
+    const maxPages = Math.max(params?.maxPages || 100, 1);
+    const allEvents: AmoCRMEvent[] = [];
+
+    let page = 1;
+    while (page <= maxPages) {
+      const response = await this.fetchEvents(
+        accessToken,
+        {
+          page,
+          limit: pageSize,
+          dateFrom: params?.dateFrom,
+          dateTo: params?.dateTo,
+          userIds: params?.userIds || undefined,
+          entityType: params?.entityType,
+        },
+        baseUrl,
+      );
+      const events = Array.isArray(response._embedded?.events) ? response._embedded.events : [];
+      allEvents.push(...events);
+
+      const hasNext = Boolean(response._links?.next?.href);
+      if (!hasNext || events.length < pageSize) {
+        break;
+      }
+      page += 1;
+    }
+
+    return allEvents;
   }
 
   async createLead(accessToken: string, leadData: any, baseUrl?: string) {
