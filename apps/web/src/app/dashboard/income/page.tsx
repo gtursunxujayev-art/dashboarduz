@@ -37,6 +37,7 @@ const BULK_TEMPLATE_HEADERS = [
   'deadline',
   'debt_source_income_id',
 ];
+const TELEGRAM_USERNAME_PATTERN = /^@?[A-Za-z0-9_]+$/;
 
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -76,6 +77,14 @@ function formatAmount(value: number | null | undefined): string {
     return '0';
   }
   return formatDigits(String(Math.max(value, 0)));
+}
+
+function sanitizeCustomerNumber(value: string): string {
+  return value.replace(/\s+/g, '').replace(/\D/g, '');
+}
+
+function sanitizeTelegramUsername(value: string): string {
+  return value.replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
 }
 
 function parseBulkImportError(error: unknown): string {
@@ -253,7 +262,7 @@ export default function IncomePage() {
       return;
     }
     setCustomerName(selectedCustomer.name || '');
-    setTelegramUsername(selectedCustomer.telegramUsername || '');
+    setTelegramUsername(sanitizeTelegramUsername(selectedCustomer.telegramUsername || ''));
   }, [selectedCustomer]);
 
   useEffect(() => {
@@ -281,7 +290,7 @@ export default function IncomePage() {
     if (!debt) {
       return;
     }
-    setCustomerNumber(debt.customerNumber || '');
+    setCustomerNumber(sanitizeCustomerNumber(debt.customerNumber || ''));
     setCustomerName(debt.customerName || '');
   }, [debtOptions, debtSourceIncomeId]);
 
@@ -416,8 +425,15 @@ export default function IncomePage() {
     if (!entryDate) nextErrors.entryDate = 'Sana majburiy.';
     if (!managerUserId) nextErrors.managerUserId = 'Sotuv menedjeri majburiy.';
 
-    const customerNumberValue = customerNumber.trim();
+    const customerNumberValue = sanitizeCustomerNumber(customerNumber);
     if (!customerNumberValue) nextErrors.customerNumber = 'Mijoz raqami majburiy.';
+    if (customerNumberValue && !/^\d+$/.test(customerNumberValue)) nextErrors.customerNumber = "Mijoz raqami faqat raqamlardan iborat bo'lishi kerak.";
+
+    const telegramUsernameValue = sanitizeTelegramUsername(telegramUsername.trim());
+    if (telegramUsernameValue && !TELEGRAM_USERNAME_PATTERN.test(telegramUsernameValue)) {
+      nextErrors.telegramUsername = "Telegram username faqat @, _, harf va raqamlardan iborat bo'lishi kerak.";
+    }
+
     if (!isExistingCustomer && !customerName.trim()) nextErrors.customerName = 'Mijoz ismi majburiy.';
     if (!type) nextErrors.type = "To'lov turi majburiy.";
 
@@ -447,7 +463,7 @@ export default function IncomePage() {
         managerUserId,
         customerNumber: customerNumberValue,
         customerName: isExistingCustomer ? undefined : customerName.trim(),
-        telegramUsername: isExistingCustomer ? undefined : (telegramUsername.trim() || undefined),
+        telegramUsername: isExistingCustomer ? undefined : (telegramUsernameValue || undefined),
         type: type as IncomeType,
         debtSourceIncomeId: type === 'repayment' ? debtSourceIncomeId : undefined,
         courseId: type === 'new_sale' ? courseId : undefined,
@@ -633,11 +649,13 @@ export default function IncomePage() {
                   list="customer-number-options"
                   value={customerNumber}
                   onChange={(event) => {
-                    setCustomerNumber(event.target.value);
+                    setCustomerNumber(sanitizeCustomerNumber(event.target.value));
                     clearFieldError('customerNumber');
                   }}
                   className={buildFieldClass(fieldErrors, 'customerNumber')}
                   placeholder="998901234567"
+                  inputMode="numeric"
+                  pattern="\d*"
                   autoComplete="off"
                 />
                 {fieldErrors.customerNumber && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.customerNumber}</p>}
@@ -679,12 +697,17 @@ export default function IncomePage() {
                 <input
                   list="customer-telegram-options"
                   value={telegramUsername}
-                  onChange={(event) => setTelegramUsername(event.target.value)}
+                  onChange={(event) => {
+                    setTelegramUsername(sanitizeTelegramUsername(event.target.value));
+                    clearFieldError('telegramUsername');
+                  }}
                   readOnly={isExistingCustomer}
                   className={buildFieldClass(fieldErrors, 'telegramUsername', 'read-only:bg-gray-100 read-only:text-gray-600 dark:read-only:bg-slate-700 dark:read-only:text-slate-300')}
                   placeholder="@username"
+                  maxLength={160}
                   autoComplete="off"
                 />
+                {fieldErrors.telegramUsername && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.telegramUsername}</p>}
                 <datalist id="customer-telegram-options">
                   {customers
                     .filter((customer) => Boolean(customer.telegramUsername))
