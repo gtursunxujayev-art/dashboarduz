@@ -3,12 +3,20 @@ import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { amocrmService, type AmoCRMLead, type AmoCRMLeadPipeline, type AmoCRMUser } from '../../services/integrations/amocrm';
+import {
+  getAmoCRMActivityMetrics,
+  type AmoCRMActivityMetrics,
+  summarizeAmoCRMActivityMetrics,
+} from '../../services/integrations/amocrm-activity';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { log, LogLevel } from '../../services/observability';
 
 const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+const sellerRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
+type SellerRange = z.infer<typeof sellerRangeSchema>;
+const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 
 function asString(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -36,6 +44,65 @@ function parseAmoDate(value: unknown): Date {
   }
 
   return new Date(0);
+}
+
+function getRangeStart(range: SellerRange, now: Date): Date {
+  const offsetMs = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
+  const shiftedNow = new Date(now.getTime() + offsetMs);
+
+  const year = shiftedNow.getUTCFullYear();
+  const month = shiftedNow.getUTCMonth();
+  const date = shiftedNow.getUTCDate();
+
+  if (range === 'today') {
+    return new Date(Date.UTC(year, month, date) - offsetMs);
+  }
+
+  if (range === 'week') {
+    const day = shiftedNow.getUTCDay();
+    const daysSinceMonday = (day + 6) % 7;
+    return new Date(Date.UTC(year, month, date - daysSinceMonday) - offsetMs);
+  }
+
+  return new Date(Date.UTC(year, month, 1) - offsetMs);
+}
+
+function parseCustomDate(input: string, endOfDay: boolean): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Custom date must be in YYYY-MM-DD format.' });
+  }
+
+  const timestamp = `${input}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid custom date: ${input}` });
+  }
+
+  return parsed;
+}
+
+function resolveDateRange(range: SellerRange, now: Date, dateFrom?: string, dateTo?: string) {
+  if (range !== 'custom') {
+    return {
+      rangeStart: getRangeStart(range, now),
+      rangeEnd: now,
+    };
+  }
+
+  if (!dateFrom || !dateTo) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Both dateFrom and dateTo are required when range is custom.',
+    });
+  }
+
+  const rangeStart = parseCustomDate(dateFrom, false);
+  const rangeEnd = parseCustomDate(dateTo, true);
+  if (rangeEnd < rangeStart) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'dateTo must be greater than or equal to dateFrom.' });
+  }
+
+  return { rangeStart, rangeEnd };
 }
 
 function getDealAmount(lead: AmoCRMLead): number {
@@ -72,10 +139,6 @@ function isAllowedUtelManagerExtension(value: unknown): boolean {
 function isMissingUserMappingColumnError(error: unknown) {
   const message = String((error as any)?.message || '');
   return message.includes('amocrmResponsibleUserId') || message.includes('utelManagerExternalId');
-}
-
-function isWonLead(lead: AmoCRMLead): boolean {
-  return asString(lead.status_id) === WON_STATUS_ID;
 }
 
 function toManagerRole(user: AmoCRMUser): string[] {
@@ -115,24 +178,51 @@ async function getAgentResponsibleScope(tenantId: string, userId: string, roles:
 function buildMetrics(
   activeLeads: AmoCRMLead[],
   wonLeadsData: AmoCRMLead[],
-  calls: Array<{ duration: number | null; direction: string; status: string }>,
+  lostLeadsData: AmoCRMLead[],
+  calls: Array<{ duration: number | null; direction: string; status: string; startedAt?: Date | null }>,
+  options?: {
+    incomeAmountOverride?: number | null;
+    neutralizeLeadOutcomes?: boolean;
+    activityMetrics?: AmoCRMActivityMetrics | null;
+  },
 ) {
   const activeLeadsCount = activeLeads.length;
-  const wonLeads = wonLeadsData.length;
-  const lostLeads = 0;
-  const totalLeads = activeLeadsCount + wonLeads;
-  const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
+  const neutralizeLeadOutcomes = Boolean(options?.neutralizeLeadOutcomes);
+  const wonLeads = neutralizeLeadOutcomes ? 0 : wonLeadsData.length;
+  const lostLeads = neutralizeLeadOutcomes ? 0 : lostLeadsData.length;
+  const totalLeads = neutralizeLeadOutcomes ? activeLeadsCount : (activeLeadsCount + wonLeads + lostLeads);
+  const conversionRate = neutralizeLeadOutcomes ? 0 : (totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0);
 
-  const totalDealAmount = wonLeadsData.reduce((sum, lead) => sum + getDealAmount(lead), 0);
-  const averageDealAmount = wonLeads > 0 ? totalDealAmount / wonLeads : 0;
+  const totalDealAmount = neutralizeLeadOutcomes
+    ? 0
+    : wonLeadsData.reduce((sum, lead) => sum + getDealAmount(lead), 0);
+  const averageDealAmount = neutralizeLeadOutcomes ? 0 : (wonLeads > 0 ? totalDealAmount / wonLeads : 0);
 
   const totalCalls = calls.length;
   const inboundCalls = calls.filter((call) => call.direction === 'inbound').length;
   const outboundCalls = calls.filter((call) => call.direction === 'outbound').length;
   const totalCallDuration = calls.reduce((sum, call) => sum + (call.duration || 0), 0);
   const averageCallDuration = totalCalls > 0 ? totalCallDuration / totalCalls : 0;
+  const activeCallDays = new Set(
+    calls
+      .map((call) => (call.startedAt instanceof Date ? call.startedAt : null))
+      .filter((value): value is Date => Boolean(value))
+      .map((value) => value.toISOString().slice(0, 10)),
+  ).size;
+  const averageDailyCalls = activeCallDays > 0 ? totalCalls / activeCallDays : 0;
+  const averageDailyCallDuration = activeCallDays > 0 ? totalCallDuration / activeCallDays : 0;
+  const incomeAmount = typeof options?.incomeAmountOverride === 'number' ? options.incomeAmountOverride : totalDealAmount;
+  const activityMetrics = options?.activityMetrics || {
+    followUpCount: 0,
+    noteCount: 0,
+    stageChangeCount: 0,
+  };
 
   return {
+    newLeads: neutralizeLeadOutcomes ? activeLeadsCount : totalLeads,
+    qualifiedLeads: neutralizeLeadOutcomes ? 0 : wonLeads,
+    unqualifiedLeads: neutralizeLeadOutcomes ? 0 : lostLeads,
+    salesCount: neutralizeLeadOutcomes ? 0 : wonLeads,
     totalLeads,
     activeLeads: activeLeadsCount,
     wonLeads,
@@ -145,6 +235,12 @@ function buildMetrics(
     outboundCalls,
     totalCallDuration,
     averageCallDuration: Number(averageCallDuration.toFixed(2)),
+    averageDailyCalls: Number(averageDailyCalls.toFixed(2)),
+    averageDailyCallDuration: Number(averageDailyCallDuration.toFixed(2)),
+    incomeAmount: Number(incomeAmount.toFixed(2)),
+    followUpCount: activityMetrics.followUpCount,
+    noteCount: activityMetrics.noteCount,
+    stageChangeCount: activityMetrics.stageChangeCount,
   };
 }
 
@@ -223,6 +319,8 @@ async function fetchLeadsByStatusFilters(
   pipelineIds: string[],
   statusFilters: Array<{ pipelineId: string; statusId: string }>,
   responsibleUserIds: string[],
+  rangeStart?: Date,
+  rangeEnd?: Date,
   withContacts = false,
 ): Promise<AmoCRMLead[]> {
   if (pipelineIds.length === 0 || statusFilters.length === 0 || responsibleUserIds.length === 0) {
@@ -237,6 +335,8 @@ async function fetchLeadsByStatusFilters(
         pipelineIds,
         statusFilters,
         responsibleUserIds,
+        createdAtFrom: rangeStart,
+        createdAtTo: rangeEnd,
         with: withContacts ? 'contacts' : undefined,
         limit: 250,
       },
@@ -248,12 +348,23 @@ async function fetchLeadsByStatusFilters(
       {
         pipelineIds,
         responsibleUserIds,
+        createdAtFrom: rangeStart,
+        createdAtTo: rangeEnd,
         with: withContacts ? 'contacts' : undefined,
         limit: 250,
       },
       baseUrl,
     );
-    return fallback.filter((lead) => isLeadInStatusSet(lead, statusSet));
+    return fallback.filter((lead) => {
+      if (!isLeadInStatusSet(lead, statusSet)) {
+        return false;
+      }
+      if (!rangeStart || !rangeEnd) {
+        return true;
+      }
+      const createdAt = parseAmoDate(lead.created_at);
+      return createdAt >= rangeStart && createdAt <= rangeEnd;
+    });
   }
 }
 
@@ -373,25 +484,15 @@ export const sellersRouter = router({
         .map((status) => asString(status.id))
         .filter((statusId): statusId is string => Boolean(statusId) && statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID),
     );
-    const wonStatusFilters = buildStatusFilters(selectedPipelineIds, pipelines, [WON_STATUS_ID]);
 
     const leadsFetchStartedMs = Date.now();
-    const [activeLeads, wonLeads] = await Promise.all([
-      fetchLeadsByStatusFilters(
-        amoContext.accessToken,
-        amoContext.baseUrl,
-        selectedPipelineIds,
-        activeStatusFilters,
-        managerIdList,
-      ),
-      fetchLeadsByStatusFilters(
-        amoContext.accessToken,
-        amoContext.baseUrl,
-        selectedPipelineIds,
-        wonStatusFilters,
-        managerIdList,
-      ),
-    ]);
+    const activeLeads = await fetchLeadsByStatusFilters(
+      amoContext.accessToken,
+      amoContext.baseUrl,
+      selectedPipelineIds,
+      activeStatusFilters,
+      managerIdList,
+    );
     timings.amocrmLeadsMs = Date.now() - leadsFetchStartedMs;
 
     const leadsGroupingStartedMs = Date.now();
@@ -405,17 +506,20 @@ export const sellersRouter = router({
       current.push(lead);
       activeLeadsByManager.set(responsibleUserId, current);
     }
-    const wonLeadsByManager = new Map<string, AmoCRMLead[]>();
-    for (const lead of wonLeads) {
-      const responsibleUserId = getLeadResponsibleId(lead);
-      if (!responsibleUserId || !managerIds.has(responsibleUserId)) {
-        continue;
-      }
-      const current = wonLeadsByManager.get(responsibleUserId) || [];
-      current.push(lead);
-      wonLeadsByManager.set(responsibleUserId, current);
-    }
     timings.leadsGroupingMs = Date.now() - leadsGroupingStartedMs;
+
+    const activityFetchStartedMs = Date.now();
+    const activityRangeStart = new Date(0);
+    const activityRangeEnd = new Date();
+    const activityByManager = await getAmoCRMActivityMetrics({
+      tenantId: ctx.tenantId,
+      accessToken: amoContext.accessToken,
+      baseUrl: amoContext.baseUrl,
+      managerIds: managerIdList,
+      rangeStart: activityRangeStart,
+      rangeEnd: activityRangeEnd,
+    });
+    timings.activityFetchMs = Date.now() - activityFetchStartedMs;
 
     const extensionMappingStartedMs = Date.now();
     const extensionsByManager = await getManagerExtensionsMap(ctx.tenantId, managerIdList);
@@ -445,13 +549,14 @@ export const sellersRouter = router({
             duration: true,
             direction: true,
             status: true,
+            startedAt: true,
           },
         })
       : [];
     timings.callsFetchMs = Date.now() - callsFetchStartedMs;
 
     const callsGroupingStartedMs = Date.now();
-    const callsByManager = new Map<string, Array<{ duration: number | null; direction: string; status: string }>>();
+    const callsByManager = new Map<string, Array<{ duration: number | null; direction: string; status: string; startedAt: Date | null }>>();
     for (const call of calls) {
       const extension = resolveCallExtension({
         from: call.from,
@@ -471,6 +576,7 @@ export const sellersRouter = router({
         duration: call.duration,
         direction: call.direction,
         status: call.status,
+        startedAt: call.startedAt,
       });
       callsByManager.set(managerId, current);
     }
@@ -481,8 +587,8 @@ export const sellersRouter = router({
       .map((manager) => {
         const managerId = asString(manager.id) || '';
         const managerActiveLeads = activeLeadsByManager.get(managerId) || [];
-        const managerWonLeads = wonLeadsByManager.get(managerId) || [];
         const managerCalls = callsByManager.get(managerId) || [];
+        const managerActivity = activityByManager.get(managerId) || null;
 
         return {
           id: managerId,
@@ -492,7 +598,10 @@ export const sellersRouter = router({
           roles: toManagerRole(manager),
           lastLoginAt: null,
           createdAt: new Date(0),
-          metrics: buildMetrics(managerActiveLeads, managerWonLeads, managerCalls),
+          metrics: buildMetrics(managerActiveLeads, [], [], managerCalls, {
+            neutralizeLeadOutcomes: true,
+            activityMetrics: managerActivity,
+          }),
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -505,8 +614,8 @@ export const sellersRouter = router({
       managerCount: managers.length,
       selectedPipelineIds,
       activeLeadsCount: activeLeads.length,
-      wonLeadsCount: wonLeads.length,
       callsCount: calls.length,
+      activityTotals: summarizeAmoCRMActivityMetrics(activityByManager),
       timings,
     });
 
@@ -514,12 +623,22 @@ export const sellersRouter = router({
   }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(
+      z.object({
+        id: z.string().min(1),
+        range: sellerRangeSchema.default('today'),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+      }),
+    )
     .query(async ({ input, ctx }) => {
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
       if (scope.isScoped && input.id !== scope.responsibleUserId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
+
+      const now = new Date();
+      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
 
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
       if (!amoContext) {
@@ -545,14 +664,17 @@ export const sellersRouter = router({
           .filter((statusId): statusId is string => Boolean(statusId) && statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID),
       );
       const wonStatusFilters = buildStatusFilters(selectedPipelineIds, pipelines, [WON_STATUS_ID]);
+      const lostStatusFilters = buildStatusFilters(selectedPipelineIds, pipelines, [LOST_STATUS_ID]);
 
-      const [activeLeads, wonLeads] = await Promise.all([
+      const [activeLeads, wonLeads, lostLeads] = await Promise.all([
         fetchLeadsByStatusFilters(
           amoContext.accessToken,
           amoContext.baseUrl,
           selectedPipelineIds,
           activeStatusFilters,
           [input.id],
+          rangeStart,
+          rangeEnd,
           true,
         ),
         fetchLeadsByStatusFilters(
@@ -561,6 +683,17 @@ export const sellersRouter = router({
           selectedPipelineIds,
           wonStatusFilters,
           [input.id],
+          rangeStart,
+          rangeEnd,
+        ),
+        fetchLeadsByStatusFilters(
+          amoContext.accessToken,
+          amoContext.baseUrl,
+          selectedPipelineIds,
+          lostStatusFilters,
+          [input.id],
+          rangeStart,
+          rangeEnd,
         ),
       ]);
 
@@ -572,11 +705,38 @@ export const sellersRouter = router({
       const extensionsByManager = await getManagerExtensionsMap(ctx.tenantId, [input.id]);
       const extensions = extensionsByManager.get(input.id) || [];
 
-      const calls = extensions.length > 0
+      const callsForMetrics = extensions.length > 0
         ? await prisma.call.findMany({
             where: {
               tenantId: ctx.tenantId,
               provider: 'utel',
+              startedAt: {
+                gte: rangeStart,
+                lte: rangeEnd,
+              },
+              OR: [
+                { from: { in: extensions } },
+                { to: { in: extensions } },
+              ],
+            },
+            select: {
+              duration: true,
+              status: true,
+              direction: true,
+              startedAt: true,
+            },
+          })
+      : [];
+
+      const recentCalls = extensions.length > 0
+        ? await prisma.call.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              provider: 'utel',
+              startedAt: {
+                gte: rangeStart,
+                lte: rangeEnd,
+              },
               OR: [
                 { from: { in: extensions } },
                 { to: { in: extensions } },
@@ -596,16 +756,68 @@ export const sellersRouter = router({
             },
             take: 50,
           })
-      : [];
+        : [];
+
+      let mappedManagerUserIds: string[] = [];
+      try {
+        mappedManagerUserIds = (
+          await prisma.user.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              isActive: true,
+              amocrmResponsibleUserId: input.id,
+            },
+            select: { id: true },
+          })
+        ).map((user) => user.id);
+      } catch (error) {
+        if (!isMissingUserMappingColumnError(error)) {
+          throw error;
+        }
+      }
+
+      const incomeAggregate = mappedManagerUserIds.length > 0
+        ? await prisma.income.aggregate({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: 'active',
+              managerUserId: { in: mappedManagerUserIds },
+              entryDate: {
+                gte: rangeStart,
+                lte: rangeEnd,
+              },
+            },
+            _sum: {
+              paymentAmount: true,
+            },
+          })
+        : null;
+      const incomeAmount = incomeAggregate?._sum?.paymentAmount ?? null;
+      const activityMetrics = (
+        await getAmoCRMActivityMetrics({
+          tenantId: ctx.tenantId,
+          accessToken: amoContext.accessToken,
+          baseUrl: amoContext.baseUrl,
+          managerIds: [input.id],
+          rangeStart,
+          rangeEnd,
+        })
+      ).get(input.id) || null;
 
       const metrics = buildMetrics(
         activeLeads,
         wonLeads,
-        (calls as Array<{ duration: number | null; direction: string; status: string }>).map((call) => ({
+        lostLeads,
+        (callsForMetrics as Array<{ duration: number | null; direction: string; status: string; startedAt: Date | null }>).map((call) => ({
           duration: call.duration,
           direction: call.direction,
           status: call.status,
+          startedAt: call.startedAt,
         })),
+        {
+          incomeAmountOverride: incomeAmount,
+          activityMetrics,
+        },
       );
 
       const recentLeads = activeLeads
@@ -645,7 +857,14 @@ export const sellersRouter = router({
         },
         metrics,
         recentLeads,
-        recentCalls: calls,
+        recentCalls,
+        period: {
+          range: input.range,
+          dateFrom: input.range === 'custom' ? input.dateFrom || null : null,
+          dateTo: input.range === 'custom' ? input.dateTo || null : null,
+          rangeStart,
+          rangeEnd,
+        },
       };
     }),
 });
