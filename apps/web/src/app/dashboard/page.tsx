@@ -37,6 +37,16 @@ function formatDuration(seconds?: number | null): string {
   return `${hours} soat ${minutes} daqiqa ${remainingSeconds} soniya`;
 }
 
+function formatDurationCompact(seconds?: number | null): string {
+  if (seconds === null || seconds === undefined) {
+    return '-';
+  }
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  return `${hours} soat ${minutes} daqiqa`;
+}
+
 function renderMetricValue(value?: number | null, suffix = ''): string {
   if (value === null || value === undefined) {
     return '-';
@@ -139,7 +149,10 @@ export default function DashboardPage() {
   });
 
   const stats = summaryQuery.data?.summary;
-  const sellerPerformance = summaryQuery.data?.sellerPerformance || [];
+  const sellerPerformance = useMemo(
+    () => summaryQuery.data?.sellerPerformance ?? [],
+    [summaryQuery.data?.sellerPerformance],
+  );
   const financeTotals = financeSummaryQuery.data?.totals;
   const incomeByCourse = financeSummaryQuery.data?.incomeByCourse || [];
   const salaryByAgent = salarySummaryQuery.data?.byAgent || [];
@@ -149,33 +162,56 @@ export default function DashboardPage() {
     ? "Bonus rejimi: Sotuv yopilganda (qarz 0 bo'lganda)"
     : "Bonus rejimi: Tushum (har bir to'lovdan)";
   const formatPercent = (value?: number) => `${(value ?? 0).toFixed(1)}%`;
+  const agentTalkDurationSeconds = useMemo(() => {
+    if (!isAgentOnly) {
+      return null;
+    }
+
+    return sellerPerformance.reduce((sum: number, seller: any) => {
+      const seconds = typeof seller?.talkedSeconds === 'number' ? seller.talkedSeconds : 0;
+      return sum + Math.max(0, seconds);
+    }, 0);
+  }, [isAgentOnly, sellerPerformance]);
 
   const metricCards = [
     {
       title: 'Sotuv shartnomasi',
       value: String(stats?.newSalesCount ?? 0),
       subtitle: formatAmount(stats?.newSalesAgreementAmount),
+      extra: null,
     },
     {
       title: 'Sotuv - Onlayn',
       value: String(stats?.onlineSalesCount ?? 0),
       subtitle: formatAmount(stats?.onlineSalesAgreementAmount),
+      extra: null,
     },
     {
       title: 'Sotuv - Oflayn',
       value: String(stats?.offlineSalesCount ?? 0),
       subtitle: formatAmount(stats?.offlineSalesAgreementAmount),
+      extra: null,
     },
     {
       title: 'Sotuv - Intensiv',
       value: String(stats?.intensiveSalesCount ?? 0),
       subtitle: formatAmount(stats?.intensiveSalesAgreementAmount),
+      extra: null,
     },
     {
       title: 'Tushum',
       value: formatAmount(stats?.totalIncomeAmount),
       subtitle: 'Tanlangan davr bo\'yicha',
+      extra: null,
     },
+    ...(isAgentOnly
+      ? [{
+          title: "Qo'ng'iroqlar",
+          value: `${stats?.totalCalls ?? 0} ta`,
+          subtitle: "Jami qo'ng'iroq soni",
+          extra: `Davomiylik: ${formatDurationCompact(agentTalkDurationSeconds)}`,
+        }]
+      : []),
   ];
 
   const financeCards = [
@@ -295,8 +331,8 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="rounded-lg bg-white shadow">
-        <div className="px-4 py-5 sm:p-6">
-          <div className="space-y-3">
+        <div className="px-4 py-3 sm:px-5 sm:py-4">
+          <div className="space-y-2">
             <div className="overflow-x-auto">
               <div className="inline-flex min-w-max rounded-md shadow-sm">
                 {RANGE_OPTIONS.map((option, index) => (
@@ -304,7 +340,7 @@ export default function DashboardPage() {
                     key={option}
                     type="button"
                     onClick={() => setRange(option)}
-                    className={`border border-gray-300 px-4 py-2 text-sm font-medium ${
+                    className={`border border-gray-300 px-3 py-1.5 text-sm font-medium ${
                       range === option ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
                     } ${index === 0 ? 'rounded-l-md' : ''} ${
                       index === RANGE_OPTIONS.length - 1 ? 'rounded-r-md' : ''
@@ -316,20 +352,20 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_1fr]">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-[170px_170px_1fr]">
               <input
                 type="date"
                 value={dateFrom}
                 disabled={range !== 'custom'}
                 onChange={(event) => setDateFrom(event.target.value)}
-                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
               />
               <input
                 type="date"
                 value={dateTo}
                 disabled={range !== 'custom'}
                 onChange={(event) => setDateTo(event.target.value)}
-                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
               />
 
               {!isFinanceOnly && isAdmin && (
@@ -348,18 +384,18 @@ export default function DashboardPage() {
       </div>
 
       <div className="overflow-hidden rounded-lg bg-white shadow">
-        <div className="px-4 py-5 sm:p-6">
+        <div className="px-4 py-3 sm:px-5 sm:py-4">
           <div className="flex items-center">
-            <div className="flex-shrink-0 rounded-md bg-gray-100 p-3">
-              <svg className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="flex-shrink-0 rounded-md bg-gray-100 p-2">
+              <svg className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <div className="ml-5">
-                <h3 className="text-lg font-medium leading-6 text-gray-900">
+            <div className="ml-4">
+                <h3 className="text-base font-medium leading-6 text-gray-900">
                 Xush kelibsiz, {user?.email?.split('@')[0] || user?.phone || 'Foydalanuvchi'}!
               </h3>
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-0.5 text-sm text-gray-500">
                 {isFinanceOnly
                   ? "Moliya panelida tanlangan davr bo'yicha tushum, qarzdorlar va kurs kesimidagi tushum ko'rinadi."
                   : "Barcha bo'limlar tepadagi bitta filtr bilan ishlaydi."}
@@ -434,6 +470,9 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-500">{card.title}</p>
                 <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{card.value}</p>
                 <p className="mt-2 text-sm text-gray-600">{card.subtitle}</p>
+                {card.extra ? (
+                  <p className="mt-1 text-sm font-medium text-gray-700">{card.extra}</p>
+                ) : null}
               </div>
             ))}
           </div>
