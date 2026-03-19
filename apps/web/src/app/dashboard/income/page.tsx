@@ -158,8 +158,10 @@ export default function IncomePage() {
     },
   );
   const createIncomeMutation = trpc.customerIncome.createIncome.useMutation();
+  const deleteIncomeMutation = trpc.customerIncome.deleteIncome.useMutation();
   const bulkImportRowsMutation = trpc.customerIncome.bulkImportRows.useMutation();
   const bulkImportFromSheetMutation = trpc.customerIncome.bulkImportFromGoogleSheet.useMutation();
+  const [deletingIncomeId, setDeletingIncomeId] = useState<string | null>(null);
 
   const managers = useMemo(() => formOptionsQuery.data?.managers || [], [formOptionsQuery.data]);
   const courseOptions = useMemo(() => formOptionsQuery.data?.courses || [], [formOptionsQuery.data]);
@@ -437,6 +439,29 @@ export default function IncomePage() {
       await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
     } catch (sheetImportError) {
       setBulkError(parseBulkImportError(sheetImportError));
+    }
+  };
+
+  const handleDeleteIncome = async (incomeId: string) => {
+    if (!isAdmin) {
+      return;
+    }
+    const confirmed = window.confirm("Bu tushum yozuvini o'chirmoqchimisiz?");
+    if (!confirmed) {
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setDeletingIncomeId(incomeId);
+    try {
+      await deleteIncomeMutation.mutateAsync({ incomeId });
+      setSuccess("Tushum yozuvi o'chirildi.");
+      await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
+    } catch (deleteError: any) {
+      setError(deleteError?.message || "Tushum yozuvini o'chirib bo'lmadi.");
+    } finally {
+      setDeletingIncomeId(null);
     }
   };
 
@@ -978,6 +1003,9 @@ export default function IncomePage() {
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Holat</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">To'lov</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Qoldiq qarz</th>
+                    {isAdmin && (
+                      <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Amal</th>
+                    )}
                   </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
@@ -1005,6 +1033,18 @@ export default function IncomePage() {
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(income.paymentAmount)}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(income.remainingDebtAmount)}</td>
+                        {isAdmin && (
+                          <td className="whitespace-nowrap px-4 py-3 text-sm">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteIncome(income.id)}
+                              disabled={deletingIncomeId === income.id}
+                              className="rounded-md border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/40"
+                            >
+                              {deletingIncomeId === income.id ? "O'chirilmoqda..." : "O'chirish"}
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
