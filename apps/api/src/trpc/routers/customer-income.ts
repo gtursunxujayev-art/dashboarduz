@@ -38,7 +38,11 @@ function isAdminUser(roles: string[]): boolean {
 
 function isMissingCourseCategoryColumnError(error: unknown): boolean {
   const message = String((error as any)?.message || '').toLowerCase();
-  return message.includes('courses.category') && message.includes('does not exist');
+  return (
+    message.includes('does not exist')
+    && message.includes('category')
+    && (message.includes('courses.category') || message.includes('courses'))
+  );
 }
 
 type CourseWithTariffsSafe = {
@@ -312,6 +316,7 @@ function isOfflineOrIntensive(category: string | null | undefined): boolean {
 async function sendOfflineOrIntensivePaymentTelegram(params: {
   tenantId: string;
   incomeId: string;
+  preferredSubTariffId?: string;
 }) {
   const groupIds = parseTelegramGroupIds(process.env[OFFLINE_PAYMENT_GROUP_ENV_KEY]);
   if (!groupIds.length) {
@@ -368,39 +373,132 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     return;
   }
 
-  const saleIncome = await prisma.income.findFirst({
-    where: {
-      id: saleIncomeId,
-      tenantId: params.tenantId,
-    },
-    select: {
-      id: true,
-      entryDate: true,
-      deadline: true,
-      coursePriceAmount: true,
-      debtAmount: true,
-      remainingDebtAmount: true,
-      tariffId: true,
-      customer: {
-        select: {
-          name: true,
-          customerNumber: true,
-          telegramUsername: true,
+  type SaleIncomePayload = {
+    id: string;
+    entryDate: Date;
+    deadline: Date | null;
+    coursePriceAmount: number | null;
+    debtAmount: number | null;
+    remainingDebtAmount: number;
+    tariffId: string | null;
+    customer: {
+      name: string;
+      customerNumber: string;
+      telegramUsername: string | null;
+    } | null;
+    course: {
+      id: string;
+      name: string;
+      category: string | null;
+    } | null;
+    tariff: {
+      name: string;
+    } | null;
+  };
+
+  let saleIncome: SaleIncomePayload | null = null;
+
+  try {
+    const withCategory = await prisma.income.findFirst({
+      where: {
+        id: saleIncomeId,
+        tenantId: params.tenantId,
+      },
+      select: {
+        id: true,
+        entryDate: true,
+        deadline: true,
+        coursePriceAmount: true,
+        debtAmount: true,
+        remainingDebtAmount: true,
+        tariffId: true,
+        customer: {
+          select: {
+            name: true,
+            customerNumber: true,
+            telegramUsername: true,
+          },
+        },
+        course: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+          },
+        },
+        tariff: {
+          select: {
+            name: true,
+          },
         },
       },
-      course: {
-        select: {
-          name: true,
-          category: true,
+    });
+    saleIncome = withCategory
+      ? {
+          ...withCategory,
+          course: withCategory.course
+            ? {
+                ...withCategory.course,
+                category: withCategory.course.category ?? null,
+              }
+            : null,
+        }
+      : null;
+  } catch (error) {
+    if (!isMissingCourseCategoryColumnError(error)) {
+      throw error;
+    }
+
+    const fallback = await prisma.income.findFirst({
+      where: {
+        id: saleIncomeId,
+        tenantId: params.tenantId,
+      },
+      select: {
+        id: true,
+        entryDate: true,
+        deadline: true,
+        coursePriceAmount: true,
+        debtAmount: true,
+        remainingDebtAmount: true,
+        tariffId: true,
+        customer: {
+          select: {
+            name: true,
+            customerNumber: true,
+            telegramUsername: true,
+          },
+        },
+        course: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        tariff: {
+          select: {
+            name: true,
+          },
         },
       },
-      tariff: {
-        select: {
-          name: true,
-        },
-      },
-    },
-  });
+    });
+
+    if (fallback?.course?.id) {
+      const safeCourseOptions = await fetchCourseOptionsSafe(params.tenantId);
+      const safeCategory = safeCourseOptions.find((course) => course.id === fallback.course?.id)?.category ?? 'offline';
+      saleIncome = fallback
+        ? {
+            ...fallback,
+            course: fallback.course ? { ...fallback.course, category: safeCategory } : null,
+          }
+        : null;
+    } else {
+      saleIncome = {
+        ...(fallback as any),
+        course: null,
+      };
+    }
+  }
 
   if (!saleIncome?.course || !saleIncome.customer || !isOfflineOrIntensive(saleIncome.course.category)) {
     return;
@@ -426,19 +524,34 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
 
   let subTariffHashtag: string | null = null;
   if (saleIncome.tariffId) {
-    const activeSubTariffs = await prisma.subTariff.findMany({
-      where: {
-        tenantId: params.tenantId,
-        tariffId: saleIncome.tariffId,
-        isActive: true,
-      },
-      orderBy: { name: 'asc' },
-      select: { name: true },
-      take: 2,
-    });
-    const [singleSubTariff] = activeSubTariffs;
-    if (activeSubTariffs.length === 1 && singleSubTariff) {
-      subTariffHashtag = toHashtag(singleSubTariff.name);
+    if (params.preferredSubTariffId) {
+      const selectedSubTariff = await prisma.subTariff.findFirst({
+        where: {
+          id: params.preferredSubTariffId,
+          tenantId: params.tenantId,
+          tariffId: saleIncome.tariffId,
+          isActive: true,
+        },
+        select: { name: true },
+      });
+      if (selectedSubTariff?.name) {
+        subTariffHashtag = toHashtag(selectedSubTariff.name);
+      }
+    }
+
+    if (!subTariffHashtag) {
+      const firstActiveSubTariff = await prisma.subTariff.findFirst({
+        where: {
+          tenantId: params.tenantId,
+          tariffId: saleIncome.tariffId,
+          isActive: true,
+        },
+        orderBy: { name: 'asc' },
+        select: { name: true },
+      });
+      if (firstActiveSubTariff?.name) {
+        subTariffHashtag = toHashtag(firstActiveSubTariff.name);
+      }
     }
   }
 
@@ -1091,6 +1204,7 @@ async function createIncomeEntry(params: {
   }
 
   let createdIncome;
+  let selectedSubTariffId: string | undefined;
 
   if (input.type === 'new_sale') {
     if (!input.courseId || !input.tariffId || input.coursePriceAmount === undefined) {
@@ -1117,6 +1231,23 @@ async function createIncomeEntry(params: {
 
     if (!course || !tariff) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course or tariff not found.' });
+    }
+
+    if (input.subTariffId) {
+      const subTariff = await prisma.subTariff.findFirst({
+        where: {
+          id: input.subTariffId,
+          tenantId,
+          tariffId: input.tariffId,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      if (!subTariff) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Sub-tariff not found for selected tariff.' });
+      }
+      selectedSubTariffId = subTariff.id;
     }
 
     const remainingDebtAmount = Math.max(input.coursePriceAmount - input.paymentAmount, 0);
@@ -1250,10 +1381,19 @@ async function createIncomeEntry(params: {
       },
     });
 
-    await sendOfflineOrIntensivePaymentTelegram({
-      tenantId,
-      incomeId: createdIncome.id,
-    });
+    try {
+      await sendOfflineOrIntensivePaymentTelegram({
+        tenantId,
+        incomeId: createdIncome.id,
+        preferredSubTariffId: selectedSubTariffId,
+      });
+    } catch (error) {
+      console.error('[Income][Telegram] Payment notification failed (non-blocking)', {
+        tenantId,
+        incomeId: createdIncome.id,
+        error: String((error as any)?.message || error),
+      });
+    }
   }
 
   return {
@@ -1365,12 +1505,22 @@ export const customerIncomeRouter = router({
         id: string;
         name: string;
         category: string;
-        tariffs: Array<{ id: string; name: string }>;
+        tariffs: Array<{
+          id: string;
+          name: string;
+          subTariffs: Array<{ id: string; name: string }>;
+        }>;
       }>).map((course) => ({
         id: course.id,
         name: course.name,
         category: course.category,
-        tariffs: course.tariffs,
+        tariffs: course.tariffs.map((tariff) => ({
+          id: tariff.id,
+          name: tariff.name,
+          subTariffs: Array.isArray(tariff.subTariffs)
+            ? tariff.subTariffs.map((subTariff) => ({ id: subTariff.id, name: subTariff.name }))
+            : [],
+        })),
       })),
       outstandingDebts: (outstandingDebts as Array<{
         id: string;
@@ -2635,7 +2785,6 @@ export const customerIncomeRouter = router({
           incomes: {
             some: {
               managerUserId: scopedManagerUserId,
-              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
             },
           },
         });
