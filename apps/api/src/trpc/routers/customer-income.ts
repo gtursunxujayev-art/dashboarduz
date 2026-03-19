@@ -10,7 +10,7 @@ import {
   customerSearchSchema,
 } from '@dashboarduz/shared';
 import { z } from 'zod';
-import { managerProcedure, protectedProcedure, router } from '../trpc';
+import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
 import { decryptIntegrationTokens } from '../../services/security/encryption';
 import { telegramService } from '../../services/integrations/telegram';
 
@@ -1889,6 +1889,111 @@ export const customerIncomeRouter = router({
       });
 
       return result.income;
+    }),
+
+  deleteIncome: adminProcedure
+    .input(
+      z.object({
+        incomeId: z.string().uuid(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const income = await prisma.income.findFirst({
+        where: {
+          id: input.incomeId,
+          tenantId: ctx.tenantId,
+        },
+        select: {
+          id: true,
+          type: true,
+          paymentAmount: true,
+          relatedDebtIncomeId: true,
+        },
+      });
+
+      if (!income) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Income entry not found.' });
+      }
+
+      const linkedAdjustmentCount = await prisma.incomeAdjustmentRequest.count({
+        where: {
+          tenantId: ctx.tenantId,
+          incomeId: income.id,
+        },
+      });
+
+      if (linkedAdjustmentCount > 0) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'This income entry has linked adjustment requests. Remove or resolve them first.',
+        });
+      }
+
+      if (income.type === 'new_sale') {
+        const linkedRepayments = await prisma.income.count({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'repayment',
+            relatedDebtIncomeId: income.id,
+          },
+        });
+
+        if (linkedRepayments > 0) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'This sale has repayments. Delete repayments first.',
+          });
+        }
+      }
+
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        if (income.type === 'repayment' && income.relatedDebtIncomeId) {
+          const sourceIncome = await tx.income.findFirst({
+            where: {
+              id: income.relatedDebtIncomeId,
+              tenantId: ctx.tenantId,
+            },
+            select: {
+              id: true,
+              debtAmount: true,
+              remainingDebtAmount: true,
+            },
+          });
+
+          if (sourceIncome) {
+            const restoredDebtRaw = (sourceIncome.remainingDebtAmount || 0) + (income.paymentAmount || 0);
+            const restoredDebt = sourceIncome.debtAmount !== null
+              ? Math.min(restoredDebtRaw, sourceIncome.debtAmount)
+              : restoredDebtRaw;
+
+            await tx.income.update({
+              where: { id: sourceIncome.id },
+              data: {
+                remainingDebtAmount: Math.max(restoredDebt, 0),
+              },
+            });
+          }
+        }
+
+        await tx.income.delete({
+          where: { id: income.id },
+        });
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'income_delete',
+          resource: 'income',
+          resourceId: income.id,
+          metadata: {
+            type: income.type,
+          },
+        },
+      });
+
+      return { success: true };
     }),
 
   bulkImportRows: protectedProcedure
