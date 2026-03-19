@@ -23,6 +23,9 @@ interface Seller {
     outboundCalls: number;
     totalCallDuration: number;
     averageCallDuration: number;
+    followUpCount: number;
+    noteCount: number;
+    stageChangeCount: number;
   };
 }
 
