@@ -121,6 +121,38 @@ function buildFieldClass(fieldErrors: FieldErrors, field: string, extra = ''): s
   return `${base} ${fieldErrors[field] ? invalid : normal} ${extra}`.trim();
 }
 
+function getTelegramDispatchWarning(dispatch: any): string | null {
+  if (!dispatch || typeof dispatch !== 'object') {
+    return null;
+  }
+
+  if (dispatch.delivered) {
+    return null;
+  }
+
+  const reason = String(dispatch.reason || '');
+  if (reason === 'course_not_eligible') {
+    return null;
+  }
+
+  if (reason === 'groups_missing') {
+    return "Telegram guruhiga yuborilmadi: OFLINE_GROUP_ID (yoki OFFLINE_GROUP_ID) sozlanmagan.";
+  }
+
+  if (reason === 'bot_token_missing') {
+    return "Telegram guruhiga yuborilmadi: bot token topilmadi (integratsiya yoki TELEGRAM_BOT_TOKEN ni tekshiring).";
+  }
+
+  const firstError = Array.isArray(dispatch.errors) && dispatch.errors.length > 0
+    ? String(dispatch.errors[0])
+    : null;
+  if (firstError) {
+    return `Telegram guruhiga yuborilmadi: ${firstError}`;
+  }
+
+  return "Telegram guruhiga yuborilmadi. API loglarini tekshiring.";
+}
+
 export default function IncomePage() {
   const { user } = useAuth();
   const isAdmin = Boolean(user?.roles?.includes('Admin'));
@@ -507,7 +539,7 @@ export default function IncomePage() {
     setFieldErrors({});
 
     try {
-      await createIncomeMutation.mutateAsync({
+      const createResult = await createIncomeMutation.mutateAsync({
         entryDate,
         managerUserId,
         customerNumber: customerNumberValue,
@@ -523,17 +555,26 @@ export default function IncomePage() {
         deadline: deadline || undefined,
       });
 
-      setSuccess("Tushum yozuvi muvaffaqiyatli saqlandi.");
+      const dispatchWarning = getTelegramDispatchWarning((createResult as any)?.telegramDispatch);
+      setSuccess(
+        dispatchWarning
+          ? `Tushum yozuvi muvaffaqiyatli saqlandi. ${dispatchWarning}`
+          : "Tushum yozuvi muvaffaqiyatli saqlandi.",
+      );
+      setEntryDate(getTashkentToday());
+      setManagerUserId('');
+      setCustomerNumber('');
+      setCustomerName('');
+      setTelegramUsername('');
+      setType('');
+      setDebtSourceIncomeId('');
+      setCourseId('');
+      setTariffId('');
+      setSubTariffId('');
+      setCoursePriceInput('');
       setPaymentInput('');
       setDeadline('');
-      if (type === 'new_sale') {
-        setCourseId('');
-        setTariffId('');
-        setSubTariffId('');
-        setCoursePriceInput('');
-      } else {
-        setDebtSourceIncomeId('');
-      }
+      setFieldErrors({});
       await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
     } catch (mutationError: any) {
       setError(mutationError?.message || "Tushum yozuvini saqlab bo'lmadi.");
