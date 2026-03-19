@@ -11,6 +11,8 @@ import {
 } from '@dashboarduz/shared';
 import { z } from 'zod';
 import { managerProcedure, protectedProcedure, router } from '../trpc';
+import { decryptIntegrationTokens } from '../../services/security/encryption';
+import { telegramService } from '../../services/integrations/telegram';
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'Agent'] as const;
 const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive'] as const;
@@ -25,6 +27,10 @@ const ADJUSTMENT_TYPE_TARIFF_CHANGE = 'tariff_change';
 const ADJUSTMENT_STATUS_PENDING = 'pending';
 const ADJUSTMENT_STATUS_APPROVED = 'approved';
 const ADJUSTMENT_STATUS_REJECTED = 'rejected';
+const CUSTOMER_NUMBER_REGEX = /^\d+$/;
+const TELEGRAM_USERNAME_REGEX = /^@?[A-Za-z0-9_]+$/;
+const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
+const OFFLINE_PAYMENT_GROUP_ENV_KEY = 'OFLINE_GROUP_ID';
 
 function isAdminUser(roles: string[]): boolean {
   return roles.includes('Admin');
@@ -256,6 +262,233 @@ function parseDateInput(input: string): Date {
   return date;
 }
 
+function parseTelegramGroupIds(rawValue: string | undefined): string[] {
+  if (!rawValue) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      rawValue
+        .split(/[,\n;]+/g)
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function toHashtag(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value
+    .normalize('NFKD')
+    .replace(/['`]/g, '')
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_');
+
+  return normalized ? `#${normalized}` : null;
+}
+
+function formatAmountUz(value: number | null | undefined): string {
+  return `${Number(value || 0).toLocaleString('ru-RU')} UZS`;
+}
+
+function formatDateGmt5(dateValue: Date): string {
+  const local = new Date(dateValue.getTime() + REPORT_TIMEZONE_OFFSET_MS);
+  const year = local.getUTCFullYear();
+  const month = String(local.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(local.getUTCDate()).padStart(2, '0');
+  return `${day}.${month}.${year}`;
+}
+
+function isOfflineOrIntensive(category: string | null | undefined): boolean {
+  const normalized = String(category || '').trim().toLowerCase();
+  return normalized === 'offline' || normalized === 'intensive';
+}
+
+async function sendOfflineOrIntensivePaymentTelegram(params: {
+  tenantId: string;
+  incomeId: string;
+}) {
+  const groupIds = parseTelegramGroupIds(process.env[OFFLINE_PAYMENT_GROUP_ENV_KEY]);
+  if (!groupIds.length) {
+    return;
+  }
+
+  const integration = await prisma.integration.findUnique({
+    where: {
+      tenantId_type: {
+        tenantId: params.tenantId,
+        type: 'telegram',
+      },
+    },
+    select: {
+      status: true,
+      tokensEncrypted: true,
+    },
+  });
+
+  if (!integration || integration.status !== 'active' || !integration.tokensEncrypted) {
+    return;
+  }
+
+  const tokens = decryptIntegrationTokens<{ botToken?: string }>(integration.tokensEncrypted);
+  const botToken = tokens.botToken?.trim();
+  if (!botToken) {
+    return;
+  }
+
+  const createdIncome = await prisma.income.findFirst({
+    where: {
+      id: params.incomeId,
+      tenantId: params.tenantId,
+    },
+    select: {
+      id: true,
+      type: true,
+      relatedDebtIncomeId: true,
+    },
+  });
+
+  if (!createdIncome) {
+    return;
+  }
+
+  const saleIncomeId = createdIncome.type === 'new_sale' ? createdIncome.id : createdIncome.relatedDebtIncomeId;
+  if (!saleIncomeId) {
+    return;
+  }
+
+  const saleIncome = await prisma.income.findFirst({
+    where: {
+      id: saleIncomeId,
+      tenantId: params.tenantId,
+    },
+    select: {
+      id: true,
+      entryDate: true,
+      deadline: true,
+      coursePriceAmount: true,
+      debtAmount: true,
+      remainingDebtAmount: true,
+      tariffId: true,
+      customer: {
+        select: {
+          name: true,
+          customerNumber: true,
+          telegramUsername: true,
+        },
+      },
+      course: {
+        select: {
+          name: true,
+          category: true,
+        },
+      },
+      tariff: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!saleIncome?.course || !saleIncome.customer || !isOfflineOrIntensive(saleIncome.course.category)) {
+    return;
+  }
+
+  const payments = await prisma.income.findMany({
+    where: {
+      tenantId: params.tenantId,
+      OR: [
+        { id: saleIncomeId },
+        { relatedDebtIncomeId: saleIncomeId },
+      ],
+    },
+    orderBy: [
+      { entryDate: 'asc' },
+      { createdAt: 'asc' },
+    ],
+    select: {
+      paymentAmount: true,
+      entryDate: true,
+    },
+  });
+
+  let subTariffHashtag: string | null = null;
+  if (saleIncome.tariffId) {
+    const activeSubTariffs = await prisma.subTariff.findMany({
+      where: {
+        tenantId: params.tenantId,
+        tariffId: saleIncome.tariffId,
+        isActive: true,
+      },
+      orderBy: { name: 'asc' },
+      select: { name: true },
+      take: 2,
+    });
+    const [singleSubTariff] = activeSubTariffs;
+    if (activeSubTariffs.length === 1 && singleSubTariff) {
+      subTariffHashtag = toHashtag(singleSubTariff.name);
+    }
+  }
+
+  const courseHashtag = toHashtag(saleIncome.course.name);
+  const tariffHashtag = toHashtag(saleIncome.tariff?.name);
+  const telegramUsername = saleIncome.customer.telegramUsername
+    ? (saleIncome.customer.telegramUsername.startsWith('@')
+      ? saleIncome.customer.telegramUsername
+      : `@${saleIncome.customer.telegramUsername}`)
+    : '-';
+  const agreementAmount = saleIncome.coursePriceAmount ?? saleIncome.debtAmount ?? 0;
+
+  const paymentLines = payments.length
+    ? payments.map((payment, index) => `${index + 1}) ${formatAmountUz(payment.paymentAmount)} - ${formatDateGmt5(payment.entryDate)}`)
+    : ['1) -'];
+
+  const messageLines = [
+    ...(courseHashtag ? [courseHashtag] : []),
+    ...(tariffHashtag ? [tariffHashtag] : []),
+    ...(subTariffHashtag ? [subTariffHashtag] : []),
+    '',
+    `1.Mijoz: ${saleIncome.customer.name}`,
+    `2.Tel: ${saleIncome.customer.customerNumber}`,
+    `3.Tg: ${telegramUsername}`,
+    '',
+    `Narxi - ${formatAmountUz(agreementAmount)}`,
+    '',
+    "To'lov:",
+    '',
+    ...paymentLines,
+    '',
+    `Qarz: ${formatAmountUz(saleIncome.remainingDebtAmount)}`,
+    `Deadline: ${saleIncome.deadline ? formatDateGmt5(saleIncome.deadline) : '-'}`,
+    '',
+    '@Moliya_b0limi',
+    '@najotnur_oflayn',
+  ];
+
+  const message = messageLines.join('\n');
+
+  for (const groupId of groupIds) {
+    try {
+      await telegramService.sendMessage(botToken, groupId, message, {
+        disable_web_page_preview: true,
+      });
+    } catch (error) {
+      console.error('[Income][Telegram] Failed to send offline/intensive payment message', {
+        tenantId: params.tenantId,
+        groupId,
+        incomeId: params.incomeId,
+        error: String((error as any)?.message || error),
+      });
+    }
+  }
+}
+
 async function assertManagerBelongsToTenant(tenantId: string, managerUserId: string) {
   const manager = await prisma.user.findFirst({
     where: {
@@ -328,6 +561,14 @@ function normalizeStringValue(value: BulkIncomeCell | undefined): string {
   }
 
   return '';
+}
+
+function sanitizeCustomerNumber(value: string): string {
+  return value.replace(/\s+/g, '').replace(/\D/g, '');
+}
+
+function sanitizeTelegramUsername(value: string): string {
+  return value.replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
 }
 
 function parseAmountValue(value: BulkIncomeCell | undefined): number {
@@ -581,16 +822,26 @@ function parseBulkRowToCreateIncomeInput(
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Row ${rowNumber}: date is required.` });
   }
 
-  const customerNumber = normalizeStringValue(getRowValue(row, CUSTOMER_NUMBER_HEADERS));
+  const customerNumber = sanitizeCustomerNumber(normalizeStringValue(getRowValue(row, CUSTOMER_NUMBER_HEADERS)));
   if (!customerNumber) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Row ${rowNumber}: customer number is required.` });
+  }
+  if (!CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `Row ${rowNumber}: customer number must contain only digits.` });
   }
 
   const typeRaw = normalizeStringValue(getRowValue(row, TYPE_HEADERS));
   const type = resolveType(typeRaw);
 
   const customerName = normalizeStringValue(getRowValue(row, CUSTOMER_NAME_HEADERS)) || undefined;
-  const telegramUsername = normalizeStringValue(getRowValue(row, TELEGRAM_HEADERS)) || undefined;
+  const telegramUsernameRaw = sanitizeTelegramUsername(normalizeStringValue(getRowValue(row, TELEGRAM_HEADERS)));
+  if (telegramUsernameRaw && !TELEGRAM_USERNAME_REGEX.test(telegramUsernameRaw)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Row ${rowNumber}: telegram username contains invalid characters.`,
+    });
+  }
+  const telegramUsername = telegramUsernameRaw || undefined;
   const deadline = parseDateValue(getRowValue(row, DEADLINE_HEADERS)) || undefined;
   const paymentAmount = parseAmountValue(getRowValue(row, PAYMENT_HEADERS));
   const debtSourceIncomeId = normalizeStringValue(getRowValue(row, DEBT_SOURCE_HEADERS)) || undefined;
@@ -774,7 +1025,23 @@ async function createIncomeEntry(params: {
   await assertManagerBelongsToTenant(tenantId, input.managerUserId);
   const entryDate = parseDateInput(input.entryDate);
   const deadline = input.deadline ? parseDateInput(input.deadline) : null;
-  const customerNumber = input.customerNumber.trim();
+  const customerNumber = sanitizeCustomerNumber(input.customerNumber.trim());
+  if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: "Customer number must contain only digits.",
+    });
+  }
+
+  const normalizedTelegramUsername = input.telegramUsername
+    ? sanitizeTelegramUsername(input.telegramUsername.trim())
+    : null;
+  if (normalizedTelegramUsername && !TELEGRAM_USERNAME_REGEX.test(normalizedTelegramUsername)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Telegram username may contain only letters, digits, "_" and optional "@".',
+    });
+  }
 
   if (input.paymentAmount < 0) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Payment amount cannot be negative.' });
@@ -809,7 +1076,7 @@ async function createIncomeEntry(params: {
         tenantId,
         customerNumber,
         name: input.customerName.trim(),
-        telegramUsername: input.telegramUsername?.trim() || null,
+        telegramUsername: normalizedTelegramUsername || null,
       },
     });
   }
@@ -972,6 +1239,11 @@ async function createIncomeEntry(params: {
           customerNumber: customer.customerNumber,
         },
       },
+    });
+
+    await sendOfflineOrIntensivePaymentTelegram({
+      tenantId,
+      incomeId: createdIncome.id,
     });
   }
 
