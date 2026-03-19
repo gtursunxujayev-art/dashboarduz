@@ -5,6 +5,27 @@ let hasRun = false;
 
 const COMPATIBILITY_SQL: string[] = [
   `
+  ALTER TABLE "courses"
+    ADD COLUMN IF NOT EXISTS "category" TEXT;
+  `,
+  `
+  UPDATE "courses"
+  SET "category" = 'offline'
+  WHERE "category" IS NULL OR LENGTH(TRIM("category")) = 0;
+  `,
+  `
+  ALTER TABLE "courses"
+    ALTER COLUMN "category" SET DEFAULT 'offline';
+  `,
+  `
+  ALTER TABLE "courses"
+    ALTER COLUMN "category" SET NOT NULL;
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS "courses_category_idx"
+    ON "courses" ("category");
+  `,
+  `
   ALTER TABLE "incomes"
     ADD COLUMN IF NOT EXISTS "lifecycleStatus" TEXT;
   `,
