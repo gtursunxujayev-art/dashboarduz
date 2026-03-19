@@ -204,6 +204,24 @@ export default function DashboardPage() {
       subtitle: 'Tanlangan davr bo\'yicha',
       extra: null,
     },
+    {
+      title: 'Follow-up',
+      value: String(stats?.followUpCount ?? 0),
+      subtitle: 'Yakunlangan vazifalar',
+      extra: null,
+    },
+    {
+      title: 'Yozuvlar',
+      value: String(stats?.noteCount ?? 0),
+      subtitle: "Lid bo'yicha yozuvlar",
+      extra: null,
+    },
+    {
+      title: "Bosqich o'zgarishi",
+      value: String(stats?.stageChangeCount ?? 0),
+      subtitle: "CRM status o'zgarishlari",
+      extra: null,
+    },
     ...(isAgentOnly
       ? [{
           title: "Qo'ng'iroqlar",
@@ -492,6 +510,9 @@ export default function DashboardPage() {
                         <tr>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Ism</th>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sotuv</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Follow-up</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Yozuvlar</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bosqich o'zgarishi</th>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Shartnoma summasi</th>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum summasi</th>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Suhbat vaqti</th>
@@ -503,6 +524,15 @@ export default function DashboardPage() {
                             <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{seller.name}</td>
                             <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                               {renderMetricValue(seller.sales)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {renderMetricValue(seller.followUpCount)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {renderMetricValue(seller.noteCount)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {renderMetricValue(seller.stageChangeCount)}
                             </td>
                             <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                               {seller.agreementsAmount === null || seller.agreementsAmount === undefined
