@@ -2,6 +2,7 @@ import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { amocrmService } from '../../services/integrations/amocrm';
+import { getAmoCRMActivityMetrics, summarizeAmoCRMActivityMetrics } from '../../services/integrations/amocrm-activity';
 import {
   asObject,
   asStringArray,
@@ -12,6 +13,7 @@ import {
   normalizeIdentifier,
   type LeadFieldOption,
 } from '../../services/integrations/amocrm-live';
+import { LogLevel, log } from '../../services/observability';
 import { adminProcedure, protectedProcedure, router } from '../trpc';
 
 const dashboardRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
@@ -595,6 +597,24 @@ export const dashboardRouter = router({
           }));
       }
 
+      let activityFetchMs = 0;
+      const activityFetchStartedMs = Date.now();
+      const activityManagerIds = agentUsers
+        .map((agent) => (agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId).trim() : ''))
+        .filter(Boolean);
+      const activityByManager = amoContext && activityManagerIds.length > 0
+        ? await getAmoCRMActivityMetrics({
+            tenantId: ctx.tenantId,
+            accessToken: amoContext.accessToken,
+            baseUrl: amoContext.baseUrl,
+            managerIds: activityManagerIds,
+            rangeStart,
+            rangeEnd,
+          })
+        : new Map();
+      activityFetchMs = Date.now() - activityFetchStartedMs;
+      const activityTotals = summarizeAmoCRMActivityMetrics(activityByManager);
+
       const reasonCounts = new Map<string, number>();
       const sourceCounts = new Map<string, number>();
       let qualifiedLeads = 0;
@@ -746,6 +766,9 @@ export const dashboardRouter = router({
           agreementsAmount: 0,
           incomeAmount: 0,
         };
+        const activityStats = responsibleUserId
+          ? activityByManager.get(responsibleUserId) || { followUpCount: 0, noteCount: 0, stageChangeCount: 0 }
+          : { followUpCount: 0, noteCount: 0, stageChangeCount: 0 };
         const talkSeconds = talkSecondsByAgent.get(agent.id);
         const leadMetricsAvailable = leadsDataAvailable && Boolean(responsibleUserId);
         const conversionPercentByAgent = leadMetricsAvailable && (leadStats?.newLeads ?? 0) > 0
@@ -765,7 +788,18 @@ export const dashboardRouter = router({
           agreementsAmount: salesStats.agreementsAmount,
           incomeAmount: salesStats.incomeAmount,
           talkedSeconds: talkedSecondsValue,
+          followUpCount: activityStats.followUpCount,
+          noteCount: activityStats.noteCount,
+          stageChangeCount: activityStats.stageChangeCount,
         };
+      });
+
+      log(LogLevel.INFO, 'Dashboard summary activity timings', {
+        tenantId: ctx.tenantId,
+        userId: ctx.user.userId,
+        activityFetchMs,
+        activityManagerCount: activityManagerIds.length,
+        activityTotals,
       });
 
       return {
@@ -793,6 +827,9 @@ export const dashboardRouter = router({
           qualifiedLeadSharePercent: Number(qualifiedLeadSharePercent.toFixed(2)),
           nonQualifiedLeadSharePercent: Number(nonQualifiedLeadSharePercent.toFixed(2)),
           conversionPercent: Number(conversionPercent.toFixed(2)),
+          followUpCount: activityTotals.followUpCount,
+          noteCount: activityTotals.noteCount,
+          stageChangeCount: activityTotals.stageChangeCount,
         },
         pieCharts: {
           nonQualifiedByReason: {
