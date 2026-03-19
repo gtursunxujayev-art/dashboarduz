@@ -7,6 +7,8 @@ import { initSentry, log, LogLevel } from './services/observability';
 import { checkRedisHealth } from './services/queue/redis-client';
 import { applyObservabilityMiddleware } from './middleware/observability';
 import { prisma } from '@dashboarduz/db';
+import { decryptIntegrationTokens } from './services/security/encryption';
+import { telegramService } from './services/integrations/telegram';
 
 dotenv.config();
 
@@ -152,6 +154,194 @@ app.get('/health/queues', async (_req, res) => {
     res.status(500).json({
       error: error.message,
       timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+function parseTelegramGroupIds(rawValue: string | undefined): string[] {
+  if (!rawValue) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      rawValue
+        .split(/[,\n;]+/g)
+        .map((value) => value.replace(/^['"`]+|['"`]+$/g, '').trim())
+        .map((value) => value.replace(/\s+/g, ''))
+        .filter(Boolean),
+    ),
+  );
+}
+
+function isTelegramDebugAuthorized(req: express.Request): boolean {
+  const configuredKey = (process.env.TELEGRAM_DEBUG_KEY || '').trim();
+  if (!configuredKey) {
+    return process.env.NODE_ENV !== 'production';
+  }
+
+  const queryKey = typeof req.query.key === 'string' ? req.query.key : '';
+  const headerKey = typeof req.headers['x-debug-key'] === 'string' ? req.headers['x-debug-key'] : '';
+  const bodyKey = typeof req.body?.key === 'string' ? req.body.key : '';
+  const providedKey = String(queryKey || headerKey || bodyKey || '').trim();
+  return providedKey.length > 0 && providedKey === configuredKey;
+}
+
+async function resolveTelegramDebugContext(req: express.Request): Promise<{
+  tenantId: string | null;
+  botToken: string | null;
+  tokenSource: 'integration' | 'env' | 'none';
+  groupIds: string[];
+}> {
+  const queryTenantId = typeof req.query.tenantId === 'string' ? req.query.tenantId.trim() : '';
+  const bodyTenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId.trim() : '';
+  const tenantId = queryTenantId || bodyTenantId || null;
+
+  const queryGroupId = typeof req.query.group_id === 'string' ? req.query.group_id.trim() : '';
+  const bodyGroupId = typeof req.body?.group_id === 'string' ? req.body.group_id.trim() : '';
+  const explicitGroups = parseTelegramGroupIds(queryGroupId || bodyGroupId || undefined);
+  const envGroups = Array.from(
+    new Set([
+      ...parseTelegramGroupIds(process.env.OFLINE_GROUP_ID),
+      ...parseTelegramGroupIds(process.env.OFFLINE_GROUP_ID),
+      ...parseTelegramGroupIds(process.env.OFLINE_GROUP_IDS),
+      ...parseTelegramGroupIds(process.env.OFFLINE_GROUP_IDS),
+    ]),
+  );
+  const groupIds = explicitGroups.length > 0 ? explicitGroups : envGroups;
+
+  const envToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim() || null;
+
+  const integration = await prisma.integration.findFirst({
+    where: {
+      ...(tenantId ? { tenantId } : {}),
+      type: 'telegram',
+      status: 'active',
+      tokensEncrypted: { not: null },
+    },
+    orderBy: { updatedAt: 'desc' },
+    select: {
+      tenantId: true,
+      tokensEncrypted: true,
+    },
+  });
+
+  let integrationToken: string | null = null;
+  if (integration?.tokensEncrypted) {
+    try {
+      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
+      integrationToken = String(tokens.botToken || tokens.token || '').trim() || null;
+    } catch (_error) {
+      integrationToken = null;
+    }
+  }
+
+  if (integrationToken) {
+    return {
+      tenantId: integration?.tenantId || tenantId,
+      botToken: integrationToken,
+      tokenSource: 'integration',
+      groupIds,
+    };
+  }
+
+  if (envToken) {
+    return {
+      tenantId: integration?.tenantId || tenantId,
+      botToken: envToken,
+      tokenSource: 'env',
+      groupIds,
+    };
+  }
+
+  return {
+    tenantId: integration?.tenantId || tenantId,
+    botToken: null,
+    tokenSource: 'none',
+    groupIds,
+  };
+}
+
+app.get('/debug/telegram', async (req, res) => {
+  if (!isTelegramDebugAuthorized(req)) {
+    return res.status(403).json({
+      ok: false,
+      error: 'Forbidden. Provide TELEGRAM_DEBUG_KEY via ?key=... or x-debug-key header.',
+    });
+  }
+
+  const context = await resolveTelegramDebugContext(req);
+  return res.json({
+    ok: true,
+    endpoint: '/debug/telegram',
+    mode: 'inspect',
+    tenantId: context.tenantId,
+    tokenSource: context.tokenSource,
+    hasBotToken: Boolean(context.botToken),
+    groupIds: context.groupIds,
+  });
+});
+
+app.post('/debug/telegram', async (req, res) => {
+  if (!isTelegramDebugAuthorized(req)) {
+    return res.status(403).json({
+      ok: false,
+      error: 'Forbidden. Provide TELEGRAM_DEBUG_KEY via body/query/header.',
+    });
+  }
+
+  try {
+    const context = await resolveTelegramDebugContext(req);
+    if (!context.botToken) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Telegram bot token not found. Connect Telegram integration or set TELEGRAM_BOT_TOKEN.',
+      });
+    }
+
+    if (!context.groupIds.length) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Group id not found. Set OFLINE_GROUP_ID/OFFLINE_GROUP_ID or pass group_id in request.',
+      });
+    }
+
+    const text = String(req.body?.text || '').trim() || `[DEBUG] Telegram test OK ${new Date().toISOString()}`;
+    const results: Array<{ groupId: string; ok: boolean; error?: string }> = [];
+
+    for (const groupId of context.groupIds) {
+      try {
+        await telegramService.sendMessage(context.botToken, groupId, text, {
+          disable_web_page_preview: true,
+        });
+        results.push({ groupId, ok: true });
+      } catch (error: any) {
+        results.push({
+          groupId,
+          ok: false,
+          error: String(error?.message || error),
+        });
+      }
+    }
+
+    const deliveredCount = results.filter((item) => item.ok).length;
+    const failedCount = results.length - deliveredCount;
+
+    return res.json({
+      ok: deliveredCount > 0,
+      endpoint: '/debug/telegram',
+      mode: 'send',
+      tenantId: context.tenantId,
+      tokenSource: context.tokenSource,
+      sentText: text,
+      deliveredCount,
+      failedCount,
+      results,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error?.message || String(error),
     });
   }
 });
