@@ -350,6 +350,12 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
       id: true,
       type: true,
       relatedDebtIncomeId: true,
+      manager: {
+        select: {
+          name: true,
+          username: true,
+        },
+      },
     },
   });
 
@@ -438,6 +444,8 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
 
   const courseHashtag = toHashtag(saleIncome.course.name);
   const tariffHashtag = toHashtag(saleIncome.tariff?.name);
+  const managerName = createdIncome.manager?.name || createdIncome.manager?.username || null;
+  const managerHashtag = toHashtag(managerName);
   const telegramUsername = saleIncome.customer.telegramUsername
     ? (saleIncome.customer.telegramUsername.startsWith('@')
       ? saleIncome.customer.telegramUsername
@@ -453,6 +461,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     ...(courseHashtag ? [courseHashtag] : []),
     ...(tariffHashtag ? [tariffHashtag] : []),
     ...(subTariffHashtag ? [subTariffHashtag] : []),
+    ...(managerHashtag ? [managerHashtag] : []),
     '',
     `1.Mijoz: ${saleIncome.customer.name}`,
     `2.Tel: ${saleIncome.customer.customerNumber}`,
