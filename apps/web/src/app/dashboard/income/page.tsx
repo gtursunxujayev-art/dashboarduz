@@ -133,6 +133,7 @@ export default function IncomePage() {
   const [debtSourceIncomeId, setDebtSourceIncomeId] = useState('');
   const [courseId, setCourseId] = useState('');
   const [tariffId, setTariffId] = useState('');
+  const [subTariffId, setSubTariffId] = useState('');
   const [coursePriceInput, setCoursePriceInput] = useState('');
   const [paymentInput, setPaymentInput] = useState('');
   const [deadline, setDeadline] = useState('');
@@ -236,6 +237,14 @@ export default function IncomePage() {
     return Array.isArray(course?.tariffs) ? course.tariffs : [];
   }, [courseId, courseOptions]);
 
+  const subTariffOptions = useMemo(() => {
+    if (!tariffId) {
+      return [];
+    }
+    const tariff = tariffOptions.find((item: any) => item.id === tariffId);
+    return Array.isArray(tariff?.subTariffs) ? tariff.subTariffs : [];
+  }, [tariffId, tariffOptions]);
+
   const coursePriceAmount = parseAmount(coursePriceInput);
   const paymentAmount = parseAmount(paymentInput);
   const sourceDebtAmount = selectedDebt?.remainingDebtAmount || 0;
@@ -273,12 +282,14 @@ export default function IncomePage() {
     if (type === 'repayment') {
       setCourseId('');
       setTariffId('');
+      setSubTariffId('');
       setCoursePriceInput('');
       return;
     }
     setDebtSourceIncomeId('');
     setCourseId('');
     setTariffId('');
+    setSubTariffId('');
     setCoursePriceInput('');
   }, [type]);
 
@@ -297,13 +308,26 @@ export default function IncomePage() {
   useEffect(() => {
     if (!courseId) {
       setTariffId('');
+      setSubTariffId('');
       return;
     }
     const exists = tariffOptions.some((tariff: any) => tariff.id === tariffId);
     if (!exists) {
       setTariffId('');
+      setSubTariffId('');
     }
   }, [courseId, tariffId, tariffOptions]);
+
+  useEffect(() => {
+    if (!tariffId) {
+      setSubTariffId('');
+      return;
+    }
+    const exists = subTariffOptions.some((subTariff: any) => subTariff.id === subTariffId);
+    if (!exists) {
+      setSubTariffId('');
+    }
+  }, [tariffId, subTariffId, subTariffOptions]);
 
   const handleDownloadTemplate = () => {
     const sampleRows: Array<Record<string, string>> = [
@@ -468,6 +492,7 @@ export default function IncomePage() {
         debtSourceIncomeId: type === 'repayment' ? debtSourceIncomeId : undefined,
         courseId: type === 'new_sale' ? courseId : undefined,
         tariffId: type === 'new_sale' ? tariffId : undefined,
+        subTariffId: type === 'new_sale' ? (subTariffId || undefined) : undefined,
         coursePriceAmount: type === 'new_sale' ? coursePriceAmount : undefined,
         paymentAmount,
         deadline: deadline || undefined,
@@ -479,6 +504,7 @@ export default function IncomePage() {
       if (type === 'new_sale') {
         setCourseId('');
         setTariffId('');
+        setSubTariffId('');
         setCoursePriceInput('');
       } else {
         setDebtSourceIncomeId('');
@@ -852,6 +878,27 @@ export default function IncomePage() {
                     {fieldErrors.tariffId && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.tariffId}</p>}
                   </div>
                 </div>
+
+                {subTariffOptions.length > 0 && (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Subtarif</label>
+                      <select
+                        value={subTariffId}
+                        onChange={(event) => setSubTariffId(event.target.value)}
+                        disabled={!tariffId}
+                        className={buildFieldClass(fieldErrors, 'subTariffId', 'disabled:bg-gray-100 disabled:text-gray-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400')}
+                      >
+                        <option value="">Subtarifni tanlang</option>
+                        {subTariffOptions.map((subTariff: any) => (
+                          <option key={subTariff.id} value={subTariff.id}>
+                            {subTariff.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div>
