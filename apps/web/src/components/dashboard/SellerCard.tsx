@@ -23,6 +23,9 @@ interface Seller {
     outboundCalls: number;
     totalCallDuration: number;
     averageCallDuration: number;
+    followUpCount: number;
+    noteCount: number;
+    stageChangeCount: number;
   };
 }
 
@@ -147,6 +150,48 @@ export default function SellerCard({ seller }: SellerCardProps) {
                 {seller.metrics.averageDealAmount.toLocaleString()} UZS
               </p>
               <p className="text-xs text-gray-500">O'rtacha Sotuv</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gray-50 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 bg-indigo-100 rounded-md p-2">
+              <svg className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-900">{seller.metrics.followUpCount}</p>
+              <p className="text-xs text-gray-500">Follow-up</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gray-50 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 bg-cyan-100 rounded-md p-2">
+              <svg className="h-5 w-5 text-cyan-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h8m-8 4h6M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-900">{seller.metrics.noteCount}</p>
+              <p className="text-xs text-gray-500">Yozuvlar</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gray-50 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 bg-rose-100 rounded-md p-2">
+              <svg className="h-5 w-5 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h5l2 3h11M5 7v10a2 2 0 002 2h9M16 21l5-5m0 0l-5-5m5 5H9" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-900">{seller.metrics.stageChangeCount}</p>
+              <p className="text-xs text-gray-500">Bosqich o'zgarishi</p>
             </div>
           </div>
         </div>
