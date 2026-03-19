@@ -46,6 +46,7 @@ const envSchema = z.object({
   OFFLINE_GROUP_ID: z.string().optional(),
   OFLINE_GROUP_IDS: z.string().optional(),
   OFFLINE_GROUP_IDS: z.string().optional(),
+  TELEGRAM_DEBUG_KEY: z.string().optional(),
   
   // AmoCRM
   AMOCRM_BASE_URL: z.string().url().default('https://www.amocrm.ru'),
