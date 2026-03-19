@@ -31,6 +31,13 @@ const CUSTOMER_NUMBER_REGEX = /^\d+$/;
 const TELEGRAM_USERNAME_REGEX = /^@?[A-Za-z0-9_]+$/;
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const OFFLINE_PAYMENT_GROUP_ENV_KEY = 'OFLINE_GROUP_ID';
+const OFFLINE_PAYMENT_GROUP_ENV_KEY_LEGACY = 'OFFLINE_GROUP_ID';
+const OFFLINE_PAYMENT_GROUP_ENV_KEYS = [
+  OFFLINE_PAYMENT_GROUP_ENV_KEY,
+  OFFLINE_PAYMENT_GROUP_ENV_KEY_LEGACY,
+  'OFLINE_GROUP_IDS',
+  'OFFLINE_GROUP_IDS',
+] as const;
 
 function isAdminUser(roles: string[]): boolean {
   return roles.includes('Admin');
@@ -271,14 +278,25 @@ function parseTelegramGroupIds(rawValue: string | undefined): string[] {
     return [];
   }
 
+  const stripWrappingQuotes = (value: string): string => value.replace(/^['"`]+|['"`]+$/g, '').trim();
+
   return Array.from(
     new Set(
       rawValue
         .split(/[,\n;]+/g)
-        .map((value) => value.trim())
+        .map((value) => stripWrappingQuotes(value))
+        .map((value) => value.replace(/\s+/g, ''))
         .filter(Boolean),
     ),
   );
+}
+
+function normalizeTelegramSecret(rawValue: string | undefined): string | null {
+  if (!rawValue) {
+    return null;
+  }
+  const normalized = rawValue.replace(/^['"`]+|['"`]+$/g, '').trim();
+  return normalized || null;
 }
 
 function toHashtag(value: string | null | undefined): string | null {
@@ -318,9 +336,28 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   incomeId: string;
   preferredSubTariffId?: string;
 }) {
-  const groupIds = parseTelegramGroupIds(process.env[OFFLINE_PAYMENT_GROUP_ENV_KEY]);
+  type TelegramPaymentDispatchResult = {
+    attempted: boolean;
+    delivered: boolean;
+    sentCount: number;
+    failedCount: number;
+    reason?: 'groups_missing' | 'bot_token_missing' | 'income_not_found' | 'course_not_eligible' | 'send_failed';
+    errors?: string[];
+  };
+
+  const groupIds = Array.from(new Set(
+    OFFLINE_PAYMENT_GROUP_ENV_KEYS.flatMap((key) => parseTelegramGroupIds(process.env[key])),
+  ));
+
   if (!groupIds.length) {
-    return;
+    console.warn('[Income][Telegram] Group ID is missing. Set OFLINE_GROUP_ID (or OFFLINE_GROUP_ID).');
+    return {
+      attempted: false,
+      delivered: false,
+      sentCount: 0,
+      failedCount: 0,
+      reason: 'groups_missing',
+    } satisfies TelegramPaymentDispatchResult;
   }
 
   const integration = await prisma.integration.findUnique({
@@ -336,14 +373,29 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     },
   });
 
-  if (!integration || integration.status !== 'active' || !integration.tokensEncrypted) {
-    return;
+  let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
+  if (integration?.tokensEncrypted) {
+    try {
+      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
+      const integrationBotToken = normalizeTelegramSecret(tokens.botToken || tokens.token);
+      botToken = integrationBotToken || botToken;
+    } catch (error) {
+      console.warn('[Income][Telegram] Failed to decrypt integration bot token, using TELEGRAM_BOT_TOKEN fallback if provided.', {
+        tenantId: params.tenantId,
+        error: String((error as any)?.message || error),
+      });
+    }
   }
 
-  const tokens = decryptIntegrationTokens<{ botToken?: string }>(integration.tokensEncrypted);
-  const botToken = tokens.botToken?.trim();
   if (!botToken) {
-    return;
+    console.warn('[Income][Telegram] Bot token is missing. Connect Telegram integration or set TELEGRAM_BOT_TOKEN.');
+    return {
+      attempted: false,
+      delivered: false,
+      sentCount: 0,
+      failedCount: 0,
+      reason: 'bot_token_missing',
+    } satisfies TelegramPaymentDispatchResult;
   }
 
   const createdIncome = await prisma.income.findFirst({
@@ -365,12 +417,24 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   });
 
   if (!createdIncome) {
-    return;
+    return {
+      attempted: false,
+      delivered: false,
+      sentCount: 0,
+      failedCount: 0,
+      reason: 'income_not_found',
+    } satisfies TelegramPaymentDispatchResult;
   }
 
   const saleIncomeId = createdIncome.type === 'new_sale' ? createdIncome.id : createdIncome.relatedDebtIncomeId;
   if (!saleIncomeId) {
-    return;
+    return {
+      attempted: false,
+      delivered: false,
+      sentCount: 0,
+      failedCount: 0,
+      reason: 'income_not_found',
+    } satisfies TelegramPaymentDispatchResult;
   }
 
   type SaleIncomePayload = {
@@ -501,7 +565,13 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   }
 
   if (!saleIncome?.course || !saleIncome.customer || !isOfflineOrIntensive(saleIncome.course.category)) {
-    return;
+    return {
+      attempted: false,
+      delivered: false,
+      sentCount: 0,
+      failedCount: 0,
+      reason: 'course_not_eligible',
+    } satisfies TelegramPaymentDispatchResult;
   }
 
   const payments = await prisma.income.findMany({
@@ -595,20 +665,46 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
 
   const message = messageLines.join('\n');
 
+  let sentCount = 0;
+  const sendErrors: string[] = [];
+
   for (const groupId of groupIds) {
     try {
       await telegramService.sendMessage(botToken, groupId, message, {
         disable_web_page_preview: true,
       });
+      sentCount += 1;
     } catch (error) {
+      const errorMessage = String((error as any)?.message || error);
+      sendErrors.push(`${groupId}: ${errorMessage}`);
       console.error('[Income][Telegram] Failed to send offline/intensive payment message', {
         tenantId: params.tenantId,
         groupId,
         incomeId: params.incomeId,
-        error: String((error as any)?.message || error),
+        error: errorMessage,
       });
     }
   }
+
+  const dispatchResult = {
+    attempted: true,
+    delivered: sentCount > 0,
+    sentCount,
+    failedCount: Math.max(groupIds.length - sentCount, 0),
+    reason: sentCount > 0 ? undefined : 'send_failed',
+    errors: sendErrors.slice(0, 3),
+  } satisfies TelegramPaymentDispatchResult;
+
+  if (!dispatchResult.delivered) {
+    console.warn('[Income][Telegram] Payment message was not delivered to any target group.', {
+      tenantId: params.tenantId,
+      incomeId: params.incomeId,
+      groupIds,
+      errors: dispatchResult.errors,
+    });
+  }
+
+  return dispatchResult;
 }
 
 async function assertManagerBelongsToTenant(tenantId: string, managerUserId: string) {
@@ -1205,6 +1301,16 @@ async function createIncomeEntry(params: {
 
   let createdIncome;
   let selectedSubTariffId: string | undefined;
+  let telegramDispatch:
+    | {
+        attempted: boolean;
+        delivered: boolean;
+        sentCount: number;
+        failedCount: number;
+        reason?: string;
+        errors?: string[];
+      }
+    | null = null;
 
   if (input.type === 'new_sale') {
     if (!input.courseId || !input.tariffId || input.coursePriceAmount === undefined) {
@@ -1382,7 +1488,7 @@ async function createIncomeEntry(params: {
     });
 
     try {
-      await sendOfflineOrIntensivePaymentTelegram({
+      telegramDispatch = await sendOfflineOrIntensivePaymentTelegram({
         tenantId,
         incomeId: createdIncome.id,
         preferredSubTariffId: selectedSubTariffId,
@@ -1393,12 +1499,21 @@ async function createIncomeEntry(params: {
         incomeId: createdIncome.id,
         error: String((error as any)?.message || error),
       });
+      telegramDispatch = {
+        attempted: true,
+        delivered: false,
+        sentCount: 0,
+        failedCount: 0,
+        reason: 'send_failed',
+        errors: [String((error as any)?.message || error)],
+      };
     }
   }
 
   return {
     income: createdIncome,
     customerNumber: customer.customerNumber,
+    telegramDispatch,
   };
 }
 
@@ -1888,7 +2003,10 @@ export const customerIncomeRouter = router({
         input,
       });
 
-      return result.income;
+      return {
+        income: result.income,
+        telegramDispatch: result.telegramDispatch,
+      };
     }),
 
   deleteIncome: adminProcedure
