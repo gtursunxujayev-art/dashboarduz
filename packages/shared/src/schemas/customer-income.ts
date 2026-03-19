@@ -36,6 +36,7 @@ export const createIncomeSchema = z.object({
   debtSourceIncomeId: z.string().uuid().optional(),
   courseId: z.string().uuid().optional(),
   tariffId: z.string().uuid().optional(),
+  subTariffId: z.string().uuid().optional(),
   coursePriceAmount: z.number().int().min(0).optional(),
   paymentAmount: z.number().int().min(0),
   deadline: z.string().optional(),
