@@ -1,8 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+
+type CallsRange = 'today' | 'week' | 'month' | 'custom';
+const RANGE_OPTIONS: CallsRange[] = ['today', 'week', 'month', 'custom'];
 
 function formatDuration(totalSeconds?: number | null): string {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
@@ -17,8 +20,33 @@ function formatDecimal(value?: number | null): string {
   return safeValue.toFixed(1);
 }
 
+function getTashkentToday(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tashkent',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+
+  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
+  return `${year}-${month}-${day}`;
+}
+
+function getRangeLabel(range: CallsRange): string {
+  if (range === 'week') return 'Bu hafta';
+  if (range === 'month') return 'Bu oy';
+  if (range === 'custom') return 'Ixtiyoriy sana';
+  return 'Bugun';
+}
+
 export default function CallsPage() {
   const { user } = useAuth();
+  const [range, setRange] = useState<CallsRange>('today');
+  const [dateFrom, setDateFrom] = useState(getTashkentToday());
+  const [dateTo, setDateTo] = useState(getTashkentToday());
+
   const isAgentOnly = Boolean(
     user?.roles?.includes('Agent')
     && !user?.roles?.includes('Admin')
@@ -26,11 +54,16 @@ export default function CallsPage() {
     && !user?.roles?.includes('Finance'),
   );
 
-  const callsQuery = trpc.calls.analytics.useQuery(undefined, {
+  const callsQuery = trpc.calls.analytics.useQuery({
+    range,
+    dateFrom: range === 'custom' ? dateFrom : undefined,
+    dateTo: range === 'custom' ? dateTo : undefined,
+  }, {
     refetchInterval: 60_000,
+    keepPreviousData: true,
   });
 
-  const rows = useMemo(() => callsQuery.data?.rows ?? [], [callsQuery.data?.rows]);
+  const rows = useMemo(() => callsQuery.data?.rows ?? [], [callsQuery.data]);
   const totals = useMemo(() => ({
     totalCalls: rows.reduce((sum: number, row: any) => sum + Number(row.totalCalls || 0), 0),
     totalDurationSeconds: rows.reduce((sum: number, row: any) => sum + Number(row.totalDurationSeconds || 0), 0),
@@ -43,6 +76,46 @@ export default function CallsPage() {
         <p className="mt-1 text-sm text-gray-500">
           Agentlar kesimida qo&apos;ng&apos;iroqlar statistikasi va bugungi natijalar
         </p>
+      </div>
+
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="space-y-3">
+          <div className="overflow-x-auto">
+            <div className="inline-flex min-w-max rounded-md shadow-sm">
+              {RANGE_OPTIONS.map((option, index) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setRange(option)}
+                  className={`border border-gray-300 px-4 py-2 text-sm font-medium ${
+                    range === option ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                  } ${index === 0 ? 'rounded-l-md' : ''} ${
+                    index === RANGE_OPTIONS.length - 1 ? 'rounded-r-md' : ''
+                  } ${index !== 0 ? 'border-l-0' : ''}`}
+                >
+                  {getRangeLabel(option)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {range === 'custom' && (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {callsQuery.data?.agentInsight?.message && (
