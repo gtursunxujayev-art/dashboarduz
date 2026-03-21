@@ -276,10 +276,12 @@ function createStyledReportPdf(params: {
   const textDark: PdfColor = [0.11, 0.16, 0.24];
   const accent: PdfColor = [0.12, 0.4, 0.95];
   const white: PdfColor = [1, 1, 1];
+  const headerDateRange = `${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`;
 
   c.rect(16, 24, 547, 62, { fill: dark });
   c.text(28, 44, params.tenantName, { font: 'F2', size: 20, color: white });
   c.text(52, 270, params.title, { font: 'F1', size: 12, color: [0.76, 0.82, 0.92] });
+  c.text(28, 360, `Sana: ${headerDateRange}`, { size: 10, color: [0.76, 0.82, 0.92] });
   c.text(92, 44, `Davr: ${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`, { size: 10, color: textDark });
   c.text(106, 44, `Tayyorlangan: ${formatLocalDateTime(params.generatedAt)}`, { size: 10, color: textDark });
 
