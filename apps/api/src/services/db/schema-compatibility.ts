@@ -167,12 +167,31 @@ export async function ensureSchemaCompatibility(): Promise<void> {
     return;
   }
 
+  if (process.env.SKIP_SCHEMA_COMPATIBILITY_BOOTSTRAP === 'true') {
+    hasRun = true;
+    log(LogLevel.INFO, 'Database compatibility bootstrap skipped by environment flag');
+    return;
+  }
+
   try {
-    for (const sql of COMPATIBILITY_SQL) {
-      await prisma.$executeRawUnsafe(sql);
+    let failures = 0;
+    for (const [index, sql] of COMPATIBILITY_SQL.entries()) {
+      try {
+        await prisma.$transaction([
+          prisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '5000ms'`),
+          prisma.$executeRawUnsafe(`SET LOCAL statement_timeout = '15000ms'`),
+          prisma.$executeRawUnsafe(sql),
+        ]);
+      } catch (error: any) {
+        failures += 1;
+        log(LogLevel.WARN, 'Database compatibility bootstrap statement failed', {
+          step: index + 1,
+          error: error?.message || String(error),
+        });
+      }
     }
     hasRun = true;
-    log(LogLevel.INFO, 'Database compatibility bootstrap complete');
+    log(LogLevel.INFO, 'Database compatibility bootstrap complete', { failures });
   } catch (error: any) {
     log(LogLevel.WARN, 'Database compatibility bootstrap failed', {
       error: error?.message || String(error),
