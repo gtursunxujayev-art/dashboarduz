@@ -23,6 +23,13 @@ const FINANCE_ALLOWED_HREFS = new Set([
   '/dashboard/finance',
   '/dashboard/adjustments',
 ]);
+const TASHKILIY_ALLOWED_HREFS = new Set([
+  '/dashboard',
+  '/dashboard/adjustments',
+  '/dashboard/customers',
+  '/dashboard/courses',
+  '/dashboard/settings',
+]);
 const ADMIN_ONLY_HREFS = new Set([
   '/dashboard/integrations',
   '/dashboard/notifications',
@@ -68,10 +75,19 @@ export default function Sidebar() {
       && !user?.roles.includes('Manager')
       && !user?.roles.includes('Agent'),
   );
+  const isTashkiliyOnly = Boolean(
+    user?.roles.includes('Tashkiliy')
+      && !user?.roles.includes('Admin')
+      && !user?.roles.includes('Manager')
+      && !user?.roles.includes('Agent')
+      && !user?.roles.includes('Finance'),
+  );
   const visibleNavigation = isAgentOnly
     ? navigation.filter((item) => AGENT_ALLOWED_HREFS.has(item.href))
     : isFinanceOnly
       ? navigation.filter((item) => FINANCE_ALLOWED_HREFS.has(item.href))
+      : isTashkiliyOnly
+        ? navigation.filter((item) => TASHKILIY_ALLOWED_HREFS.has(item.href))
       : isAdmin
         ? navigation
         : navigation.filter((item) => !ADMIN_ONLY_HREFS.has(item.href));
