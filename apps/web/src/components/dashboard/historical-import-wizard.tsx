@@ -49,6 +49,7 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
   const [incomeRows, setIncomeRows] = useState<RawImportRow[]>([]);
   const [customerRows, setCustomerRows] = useState<RawImportRow[]>([]);
   const [incomeFileName, setIncomeFileName] = useState('');
+  const [incomeSheetName, setIncomeSheetName] = useState('');
   const [customerFileName, setCustomerFileName] = useState('');
   const [customerSheetName, setCustomerSheetName] = useState('');
   const [fallbackManagerUserId, setFallbackManagerUserId] = useState('');
@@ -141,9 +142,14 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
       const rows = readWorkbookRows(workbook, firstSheetName);
       setIncomeRows(rows);
       setIncomeFileName(file.name);
+      setIncomeSheetName(firstSheetName);
+      setLocalPreview(null);
       setError(null);
       setSuccess(null);
     } catch (parseError: any) {
+      setIncomeRows([]);
+      setIncomeFileName('');
+      setIncomeSheetName('');
       setError(parseError?.message || "Income faylini o'qib bo'lmadi.");
     }
   };
@@ -164,9 +170,13 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
       setCustomerRows(rows);
       setCustomerFileName(file.name);
       setCustomerSheetName(targetSheetName);
+      setLocalPreview(null);
       setError(null);
       setSuccess(null);
     } catch (parseError: any) {
+      setCustomerRows([]);
+      setCustomerFileName('');
+      setCustomerSheetName('');
       setError(parseError?.message || "Customer faylini o'qib bo'lmadi.");
     }
   };
@@ -245,15 +255,47 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
         {success && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-300">{success}</p>}
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <label className="rounded-md border border-dashed border-gray-300 p-4 text-sm text-gray-700 dark:border-slate-600 dark:text-slate-200">
+          <label className={`rounded-md border border-dashed p-4 text-sm ${incomeFileName ? 'border-emerald-300 bg-emerald-50/60 text-emerald-900 dark:border-emerald-700/60 dark:bg-emerald-950/20 dark:text-emerald-100' : 'border-gray-300 text-gray-700 dark:border-slate-600 dark:text-slate-200'}`}>
             <div className="font-medium">Income ledger fayli</div>
-            <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">{incomeFileName || 'import income.xlsx ni tanlang'}</div>
-            <input type="file" accept=".xlsx,.xls" className="mt-3 block w-full text-xs" onChange={handleIncomeFile} />
+            <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+              {incomeFileName || 'import income.xlsx ni tanlang'}
+            </div>
+            <input type="file" accept=".xlsx,.xls" className="sr-only" onChange={handleIncomeFile} />
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <span className="inline-flex rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                Fayl tanlash
+              </span>
+              {incomeFileName ? (
+                <span className="text-xs text-emerald-700 dark:text-emerald-300">
+                  Yuklandi: {incomeSheetName || '-'} • {incomeRows.length} qator
+                </span>
+              ) : (
+                <span className="text-xs text-gray-500 dark:text-slate-400">
+                  Excel fayl tanlang
+                </span>
+              )}
+            </div>
           </label>
-          <label className="rounded-md border border-dashed border-gray-300 p-4 text-sm text-gray-700 dark:border-slate-600 dark:text-slate-200">
+          <label className={`rounded-md border border-dashed p-4 text-sm ${customerFileName ? 'border-emerald-300 bg-emerald-50/60 text-emerald-900 dark:border-emerald-700/60 dark:bg-emerald-950/20 dark:text-emerald-100' : 'border-gray-300 text-gray-700 dark:border-slate-600 dark:text-slate-200'}`}>
             <div className="font-medium">Customer master fayli</div>
-            <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">{customerFileName || "Couching ro'yhat.xlsx ni tanlang"}</div>
-            <input type="file" accept=".xlsx,.xls" className="mt-3 block w-full text-xs" onChange={handleCustomerFile} />
+            <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+              {customerFileName || "Couching ro'yhat.xlsx ni tanlang"}
+            </div>
+            <input type="file" accept=".xlsx,.xls" className="sr-only" onChange={handleCustomerFile} />
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <span className="inline-flex rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                Fayl tanlash
+              </span>
+              {customerFileName ? (
+                <span className="text-xs text-emerald-700 dark:text-emerald-300">
+                  Yuklandi: {customerSheetName || '-'} • {customerRows.length} qator
+                </span>
+              ) : (
+                <span className="text-xs text-gray-500 dark:text-slate-400">
+                  `Baza` sheetli Excel fayl tanlang
+                </span>
+              )}
+            </div>
           </label>
         </div>
 
