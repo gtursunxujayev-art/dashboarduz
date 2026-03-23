@@ -93,6 +93,10 @@ export default function FinancePage() {
   const { user } = useAuth();
   const roles = user?.roles || [];
   const canSeeRefundAnalytics = roles.includes('Admin') || roles.includes('Finance');
+  const isAgentOnly = roles.includes('Agent')
+    && !roles.includes('Admin')
+    && !roles.includes('Manager')
+    && !roles.includes('Finance');
   const [range, setRange] = useState<DashboardRange>('month');
   const [dateFrom, setDateFrom] = useState(getTashkentToday());
   const [dateTo, setDateTo] = useState(getTashkentToday());
@@ -105,7 +109,7 @@ export default function FinancePage() {
       dateFrom: range === 'custom' ? dateFrom : undefined,
       dateTo: range === 'custom' ? dateTo : undefined,
       courseId: courseId || undefined,
-      managerUserId: managerUserId || undefined,
+      managerUserId: isAgentOnly ? undefined : (managerUserId || undefined),
     },
     {
       retry: 1,
@@ -131,10 +135,15 @@ export default function FinancePage() {
         <p className="mt-1 text-sm text-gray-500">
           Kurs, agent va sana bo'yicha tushum hamda qarzdorlik tahlili.
         </p>
+        {isAgentOnly && (
+          <p className="mt-2 text-xs font-medium text-blue-700">
+            Agent rejimi: bu sahifada faqat o'zingizga tegishli moliyaviy ma'lumotlar ko'rsatiladi.
+          </p>
+        )}
       </div>
 
       <div className="rounded-lg bg-white p-6 shadow">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_180px_1fr_1fr]">
+        <div className={`grid grid-cols-1 gap-3 ${isAgentOnly ? 'md:grid-cols-[180px_180px_180px_1fr]' : 'md:grid-cols-[180px_180px_180px_1fr_1fr]'}`}>
           <select
             value={range}
             onChange={(event) => setRange(event.target.value as DashboardRange)}
@@ -174,18 +183,20 @@ export default function FinancePage() {
             ))}
           </select>
 
-          <select
-            value={managerUserId}
-            onChange={(event) => setManagerUserId(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">Barcha agentlar</option>
-            {managerOptions.map((manager: any) => (
-              <option key={manager.id} value={manager.id}>
-                {manager.label}
-              </option>
-            ))}
-          </select>
+          {!isAgentOnly && (
+            <select
+              value={managerUserId}
+              onChange={(event) => setManagerUserId(event.target.value)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">Barcha agentlar</option>
+              {managerOptions.map((manager: any) => (
+                <option key={manager.id} value={manager.id}>
+                  {manager.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
