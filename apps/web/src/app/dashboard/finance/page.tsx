@@ -3,6 +3,15 @@
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
@@ -22,6 +31,43 @@ function getTashkentToday(): string {
 
 function formatAmount(value: number | null | undefined): string {
   return `${new Intl.NumberFormat('ru-RU').format(value ?? 0)} so'm`;
+}
+
+function formatCompactAmount(value: number | null | undefined): string {
+  const safe = Number(value || 0);
+  const abs = Math.abs(safe);
+  if (abs >= 1_000_000_000) {
+    return `${(safe / 1_000_000_000).toFixed(1)} mlrd`;
+  }
+  if (abs >= 1_000_000) {
+    return `${(safe / 1_000_000).toFixed(1)} mln`;
+  }
+  if (abs >= 1_000) {
+    return `${(safe / 1_000).toFixed(1)} ming`;
+  }
+  return `${Math.round(safe)}`;
+}
+
+function getTrendMeta(direction?: string) {
+  if (direction === 'up') {
+    return {
+      badgeClass: 'bg-emerald-100 text-emerald-800',
+      label: "O'sish",
+      sign: '+',
+    };
+  }
+  if (direction === 'down') {
+    return {
+      badgeClass: 'bg-red-100 text-red-800',
+      label: 'Pasayish',
+      sign: '',
+    };
+  }
+  return {
+    badgeClass: 'bg-gray-100 text-gray-700',
+    label: "O'zgarish yo'q",
+    sign: '',
+  };
 }
 
 function getIncomeStatusBadge(status: string) {
@@ -73,6 +119,10 @@ export default function FinancePage() {
   const recentIncomes = useMemo(() => financeQuery.data?.recentIncomes || [], [financeQuery.data]);
   const incomeByCourse = useMemo(() => financeQuery.data?.incomeByCourse || [], [financeQuery.data]);
   const incomeByAgent = useMemo(() => financeQuery.data?.incomeByAgent || [], [financeQuery.data]);
+  const comparisons = financeQuery.data?.comparisons;
+  const forecast = financeQuery.data?.forecast;
+  const monthSeries = useMemo(() => forecast?.monthSeries || [], [forecast]);
+  const yearSeries = useMemo(() => forecast?.yearSeries || [], [forecast]);
 
   return (
     <div className="space-y-6">
@@ -173,6 +223,127 @@ export default function FinancePage() {
             <p className="mt-1 text-xs text-gray-500">{totals?.refundCount ?? 0} ta qaytarish</p>
           </div>
         )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        {[
+          {
+            title: "Bu oy (hozirgacha) vs o'tgan oy (shu sana)",
+            data: comparisons?.monthToDateVsLastMonthToDate,
+          },
+          {
+            title: "Bu oy (hozirgacha) vs o'tgan yil shu oy",
+            data: comparisons?.monthToDateVsLastYearSameMonth,
+          },
+          {
+            title: 'YTD: Bu yil vs O‘tgan yil',
+            data: comparisons?.ytdVsLastYearYtd,
+          },
+        ].map((item) => {
+          const trend = getTrendMeta(item.data?.direction);
+          return (
+            <div key={item.title} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-gray-500">{item.title}</p>
+              <div className="mt-3 space-y-1">
+                <p className="text-sm text-gray-600">Joriy: <span className="font-semibold text-gray-900">{formatAmount(item.data?.currentValue)}</span></p>
+                <p className="text-sm text-gray-600">Taqqoslash: <span className="font-semibold text-gray-900">{formatAmount(item.data?.previousValue)}</span></p>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${trend.badgeClass}`}>
+                  {trend.label}
+                </span>
+                <span className="text-sm font-semibold text-gray-900">
+                  {trend.sign}{formatAmount(item.data?.diffAmount)} ({trend.sign}{Number(item.data?.diffPercent || 0).toFixed(2)}%)
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="rounded-lg bg-white p-6 shadow">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Oy yakuni prognozi</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Hozirgi kunlik sur&apos;at asosida oy oxiri prognozi.
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500">Prognoz</p>
+              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.monthEnd?.projectedTotal)}</p>
+            </div>
+          </div>
+
+          <div className="mb-3 grid grid-cols-2 gap-3">
+            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-xs text-gray-500">Hozirgacha</p>
+              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.monthEnd?.currentToDate)}</p>
+            </div>
+            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-xs text-gray-500">Qolgan potensial</p>
+              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.monthEnd?.remainingAmount)}</p>
+            </div>
+          </div>
+
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={monthSeries}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={(value) => formatCompactAmount(value)} tick={{ fontSize: 11 }} />
+                <Tooltip
+                  formatter={(value: any, name: string) => [formatAmount(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
+                  labelFormatter={(label) => `${label}-kun`}
+                />
+                <Line type="monotone" dataKey="actual" name="actual" stroke="#2563EB" strokeWidth={2.5} dot={false} connectNulls={false} />
+                <Line type="monotone" dataKey="forecast" name="forecast" stroke="#F59E0B" strokeWidth={2} dot={false} strokeDasharray="6 4" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-white p-6 shadow">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Yil yakuni prognozi</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                YTD dinamikasi va yil oxirigacha prognoz.
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500">Prognoz</p>
+              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.yearEnd?.projectedTotal)}</p>
+            </div>
+          </div>
+
+          <div className="mb-3 grid grid-cols-2 gap-3">
+            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-xs text-gray-500">YTD</p>
+              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.yearEnd?.currentToDate)}</p>
+            </div>
+            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-xs text-gray-500">Qolgan potensial</p>
+              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.yearEnd?.remainingAmount)}</p>
+            </div>
+          </div>
+
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={yearSeries}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={(value) => formatCompactAmount(value)} tick={{ fontSize: 11 }} />
+                <Tooltip
+                  formatter={(value: any, name: string) => [formatAmount(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
+                />
+                <Line type="monotone" dataKey="actual" name="actual" stroke="#2563EB" strokeWidth={2.5} dot={false} connectNulls={false} />
+                <Line type="monotone" dataKey="forecast" name="forecast" stroke="#F59E0B" strokeWidth={2} dot={false} strokeDasharray="6 4" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
