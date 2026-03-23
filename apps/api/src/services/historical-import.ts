@@ -692,7 +692,8 @@ function parseCustomerRows(params: {
     const blockingIssues: string[] = [];
 
     if (!customerNumber) {
-      blockingIssues.push('Mijoz raqami topilmadi.');
+      skippedCount += 1;
+      continue;
     }
     if (telegramUsernameRaw && !TELEGRAM_USERNAME_REGEX.test(telegramUsernameRaw)) {
       blockingIssues.push('Telegram username formati notogri.');
