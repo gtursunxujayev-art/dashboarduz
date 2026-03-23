@@ -23,6 +23,11 @@ type BulkImportResult = {
   failures: Array<{ rowNumber: number; message: string }>;
 };
 
+type BulkFailureItem = {
+  rowNumber: number;
+  message: string;
+};
+
 const BULK_TEMPLATE_HEADERS = [
   'entry_date',
   'sales_manager',
@@ -37,7 +42,9 @@ const BULK_TEMPLATE_HEADERS = [
   'deadline',
   'debt_source_income_id',
 ];
+const BULK_IMPORT_CHUNK_SIZE = 25;
 const TELEGRAM_USERNAME_PATTERN = /^@?[A-Za-z0-9_]+$/;
+const GOOGLE_SPREADSHEET_ID_PATTERN = /^[a-zA-Z0-9-_]{20,}$/;
 
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -111,6 +118,118 @@ function summarizeBulkResult(result: BulkImportResult): string {
   return `${result.importedCount}/${result.totalRows} qator import qilindi. Xato: ${result.failedCount}. ${preview}`;
 }
 
+function resolveGoogleSheetCsvUrlClient(sheetUrlInput: string): string {
+  const trimmedInput = sheetUrlInput.trim();
+  if (!trimmedInput) {
+    throw new Error('Google Sheets URL majburiy.');
+  }
+
+  if (GOOGLE_SPREADSHEET_ID_PATTERN.test(trimmedInput)) {
+    return `https://docs.google.com/spreadsheets/d/${trimmedInput}/export?format=csv`;
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(trimmedInput);
+  } catch {
+    throw new Error('Google Sheets URL noto‘g‘ri.');
+  }
+
+  const host = parsedUrl.hostname.toLowerCase();
+  if (!host.includes('google.com')) {
+    throw new Error('Faqat docs.google.com Google Sheets URL qo‘llab-quvvatlanadi.');
+  }
+
+  if (parsedUrl.pathname.includes('/export') && parsedUrl.searchParams.get('format') === 'csv') {
+    return parsedUrl.toString();
+  }
+
+  const idMatch = parsedUrl.pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (!idMatch?.[1]) {
+    throw new Error('Google Sheets URL dan spreadsheet ID topilmadi.');
+  }
+
+  const gidFromSearch = parsedUrl.searchParams.get('gid');
+  const hashMatch = parsedUrl.hash.match(/gid=(\d+)/);
+  const gid = gidFromSearch || hashMatch?.[1];
+
+  return `https://docs.google.com/spreadsheets/d/${idMatch[1]}/export?format=csv${gid ? `&gid=${gid}` : ''}`;
+}
+
+function parseCsvRowsClient(csvContent: string): Array<Record<string, string | number | boolean | null>> {
+  const rows: string[][] = [];
+  let currentCell = '';
+  let currentRow: string[] = [];
+  let inQuotes = false;
+
+  for (let index = 0; index < csvContent.length; index += 1) {
+    const char = csvContent[index];
+    const nextChar = csvContent[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      currentRow.push(currentCell);
+      currentCell = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        index += 1;
+      }
+
+      currentRow.push(currentCell);
+      currentCell = '';
+      if (currentRow.some((cell) => cell.trim().length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      continue;
+    }
+
+    currentCell += char;
+  }
+
+  if (currentCell.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentCell);
+    if (currentRow.some((cell) => cell.trim().length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+
+  if (!rows.length) {
+    return [];
+  }
+
+  const headerRow = rows[0] ?? [];
+  if (!headerRow.length) {
+    return [];
+  }
+
+  const bodyRows = rows.slice(1);
+  const headers = headerRow.map((header) => header.trim());
+
+  return bodyRows.map((line) => {
+    const result: Record<string, string | number | boolean | null> = {};
+    headers.forEach((header, index) => {
+      if (!header) {
+        return;
+      }
+      result[header] = line[index] ?? '';
+    });
+    return result;
+  });
+}
+
 function buildFieldClass(fieldErrors: FieldErrors, field: string, extra = ''): string {
   const base =
     'mt-1 w-full rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1';
@@ -173,6 +292,11 @@ export default function IncomePage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const [bulkProgressTotal, setBulkProgressTotal] = useState(0);
+  const [bulkProgressProcessed, setBulkProgressProcessed] = useState(0);
+  const [bulkProgressImported, setBulkProgressImported] = useState(0);
+  const [bulkFailureItems, setBulkFailureItems] = useState<BulkFailureItem[]>([]);
   const [googleSheetUrl, setGoogleSheetUrl] = useState('');
   const [bulkFallbackManagerUserId, setBulkFallbackManagerUserId] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -194,6 +318,7 @@ export default function IncomePage() {
   const bulkImportRowsMutation = trpc.customerIncome.bulkImportRows.useMutation();
   const bulkImportFromSheetMutation = trpc.customerIncome.bulkImportFromGoogleSheet.useMutation();
   const [deletingIncomeId, setDeletingIncomeId] = useState<string | null>(null);
+  const isBulkBusy = isBulkUploading || bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading;
 
   const managers = useMemo(() => formOptionsQuery.data?.managers || [], [formOptionsQuery.data]);
   const courseOptions = useMemo(() => formOptionsQuery.data?.courses || [], [formOptionsQuery.data]);
@@ -414,16 +539,55 @@ export default function IncomePage() {
 
     setBulkError(null);
     setBulkSuccess(null);
+    setIsBulkUploading(true);
+    setBulkProgressTotal(rows.length);
+    setBulkProgressProcessed(0);
+    setBulkProgressImported(0);
+    setBulkFailureItems([]);
 
     try {
-      const result = await bulkImportRowsMutation.mutateAsync({
-        rows,
-        fallbackManagerUserId: bulkFallbackManagerUserId || undefined,
-      }) as BulkImportResult;
-      setBulkSuccess(summarizeBulkResult(result));
+      let totalImported = 0;
+      let totalFailed = 0;
+      const allFailures: BulkFailureItem[] = [];
+
+      for (let start = 0; start < rows.length; start += BULK_IMPORT_CHUNK_SIZE) {
+        const chunkRows = rows.slice(start, start + BULK_IMPORT_CHUNK_SIZE);
+        const result = await bulkImportRowsMutation.mutateAsync({
+          rows: chunkRows,
+          fallbackManagerUserId: bulkFallbackManagerUserId || undefined,
+        }) as BulkImportResult;
+
+        totalImported += result.importedCount;
+        totalFailed += result.failedCount;
+
+        const mappedFailures = (result.failures || []).map((failure) => ({
+          rowNumber: start + failure.rowNumber,
+          message: failure.message,
+        }));
+
+        setBulkProgressProcessed(Math.min(start + chunkRows.length, rows.length));
+        setBulkProgressImported(totalImported);
+
+        if (mappedFailures.length > 0) {
+          allFailures.push(...mappedFailures);
+          setBulkFailureItems((prev) => [...prev, ...mappedFailures]);
+        }
+      }
+
+      if (totalFailed > 0) {
+        const uniqueRows = Array.from(new Set(allFailures.map((item) => item.rowNumber))).sort((a, b) => a - b);
+        const rowPreview = uniqueRows.slice(0, 20).join(', ');
+        setBulkError(`Xato qatorlar: ${rowPreview}${uniqueRows.length > 20 ? ' ...' : ''}`);
+      }
+
+      setBulkSuccess(
+        `Yuklash yakunlandi: ${totalImported}/${rows.length}. Xatolar: ${totalFailed}.`,
+      );
       await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
     } catch (bulkImportError) {
       setBulkError(parseBulkImportError(bulkImportError));
+    } finally {
+      setIsBulkUploading(false);
     }
   };
 
@@ -468,14 +632,43 @@ export default function IncomePage() {
     setBulkSuccess(null);
 
     try {
-      const result = await bulkImportFromSheetMutation.mutateAsync({
-        sheetUrl: trimmedUrl,
-        fallbackManagerUserId: bulkFallbackManagerUserId || undefined,
-      }) as BulkImportResult;
-      setBulkSuccess(summarizeBulkResult(result));
-      await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
-    } catch (sheetImportError) {
-      setBulkError(parseBulkImportError(sheetImportError));
+      const csvUrl = resolveGoogleSheetCsvUrlClient(trimmedUrl);
+      const response = await fetch(csvUrl, {
+        headers: {
+          Accept: 'text/csv,text/plain,*/*',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Google Sheet CSV yuklab bo'lmadi (${response.status}).`);
+      }
+
+      const csvContent = await response.text();
+      if (!csvContent.trim()) {
+        throw new Error("Google Sheet bo'sh.");
+      }
+      if (csvContent.trimStart().startsWith('<')) {
+        throw new Error("Google Sheet CSV qaytarmadi. Sheet ochiq (public) ekanini tekshiring.");
+      }
+
+      const rows = parseCsvRowsClient(csvContent);
+      if (!rows.length) {
+        throw new Error("Google Sheet CSV da ma'lumot qatorlari topilmadi.");
+      }
+
+      await runBulkImport(rows);
+    } catch (sheetImportError: any) {
+      try {
+        const result = await bulkImportFromSheetMutation.mutateAsync({
+          sheetUrl: trimmedUrl,
+          fallbackManagerUserId: bulkFallbackManagerUserId || undefined,
+        }) as BulkImportResult;
+        setBulkSuccess(`${summarizeBulkResult(result)} (Server import ishlatildi)`);
+        await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
+      } catch (fallbackError) {
+        const preferredMessage = sheetImportError?.message || parseBulkImportError(fallbackError);
+        setBulkError(preferredMessage);
+      }
     }
   };
 
@@ -630,6 +823,26 @@ export default function IncomePage() {
           <div className="space-y-4 p-6">
             {bulkError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{bulkError}</p>}
             {bulkSuccess && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{bulkSuccess}</p>}
+            {(isBulkUploading || bulkProgressTotal > 0) && (
+              <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                <div className="font-medium">
+                  Yuklanmoqda: {bulkProgressProcessed}/{bulkProgressTotal}
+                </div>
+                <div className="mt-1 text-xs">
+                  Muvaffaqiyatli: {bulkProgressImported} | Xato: {bulkFailureItems.length}
+                </div>
+                {bulkFailureItems.length > 0 && (
+                  <div className="mt-1 text-xs text-red-700">
+                    {bulkFailureItems.slice(0, 20).map((item) => (
+                      <div key={`${item.rowNumber}-${item.message}`}>
+                        xato - {item.rowNumber}
+                      </div>
+                    ))}
+                    {bulkFailureItems.length > 20 && <div>...</div>}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Zaxira sotuv menedjeri (mos kelmagan ism uchun)</label>
@@ -668,7 +881,7 @@ export default function IncomePage() {
                   accept=".xlsx,.xls,.csv"
                   onChange={handleFileImport}
                   className="hidden"
-                  disabled={bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading}
+                  disabled={isBulkBusy}
                 />
               </label>
             </div>
@@ -683,10 +896,10 @@ export default function IncomePage() {
               <button
                 type="button"
                 onClick={handleGoogleSheetImport}
-                disabled={bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading}
+                disabled={isBulkBusy}
                 className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {bulkImportFromSheetMutation.isLoading ? 'Import qilinmoqda...' : 'Google Sheets dan import'}
+                {bulkImportFromSheetMutation.isLoading || isBulkUploading ? 'Import qilinmoqda...' : 'Google Sheets dan import'}
               </button>
             </div>
           </div>
