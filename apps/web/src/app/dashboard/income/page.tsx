@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 're
 import { trpc } from '@/lib/trpc';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/contexts/auth-context';
+import { HistoricalImportWizard } from '@/components/dashboard/historical-import-wizard';
 
 type IncomeType = 'new_sale' | 'repayment';
 type IncomeTypeChoice = '' | IncomeType;
@@ -801,6 +802,10 @@ export default function IncomePage() {
     }
   };
 
+  const handleHistoricalImported = async () => {
+    await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
@@ -1010,6 +1015,13 @@ export default function IncomePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {isAdmin && (
+        <HistoricalImportWizard
+          managers={managers}
+          onImported={handleHistoricalImported}
+        />
       )}
 
       <div className="rounded-lg bg-white shadow dark:bg-slate-900">
