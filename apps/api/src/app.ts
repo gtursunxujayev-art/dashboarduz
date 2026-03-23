@@ -206,6 +206,14 @@ async function resolveTelegramDebugContext(req: express.Request): Promise<{
       ...parseTelegramGroupIds(process.env.OFFLINE_GROUP_ID),
       ...parseTelegramGroupIds(process.env.OFLINE_GROUP_IDS),
       ...parseTelegramGroupIds(process.env.OFFLINE_GROUP_IDS),
+      ...parseTelegramGroupIds(process.env.ONLINE_GROUP_ID),
+      ...parseTelegramGroupIds(process.env.ONLINE_GROUP_IDS),
+      ...parseTelegramGroupIds(process.env.PAYMENT_RETURN_GROUP_ID),
+      ...parseTelegramGroupIds(process.env.PAYMENT_RETURN_GROUP_IDS),
+      ...parseTelegramGroupIds(process.env.REFUND_GROUP_ID),
+      ...parseTelegramGroupIds(process.env.REFUND_GROUP_IDS),
+      ...parseTelegramGroupIds(process.env.RETURN_GROUP_ID),
+      ...parseTelegramGroupIds(process.env.RETURN_GROUP_IDS),
     ]),
   );
   const groupIds = explicitGroups.length > 0 ? explicitGroups : envGroups;
