@@ -126,6 +126,20 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
 
   const unresolvedManagers = useMemo(() => Array.isArray(preview?.unresolvedManagers) ? preview.unresolvedManagers : [], [preview]);
   const missingCatalogItems = useMemo(() => Array.isArray(preview?.missingCatalogItems) ? preview.missingCatalogItems : [], [preview]);
+  const unresolvedManagersFullyMapped = useMemo(
+    () =>
+      unresolvedManagers.length > 0 &&
+      unresolvedManagers.every((item: any) => Boolean(managerAliasMap[item.label])),
+    [managerAliasMap, unresolvedManagers],
+  );
+  const canExecuteImport = Boolean(
+    sessionId &&
+      currentStatus !== 'running' &&
+      (
+        preview?.canExecute ||
+        unresolvedManagersFullyMapped
+      ),
+  );
 
   const handleIncomeFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -217,7 +231,28 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
     setSuccess(null);
     completionHandledRef.current = false;
     try {
-      await executeMutation.mutateAsync({ sessionId });
+      let targetSessionId = sessionId;
+      if (unresolvedManagersFullyMapped || !preview?.canExecute) {
+        const refreshed = await prepareMutation.mutateAsync({
+          sessionId,
+          incomeFileName,
+          customerFileName,
+          customerSheetName,
+          incomeRows,
+          customerRows,
+          fallbackManagerUserId: fallbackManagerUserId || undefined,
+          managerAliasMap,
+        });
+        targetSessionId = refreshed.sessionId;
+        setSessionId(refreshed.sessionId);
+        setLocalPreview(refreshed.preview);
+        if (!refreshed.preview?.canExecute) {
+          await progressQuery.refetch();
+          setError("Importni boshlashdan oldin previewdagi bloklovchi xatolarni ko'rib chiqing.");
+          return;
+        }
+      }
+      await executeMutation.mutateAsync({ sessionId: targetSessionId });
       await Promise.all([progressQuery.refetch(), utils.customerIncome.formOptions.invalidate(), utils.customerIncome.listIncomes.invalidate()]);
     } catch (executeError: any) {
       setError(executeError?.message || 'Tarixiy import ishga tushmadi.');
@@ -374,6 +409,9 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
         {unresolvedManagers.length > 0 && (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-700/40 dark:bg-amber-950/20">
             <div className="text-sm font-medium text-amber-900 dark:text-amber-200">Manager mapping kerak</div>
+            <div className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+              Barcha mappinglar tanlangach, `Importni boshlash` tugmasi preview ni yangilab, keyin importni ishga tushiradi.
+            </div>
             <div className="mt-3 space-y-3">
               {unresolvedManagers.map((item: any) => (
                 <div key={`alias-${item.label}`} className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_240px]">
@@ -490,7 +528,7 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
           <button
             type="button"
             onClick={handleExecute}
-            disabled={!sessionId || !preview?.canExecute || executeMutation.isLoading || currentStatus === 'running'}
+            disabled={!canExecuteImport || executeMutation.isLoading}
             className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
           >
             {executeMutation.isLoading || currentStatus === 'running' ? 'Import ishlayapti...' : 'Importni boshlash'}
