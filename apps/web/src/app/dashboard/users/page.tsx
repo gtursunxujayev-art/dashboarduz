@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 
-const availableRoles = ['Admin', 'Manager', 'Agent', 'Finance'] as const;
+const availableRoles = ['Admin', 'Manager', 'Agent', 'Finance', 'Tashkiliy'] as const;
 const roleLabels: Record<(typeof availableRoles)[number], string> = {
   Admin: 'Admin',
   Manager: 'Menejer',
   Agent: 'Agent',
   Finance: 'Moliya',
+  Tashkiliy: 'Tashkiliy',
 };
 
 type UserRole = (typeof availableRoles)[number];
