@@ -202,6 +202,11 @@ export default function IncomePage() {
       { key: 'online', label: 'Online', courses: courseOptions.filter((course: any) => course.category === 'online') },
       { key: 'offline', label: 'Offline', courses: courseOptions.filter((course: any) => course.category === 'offline') },
       { key: 'intensive', label: 'Intensive', courses: courseOptions.filter((course: any) => course.category === 'intensive') },
+      {
+        key: 'additional_service',
+        label: "Qo'shimcha xizmat",
+        courses: courseOptions.filter((course: any) => course.category === 'additional_service'),
+      },
     ],
     [courseOptions],
   );
