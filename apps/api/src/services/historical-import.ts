@@ -394,6 +394,10 @@ function inferProfileCourseCategory(rawCourseLabel: string): HistoricalCourseCat
   return 'offline';
 }
 
+function shouldSkipHistoricalCourseCategory(category: HistoricalCourseCategory | null): boolean {
+  return category === 'additional_service';
+}
+
 function normalizeAliasMap(aliasMapInput: Record<string, string> | undefined): Record<string, string> {
   const aliasMap: Record<string, string> = {};
   for (const [label, userId] of Object.entries(aliasMapInput || {})) {
@@ -466,6 +470,11 @@ function parseIncomeRows(params: {
     const customerName = toDisplayLabel(getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.customerName)) || null;
     const telegramUsernameRaw = sanitizeTelegramUsername(getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.telegramUsername));
     const rawCourseLabel = toDisplayLabel(getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.courseLabel));
+    const courseSpec = rawCourseLabel ? normalizeIncomeCourseSpec(rawCourseLabel) : null;
+    if (courseSpec && shouldSkipHistoricalCourseCategory(courseSpec.category)) {
+      skippedCount += 1;
+      continue;
+    }
     const rawType = getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.type);
     const entryDate = parseDateToIso(getRawValue(rawRow, HISTORICAL_INCOME_HEADERS.entryDate));
     const deadline = parseDateToIso(getRawValue(rawRow, HISTORICAL_INCOME_HEADERS.deadline));
@@ -513,7 +522,7 @@ function parseIncomeRows(params: {
       blockingIssues.push("Qarzdorlik tolovi 0 dan katta bolishi kerak.");
     }
 
-    const courseSpec = normalizeIncomeCourseSpec(rawCourseLabel || 'Qoshimcha xizmat');
+    const resolvedCourseSpec = courseSpec || normalizeIncomeCourseSpec(rawCourseLabel || 'Qoshimcha xizmat');
     const legacyImportKey = buildHashKey({
       scope: 'income_ledger',
       rowNumber,
@@ -543,9 +552,9 @@ function parseIncomeRows(params: {
       customerName,
       telegramUsername: telegramUsernameRaw || null,
       rawCourseLabel,
-      courseName: courseSpec.courseName,
-      tariffName: courseSpec.tariffName,
-      category: courseSpec.category,
+      courseName: resolvedCourseSpec.courseName,
+      tariffName: resolvedCourseSpec.tariffName,
+      category: resolvedCourseSpec.category,
       coursePriceAmount,
       paymentAmount,
       remainingDebtHint,
@@ -705,6 +714,10 @@ function parseCustomerRows(params: {
     const courseName = rawCourseLabel ? toDisplayLabel(rawCourseLabel) : null;
     const tariffName = rawTariffLabel ? toDisplayLabel(rawTariffLabel) : null;
     const category = courseName ? inferProfileCourseCategory(courseName) : null;
+    if (shouldSkipHistoricalCourseCategory(category)) {
+      skippedCount += 1;
+      continue;
+    }
     const profileOnly = Boolean(customerNumber) && !params.incomeCustomerNumbers.has(customerNumber);
     const legacyProfileImportKey = buildHashKey({
       scope: 'customer_master',
