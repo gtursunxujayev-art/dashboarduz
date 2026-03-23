@@ -39,8 +39,16 @@ function parseAmountInput(value: string): number {
 
 export default function SettingsPage() {
   const { user } = useAuth();
+  const roles = user?.roles || [];
   const isAdmin = Boolean(user?.roles?.includes('Admin'));
   const isManager = Boolean(user?.roles?.includes('Manager') && !isAdmin);
+  const isTashkiliyOnly = Boolean(
+    roles.includes('Tashkiliy')
+      && !roles.includes('Admin')
+      && !roles.includes('Manager')
+      && !roles.includes('Agent')
+      && !roles.includes('Finance'),
+  );
   const canViewSalarySettings = isAdmin || isManager;
   const showLeadSettings = false;
 
@@ -271,13 +279,21 @@ export default function SettingsPage() {
           )}
           {success && <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
 
-          {!isAdmin && (
-            <p className="mb-4 rounded-md bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
-              Admin bo'lmagan foydalanuvchilar uchun bu sahifa faqat o'qish rejimida.
+          {isTashkiliyOnly && (
+            <p className="mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">
+              Tashkiliy roli uchun bu sahifada faqat shaxsiy login/parol sozlamalari mavjud.
             </p>
           )}
 
-          <form onSubmit={handleSave} className="space-y-4">
+          {!isTashkiliyOnly && (
+            <>
+              {!isAdmin && (
+                <p className="mb-4 rounded-md bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+                  Admin bo'lmagan foydalanuvchilar uchun bu sahifa faqat o'qish rejimida.
+                </p>
+              )}
+
+              <form onSubmit={handleSave} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Ish maydoni nomi</label>
               <input
@@ -472,14 +488,16 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={!isAdmin || updateTenant.isLoading || tenantQuery.isLoading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {updateTenant.isLoading ? 'Saqlanmoqda...' : 'Sozlamalarni saqlash'}
-            </button>
-          </form>
+                <button
+                  type="submit"
+                  disabled={!isAdmin || updateTenant.isLoading || tenantQuery.isLoading}
+                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {updateTenant.isLoading ? 'Saqlanmoqda...' : 'Sozlamalarni saqlash'}
+                </button>
+              </form>
+            </>
+          )}
 
           <div className="mt-8 border-t border-gray-100 pt-6">
             <h2 className="text-base font-semibold text-gray-900">Mening login va parolim</h2>
