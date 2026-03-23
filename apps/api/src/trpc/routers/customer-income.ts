@@ -118,6 +118,33 @@ function throwCourseCategoryMigrationError(): never {
   });
 }
 
+function normalizeHistoricalImportErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || '');
+  const normalized = raw.toLowerCase();
+
+  if (
+    normalized.includes('courses_category_check')
+    || (
+      normalized.includes('violates check constraint')
+      && normalized.includes('category')
+      && normalized.includes('courses')
+    )
+  ) {
+    return "Kurs kategoriya cheklovi eskirgan. `additional_service` uchun yangi database migration ni ishga tushiring va keyin importni qayta boshlang.";
+  }
+
+  if (
+    (normalized.includes('historical_import_sessions') && normalized.includes('does not exist'))
+    || (normalized.includes('legacyimportkey') && normalized.includes('does not exist'))
+    || (normalized.includes('legacyprofileimportkey') && normalized.includes('does not exist'))
+    || (normalized.includes('historicalimportsessionid') && normalized.includes('does not exist'))
+  ) {
+    return "Tarixiy import ishlashi uchun yangi migratsiyalar hali qo'llanmagan. Avval database migration ni ishga tushiring.";
+  }
+
+  return raw;
+}
+
 type CourseWithTariffsSafe = {
   id: string;
   name: string;
@@ -3440,7 +3467,7 @@ export const customerIncomeRouter = router({
             preview: (recoveredSession.preview || {}) as Record<string, unknown>,
             progress: asHistoricalProgressState(recoveredSession.progress),
             failureReport: Array.isArray(recoveredSession.failureReport) ? recoveredSession.failureReport : [],
-            errorMessage: recoveredSession.errorMessage,
+            errorMessage: recoveredSession.errorMessage ? normalizeHistoricalImportErrorMessage(recoveredSession.errorMessage) : null,
             sourceFiles: recoveredSession.sourceFiles || null,
             createdAt: recoveredSession.createdAt,
             updatedAt: recoveredSession.updatedAt,
@@ -3456,7 +3483,7 @@ export const customerIncomeRouter = router({
           preview: (session.preview || {}) as Record<string, unknown>,
           progress: asHistoricalProgressState(session.progress),
           failureReport: Array.isArray(session.failureReport) ? session.failureReport : [],
-          errorMessage: session.errorMessage,
+          errorMessage: session.errorMessage ? normalizeHistoricalImportErrorMessage(session.errorMessage) : null,
           sourceFiles: session.sourceFiles || null,
           createdAt: session.createdAt,
           updatedAt: session.updatedAt,
@@ -4020,7 +4047,7 @@ export const customerIncomeRouter = router({
                   message: "Import xatolik bilan to'xtadi.",
                 } as unknown as Prisma.InputJsonValue,
                 failureReport: failureReport as unknown as Prisma.InputJsonValue,
-                errorMessage: error instanceof Error ? error.message : String(error),
+                errorMessage: normalizeHistoricalImportErrorMessage(error),
               },
             });
           } catch {
