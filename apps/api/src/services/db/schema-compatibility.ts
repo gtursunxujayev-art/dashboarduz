@@ -26,6 +26,27 @@ const COMPATIBILITY_SQL: string[] = [
     ON "courses" ("category");
   `,
   `
+  ALTER TABLE "courses"
+    ADD COLUMN IF NOT EXISTS "isHiddenFromIncomeForm" BOOLEAN;
+  `,
+  `
+  UPDATE "courses"
+  SET "isHiddenFromIncomeForm" = FALSE
+  WHERE "isHiddenFromIncomeForm" IS NULL;
+  `,
+  `
+  ALTER TABLE "courses"
+    ALTER COLUMN "isHiddenFromIncomeForm" SET DEFAULT FALSE;
+  `,
+  `
+  ALTER TABLE "courses"
+    ALTER COLUMN "isHiddenFromIncomeForm" SET NOT NULL;
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS "courses_isHiddenFromIncomeForm_idx"
+    ON "courses" ("isHiddenFromIncomeForm");
+  `,
+  `
   ALTER TABLE "incomes"
     ADD COLUMN IF NOT EXISTS "lifecycleStatus" TEXT;
   `,
