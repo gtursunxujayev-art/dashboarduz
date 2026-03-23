@@ -313,6 +313,9 @@ model Customer {
   customerNumber  String
   name            String
   telegramUsername String?
+  profileCourseId String?
+  profileTariffId String?
+  profileSubTariffId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -323,6 +326,9 @@ model Customer {
   @@unique([tenantId, customerNumber])
   @@index([tenantId])
   @@index([customerNumber])
+  @@index([profileCourseId])
+  @@index([profileTariffId])
+  @@index([profileSubTariffId])
   @@map("customers")
 }
 
@@ -330,7 +336,7 @@ model Course {
   id        String   @id @default(uuid())
   tenantId  String
   name      String
-  category  String   @default("offline") // online, offline, intensive
+  category  String   @default("offline") // online, offline, intensive, additional_service
   isActive  Boolean  @default(true)
   isHiddenFromIncomeForm Boolean @default(false)
   createdAt DateTime @default(now())
