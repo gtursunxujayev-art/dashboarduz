@@ -22,7 +22,7 @@ type SubTariffItem = {
 type CourseItem = {
   id: string;
   name: string;
-  category: 'online' | 'offline' | 'intensive';
+  category: 'online' | 'offline' | 'intensive' | 'additional_service';
   isActive: boolean;
   isHiddenFromIncomeForm: boolean;
   tariffs: TariffItem[];
@@ -32,6 +32,7 @@ const COURSE_CATEGORY_OPTIONS: Array<{ value: CourseItem['category']; label: str
   { value: 'online', label: 'Onlayn' },
   { value: 'offline', label: 'Oflayn' },
   { value: 'intensive', label: 'Intensiv' },
+  { value: 'additional_service', label: "Qo'shimcha xizmat" },
 ];
 
 function getCategoryLabel(category: CourseItem['category']): string {
