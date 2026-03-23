@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
+import { trpc } from '@/lib/trpc';
 
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 const AGENT_ALLOWED_HREFS = new Set([
@@ -47,6 +48,12 @@ export default function Sidebar() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const adjustmentBadgeQuery = trpc.customerIncome.adjustmentBadgeCount.useQuery(undefined, {
+    retry: false,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+  });
+  const pendingAdjustmentCount = adjustmentBadgeQuery.data?.pendingTotal ?? 0;
   const handleLogout = () => {
     setSidebarOpen(false);
     logout();
@@ -79,12 +86,17 @@ export default function Sidebar() {
       <div className="fixed left-4 top-4 z-50 lg:hidden">
         <button
           onClick={() => setSidebarOpen(true)}
-          className="rounded-md border border-gray-200 bg-white p-2 text-gray-500 shadow-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+          className="relative rounded-md border border-gray-200 bg-white p-2 text-gray-500 shadow-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
         >
           <span className="sr-only">Menyuni ochish</span>
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
+          {pendingAdjustmentCount > 0 && (
+            <span className="absolute -right-1 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+              {pendingAdjustmentCount > 99 ? '99+' : pendingAdjustmentCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -131,7 +143,14 @@ export default function Sidebar() {
                       >
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
                       </svg>
-                      {item.name}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate">{item.name}</span>
+                        {item.href === '/dashboard/adjustments' && pendingAdjustmentCount > 0 && (
+                          <span className="inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                            {pendingAdjustmentCount > 99 ? '99+' : pendingAdjustmentCount}
+                          </span>
+                        )}
+                      </span>
                     </Link>
                   ))}
                 </nav>
@@ -185,7 +204,14 @@ export default function Sidebar() {
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
                     </svg>
-                    {item.name}
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate">{item.name}</span>
+                      {item.href === '/dashboard/adjustments' && pendingAdjustmentCount > 0 && (
+                        <span className="inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                          {pendingAdjustmentCount > 99 ? '99+' : pendingAdjustmentCount}
+                        </span>
+                      )}
+                    </span>
                   </Link>
                 ))}
               </nav>
