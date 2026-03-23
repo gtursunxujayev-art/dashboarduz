@@ -64,11 +64,21 @@ function isMissingCourseCategoryColumnError(error: unknown): boolean {
   );
 }
 
+function isMissingCourseHiddenFromIncomeFormColumnError(error: unknown): boolean {
+  const message = String((error as any)?.message || '').toLowerCase();
+  return (
+    message.includes('does not exist')
+    && message.includes('ishiddenfromincomeform')
+    && (message.includes('courses.ishiddenfromincomeform') || message.includes('courses'))
+  );
+}
+
 type CourseWithTariffsSafe = {
   id: string;
   name: string;
   category: string;
   isActive: boolean;
+  isHiddenFromIncomeForm: boolean;
   createdAt: Date;
   updatedAt: Date;
   tariffs: Array<{
@@ -89,10 +99,18 @@ type CourseWithTariffsSafe = {
   }>;
 };
 
-async function fetchCoursesWithTariffsSafe(params: { tenantId: string; onlyActive: boolean }): Promise<CourseWithTariffsSafe[]> {
-  const where = params.onlyActive
+async function fetchCoursesWithTariffsSafe(params: {
+  tenantId: string;
+  onlyActive: boolean;
+  excludeHiddenFromIncomeForm?: boolean;
+}): Promise<CourseWithTariffsSafe[]> {
+  const baseWhere: Prisma.CourseWhereInput = params.onlyActive
     ? { tenantId: params.tenantId, isActive: true }
     : { tenantId: params.tenantId };
+  const where: Prisma.CourseWhereInput = {
+    ...baseWhere,
+    ...(params.excludeHiddenFromIncomeForm ? { isHiddenFromIncomeForm: false } : {}),
+  };
 
   try {
     const courses = await prisma.course.findMany({
@@ -103,6 +121,7 @@ async function fetchCoursesWithTariffsSafe(params: { tenantId: string; onlyActiv
         name: true,
         category: true,
         isActive: true,
+        isHiddenFromIncomeForm: true,
         createdAt: true,
         updatedAt: true,
         tariffs: {
@@ -133,17 +152,28 @@ async function fetchCoursesWithTariffsSafe(params: { tenantId: string; onlyActiv
 
     return courses as CourseWithTariffsSafe[];
   } catch (error) {
-    if (!isMissingCourseCategoryColumnError(error)) {
+    const missingCategoryColumn = isMissingCourseCategoryColumnError(error);
+    const missingHiddenColumn = isMissingCourseHiddenFromIncomeFormColumnError(error);
+    if (!missingCategoryColumn && !missingHiddenColumn) {
       throw error;
     }
 
+    const fallbackWhere: Prisma.CourseWhereInput = {
+      ...baseWhere,
+      ...(params.excludeHiddenFromIncomeForm && !missingHiddenColumn
+        ? { isHiddenFromIncomeForm: false }
+        : {}),
+    };
+
     const fallbackCourses = await prisma.course.findMany({
-      where,
+      where: fallbackWhere,
       orderBy: { name: 'asc' },
       select: {
         id: true,
         name: true,
+        ...(missingCategoryColumn ? {} : { category: true }),
         isActive: true,
+        ...(missingHiddenColumn ? {} : { isHiddenFromIncomeForm: true }),
         createdAt: true,
         updatedAt: true,
         tariffs: {
@@ -175,13 +205,16 @@ async function fetchCoursesWithTariffsSafe(params: { tenantId: string; onlyActiv
     return (fallbackCourses as Array<{
       id: string;
       name: string;
+      category?: string;
       isActive: boolean;
+      isHiddenFromIncomeForm?: boolean;
       createdAt: Date;
       updatedAt: Date;
       tariffs: CourseWithTariffsSafe['tariffs'];
     }>).map((course) => ({
       ...course,
-      category: 'offline',
+      category: course.category ?? 'offline',
+      isHiddenFromIncomeForm: course.isHiddenFromIncomeForm ?? false,
     }));
   }
 }
@@ -1404,8 +1437,9 @@ async function createIncomeEntry(params: {
   userId: string;
   input: CreateIncomeInput;
   writeAuditLog?: boolean;
+  allowHiddenCourseSelection?: boolean;
 }) {
-  const { tenantId, userId, input, writeAuditLog = true } = params;
+  const { tenantId, userId, input, writeAuditLog = true, allowHiddenCourseSelection = false } = params;
 
   await assertManagerBelongsToTenant(tenantId, input.managerUserId);
   const entryDate = parseDateInput(input.entryDate);
@@ -1493,8 +1527,21 @@ async function createIncomeEntry(params: {
 
     const [course, tariff] = await Promise.all([
       prisma.course.findFirst({
-        where: { id: input.courseId, tenantId, isActive: true },
+        where: {
+          id: input.courseId,
+          tenantId,
+          isActive: true,
+          ...(allowHiddenCourseSelection ? {} : { isHiddenFromIncomeForm: false }),
+        },
         select: { id: true },
+      }).catch((error) => {
+        if (!allowHiddenCourseSelection && isMissingCourseHiddenFromIncomeFormColumnError(error)) {
+          return prisma.course.findFirst({
+            where: { id: input.courseId, tenantId, isActive: true },
+            select: { id: true },
+          });
+        }
+        throw error;
       }),
       prisma.tariff.findFirst({
         where: { id: input.tariffId, tenantId, courseId: input.courseId, isActive: true },
@@ -1736,6 +1783,7 @@ export const customerIncomeRouter = router({
       fetchCoursesWithTariffsSafe({
         tenantId: ctx.tenantId,
         onlyActive: true,
+        excludeHiddenFromIncomeForm: true,
       }),
       prisma.income.findMany({
         where: {
@@ -2014,6 +2062,8 @@ export const customerIncomeRouter = router({
         name: z.string().min(1).max(120).optional(),
         category: z.enum(COURSE_CATEGORY_VALUES).optional(),
         isActive: z.boolean().optional(),
+        isFaol: z.boolean().optional(),
+        isHiddenFromIncomeForm: z.boolean().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -2029,7 +2079,12 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found.' });
       }
 
-      const data: { name?: string; category?: string; isActive?: boolean } = {};
+      const data: {
+        name?: string;
+        category?: string;
+        isActive?: boolean;
+        isHiddenFromIncomeForm?: boolean;
+      } = {};
       if (typeof input.name === 'string') {
         data.name = input.name.trim();
       }
@@ -2038,6 +2093,11 @@ export const customerIncomeRouter = router({
       }
       if (typeof input.isActive === 'boolean') {
         data.isActive = input.isActive;
+      } else if (typeof input.isFaol === 'boolean') {
+        data.isActive = input.isFaol;
+      }
+      if (typeof input.isHiddenFromIncomeForm === 'boolean') {
+        data.isHiddenFromIncomeForm = input.isHiddenFromIncomeForm;
       }
 
       if (!Object.keys(data).length) {
@@ -2050,7 +2110,7 @@ export const customerIncomeRouter = router({
           data,
         });
       } catch (error) {
-        if (!isMissingCourseCategoryColumnError(error) || typeof input.category !== 'string') {
+        if (!isMissingCourseCategoryColumnError(error) && !isMissingCourseHiddenFromIncomeFormColumnError(error)) {
           throw error;
         }
 
@@ -2060,12 +2120,14 @@ export const customerIncomeRouter = router({
         }
         if (typeof input.isActive === 'boolean') {
           fallbackData.isActive = input.isActive;
+        } else if (typeof input.isFaol === 'boolean') {
+          fallbackData.isActive = input.isFaol;
         }
 
         if (!Object.keys(fallbackData).length) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
-            message: 'Course category field is unavailable until database migrations are applied.',
+            message: 'Course fields are unavailable until database migrations are applied.',
           });
         }
 
@@ -2082,6 +2144,7 @@ export const customerIncomeRouter = router({
         tariffId: z.string().uuid(),
         name: z.string().min(1).max(120).optional(),
         isActive: z.boolean().optional(),
+        isFaol: z.boolean().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -2103,6 +2166,8 @@ export const customerIncomeRouter = router({
       }
       if (typeof input.isActive === 'boolean') {
         data.isActive = input.isActive;
+      } else if (typeof input.isFaol === 'boolean') {
+        data.isActive = input.isFaol;
       }
 
       if (!Object.keys(data).length) {
@@ -2121,6 +2186,7 @@ export const customerIncomeRouter = router({
         subTariffId: z.string().uuid(),
         name: z.string().min(1).max(120).optional(),
         isActive: z.boolean().optional(),
+        isFaol: z.boolean().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -2142,6 +2208,8 @@ export const customerIncomeRouter = router({
       }
       if (typeof input.isActive === 'boolean') {
         data.isActive = input.isActive;
+      } else if (typeof input.isFaol === 'boolean') {
+        data.isActive = input.isFaol;
       }
 
       if (!Object.keys(data).length) {
@@ -2331,6 +2399,7 @@ export const customerIncomeRouter = router({
             userId: ctx.user.userId,
             input: createInput,
             writeAuditLog: false,
+            allowHiddenCourseSelection: true,
           });
           importedCount += 1;
         } catch (error) {
@@ -2450,6 +2519,7 @@ export const customerIncomeRouter = router({
             userId: ctx.user.userId,
             input: createInput,
             writeAuditLog: false,
+            allowHiddenCourseSelection: true,
           });
           importedCount += 1;
         } catch (error) {
