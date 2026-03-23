@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { FormEvent, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/auth-context';
 type TariffItem = {
   id: string;
   name: string;
-  isFaol: boolean;
+  isActive: boolean;
   courseId: string;
   subTariffs: SubTariffItem[];
 };
@@ -15,7 +15,7 @@ type TariffItem = {
 type SubTariffItem = {
   id: string;
   name: string;
-  isFaol: boolean;
+  isActive: boolean;
   tariffId: string;
 };
 
@@ -23,7 +23,8 @@ type CourseItem = {
   id: string;
   name: string;
   category: 'online' | 'offline' | 'intensive';
-  isFaol: boolean;
+  isActive: boolean;
+  isHiddenFromIncomeForm: boolean;
   tariffs: TariffItem[];
 };
 
@@ -67,7 +68,10 @@ export default function CoursesPage() {
   const updateSubTariff = trpc.customerIncome.updateSubTariff.useMutation();
 
   const courses = useMemo<CourseItem[]>(() => {
-    return (catalogQuery.data || []) as CourseItem[];
+    return ((catalogQuery.data || []) as Array<CourseItem & { isHiddenFromIncomeForm?: boolean }>).map((course) => ({
+      ...course,
+      isHiddenFromIncomeForm: Boolean(course.isHiddenFromIncomeForm),
+    }));
   }, [catalogQuery.data]);
   const groupedCourses = useMemo(
     () =>
@@ -185,12 +189,35 @@ export default function CoursesPage() {
     try {
       await updateCourse.mutateAsync({
         courseId: course.id,
-        isFaol: !course.isFaol,
+        isActive: !course.isActive,
       });
       setSuccess('Kurs holati yangilandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
       setError(mutationError?.message || 'Kurs holatini yangilashda xatolik.');
+    }
+  };
+
+  const handleToggleCourseIncomeVisibility = async (course: CourseItem) => {
+    resetMessages();
+    if (!canManageCourses) {
+      setError("Faqat admin yoki manager kurslarni boshqara oladi.");
+      return;
+    }
+
+    try {
+      await updateCourse.mutateAsync({
+        courseId: course.id,
+        isHiddenFromIncomeForm: !course.isHiddenFromIncomeForm,
+      });
+      setSuccess(
+        course.isHiddenFromIncomeForm
+          ? "Kurs yangi to'lov tanlovida qayta ko'rsatiladi."
+          : "Kurs yangi to'lov tanlovidan yashirildi.",
+      );
+      await catalogQuery.refetch();
+    } catch (mutationError: any) {
+      setError(mutationError?.message || "Kurs to'lov ko'rinishini yangilashda xatolik.");
     }
   };
 
@@ -224,7 +251,7 @@ export default function CoursesPage() {
     try {
       await updateTariff.mutateAsync({
         tariffId: tariff.id,
-        isFaol: !tariff.isFaol,
+        isActive: !tariff.isActive,
       });
       setSuccess('Tarif holati yangilandi.');
       await catalogQuery.refetch();
@@ -290,7 +317,7 @@ export default function CoursesPage() {
     try {
       await updateSubTariff.mutateAsync({
         subTariffId: subTariff.id,
-        isFaol: !subTariff.isFaol,
+        isActive: !subTariff.isActive,
       });
       setSuccess('Sub-tarif holati yangilandi.');
       await catalogQuery.refetch();
@@ -414,7 +441,7 @@ export default function CoursesPage() {
                             <div>
                               <p className="text-base font-medium text-gray-900">{course.name}</p>
                               <p className="text-xs text-gray-500">
-                                {course.tariffs.length} ta tarif - {course.isFaol ? 'Faol' : 'Faolsiz'} - {getCategoryLabel(course.category)}
+                                {course.tariffs.length} ta tarif - {course.isActive ? 'Faol' : 'Faolsiz'} - {getCategoryLabel(course.category)} - {course.isHiddenFromIncomeForm ? "To'lovdan yashirilgan" : "To'lovda ko'rinadi"}
                               </p>
                             </div>
                             <span className="text-sm text-blue-600">{openCourseIds[course.id] ? 'Yopish' : 'Ochish'}</span>
@@ -422,7 +449,7 @@ export default function CoursesPage() {
 
                           {openCourseIds[course.id] && (
                             <div className="space-y-3 border-t border-gray-200 p-4">
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_auto_auto] md:items-center">
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_auto_auto_auto] md:items-center">
                                 <input
                                   value={courseEditName[course.id] ?? course.name}
                                   onChange={(event) =>
@@ -457,12 +484,23 @@ export default function CoursesPage() {
                                   type="button"
                                   onClick={() => handleToggleCourse(course)}
                                   className={`rounded-md px-3 py-2 text-sm font-medium ${
-                                    course.isFaol
+                                    course.isActive
                                       ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                                       : 'bg-green-100 text-green-700 hover:bg-green-200'
                                   }`}
                                 >
-                                  {course.isFaol ? 'Faolsizlantirish' : 'Faollashtirish'}
+                                  {course.isActive ? 'Faolsizlantirish' : 'Faollashtirish'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCourseIncomeVisibility(course)}
+                                  className={`rounded-md px-3 py-2 text-sm font-medium ${
+                                    course.isHiddenFromIncomeForm
+                                      ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                      : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                                  }`}
+                                >
+                                  {course.isHiddenFromIncomeForm ? "To'lovda ko'rsatish" : "To'lovdan yashirish"}
                                 </button>
                               </div>
 
@@ -480,7 +518,7 @@ export default function CoursesPage() {
                                         <div>
                                           <p className="text-sm font-medium text-gray-900">{tariff.name}</p>
                                           <p className="text-xs text-gray-500">
-                                            {tariff.subTariffs?.length || 0} ta sub-tarif - {tariff.isFaol ? 'Faol' : 'Faolsiz'}
+                                            {tariff.subTariffs?.length || 0} ta sub-tarif - {tariff.isActive ? 'Faol' : 'Faolsiz'}
                                           </p>
                                         </div>
                                         <span className="text-xs text-blue-600">{openTariffIds[tariff.id] ? 'Yopish' : 'Ochish'}</span>
@@ -507,12 +545,12 @@ export default function CoursesPage() {
                                               type="button"
                                               onClick={() => handleToggleTariff(tariff)}
                                               className={`rounded-md px-3 py-2 text-sm font-medium ${
-                                                tariff.isFaol
+                                                tariff.isActive
                                                   ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                                                   : 'bg-green-100 text-green-700 hover:bg-green-200'
                                               }`}
                                             >
-                                              {tariff.isFaol ? 'Faolsizlantirish' : 'Faollashtirish'}
+                                              {tariff.isActive ? 'Faolsizlantirish' : 'Faollashtirish'}
                                             </button>
                                           </div>
 
@@ -570,12 +608,12 @@ export default function CoursesPage() {
                                                       type="button"
                                                       onClick={() => handleToggleSubTariff(subTariff)}
                                                       className={`rounded-md px-3 py-2 text-sm font-medium ${
-                                                        subTariff.isFaol
+                                                        subTariff.isActive
                                                           ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                                                           : 'bg-green-100 text-green-700 hover:bg-green-200'
                                                       }`}
                                                     >
-                                                      {subTariff.isFaol ? 'Faolsizlantirish' : 'Faollashtirish'}
+                                                      {subTariff.isActive ? 'Faolsizlantirish' : 'Faollashtirish'}
                                                     </button>
                                                   </div>
                                                 ))}
@@ -605,4 +643,5 @@ export default function CoursesPage() {
     </div>
   );
 }
+
 
