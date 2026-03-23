@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/contexts/auth-context';
@@ -301,6 +301,11 @@ export default function IncomePage() {
   const [bulkFallbackManagerUserId, setBulkFallbackManagerUserId] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [recentLimit, setRecentLimit] = useState(10);
+  const [periodDeleteFrom, setPeriodDeleteFrom] = useState(getTashkentToday());
+  const [periodDeleteTo, setPeriodDeleteTo] = useState(getTashkentToday());
+  const [isDeletingPeriod, setIsDeletingPeriod] = useState(false);
+  const customerInputWrapperRef = useRef<HTMLDivElement | null>(null);
+  const [isCustomerSuggestionsOpen, setIsCustomerSuggestionsOpen] = useState(false);
 
   const formOptionsQuery = trpc.customerIncome.formOptions.useQuery(undefined, {
     retry: false,
@@ -317,6 +322,7 @@ export default function IncomePage() {
   const deleteIncomeMutation = trpc.customerIncome.deleteIncome.useMutation();
   const bulkImportRowsMutation = trpc.customerIncome.bulkImportRows.useMutation();
   const bulkImportFromSheetMutation = trpc.customerIncome.bulkImportFromGoogleSheet.useMutation();
+  const deleteIncomesByPeriodMutation = trpc.customerIncome.deleteIncomesByPeriod.useMutation();
   const [deletingIncomeId, setDeletingIncomeId] = useState<string | null>(null);
   const isBulkBusy = isBulkUploading || bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading;
 
@@ -365,6 +371,23 @@ export default function IncomePage() {
   const selectedCustomer = useMemo(() => {
     return customerByNumber.get(customerNumber.trim().toLowerCase()) ?? null;
   }, [customerByNumber, customerNumber]);
+
+  const customerSuggestions = useMemo(() => {
+    const query = customerNumber.trim().toLowerCase();
+    const sorted = [...customers].sort((a, b) => a.customerNumber.localeCompare(b.customerNumber));
+    if (!query) {
+      return sorted.slice(0, 30);
+    }
+
+    return sorted
+      .filter((customer) => {
+        const customerNum = customer.customerNumber.toLowerCase();
+        const customerName = customer.name.toLowerCase();
+        const customerTg = (customer.telegramUsername || '').toLowerCase();
+        return customerNum.includes(query) || customerName.includes(query) || customerTg.includes(query);
+      })
+      .slice(0, 30);
+  }, [customers, customerNumber]);
 
   const isExistingCustomer = Boolean(selectedCustomer);
 
@@ -437,6 +460,25 @@ export default function IncomePage() {
     setCustomerName(selectedCustomer.name || '');
     setTelegramUsername(sanitizeTelegramUsername(selectedCustomer.telegramUsername || ''));
   }, [selectedCustomer]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
+      if (!customerInputWrapperRef.current) {
+        return;
+      }
+      const targetNode = event.target as Node | null;
+      if (targetNode && !customerInputWrapperRef.current.contains(targetNode)) {
+        setIsCustomerSuggestionsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
 
   useEffect(() => {
     if (type === 'new_sale') {
@@ -692,6 +734,70 @@ export default function IncomePage() {
       setError(deleteError?.message || "Tushum yozuvini o'chirib bo'lmadi.");
     } finally {
       setDeletingIncomeId(null);
+    }
+  };
+
+  const handleDeleteIncomesByPeriod = async () => {
+    if (!isAdmin) {
+      return;
+    }
+
+    if (!periodDeleteFrom || !periodDeleteTo) {
+      setError("Boshlanish va tugash sanasini kiriting.");
+      setSuccess(null);
+      return;
+    }
+
+    if (periodDeleteTo < periodDeleteFrom) {
+      setError("Tugash sanasi boshlanish sanasidan oldin bo'lmasligi kerak.");
+      setSuccess(null);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `${periodDeleteFrom} dan ${periodDeleteTo} gacha tushumlarni o'chirmoqchimisiz? Bu amalni ortga qaytarib bo'lmaydi.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setIsDeletingPeriod(true);
+
+    try {
+      const result = await deleteIncomesByPeriodMutation.mutateAsync({
+        dateFrom: periodDeleteFrom,
+        dateTo: periodDeleteTo,
+      });
+
+      if (result.matchedCount === 0) {
+        setSuccess("Tanlangan davrda o'chirish uchun tushum topilmadi.");
+      } else {
+        const blockedReasons = (result.blocked || [])
+          .slice(0, 3)
+          .map((item: any) => {
+            if (item.reason === 'pending_adjustment') {
+              return `${item.incomeId}: pending request`;
+            }
+            return `${item.incomeId}: repayment linked`;
+          })
+          .join(' | ');
+
+        const blockedMessage = result.blockedCount > 0
+          ? ` Bloklangan: ${result.blockedCount}.${blockedReasons ? ` ${blockedReasons}` : ''}`
+          : '';
+
+        setSuccess(
+          `Davr bo'yicha o'chirish yakunlandi: ${result.deletedCount}/${result.matchedCount} o'chirildi.${blockedMessage}`,
+        );
+      }
+
+      await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
+    } catch (deleteError: any) {
+      setError(deleteError?.message || "Davr bo'yicha tushumlarni o'chirib bo'lmadi.");
+    } finally {
+      setIsDeletingPeriod(false);
     }
   };
 
@@ -955,35 +1061,55 @@ export default function IncomePage() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mijoz raqami <span className="text-red-500">*</span></label>
-                <input
-                  list="customer-number-options"
-                  value={customerNumber}
-                  onChange={(event) => {
-                    setCustomerNumber(sanitizeCustomerNumber(event.target.value));
-                    clearFieldError('customerNumber');
-                  }}
-                  className={buildFieldClass(fieldErrors, 'customerNumber')}
-                  placeholder="998901234567"
-                  inputMode="numeric"
-                  pattern="\d*"
-                  autoComplete="off"
-                />
+                <div className="relative" ref={customerInputWrapperRef}>
+                  <input
+                    value={customerNumber}
+                    onFocus={() => setIsCustomerSuggestionsOpen(true)}
+                    onChange={(event) => {
+                      setCustomerNumber(sanitizeCustomerNumber(event.target.value));
+                      setIsCustomerSuggestionsOpen(true);
+                      clearFieldError('customerNumber');
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        setIsCustomerSuggestionsOpen(false);
+                      }
+                    }}
+                    className={buildFieldClass(fieldErrors, 'customerNumber')}
+                    placeholder="998901234567"
+                    inputMode="numeric"
+                    pattern="\d*"
+                    autoComplete="off"
+                  />
+                  {isCustomerSuggestionsOpen && customerSuggestions.length > 0 && (
+                    <div className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-800">
+                      {customerSuggestions.map((customer) => (
+                        <button
+                          key={customer.id}
+                          type="button"
+                          className="flex w-full flex-col gap-0.5 border-b border-gray-100 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-700/70"
+                          onClick={() => {
+                            setCustomerNumber(customer.customerNumber);
+                            setIsCustomerSuggestionsOpen(false);
+                            clearFieldError('customerNumber');
+                          }}
+                        >
+                          <span className="font-medium text-gray-900 dark:text-slate-100">{customer.customerNumber}</span>
+                          <span className="text-xs text-gray-600 dark:text-slate-300">
+                            {customer.name}
+                            {customer.telegramUsername ? ` • ${customer.telegramUsername}` : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 {fieldErrors.customerNumber && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.customerNumber}</p>}
-                <datalist id="customer-number-options">
-                  {customers.map((customer) => (
-                    <option
-                      key={customer.id}
-                      value={customer.customerNumber}
-                      label={`${customer.customerNumber} - ${customer.name}`}
-                    />
-                  ))}
-                </datalist>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mijoz ismi {!isExistingCustomer && <span className="text-red-500">*</span>}</label>
                 <input
-                  list="customer-name-options"
                   value={customerName}
                   onChange={(event) => {
                     setCustomerName(event.target.value);
@@ -995,17 +1121,11 @@ export default function IncomePage() {
                   autoComplete="off"
                 />
                 {fieldErrors.customerName && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.customerName}</p>}
-                <datalist id="customer-name-options">
-                  {customers.map((customer) => (
-                    <option key={`${customer.id}-name`} value={customer.name} />
-                  ))}
-                </datalist>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Telegram username</label>
                 <input
-                  list="customer-telegram-options"
                   value={telegramUsername}
                   onChange={(event) => {
                     setTelegramUsername(sanitizeTelegramUsername(event.target.value));
@@ -1018,13 +1138,6 @@ export default function IncomePage() {
                   autoComplete="off"
                 />
                 {fieldErrors.telegramUsername && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.telegramUsername}</p>}
-                <datalist id="customer-telegram-options">
-                  {customers
-                    .filter((customer) => Boolean(customer.telegramUsername))
-                    .map((customer) => (
-                      <option key={`${customer.id}-telegram`} value={customer.telegramUsername || ''} />
-                    ))}
-                </datalist>
               </div>
             </div>
 
@@ -1246,6 +1359,37 @@ export default function IncomePage() {
         </div>
 
         <div className="p-6">
+          {isAdmin && (
+            <div className="mb-5 rounded-md border border-red-200 bg-red-50/60 p-4 dark:border-red-800 dark:bg-red-950/30">
+              <h3 className="text-sm font-semibold text-red-800 dark:text-red-200">Davr bo'yicha tushumlarni o'chirish (Admin)</h3>
+              <p className="mt-1 text-xs text-red-700 dark:text-red-300">
+                Faqat tanlangan davrdagi yozuvlar o'chiriladi. Pending so'rovi bor yoki repayment bog'langan yozuvlar bloklanadi.
+              </p>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_auto]">
+                <input
+                  type="date"
+                  value={periodDeleteFrom}
+                  onChange={(event) => setPeriodDeleteFrom(event.target.value)}
+                  className="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 dark:border-red-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+                <input
+                  type="date"
+                  value={periodDeleteTo}
+                  onChange={(event) => setPeriodDeleteTo(event.target.value)}
+                  className="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 dark:border-red-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+                <button
+                  type="button"
+                  onClick={handleDeleteIncomesByPeriod}
+                  disabled={isDeletingPeriod}
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isDeletingPeriod ? "O'chirilmoqda..." : "Davr bo'yicha o'chirish"}
+                </button>
+              </div>
+            </div>
+          )}
+
           {incomesQuery.isLoading ? (
             <p className="text-sm text-gray-600 dark:text-slate-300">Tushumlar yuklanmoqda...</p>
           ) : incomesQuery.data?.length ? (
