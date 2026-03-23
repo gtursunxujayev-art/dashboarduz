@@ -61,7 +61,11 @@ export default function AdjustmentsPage() {
 
   const canApproveRefund = roles.includes('Admin') || roles.includes('Finance');
   const canApproveTariffChange =
-    roles.includes('Admin') || roles.includes('Manager') || roles.includes('Organizator') || roles.includes('Organizer');
+    roles.includes('Admin')
+    || roles.includes('Manager')
+    || roles.includes('Tashkiliy')
+    || roles.includes('Organizator')
+    || roles.includes('Organizer');
 
   const [mode, setMode] = useState<AdjustmentMode>('');
   const [customerNumberInput, setCustomerNumberInput] = useState('');
