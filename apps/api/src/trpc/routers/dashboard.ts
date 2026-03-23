@@ -235,6 +235,14 @@ function isFinanceOnly(roles: string[]): boolean {
   return roles.includes('Finance') && !roles.some((role) => role === 'Admin' || role === 'Manager' || role === 'Agent');
 }
 
+function isTashkiliyOnly(roles: string[]): boolean {
+  return roles.includes('Tashkiliy')
+    && !roles.includes('Admin')
+    && !roles.includes('Manager')
+    && !roles.includes('Agent')
+    && !roles.includes('Finance');
+}
+
 function toPieData(input: Map<string, number>) {
   return Array.from(input.entries())
     .sort((a, b) => b[1] - a[1])
@@ -433,6 +441,7 @@ export const dashboardRouter = router({
     .query(async ({ ctx, input }) => {
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
+      const tashkiliyOnly = isTashkiliyOnly(ctx.user.roles);
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
       const tenant = await prisma.tenant.findUnique({
         where: { id: ctx.tenantId },
@@ -855,8 +864,8 @@ export const dashboardRouter = router({
           qualifiedLeads: leadMetricsAvailable ? (leadStats?.qualifiedLeads ?? 0) : null,
           sales: salesStats.sales,
           conversionPercent: conversionPercentByAgent,
-          agreementsAmount: salesStats.agreementsAmount,
-          incomeAmount: salesStats.incomeAmount,
+          agreementsAmount: tashkiliyOnly ? 0 : salesStats.agreementsAmount,
+          incomeAmount: tashkiliyOnly ? 0 : salesStats.incomeAmount,
           talkedSeconds: talkedSecondsValue,
           followUpCount: activityStats.followUpCount,
           noteCount: activityStats.noteCount,
@@ -885,15 +894,15 @@ export const dashboardRouter = router({
           totalCalls,
           pendingNotifications,
           activeIntegrations,
-          totalIncomeAmount,
+          totalIncomeAmount: tashkiliyOnly ? 0 : totalIncomeAmount,
           newSalesCount,
-          newSalesAgreementAmount,
+          newSalesAgreementAmount: tashkiliyOnly ? 0 : newSalesAgreementAmount,
           onlineSalesCount,
-          onlineSalesAgreementAmount,
+          onlineSalesAgreementAmount: tashkiliyOnly ? 0 : onlineSalesAgreementAmount,
           offlineSalesCount,
-          offlineSalesAgreementAmount,
+          offlineSalesAgreementAmount: tashkiliyOnly ? 0 : offlineSalesAgreementAmount,
           intensiveSalesCount,
-          intensiveSalesAgreementAmount,
+          intensiveSalesAgreementAmount: tashkiliyOnly ? 0 : intensiveSalesAgreementAmount,
           qualifiedLeadSharePercent: Number(qualifiedLeadSharePercent.toFixed(2)),
           nonQualifiedLeadSharePercent: Number(nonQualifiedLeadSharePercent.toFixed(2)),
           conversionPercent: Number(conversionPercent.toFixed(2)),
@@ -928,6 +937,10 @@ export const dashboardRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
+      if (isTashkiliyOnly(ctx.user.roles)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Tashkiliy role cannot access finance summary.' });
+      }
+
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
