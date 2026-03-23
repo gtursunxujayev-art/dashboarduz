@@ -72,16 +72,16 @@ export default function Header() {
 
   return (
     <header className="relative z-30 border-b border-gray-200 bg-white">
-      <div className="pl-14 pr-4 sm:px-6 lg:px-8">
-        <div className="flex min-h-16 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Boshqaruv paneli</h2>
+      <div className="pl-12 pr-3 sm:px-6 lg:px-8">
+        <div className="flex min-h-12 flex-col gap-2 py-2 sm:min-h-16 sm:gap-3 sm:py-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-base font-semibold text-gray-900 sm:text-lg">Boshqaruv paneli</h2>
 
-          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-4">
+          <div className="flex w-full flex-wrap items-center justify-end gap-1.5 sm:w-auto sm:gap-4">
             <div className="inline-flex rounded-md border border-gray-300 bg-white shadow-sm">
               <button
                 type="button"
                 onClick={() => handleThemeChange('light')}
-                className={`px-3 py-1.5 text-xs font-medium ${theme === 'light' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+                className={`px-2 py-1 text-[11px] font-medium sm:px-3 sm:py-1.5 sm:text-xs ${theme === 'light' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
                 aria-label="Yorug' mavzu"
               >
                 Yorug'
@@ -89,24 +89,24 @@ export default function Header() {
               <button
                 type="button"
                 onClick={() => handleThemeChange('dark')}
-                className={`border-l border-gray-300 px-3 py-1.5 text-xs font-medium ${theme === 'dark' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+                className={`border-l border-gray-300 px-2 py-1 text-[11px] font-medium sm:px-3 sm:py-1.5 sm:text-xs ${theme === 'dark' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
                 aria-label="Tungi mavzu"
               >
                 Tungi
               </button>
             </div>
 
-            <div ref={menuRef} className="relative min-w-[180px]">
+            <div ref={menuRef} className="relative min-w-[150px] sm:min-w-[180px]">
               <button
                 type="button"
                 onClick={() => setMenuOpen((v) => !v)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-left shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-left shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:px-4 sm:py-2"
                 aria-expanded={menuOpen}
               >
                 <div className="flex items-center gap-2">
                   <div>
-                    <p className="text-sm font-medium text-gray-800">{tenantName}</p>
-                    <p className="text-xs capitalize text-gray-500">{tenantPlan} tarif</p>
+                    <p className="text-xs font-medium text-gray-800 sm:text-sm">{tenantName}</p>
+                    <p className="text-[11px] capitalize text-gray-500 sm:text-xs">{tenantPlan} tarif</p>
                   </div>
                   <svg
                     className={`h-4 w-4 text-gray-500 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
@@ -136,14 +136,14 @@ export default function Header() {
 
             <button className="rounded-full p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <span className="sr-only">Bildirishnomalar</span>
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0a3 3 0 11-6 0m6 0H9" />
               </svg>
             </button>
 
-            <div className="text-right sm:block">
-              <p className="text-sm font-medium text-gray-800">{user?.email?.split('@')[0] || user?.phone || 'Akkaunt'}</p>
-              <p className="text-xs text-gray-500">
+            <div className="text-right">
+              <p className="max-w-[80px] truncate text-xs font-medium text-gray-800 sm:max-w-none sm:text-sm">{user?.email?.split('@')[0] || user?.phone || 'Akkaunt'}</p>
+              <p className="text-[11px] text-gray-500 sm:text-xs">
                 {user?.roles?.map((role: string) => ROLE_LABELS[role] || role).join(', ')}
               </p>
             </div>
