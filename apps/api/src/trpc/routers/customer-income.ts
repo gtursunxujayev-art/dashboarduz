@@ -907,6 +907,125 @@ async function sendRefundApprovedTelegram(params: {
   }
 }
 
+async function sendRefundRequestedTelegram(params: {
+  tenantId: string;
+  requestId: string;
+  requestedByUserId: string;
+}) {
+  const groupIds = parseTelegramGroupIdsFromEnvKeys(REFUND_PAYMENT_GROUP_ENV_KEYS);
+  if (!groupIds.length) {
+    console.warn('[Income][Telegram] Refund request group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
+    return;
+  }
+
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  if (!botToken) {
+    console.warn('[Income][Telegram] Bot token is missing for refund request message.');
+    return;
+  }
+
+  const request = await prisma.incomeAdjustmentRequest.findFirst({
+    where: {
+      id: params.requestId,
+      tenantId: params.tenantId,
+      type: ADJUSTMENT_TYPE_REFUND,
+      status: ADJUSTMENT_STATUS_PENDING,
+    },
+    select: {
+      id: true,
+      reason: true,
+      requestedAmount: true,
+      createdAt: true,
+      income: {
+        select: {
+          id: true,
+          entryDate: true,
+          paymentAmount: true,
+          customer: {
+            select: {
+              name: true,
+              customerNumber: true,
+              telegramUsername: true,
+            },
+          },
+          manager: {
+            select: {
+              name: true,
+              username: true,
+            },
+          },
+          course: {
+            select: {
+              name: true,
+            },
+          },
+          tariff: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      requestedBy: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+        },
+      },
+    },
+  });
+
+  if (!request?.income?.customer) {
+    return;
+  }
+
+  const customer = request.income.customer;
+  const managerLabel = request.income.manager?.name || request.income.manager?.username || null;
+  const requesterLabel = request.requestedBy?.name || request.requestedBy?.username || params.requestedByUserId;
+  const telegramUsername = customer.telegramUsername
+    ? (customer.telegramUsername.startsWith('@') ? customer.telegramUsername : `@${customer.telegramUsername}`)
+    : '-';
+
+  const messageLines = [
+    '#Pul_qaytarish_so\'rovi',
+    ...(toHashtag(request.income.course?.name) ? [toHashtag(request.income.course?.name)] : []),
+    ...(toHashtag(request.income.tariff?.name) ? [toHashtag(request.income.tariff?.name)] : []),
+    ...(toHashtag(managerLabel) ? [toHashtag(managerLabel)] : []),
+    '',
+    `1.Mijoz: ${customer.name}`,
+    `2.Tel: ${customer.customerNumber}`,
+    `3.Tg: ${telegramUsername}`,
+    '',
+    `So'ralgan summa: ${formatAmountUz(request.requestedAmount ?? request.income.paymentAmount ?? 0)}`,
+    `Asl to'lov sanasi: ${formatDateGmt5(request.income.entryDate)}`,
+    `So'rov yuborgan: ${requesterLabel}`,
+    `So'rov vaqti: ${formatDateGmt5(request.createdAt)}`,
+    'Holat: Kutilmoqda',
+    ...(request.reason ? [`Izoh: ${request.reason}`] : []),
+    '',
+    '@Moliya_b0limi',
+    '@najotnur_oflayn',
+  ];
+
+  const message = messageLines.join('\n');
+
+  for (const groupId of groupIds) {
+    try {
+      await telegramService.sendMessage(botToken, groupId, message, {
+        disable_web_page_preview: true,
+      });
+    } catch (error) {
+      console.error('[Income][Telegram] Failed to send refund request message', {
+        tenantId: params.tenantId,
+        requestId: params.requestId,
+        groupId,
+        error: String((error as any)?.message || error),
+      });
+    }
+  }
+}
+
 async function assertManagerBelongsToTenant(tenantId: string, managerUserId: string) {
   const manager = await prisma.user.findFirst({
     where: {
@@ -2965,6 +3084,22 @@ export const customerIncomeRouter = router({
           },
         },
       });
+
+      if (input.type === ADJUSTMENT_TYPE_REFUND) {
+        try {
+          await sendRefundRequestedTelegram({
+            tenantId: ctx.tenantId,
+            requestId: createdRequest.id,
+            requestedByUserId: ctx.user.userId,
+          });
+        } catch (error) {
+          console.error('[Income][Telegram] Refund request notification failed (non-blocking)', {
+            tenantId: ctx.tenantId,
+            requestId: createdRequest.id,
+            error: String((error as any)?.message || error),
+          });
+        }
+      }
 
       return createdRequest;
     }),
