@@ -39,6 +39,7 @@ model Tenant {
   subTariffs      SubTariff[]
   incomes         Income[]
   incomeAdjustmentRequests IncomeAdjustmentRequest[]
+  historicalImportSessions HistoricalImportSession[]
 
   @@index([subdomain])
   @@map("tenants")
@@ -70,6 +71,7 @@ model User {
   managedIncomes Income[] @relation("IncomeManager")
   requestedIncomeAdjustments IncomeAdjustmentRequest[] @relation("IncomeAdjustmentRequestedBy")
   reviewedIncomeAdjustments IncomeAdjustmentRequest[] @relation("IncomeAdjustmentReviewedBy")
+  createdHistoricalImportSessions HistoricalImportSession[] @relation("HistoricalImportCreatedBy")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -316,6 +318,10 @@ model Customer {
   profileCourseId String?
   profileTariffId String?
   profileSubTariffId String?
+  legacyProfileImportKey String?
+  legacyProfileImportSource String?
+  historicalImportSessionId String?
+  legacyProfileMeta Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -329,6 +335,7 @@ model Customer {
   @@index([profileCourseId])
   @@index([profileTariffId])
   @@index([profileSubTariffId])
+  @@unique([tenantId, legacyProfileImportKey])
   @@map("customers")
 }
 
@@ -407,6 +414,10 @@ model Income {
   paymentAmount      Int      // paid amount
   remainingDebtAmount Int     // remaining debt after this transaction
   lifecycleStatus    String   @default("active") // active, pending_refund, refunded
+  legacyImportKey    String?
+  legacyImportSource String?
+  historicalImportSessionId String?
+  legacyImportMeta   Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -428,7 +439,38 @@ model Income {
   @@index([remainingDebtAmount])
   @@index([lifecycleStatus])
   @@index([relatedDebtIncomeId])
+  @@index([historicalImportSessionId])
+  @@unique([tenantId, legacyImportKey])
   @@map("incomes")
+}
+
+model HistoricalImportSession {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  createdByUserId    String
+  status             String   @default("prepared") // prepared, running, cancelling, cancelled, failed, completed
+  fallbackManagerUserId String?
+  sourceFiles        Json?
+  managerAliasMap    Json?
+  incomeRows         Json?
+  customerRows       Json?
+  preview            Json?
+  progress           Json?
+  failureReport      Json?
+  errorMessage       String?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy          User     @relation("HistoricalImportCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([createdByUserId])
+  @@index([status])
+  @@map("historical_import_sessions")
 }
 
 model IncomeAdjustmentRequest {
