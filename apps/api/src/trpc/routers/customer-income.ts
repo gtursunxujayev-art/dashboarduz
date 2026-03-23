@@ -3704,29 +3704,6 @@ export const customerIncomeRouter = router({
       }
 
       const existingCustomerIds = customers.map((customer) => customer.id);
-      const incomesGrouped = await prisma.income.groupBy({
-        by: ['customerId'],
-        where: {
-          tenantId: ctx.tenantId,
-          customerId: { in: existingCustomerIds },
-        },
-        _count: {
-          customerId: true,
-        },
-      });
-
-      if (incomesGrouped.length > 0) {
-        const blockedIds = new Set(incomesGrouped.map((item) => item.customerId));
-        const blockedCustomers = customers
-          .filter((customer) => blockedIds.has(customer.id))
-          .slice(0, 5)
-          .map((customer) => customer.customerNumber);
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: `Customers with income history cannot be deleted. Blocked: ${blockedCustomers.join(', ')}${blockedIds.size > blockedCustomers.length ? '...' : ''}`,
-        });
-      }
-
       const deleteResult = await prisma.customer.deleteMany({
         where: {
           tenantId: ctx.tenantId,
