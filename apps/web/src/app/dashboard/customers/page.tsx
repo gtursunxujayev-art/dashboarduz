@@ -31,7 +31,15 @@ function sanitizeTelegram(value: string): string {
 
 export default function CustomersPage() {
   const { user } = useAuth();
+  const roles = user?.roles || [];
   const isAdmin = Boolean(user?.roles?.includes('Admin'));
+  const isTashkiliyOnly = Boolean(
+    roles.includes('Tashkiliy')
+      && !roles.includes('Admin')
+      && !roles.includes('Manager')
+      && !roles.includes('Agent')
+      && !roles.includes('Finance'),
+  );
 
   const [query, setQuery] = useState('');
   const [courseId, setCourseId] = useState('');
@@ -490,7 +498,9 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Telegram</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Kurslar</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Qarz</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Jami to&apos;langan</th>
+                    {!isTashkiliyOnly && (
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Jami to&apos;langan</th>
+                    )}
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Oxirgi faollik</th>
                   </tr>
                 </thead>
@@ -518,7 +528,9 @@ export default function CustomersPage() {
                           {formatAmount(customer.totalDebtAmount || 0)}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(customer.totalPaidAmount || 0)}</td>
+                      {!isTashkiliyOnly && (
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(customer.totalPaidAmount || 0)}</td>
+                      )}
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatDate(customer.lastActivityAt)}</td>
                     </tr>
                   ))}
