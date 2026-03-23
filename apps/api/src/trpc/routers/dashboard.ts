@@ -34,8 +34,10 @@ const PIE_COLORS = [
 type DashboardRange = z.infer<typeof dashboardRangeSchema>;
 
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
+const REPORT_TZ_OFFSET_MS = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 const SALARY_CATEGORIES = ['online', 'offline', 'intensive'] as const;
+const REPORT_MONTH_LABELS_UZ = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'] as const;
 const INCOME_LIFECYCLE_ACTIVE = 'active';
 const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
 const INCOME_LIFECYCLE_REFUNDED = 'refunded';
@@ -103,7 +105,7 @@ async function getAgentResponsibleScope(tenantId: string, userId: string, roles:
 }
 
 function getRangeStart(range: DashboardRange, now: Date): Date {
-  const offsetMs = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
+  const offsetMs = REPORT_TZ_OFFSET_MS;
   const shiftedNow = new Date(now.getTime() + offsetMs);
 
   const year = shiftedNow.getUTCFullYear();
@@ -121,6 +123,74 @@ function getRangeStart(range: DashboardRange, now: Date): Date {
   }
 
   return new Date(Date.UTC(year, month, 1) - offsetMs);
+}
+
+function shiftToReportTimezone(date: Date): Date {
+  return new Date(date.getTime() + REPORT_TZ_OFFSET_MS);
+}
+
+function fromReportLocalParts(
+  year: number,
+  month: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0,
+  millisecond = 0,
+): Date {
+  return new Date(Date.UTC(year, month, day, hour, minute, second, millisecond) - REPORT_TZ_OFFSET_MS);
+}
+
+function getDaysInReportLocalMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+}
+
+function getReportLocalDayKey(date: Date): string {
+  const shifted = shiftToReportTimezone(date);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getReportLocalDayOfYear(date: Date): number {
+  const shifted = shiftToReportTimezone(date);
+  const year = shifted.getUTCFullYear();
+  const yearStart = Date.UTC(year, 0, 1);
+  const currentDay = Date.UTC(year, shifted.getUTCMonth(), shifted.getUTCDate());
+  return Math.floor((currentDay - yearStart) / 86_400_000) + 1;
+}
+
+function getReportLocalDaysInYear(year: number): number {
+  const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  return isLeapYear ? 366 : 365;
+}
+
+function getReportLocalDayOfYearForMonthEnd(year: number, month: number): number {
+  const yearStart = Date.UTC(year, 0, 1);
+  const monthEnd = Date.UTC(year, month + 1, 0);
+  return Math.floor((monthEnd - yearStart) / 86_400_000) + 1;
+}
+
+function buildTrend(currentValue: number, previousValue: number) {
+  const diffAmount = currentValue - previousValue;
+  let diffPercent = 0;
+
+  if (previousValue > 0) {
+    diffPercent = (diffAmount / previousValue) * 100;
+  } else if (currentValue > 0) {
+    diffPercent = 100;
+  }
+
+  const direction = diffAmount > 0 ? 'up' : diffAmount < 0 ? 'down' : 'flat';
+
+  return {
+    currentValue,
+    previousValue,
+    diffAmount,
+    diffPercent: Number(diffPercent.toFixed(2)),
+    direction,
+  };
 }
 
 function parseCustomDate(input: string, endOfDay: boolean): Date {
@@ -883,8 +953,97 @@ export const dashboardRouter = router({
             }
           : {}),
       };
+      const analyticsBaseWhere = {
+        tenantId: ctx.tenantId,
+        ...(effectiveManagerUserId
+          ? {
+              managerUserId: effectiveManagerUserId,
+            }
+          : {}),
+        ...(input.courseId
+          ? {
+              courseId: input.courseId,
+            }
+          : {}),
+      };
 
-      const [incomes, courses, managers] = await Promise.all([
+      const nowLocal = shiftToReportTimezone(now);
+      const currentYear = nowLocal.getUTCFullYear();
+      const currentMonth = nowLocal.getUTCMonth();
+      const currentDay = nowLocal.getUTCDate();
+      const currentHour = nowLocal.getUTCHours();
+      const currentMinute = nowLocal.getUTCMinutes();
+      const currentSecond = nowLocal.getUTCSeconds();
+      const currentMillisecond = nowLocal.getUTCMilliseconds();
+
+      const previousMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+      const previousMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+      const previousMonthSameDay = Math.min(currentDay, getDaysInReportLocalMonth(previousMonthYear, previousMonth));
+      const lastYearSameMonthDay = Math.min(currentDay, getDaysInReportLocalMonth(currentYear - 1, currentMonth));
+      const currentMonthTotalDays = getDaysInReportLocalMonth(currentYear, currentMonth);
+
+      const currentMonthStart = fromReportLocalParts(currentYear, currentMonth, 1, 0, 0, 0, 0);
+      const previousMonthStart = fromReportLocalParts(previousMonthYear, previousMonth, 1, 0, 0, 0, 0);
+      const previousMonthSameMoment = fromReportLocalParts(
+        previousMonthYear,
+        previousMonth,
+        previousMonthSameDay,
+        currentHour,
+        currentMinute,
+        currentSecond,
+        currentMillisecond,
+      );
+      const lastYearSameMonthStart = fromReportLocalParts(currentYear - 1, currentMonth, 1, 0, 0, 0, 0);
+      const lastYearSameMonthMoment = fromReportLocalParts(
+        currentYear - 1,
+        currentMonth,
+        lastYearSameMonthDay,
+        currentHour,
+        currentMinute,
+        currentSecond,
+        currentMillisecond,
+      );
+      const currentYearStart = fromReportLocalParts(currentYear, 0, 1, 0, 0, 0, 0);
+      const previousYearStart = fromReportLocalParts(currentYear - 1, 0, 1, 0, 0, 0, 0);
+      const previousYearYtdMoment = fromReportLocalParts(
+        currentYear - 1,
+        currentMonth,
+        lastYearSameMonthDay,
+        currentHour,
+        currentMinute,
+        currentSecond,
+        currentMillisecond,
+      );
+
+      const sumActiveIncome = async (start: Date, end: Date): Promise<number> => {
+        const aggregate = await prisma.income.aggregate({
+          where: {
+            ...analyticsBaseWhere,
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            entryDate: {
+              gte: start,
+              lte: end,
+            },
+          },
+          _sum: {
+            paymentAmount: true,
+          },
+        });
+        return Number(aggregate._sum.paymentAmount || 0);
+      };
+
+      const [
+        incomes,
+        courses,
+        managers,
+        currentMonthToDateIncome,
+        previousMonthToDateIncome,
+        lastYearSameMonthToDateIncome,
+        currentYearToDateIncome,
+        previousYearToDateIncome,
+        monthActiveIncomes,
+        yearActiveIncomes,
+      ] = await Promise.all([
         prisma.income.findMany({
           where,
           orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
@@ -946,6 +1105,39 @@ export const dashboardRouter = router({
             name: true,
             username: true,
             roles: true,
+          },
+        }),
+        sumActiveIncome(currentMonthStart, now),
+        sumActiveIncome(previousMonthStart, previousMonthSameMoment),
+        sumActiveIncome(lastYearSameMonthStart, lastYearSameMonthMoment),
+        sumActiveIncome(currentYearStart, now),
+        sumActiveIncome(previousYearStart, previousYearYtdMoment),
+        prisma.income.findMany({
+          where: {
+            ...analyticsBaseWhere,
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            entryDate: {
+              gte: currentMonthStart,
+              lte: now,
+            },
+          },
+          select: {
+            entryDate: true,
+            paymentAmount: true,
+          },
+        }),
+        prisma.income.findMany({
+          where: {
+            ...analyticsBaseWhere,
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            entryDate: {
+              gte: currentYearStart,
+              lte: now,
+            },
+          },
+          select: {
+            entryDate: true,
+            paymentAmount: true,
           },
         }),
       ]);
@@ -1024,6 +1216,63 @@ export const dashboardRouter = router({
       }
 
       totals.debtorsCount = debtorCustomers.size;
+      const monthTrend = buildTrend(currentMonthToDateIncome, previousMonthToDateIncome);
+      const monthVsLastYearTrend = buildTrend(currentMonthToDateIncome, lastYearSameMonthToDateIncome);
+      const ytdTrend = buildTrend(currentYearToDateIncome, previousYearToDateIncome);
+
+      const monthDailyMap = new Map<number, number>();
+      for (const income of monthActiveIncomes as Array<{ entryDate: Date; paymentAmount: number }>) {
+        const localDate = shiftToReportTimezone(income.entryDate);
+        const day = localDate.getUTCDate();
+        monthDailyMap.set(day, (monthDailyMap.get(day) || 0) + Number(income.paymentAmount || 0));
+      }
+
+      let monthCumulativeActual = 0;
+      const monthElapsedDays = Math.max(1, currentDay);
+      const monthRunRatePerDay = currentMonthToDateIncome > 0 ? currentMonthToDateIncome / monthElapsedDays : 0;
+      const monthForecastSeries: Array<{ label: string; actual: number | null; forecast: number }> = [];
+      for (let day = 1; day <= currentMonthTotalDays; day += 1) {
+        monthCumulativeActual += monthDailyMap.get(day) || 0;
+        monthForecastSeries.push({
+          label: String(day),
+          actual: day <= currentDay ? Math.round(monthCumulativeActual) : null,
+          forecast: Math.round(monthRunRatePerDay * day),
+        });
+      }
+
+      const monthProjectedTotal = Math.round(monthRunRatePerDay * currentMonthTotalDays);
+      const monthRemainingAmount = Math.max(0, monthProjectedTotal - Math.round(currentMonthToDateIncome));
+      const monthProgressPercent = monthProjectedTotal > 0
+        ? Number(((currentMonthToDateIncome / monthProjectedTotal) * 100).toFixed(2))
+        : 0;
+
+      const yearMonthlyMap = new Map<number, number>();
+      for (const income of yearActiveIncomes as Array<{ entryDate: Date; paymentAmount: number }>) {
+        const localDate = shiftToReportTimezone(income.entryDate);
+        const monthIndex = localDate.getUTCMonth();
+        yearMonthlyMap.set(monthIndex, (yearMonthlyMap.get(monthIndex) || 0) + Number(income.paymentAmount || 0));
+      }
+
+      const yearElapsedDays = Math.max(1, getReportLocalDayOfYear(now));
+      const yearTotalDays = getReportLocalDaysInYear(currentYear);
+      const yearRunRatePerDay = currentYearToDateIncome > 0 ? currentYearToDateIncome / yearElapsedDays : 0;
+      let yearCumulativeActual = 0;
+      const yearForecastSeries: Array<{ label: string; actual: number | null; forecast: number }> = [];
+      for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+        yearCumulativeActual += yearMonthlyMap.get(monthIndex) || 0;
+        yearForecastSeries.push({
+          label: REPORT_MONTH_LABELS_UZ[monthIndex] || String(monthIndex + 1),
+          actual: monthIndex <= currentMonth ? Math.round(yearCumulativeActual) : null,
+          forecast: Math.round(yearRunRatePerDay * getReportLocalDayOfYearForMonthEnd(currentYear, monthIndex)),
+        });
+      }
+
+      const yearProjectedTotal = Math.round(yearRunRatePerDay * yearTotalDays);
+      const yearRemainingAmount = Math.max(0, yearProjectedTotal - Math.round(currentYearToDateIncome));
+      const yearProgressPercent = yearProjectedTotal > 0
+        ? Number(((currentYearToDateIncome / yearProjectedTotal) * 100).toFixed(2))
+        : 0;
+
       const managerOptions = (managers as Array<{ id: string; name: string | null; username: string | null; roles: string[] }>)
         .map((manager) => ({
           id: manager.id,
@@ -1042,6 +1291,51 @@ export const dashboardRouter = router({
           courseId: input.courseId || null,
           managerUserId: effectiveManagerUserId || null,
           agentScoped: scope.isScoped,
+        },
+        comparisons: {
+          monthToDateVsLastMonthToDate: {
+            ...monthTrend,
+            currentStart: currentMonthStart.toISOString(),
+            currentEnd: now.toISOString(),
+            previousStart: previousMonthStart.toISOString(),
+            previousEnd: previousMonthSameMoment.toISOString(),
+          },
+          monthToDateVsLastYearSameMonth: {
+            ...monthVsLastYearTrend,
+            currentStart: currentMonthStart.toISOString(),
+            currentEnd: now.toISOString(),
+            previousStart: lastYearSameMonthStart.toISOString(),
+            previousEnd: lastYearSameMonthMoment.toISOString(),
+          },
+          ytdVsLastYearYtd: {
+            ...ytdTrend,
+            currentStart: currentYearStart.toISOString(),
+            currentEnd: now.toISOString(),
+            previousStart: previousYearStart.toISOString(),
+            previousEnd: previousYearYtdMoment.toISOString(),
+          },
+        },
+        forecast: {
+          monthEnd: {
+            currentToDate: Math.round(currentMonthToDateIncome),
+            projectedTotal: monthProjectedTotal,
+            remainingAmount: monthRemainingAmount,
+            progressPercent: monthProgressPercent,
+            runRatePerDay: Number(monthRunRatePerDay.toFixed(2)),
+            periodStart: currentMonthStart.toISOString(),
+            periodEnd: fromReportLocalParts(currentYear, currentMonth, currentMonthTotalDays, 23, 59, 59, 999).toISOString(),
+          },
+          yearEnd: {
+            currentToDate: Math.round(currentYearToDateIncome),
+            projectedTotal: yearProjectedTotal,
+            remainingAmount: yearRemainingAmount,
+            progressPercent: yearProgressPercent,
+            runRatePerDay: Number(yearRunRatePerDay.toFixed(2)),
+            periodStart: currentYearStart.toISOString(),
+            periodEnd: fromReportLocalParts(currentYear, 11, 31, 23, 59, 59, 999).toISOString(),
+          },
+          monthSeries: monthForecastSeries,
+          yearSeries: yearForecastSeries,
         },
         totals,
         incomeByCourse: Array.from(incomeByCourse.entries())
