@@ -2743,8 +2743,11 @@ export const customerIncomeRouter = router({
             : restoredDebtRaw;
 
           transactionSteps.push(
-            prisma.income.update({
-              where: { id: sourceIncome.id },
+            prisma.income.updateMany({
+              where: {
+                id: sourceIncome.id,
+                tenantId: ctx.tenantId,
+              },
               data: {
                 remainingDebtAmount: Math.max(restoredDebt, 0),
               },
@@ -2925,8 +2928,11 @@ export const customerIncomeRouter = router({
             : restoredDebtRaw;
 
           transactionSteps.push(
-            prisma.income.update({
-              where: { id: sourceIncome.id },
+            prisma.income.updateMany({
+              where: {
+                id: sourceIncome.id,
+                tenantId: ctx.tenantId,
+              },
               data: {
                 remainingDebtAmount: Math.max(restoredDebt, 0),
               },
