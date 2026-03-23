@@ -332,6 +332,7 @@ model Course {
   name      String
   category  String   @default("offline") // online, offline, intensive
   isActive  Boolean  @default(true)
+  isHiddenFromIncomeForm Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
