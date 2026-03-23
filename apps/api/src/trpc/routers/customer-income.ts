@@ -82,6 +82,23 @@ function isMissingCourseHiddenFromIncomeFormColumnError(error: unknown): boolean
   );
 }
 
+function isMissingHistoricalImportSchemaError(error: unknown): boolean {
+  const message = String((error as any)?.message || '').toLowerCase();
+  return (
+    (message.includes('historical_import_sessions') && message.includes('does not exist'))
+    || (message.includes('legacyimportkey') && message.includes('does not exist'))
+    || (message.includes('legacyprofileimportkey') && message.includes('does not exist'))
+    || (message.includes('historicalimportsessionid') && message.includes('does not exist'))
+  );
+}
+
+function throwHistoricalImportMigrationError(): never {
+  throw new TRPCError({
+    code: 'PRECONDITION_FAILED',
+    message: "Tarixiy import ishlashi uchun yangi migratsiyalar hali qo'llanmagan. Avval database migration ni ishga tushiring.",
+  });
+}
+
 type CourseWithTariffsSafe = {
   id: string;
   name: string;
@@ -3190,27 +3207,163 @@ export const customerIncomeRouter = router({
   prepareHistoricalImport: adminProcedure
     .input(historicalImportPrepareSchema)
     .mutation(async ({ ctx, input }) => {
-      if (input.fallbackManagerUserId) {
-        await assertManagerBelongsToTenant(ctx.tenantId, input.fallbackManagerUserId);
+      try {
+        if (input.fallbackManagerUserId) {
+          await assertManagerBelongsToTenant(ctx.tenantId, input.fallbackManagerUserId);
+        }
+
+        const { managerLookup, catalogLookup } = await buildHistoricalCatalogContext(ctx.tenantId);
+        const prepared = prepareHistoricalImportPreview({
+          incomeRows: input.incomeRows as HistoricalRawRow[],
+          customerRows: input.customerRows as HistoricalRawRow[],
+          managerLookup,
+          existingCatalog: catalogLookup,
+          fallbackManagerUserId: input.fallbackManagerUserId,
+          managerAliasMap: input.managerAliasMap,
+        });
+        const initialProgress = buildHistoricalInitialProgress({
+          incomeRows: prepared.incomeRows,
+          customerRows: prepared.customerRows,
+          preview: prepared.preview,
+        });
+
+        if (input.sessionId) {
+          const existingSession = await prisma.historicalImportSession.findFirst({
+            where: {
+              id: input.sessionId,
+              tenantId: ctx.tenantId,
+            },
+            select: {
+              id: true,
+              status: true,
+            },
+          });
+          if (!existingSession) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
+          }
+          if (existingSession.status === HISTORICAL_IMPORT_STATUS_RUNNING) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Historical import is already running.' });
+          }
+        }
+
+        const sessionPayload = {
+          fallbackManagerUserId: input.fallbackManagerUserId || null,
+          sourceFiles: {
+            incomeFileName: input.incomeFileName || null,
+            customerFileName: input.customerFileName || null,
+            customerSheetName: input.customerSheetName || null,
+          },
+          managerAliasMap: prepared.managerAliasMap,
+          incomeRows: prepared.incomeRows as unknown as Prisma.InputJsonValue,
+          customerRows: prepared.customerRows as unknown as Prisma.InputJsonValue,
+          preview: prepared.preview as unknown as Prisma.InputJsonValue,
+          progress: initialProgress as unknown as Prisma.InputJsonValue,
+          failureReport: prepared.preview.failures as unknown as Prisma.InputJsonValue,
+          status: HISTORICAL_IMPORT_STATUS_PREPARED,
+          errorMessage: null,
+          startedAt: null,
+          completedAt: null,
+          cancelledAt: null,
+        };
+
+        const session = input.sessionId
+          ? await prisma.historicalImportSession.update({
+              where: { id: input.sessionId },
+              data: sessionPayload,
+              select: { id: true, status: true, createdAt: true, updatedAt: true },
+            })
+          : await prisma.historicalImportSession.create({
+              data: {
+                tenantId: ctx.tenantId,
+                createdByUserId: ctx.user.userId,
+                ...sessionPayload,
+              },
+              select: { id: true, status: true, createdAt: true, updatedAt: true },
+            });
+
+        await prisma.auditLog.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.user.userId,
+            action: 'historical_import_prepare',
+            resource: 'historical_import_session',
+            resourceId: session.id,
+            metadata: {
+              preview: prepared.preview,
+            },
+          },
+        });
+
+        return {
+          sessionId: session.id,
+          status: session.status,
+          preview: prepared.preview,
+          progress: initialProgress,
+        };
+      } catch (error) {
+        if (isMissingHistoricalImportSchemaError(error)) {
+          throwHistoricalImportMigrationError();
+        }
+        throw error;
       }
+    }),
 
-      const { managerLookup, catalogLookup } = await buildHistoricalCatalogContext(ctx.tenantId);
-      const prepared = prepareHistoricalImportPreview({
-        incomeRows: input.incomeRows as HistoricalRawRow[],
-        customerRows: input.customerRows as HistoricalRawRow[],
-        managerLookup,
-        existingCatalog: catalogLookup,
-        fallbackManagerUserId: input.fallbackManagerUserId,
-        managerAliasMap: input.managerAliasMap,
-      });
-      const initialProgress = buildHistoricalInitialProgress({
-        incomeRows: prepared.incomeRows,
-        customerRows: prepared.customerRows,
-        preview: prepared.preview,
-      });
+  getHistoricalImportProgress: adminProcedure
+    .input(historicalImportSessionSchema)
+    .query(async ({ ctx, input }) => {
+      try {
+        const session = await prisma.historicalImportSession.findFirst({
+          where: {
+            id: input.sessionId,
+            tenantId: ctx.tenantId,
+          },
+          select: {
+            id: true,
+            status: true,
+            preview: true,
+            progress: true,
+            failureReport: true,
+            errorMessage: true,
+            createdAt: true,
+            updatedAt: true,
+            startedAt: true,
+            completedAt: true,
+            cancelledAt: true,
+            sourceFiles: true,
+          },
+        });
 
-      if (input.sessionId) {
-        const existingSession = await prisma.historicalImportSession.findFirst({
+        if (!session) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
+        }
+
+        return {
+          sessionId: session.id,
+          status: session.status,
+          preview: (session.preview || {}) as Record<string, unknown>,
+          progress: asHistoricalProgressState(session.progress),
+          failureReport: Array.isArray(session.failureReport) ? session.failureReport : [],
+          errorMessage: session.errorMessage,
+          sourceFiles: session.sourceFiles || null,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
+          startedAt: session.startedAt,
+          completedAt: session.completedAt,
+          cancelledAt: session.cancelledAt,
+        };
+      } catch (error) {
+        if (isMissingHistoricalImportSchemaError(error)) {
+          throwHistoricalImportMigrationError();
+        }
+        throw error;
+      }
+    }),
+
+  cancelHistoricalImport: adminProcedure
+    .input(historicalImportSessionSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const session = await prisma.historicalImportSession.findFirst({
           where: {
             id: input.sessionId,
             tenantId: ctx.tenantId,
@@ -3220,192 +3373,77 @@ export const customerIncomeRouter = router({
             status: true,
           },
         });
-        if (!existingSession) {
+        if (!session) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
         }
-        if (existingSession.status === HISTORICAL_IMPORT_STATUS_RUNNING) {
-          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Historical import is already running.' });
-        }
-      }
 
-      const sessionPayload = {
-        fallbackManagerUserId: input.fallbackManagerUserId || null,
-        sourceFiles: {
-          incomeFileName: input.incomeFileName || null,
-          customerFileName: input.customerFileName || null,
-          customerSheetName: input.customerSheetName || null,
-        },
-        managerAliasMap: prepared.managerAliasMap,
-        incomeRows: prepared.incomeRows as unknown as Prisma.InputJsonValue,
-        customerRows: prepared.customerRows as unknown as Prisma.InputJsonValue,
-        preview: prepared.preview as unknown as Prisma.InputJsonValue,
-        progress: initialProgress as unknown as Prisma.InputJsonValue,
-        failureReport: prepared.preview.failures as unknown as Prisma.InputJsonValue,
-        status: HISTORICAL_IMPORT_STATUS_PREPARED,
-        errorMessage: null,
-        startedAt: null,
-        completedAt: null,
-        cancelledAt: null,
-      };
+        const nextStatus = session.status === HISTORICAL_IMPORT_STATUS_RUNNING
+          ? HISTORICAL_IMPORT_STATUS_CANCELLING
+          : HISTORICAL_IMPORT_STATUS_CANCELLED;
 
-      const session = input.sessionId
-        ? await prisma.historicalImportSession.update({
-            where: { id: input.sessionId },
-            data: sessionPayload,
-            select: { id: true, status: true, createdAt: true, updatedAt: true },
-          })
-        : await prisma.historicalImportSession.create({
-            data: {
-              tenantId: ctx.tenantId,
-              createdByUserId: ctx.user.userId,
-              ...sessionPayload,
-            },
-            select: { id: true, status: true, createdAt: true, updatedAt: true },
-          });
-
-      await prisma.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'historical_import_prepare',
-          resource: 'historical_import_session',
-          resourceId: session.id,
-          metadata: {
-            preview: prepared.preview,
+        await prisma.historicalImportSession.update({
+          where: { id: session.id },
+          data: {
+            status: nextStatus,
+            cancelledAt: nextStatus === HISTORICAL_IMPORT_STATUS_CANCELLED ? new Date() : null,
           },
-        },
-      });
+        });
 
-      return {
-        sessionId: session.id,
-        status: session.status,
-        preview: prepared.preview,
-        progress: initialProgress,
-      };
-    }),
-
-  getHistoricalImportProgress: adminProcedure
-    .input(historicalImportSessionSchema)
-    .query(async ({ ctx, input }) => {
-      const session = await prisma.historicalImportSession.findFirst({
-        where: {
-          id: input.sessionId,
-          tenantId: ctx.tenantId,
-        },
-        select: {
-          id: true,
-          status: true,
-          preview: true,
-          progress: true,
-          failureReport: true,
-          errorMessage: true,
-          createdAt: true,
-          updatedAt: true,
-          startedAt: true,
-          completedAt: true,
-          cancelledAt: true,
-          sourceFiles: true,
-        },
-      });
-
-      if (!session) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
-      }
-
-      return {
-        sessionId: session.id,
-        status: session.status,
-        preview: (session.preview || {}) as Record<string, unknown>,
-        progress: asHistoricalProgressState(session.progress),
-        failureReport: Array.isArray(session.failureReport) ? session.failureReport : [],
-        errorMessage: session.errorMessage,
-        sourceFiles: session.sourceFiles || null,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-        startedAt: session.startedAt,
-        completedAt: session.completedAt,
-        cancelledAt: session.cancelledAt,
-      };
-    }),
-
-  cancelHistoricalImport: adminProcedure
-    .input(historicalImportSessionSchema)
-    .mutation(async ({ ctx, input }) => {
-      const session = await prisma.historicalImportSession.findFirst({
-        where: {
-          id: input.sessionId,
-          tenantId: ctx.tenantId,
-        },
-        select: {
-          id: true,
-          status: true,
-        },
-      });
-      if (!session) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
-      }
-
-      const nextStatus = session.status === HISTORICAL_IMPORT_STATUS_RUNNING
-        ? HISTORICAL_IMPORT_STATUS_CANCELLING
-        : HISTORICAL_IMPORT_STATUS_CANCELLED;
-
-      await prisma.historicalImportSession.update({
-        where: { id: session.id },
-        data: {
+        return {
+          sessionId: session.id,
           status: nextStatus,
-          cancelledAt: nextStatus === HISTORICAL_IMPORT_STATUS_CANCELLED ? new Date() : null,
-        },
-      });
-
-      return {
-        sessionId: session.id,
-        status: nextStatus,
-      };
+        };
+      } catch (error) {
+        if (isMissingHistoricalImportSchemaError(error)) {
+          throwHistoricalImportMigrationError();
+        }
+        throw error;
+      }
     }),
 
   executeHistoricalImport: adminProcedure
     .input(historicalImportSessionSchema)
     .mutation(async ({ ctx, input }) => {
-      const session = await prisma.historicalImportSession.findFirst({
-        where: {
-          id: input.sessionId,
-          tenantId: ctx.tenantId,
-        },
-        select: {
-          id: true,
-          status: true,
-          incomeRows: true,
-          customerRows: true,
-          preview: true,
-          progress: true,
-          failureReport: true,
-          fallbackManagerUserId: true,
-          managerAliasMap: true,
-          startedAt: true,
-        },
-      });
-
-      if (!session) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
-      }
-
-      const preview = (session.preview || {}) as {
-        canExecute?: boolean;
-        missingCatalogItems?: HistoricalCatalogItemPreview[];
-      };
-      if (!preview.canExecute) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: 'Historical import preview still has blocking issues. Fix preview errors first.',
-        });
-      }
-
-      const incomeRows = (Array.isArray(session.incomeRows) ? session.incomeRows : []) as unknown as HistoricalPreparedIncomeRow[];
-      const customerRows = (Array.isArray(session.customerRows) ? session.customerRows : []) as unknown as HistoricalPreparedCustomerRow[];
-      const progress = asHistoricalProgressState(session.progress);
-      const failureReport = (Array.isArray(session.failureReport) ? [...session.failureReport] : []) as HistoricalImportFailure[];
-
       try {
+        const session = await prisma.historicalImportSession.findFirst({
+          where: {
+            id: input.sessionId,
+            tenantId: ctx.tenantId,
+          },
+          select: {
+            id: true,
+            status: true,
+            incomeRows: true,
+            customerRows: true,
+            preview: true,
+            progress: true,
+            failureReport: true,
+            fallbackManagerUserId: true,
+            managerAliasMap: true,
+            startedAt: true,
+          },
+        });
+
+        if (!session) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
+        }
+
+        const preview = (session.preview || {}) as {
+          canExecute?: boolean;
+          missingCatalogItems?: HistoricalCatalogItemPreview[];
+        };
+        if (!preview.canExecute) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'Historical import preview still has blocking issues. Fix preview errors first.',
+          });
+        }
+
+        const incomeRows = (Array.isArray(session.incomeRows) ? session.incomeRows : []) as unknown as HistoricalPreparedIncomeRow[];
+        const customerRows = (Array.isArray(session.customerRows) ? session.customerRows : []) as unknown as HistoricalPreparedCustomerRow[];
+        const progress = asHistoricalProgressState(session.progress);
+        const failureReport = (Array.isArray(session.failureReport) ? [...session.failureReport] : []) as HistoricalImportFailure[];
+
         await prisma.historicalImportSession.update({
           where: { id: session.id },
           data: {
@@ -3834,22 +3872,9 @@ export const customerIncomeRouter = router({
           failureReport,
         };
       } catch (error) {
-        progress.stage = HISTORICAL_IMPORT_STATUS_FAILED;
-        progress.message = 'Tarixiy import xatolik bilan toxtadi';
-        failureReport.push({
-          scope: 'income',
-          rowNumber: 0,
-          message: error instanceof Error ? error.message : 'Unknown historical import failure',
-        });
-        await prisma.historicalImportSession.update({
-          where: { id: session.id },
-          data: {
-            status: HISTORICAL_IMPORT_STATUS_FAILED,
-            errorMessage: error instanceof Error ? error.message : 'Historical import failed.',
-            progress: progress as unknown as Prisma.InputJsonValue,
-            failureReport: failureReport as unknown as Prisma.InputJsonValue,
-          },
-        });
+        if (isMissingHistoricalImportSchemaError(error)) {
+          throwHistoricalImportMigrationError();
+        }
         throw error;
       }
     }),
