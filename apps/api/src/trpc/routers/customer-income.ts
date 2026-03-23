@@ -13,6 +13,15 @@ import { z } from 'zod';
 import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
 import { decryptIntegrationTokens } from '../../services/security/encryption';
 import { telegramService } from '../../services/integrations/telegram';
+import {
+  buildHistoricalInitialProgress,
+  prepareHistoricalImportPreview,
+  type HistoricalCatalogItemPreview,
+  type HistoricalImportFailure,
+  type HistoricalPreparedCustomerRow,
+  type HistoricalPreparedIncomeRow,
+  type HistoricalRawRow,
+} from '../../services/historical-import';
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'Agent'] as const;
 const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive', 'additional_service'] as const;
@@ -1916,6 +1925,233 @@ async function createIncomeEntry(params: {
   };
 }
 
+const HISTORICAL_IMPORT_STATUS_PREPARED = 'prepared';
+const HISTORICAL_IMPORT_STATUS_RUNNING = 'running';
+const HISTORICAL_IMPORT_STATUS_CANCELLING = 'cancelling';
+const HISTORICAL_IMPORT_STATUS_CANCELLED = 'cancelled';
+const HISTORICAL_IMPORT_STATUS_FAILED = 'failed';
+const HISTORICAL_IMPORT_STATUS_COMPLETED = 'completed';
+
+const historicalRawRowSchema = z.record(z.union([z.string(), z.number(), z.boolean(), z.null()]));
+const historicalImportPrepareSchema = z.object({
+  sessionId: z.string().uuid().optional(),
+  incomeFileName: z.string().min(1).max(255).optional(),
+  customerFileName: z.string().min(1).max(255).optional(),
+  customerSheetName: z.string().min(1).max(255).optional(),
+  incomeRows: z.array(historicalRawRowSchema).min(1).max(5000),
+  customerRows: z.array(historicalRawRowSchema).min(1).max(5000),
+  fallbackManagerUserId: z.string().uuid().optional(),
+  managerAliasMap: z.record(z.string().uuid()).optional(),
+});
+const historicalImportSessionSchema = z.object({
+  sessionId: z.string().uuid(),
+});
+
+type HistoricalProgressState = {
+  stage: string;
+  totalRows: number;
+  processedRows: number;
+  importedRows: number;
+  failedRows: number;
+  totalIncomeRows: number;
+  processedIncomeRows: number;
+  importedIncomeRows: number;
+  importedNewSaleRows: number;
+  importedRepaymentRows: number;
+  totalCustomerRows: number;
+  processedCustomerRows: number;
+  importedCustomerRows: number;
+  createdCustomers: number;
+  updatedCustomers: number;
+  profileOnlyCustomers: number;
+  skippedIncomeRows: number;
+  skippedCustomerRows: number;
+  message?: string;
+  incomeCursor?: number;
+  customerCursor?: number;
+};
+
+function asHistoricalProgressState(value: unknown): HistoricalProgressState {
+  const raw = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+  return {
+    stage: String(raw.stage || HISTORICAL_IMPORT_STATUS_PREPARED),
+    totalRows: Number(raw.totalRows || 0),
+    processedRows: Number(raw.processedRows || 0),
+    importedRows: Number(raw.importedRows || 0),
+    failedRows: Number(raw.failedRows || 0),
+    totalIncomeRows: Number(raw.totalIncomeRows || 0),
+    processedIncomeRows: Number(raw.processedIncomeRows || 0),
+    importedIncomeRows: Number(raw.importedIncomeRows || 0),
+    importedNewSaleRows: Number(raw.importedNewSaleRows || 0),
+    importedRepaymentRows: Number(raw.importedRepaymentRows || 0),
+    totalCustomerRows: Number(raw.totalCustomerRows || 0),
+    processedCustomerRows: Number(raw.processedCustomerRows || 0),
+    importedCustomerRows: Number(raw.importedCustomerRows || 0),
+    createdCustomers: Number(raw.createdCustomers || 0),
+    updatedCustomers: Number(raw.updatedCustomers || 0),
+    profileOnlyCustomers: Number(raw.profileOnlyCustomers || 0),
+    skippedIncomeRows: Number(raw.skippedIncomeRows || 0),
+    skippedCustomerRows: Number(raw.skippedCustomerRows || 0),
+    message: raw.message ? String(raw.message) : undefined,
+    incomeCursor: Number(raw.incomeCursor || 0),
+    customerCursor: Number(raw.customerCursor || 0),
+  };
+}
+
+async function buildHistoricalCatalogContext(tenantId: string) {
+  const [lookupContext, courses, existingCustomers] = await Promise.all([
+    buildRowLookupContext(tenantId),
+    fetchCoursesWithTariffsSafe({ tenantId, onlyActive: false }),
+    prisma.customer.findMany({
+      where: { tenantId },
+      select: {
+        customerNumber: true,
+      },
+    }),
+  ]);
+
+  return {
+    managerLookup: {
+      managersByKey: Object.fromEntries(lookupContext.managersByKey.entries()),
+      managersByNormalizedName: lookupContext.managersByNormalizedName,
+    },
+    catalogLookup: {
+      courses: courses.map((course) => ({
+        name: course.name,
+        category: (course.category as any) || 'offline',
+        tariffs: course.tariffs.map((tariff) => tariff.name),
+      })),
+      existingCustomerNumbers: existingCustomers.map((customer) => customer.customerNumber),
+    },
+  };
+}
+
+async function ensureHistoricalCatalogItems(params: {
+  tenantId: string;
+  items: HistoricalCatalogItemPreview[];
+}) {
+  const ensuredCourses = new Map<string, { id: string; name: string; tariffsByKey: Map<string, string> }>();
+
+  for (const item of params.items) {
+    const course = await prisma.course.upsert({
+      where: {
+        tenantId_name: {
+          tenantId: params.tenantId,
+          name: item.courseName,
+        },
+      },
+      update: {},
+      create: {
+        tenantId: params.tenantId,
+        name: item.courseName,
+        category: item.category,
+        isActive: true,
+        isHiddenFromIncomeForm: false,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    const tariffsByKey = ensuredCourses.get(normalizeKey(item.courseName))?.tariffsByKey ?? new Map<string, string>();
+    for (const tariffName of item.tariffs) {
+      const tariff = await prisma.tariff.upsert({
+        where: {
+          tenantId_courseId_name: {
+            tenantId: params.tenantId,
+            courseId: course.id,
+            name: tariffName,
+          },
+        },
+        update: {},
+        create: {
+          tenantId: params.tenantId,
+          courseId: course.id,
+          name: tariffName,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+      tariffsByKey.set(normalizeKey(tariff.name), tariff.id);
+    }
+
+    ensuredCourses.set(normalizeKey(item.courseName), {
+      id: course.id,
+      name: course.name,
+      tariffsByKey,
+    });
+  }
+
+  const courses = await fetchCoursesWithTariffsSafe({
+    tenantId: params.tenantId,
+    onlyActive: false,
+  });
+
+  const courseIdByKey = new Map<string, string>();
+  const tariffIdByCourseAndKey = new Map<string, string>();
+  for (const course of courses) {
+    courseIdByKey.set(normalizeKey(course.name), course.id);
+    for (const tariff of course.tariffs) {
+      tariffIdByCourseAndKey.set(`${course.id}:${normalizeKey(tariff.name)}`, tariff.id);
+    }
+  }
+
+  return {
+    courseIdByKey,
+    tariffIdByCourseAndKey,
+  };
+}
+
+function buildHistoricalIncomeMeta(row: HistoricalPreparedIncomeRow) {
+  return {
+    comment: row.comment,
+    rawManagerValue: row.rawManagerValue,
+    rawCourseLabel: row.rawCourseLabel,
+    remainingDebtHint: row.remainingDebtHint,
+  };
+}
+
+async function annotateHistoricalIncome(params: {
+  incomeId: string;
+  tenantId: string;
+  sessionId: string;
+  legacyImportKey: string;
+  legacyImportSource: string;
+  legacyImportMeta?: Prisma.InputJsonValue | null;
+}) {
+  await prisma.income.update({
+    where: { id: params.incomeId },
+    data: {
+      legacyImportKey: params.legacyImportKey,
+      legacyImportSource: params.legacyImportSource,
+      historicalImportSessionId: params.sessionId,
+      legacyImportMeta: params.legacyImportMeta || undefined,
+    },
+  });
+}
+
+function shouldBackfillCustomerText(currentValue: string | null | undefined, fallbackValue: string | null | undefined, customerNumber?: string) {
+  const current = String(currentValue || '').trim();
+  const fallback = String(fallbackValue || '').trim();
+  if (!fallback) {
+    return false;
+  }
+  if (!current) {
+    return true;
+  }
+  if (customerNumber && current === customerNumber) {
+    return true;
+  }
+  if (/^\d+$/.test(current) && current.length >= 7) {
+    return true;
+  }
+  return false;
+}
+
 export const customerIncomeRouter = router({
   formOptions: protectedProcedure.query(async ({ ctx }) => {
     const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
@@ -2485,39 +2721,45 @@ export const customerIncomeRouter = router({
         }
       }
 
-      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        if (income.type === 'repayment' && income.relatedDebtIncomeId) {
-          const sourceIncome = await tx.income.findFirst({
-            where: {
-              id: income.relatedDebtIncomeId,
-              tenantId: ctx.tenantId,
-            },
-            select: {
-              id: true,
-              debtAmount: true,
-              remainingDebtAmount: true,
-            },
-          });
+      const transactionSteps: Prisma.PrismaPromise<unknown>[] = [];
 
-          if (sourceIncome) {
-            const restoredDebtRaw = (sourceIncome.remainingDebtAmount || 0) + (income.paymentAmount || 0);
-            const restoredDebt = sourceIncome.debtAmount !== null
-              ? Math.min(restoredDebtRaw, sourceIncome.debtAmount)
-              : restoredDebtRaw;
+      if (income.type === 'repayment' && income.relatedDebtIncomeId) {
+        const sourceIncome = await prisma.income.findFirst({
+          where: {
+            id: income.relatedDebtIncomeId,
+            tenantId: ctx.tenantId,
+          },
+          select: {
+            id: true,
+            debtAmount: true,
+            remainingDebtAmount: true,
+          },
+        });
 
-            await tx.income.update({
+        if (sourceIncome) {
+          const restoredDebtRaw = (sourceIncome.remainingDebtAmount || 0) + (income.paymentAmount || 0);
+          const restoredDebt = sourceIncome.debtAmount !== null
+            ? Math.min(restoredDebtRaw, sourceIncome.debtAmount)
+            : restoredDebtRaw;
+
+          transactionSteps.push(
+            prisma.income.update({
               where: { id: sourceIncome.id },
               data: {
                 remainingDebtAmount: Math.max(restoredDebt, 0),
               },
-            });
-          }
+            }),
+          );
         }
+      }
 
-        await tx.income.delete({
+      transactionSteps.push(
+        prisma.income.delete({
           where: { id: income.id },
-        });
-      });
+        }),
+      );
+
+      await prisma.$transaction(transactionSteps);
 
       await prisma.auditLog.create({
         data: {
@@ -2596,30 +2838,38 @@ export const customerIncomeRouter = router({
         .filter((income) => income.type === 'new_sale')
         .map((income) => income.id);
 
-      const linkedRepaymentGrouped = newSaleIncomeIds.length > 0
-        ? await prisma.income.groupBy({
-            by: ['relatedDebtIncomeId'],
+      const linkedRepayments = newSaleIncomeIds.length > 0
+        ? await prisma.income.findMany({
             where: {
               tenantId: ctx.tenantId,
               type: 'repayment',
               relatedDebtIncomeId: { in: newSaleIncomeIds },
             },
-            _count: { _all: true },
+            select: {
+              id: true,
+              relatedDebtIncomeId: true,
+            },
           })
         : [];
-
-      const linkedRepaymentSet = new Set(
-        linkedRepaymentGrouped
-          .map((row) => row.relatedDebtIncomeId)
-          .filter((value): value is string => typeof value === 'string' && value.length > 0),
-      );
+      const matchedIncomeIdSet = new Set(incomeIds);
+      const saleIdsBlockedByRepayments = new Set<string>();
+      for (const linkedRepayment of linkedRepayments) {
+        if (!linkedRepayment.relatedDebtIncomeId) {
+          continue;
+        }
+        const repaymentOutsideSelectedRange = !matchedIncomeIdSet.has(linkedRepayment.id);
+        const repaymentBlockedByAdjustment = pendingAdjustmentSet.has(linkedRepayment.id);
+        if (repaymentOutsideSelectedRange || repaymentBlockedByAdjustment) {
+          saleIdsBlockedByRepayments.add(linkedRepayment.relatedDebtIncomeId);
+        }
+      }
 
       const blocked = matchedIncomes
         .map((income) => {
           if (pendingAdjustmentSet.has(income.id)) {
             return { incomeId: income.id, reason: 'pending_adjustment' as const };
           }
-          if (income.type === 'new_sale' && linkedRepaymentSet.has(income.id)) {
+          if (income.type === 'new_sale' && saleIdsBlockedByRepayments.has(income.id)) {
             return { incomeId: income.id, reason: 'has_linked_repayments' as const };
           }
           return null;
@@ -2648,50 +2898,55 @@ export const customerIncomeRouter = router({
         debtRestoreMap.set(income.relatedDebtIncomeId, current + Number(income.paymentAmount || 0));
       }
 
-      const deletedCount = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        if (debtRestoreMap.size > 0) {
-          const sourceIncomeIds = Array.from(debtRestoreMap.keys());
-          const sourceIncomes = await tx.income.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              id: { in: sourceIncomeIds },
-            },
-            select: {
-              id: true,
-              debtAmount: true,
-              remainingDebtAmount: true,
-            },
-          });
+      const transactionSteps: Prisma.PrismaPromise<unknown>[] = [];
+      if (debtRestoreMap.size > 0) {
+        const sourceIncomeIds = Array.from(debtRestoreMap.keys());
+        const sourceIncomes = await prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: sourceIncomeIds },
+          },
+          select: {
+            id: true,
+            debtAmount: true,
+            remainingDebtAmount: true,
+          },
+        });
 
-          for (const sourceIncome of sourceIncomes) {
-            const restoreAmount = debtRestoreMap.get(sourceIncome.id) || 0;
-            if (restoreAmount <= 0) {
-              continue;
-            }
+        for (const sourceIncome of sourceIncomes) {
+          const restoreAmount = debtRestoreMap.get(sourceIncome.id) || 0;
+          if (restoreAmount <= 0) {
+            continue;
+          }
 
-            const restoredDebtRaw = (sourceIncome.remainingDebtAmount || 0) + restoreAmount;
-            const restoredDebt = sourceIncome.debtAmount !== null
-              ? Math.min(restoredDebtRaw, sourceIncome.debtAmount)
-              : restoredDebtRaw;
+          const restoredDebtRaw = (sourceIncome.remainingDebtAmount || 0) + restoreAmount;
+          const restoredDebt = sourceIncome.debtAmount !== null
+            ? Math.min(restoredDebtRaw, sourceIncome.debtAmount)
+            : restoredDebtRaw;
 
-            await tx.income.update({
+          transactionSteps.push(
+            prisma.income.update({
               where: { id: sourceIncome.id },
               data: {
                 remainingDebtAmount: Math.max(restoredDebt, 0),
               },
-            });
-          }
+            }),
+          );
         }
+      }
 
-        const deletionResult = await tx.income.deleteMany({
+      transactionSteps.push(
+        prisma.income.deleteMany({
           where: {
             tenantId: ctx.tenantId,
             id: { in: deletableIncomes.map((income) => income.id) },
           },
-        });
+        }),
+      );
 
-        return deletionResult.count;
-      });
+      const transactionResult = await prisma.$transaction(transactionSteps);
+      const deletionResult = transactionResult[transactionResult.length - 1] as { count: number };
+      const deletedCount = deletionResult.count;
 
       await prisma.auditLog.create({
         data: {
@@ -2924,6 +3179,673 @@ export const customerIncomeRouter = router({
         failedCount: failures.length,
         failures,
       };
+    }),
+
+  prepareHistoricalImport: adminProcedure
+    .input(historicalImportPrepareSchema)
+    .mutation(async ({ ctx, input }) => {
+      if (input.fallbackManagerUserId) {
+        await assertManagerBelongsToTenant(ctx.tenantId, input.fallbackManagerUserId);
+      }
+
+      const { managerLookup, catalogLookup } = await buildHistoricalCatalogContext(ctx.tenantId);
+      const prepared = prepareHistoricalImportPreview({
+        incomeRows: input.incomeRows as HistoricalRawRow[],
+        customerRows: input.customerRows as HistoricalRawRow[],
+        managerLookup,
+        existingCatalog: catalogLookup,
+        fallbackManagerUserId: input.fallbackManagerUserId,
+        managerAliasMap: input.managerAliasMap,
+      });
+      const initialProgress = buildHistoricalInitialProgress({
+        incomeRows: prepared.incomeRows,
+        customerRows: prepared.customerRows,
+        preview: prepared.preview,
+      });
+
+      if (input.sessionId) {
+        const existingSession = await prisma.historicalImportSession.findFirst({
+          where: {
+            id: input.sessionId,
+            tenantId: ctx.tenantId,
+          },
+          select: {
+            id: true,
+            status: true,
+          },
+        });
+        if (!existingSession) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
+        }
+        if (existingSession.status === HISTORICAL_IMPORT_STATUS_RUNNING) {
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Historical import is already running.' });
+        }
+      }
+
+      const sessionPayload = {
+        fallbackManagerUserId: input.fallbackManagerUserId || null,
+        sourceFiles: {
+          incomeFileName: input.incomeFileName || null,
+          customerFileName: input.customerFileName || null,
+          customerSheetName: input.customerSheetName || null,
+        },
+        managerAliasMap: prepared.managerAliasMap,
+        incomeRows: prepared.incomeRows as unknown as Prisma.InputJsonValue,
+        customerRows: prepared.customerRows as unknown as Prisma.InputJsonValue,
+        preview: prepared.preview as unknown as Prisma.InputJsonValue,
+        progress: initialProgress as unknown as Prisma.InputJsonValue,
+        failureReport: prepared.preview.failures as unknown as Prisma.InputJsonValue,
+        status: HISTORICAL_IMPORT_STATUS_PREPARED,
+        errorMessage: null,
+        startedAt: null,
+        completedAt: null,
+        cancelledAt: null,
+      };
+
+      const session = input.sessionId
+        ? await prisma.historicalImportSession.update({
+            where: { id: input.sessionId },
+            data: sessionPayload,
+            select: { id: true, status: true, createdAt: true, updatedAt: true },
+          })
+        : await prisma.historicalImportSession.create({
+            data: {
+              tenantId: ctx.tenantId,
+              createdByUserId: ctx.user.userId,
+              ...sessionPayload,
+            },
+            select: { id: true, status: true, createdAt: true, updatedAt: true },
+          });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'historical_import_prepare',
+          resource: 'historical_import_session',
+          resourceId: session.id,
+          metadata: {
+            preview: prepared.preview,
+          },
+        },
+      });
+
+      return {
+        sessionId: session.id,
+        status: session.status,
+        preview: prepared.preview,
+        progress: initialProgress,
+      };
+    }),
+
+  getHistoricalImportProgress: adminProcedure
+    .input(historicalImportSessionSchema)
+    .query(async ({ ctx, input }) => {
+      const session = await prisma.historicalImportSession.findFirst({
+        where: {
+          id: input.sessionId,
+          tenantId: ctx.tenantId,
+        },
+        select: {
+          id: true,
+          status: true,
+          preview: true,
+          progress: true,
+          failureReport: true,
+          errorMessage: true,
+          createdAt: true,
+          updatedAt: true,
+          startedAt: true,
+          completedAt: true,
+          cancelledAt: true,
+          sourceFiles: true,
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
+      }
+
+      return {
+        sessionId: session.id,
+        status: session.status,
+        preview: (session.preview || {}) as Record<string, unknown>,
+        progress: asHistoricalProgressState(session.progress),
+        failureReport: Array.isArray(session.failureReport) ? session.failureReport : [],
+        errorMessage: session.errorMessage,
+        sourceFiles: session.sourceFiles || null,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        cancelledAt: session.cancelledAt,
+      };
+    }),
+
+  cancelHistoricalImport: adminProcedure
+    .input(historicalImportSessionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = await prisma.historicalImportSession.findFirst({
+        where: {
+          id: input.sessionId,
+          tenantId: ctx.tenantId,
+        },
+        select: {
+          id: true,
+          status: true,
+        },
+      });
+      if (!session) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
+      }
+
+      const nextStatus = session.status === HISTORICAL_IMPORT_STATUS_RUNNING
+        ? HISTORICAL_IMPORT_STATUS_CANCELLING
+        : HISTORICAL_IMPORT_STATUS_CANCELLED;
+
+      await prisma.historicalImportSession.update({
+        where: { id: session.id },
+        data: {
+          status: nextStatus,
+          cancelledAt: nextStatus === HISTORICAL_IMPORT_STATUS_CANCELLED ? new Date() : null,
+        },
+      });
+
+      return {
+        sessionId: session.id,
+        status: nextStatus,
+      };
+    }),
+
+  executeHistoricalImport: adminProcedure
+    .input(historicalImportSessionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = await prisma.historicalImportSession.findFirst({
+        where: {
+          id: input.sessionId,
+          tenantId: ctx.tenantId,
+        },
+        select: {
+          id: true,
+          status: true,
+          incomeRows: true,
+          customerRows: true,
+          preview: true,
+          progress: true,
+          failureReport: true,
+          fallbackManagerUserId: true,
+          managerAliasMap: true,
+          startedAt: true,
+        },
+      });
+
+      if (!session) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
+      }
+
+      const preview = (session.preview || {}) as {
+        canExecute?: boolean;
+        missingCatalogItems?: HistoricalCatalogItemPreview[];
+      };
+      if (!preview.canExecute) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Historical import preview still has blocking issues. Fix preview errors first.',
+        });
+      }
+
+      const incomeRows = (Array.isArray(session.incomeRows) ? session.incomeRows : []) as unknown as HistoricalPreparedIncomeRow[];
+      const customerRows = (Array.isArray(session.customerRows) ? session.customerRows : []) as unknown as HistoricalPreparedCustomerRow[];
+      const progress = asHistoricalProgressState(session.progress);
+      const failureReport = (Array.isArray(session.failureReport) ? [...session.failureReport] : []) as HistoricalImportFailure[];
+
+      try {
+        await prisma.historicalImportSession.update({
+          where: { id: session.id },
+          data: {
+            status: HISTORICAL_IMPORT_STATUS_RUNNING,
+            startedAt: session.startedAt || new Date(),
+            progress: {
+              ...(session.progress as Record<string, unknown> || {}),
+              stage: 'catalog',
+              message: 'Katalog tekshirilmoqda',
+            } as unknown as Prisma.InputJsonValue,
+            errorMessage: null,
+          },
+        });
+
+        const catalogMaps = await ensureHistoricalCatalogItems({
+          tenantId: ctx.tenantId,
+          items: Array.isArray(preview.missingCatalogItems) ? preview.missingCatalogItems : [],
+        });
+
+        const validIncomeRows = incomeRows.filter((row) => row.blockingIssues.length === 0);
+        const validCustomerRows = customerRows.filter((row) => row.blockingIssues.length === 0);
+        const legacyKeys = Array.from(new Set(
+          validIncomeRows.flatMap((row) => [
+            row.legacyImportKey,
+            ...(row.openingBalanceLegacyKey ? [row.openingBalanceLegacyKey] : []),
+          ]),
+        ));
+
+        const existingIncomes = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          legacyImportKey: { in: legacyKeys },
+        },
+        select: {
+          id: true,
+          legacyImportKey: true,
+          type: true,
+        },
+      });
+        const saleIdByLegacyKey = new Map<string, string>();
+        const importedIncomeIdByLegacyKey = new Map<string, string>();
+        for (const income of existingIncomes) {
+          if (income.legacyImportKey) {
+            importedIncomeIdByLegacyKey.set(income.legacyImportKey, income.id);
+            if (income.type === 'new_sale') {
+              saleIdByLegacyKey.set(income.legacyImportKey, income.id);
+            }
+          }
+        }
+
+        const persistProgress = async (message: string) => {
+          await prisma.historicalImportSession.update({
+            where: { id: session.id },
+            data: {
+              progress: {
+                ...progress,
+                message,
+              } as unknown as Prisma.InputJsonValue,
+              failureReport: failureReport as unknown as Prisma.InputJsonValue,
+            },
+          });
+        };
+
+        for (let index = progress.incomeCursor || 0; index < validIncomeRows.length; index += 1) {
+        const row = validIncomeRows[index] as HistoricalPreparedIncomeRow;
+
+        if (index % 25 === 0) {
+          const statusCheck = await prisma.historicalImportSession.findFirst({
+            where: { id: session.id, tenantId: ctx.tenantId },
+            select: { status: true },
+          });
+          if (statusCheck?.status === HISTORICAL_IMPORT_STATUS_CANCELLING) {
+            await prisma.historicalImportSession.update({
+              where: { id: session.id },
+              data: {
+                status: HISTORICAL_IMPORT_STATUS_CANCELLED,
+                cancelledAt: new Date(),
+                progress: {
+                  ...progress,
+                  stage: 'cancelled',
+                  message: 'Import bekor qilindi',
+                } as unknown as Prisma.InputJsonValue,
+                failureReport: failureReport as unknown as Prisma.InputJsonValue,
+              },
+            });
+            return {
+              sessionId: session.id,
+              status: HISTORICAL_IMPORT_STATUS_CANCELLED,
+              progress,
+            };
+          }
+        }
+
+        try {
+          const courseId = catalogMaps.courseIdByKey.get(normalizeKey(row.courseName));
+          const tariffId = courseId
+            ? catalogMaps.tariffIdByCourseAndKey.get(`${courseId}:${normalizeKey(row.tariffName)}`)
+            : null;
+
+          if (!courseId || !tariffId) {
+            throw new Error(`Catalog item not found for ${row.courseName} / ${row.tariffName}.`);
+          }
+
+          if (row.type === 'new_sale') {
+            const existingIncomeId = importedIncomeIdByLegacyKey.get(row.legacyImportKey);
+            if (!existingIncomeId) {
+              const created = await createIncomeEntry({
+                tenantId: ctx.tenantId,
+                userId: ctx.user.userId,
+                input: {
+                  entryDate: row.entryDate,
+                  managerUserId: row.managerUserId as string,
+                  customerNumber: row.customerNumber,
+                  customerName: row.customerName || undefined,
+                  telegramUsername: row.telegramUsername || undefined,
+                  type: 'new_sale',
+                  courseId,
+                  tariffId,
+                  coursePriceAmount: row.coursePriceAmount || 0,
+                  paymentAmount: row.paymentAmount,
+                  deadline: row.deadline || undefined,
+                },
+                writeAuditLog: false,
+                allowHiddenCourseSelection: true,
+              });
+              await annotateHistoricalIncome({
+                incomeId: created.income.id,
+                tenantId: ctx.tenantId,
+                sessionId: session.id,
+                legacyImportKey: row.legacyImportKey,
+                legacyImportSource: 'income_ledger',
+                legacyImportMeta: buildHistoricalIncomeMeta(row),
+              });
+              importedIncomeIdByLegacyKey.set(row.legacyImportKey, created.income.id);
+              saleIdByLegacyKey.set(row.legacyImportKey, created.income.id);
+            } else {
+              saleIdByLegacyKey.set(row.legacyImportKey, existingIncomeId);
+            }
+          } else {
+            if (row.requiresOpeningBalance && row.openingBalanceLegacyKey && !saleIdByLegacyKey.has(row.openingBalanceLegacyKey)) {
+              const openingIncomeId = importedIncomeIdByLegacyKey.get(row.openingBalanceLegacyKey);
+              if (openingIncomeId) {
+                saleIdByLegacyKey.set(row.openingBalanceLegacyKey, openingIncomeId);
+              } else {
+                const openingCreated = await createIncomeEntry({
+                  tenantId: ctx.tenantId,
+                  userId: ctx.user.userId,
+                  input: {
+                    entryDate: row.entryDate,
+                    managerUserId: row.managerUserId as string,
+                    customerNumber: row.customerNumber,
+                    customerName: row.customerName || undefined,
+                    telegramUsername: row.telegramUsername || undefined,
+                    type: 'new_sale',
+                    courseId,
+                    tariffId,
+                    coursePriceAmount: row.openingBalanceAmount || row.paymentAmount,
+                    paymentAmount: 0,
+                    deadline: row.deadline || undefined,
+                  },
+                  writeAuditLog: false,
+                  allowHiddenCourseSelection: true,
+                });
+                await annotateHistoricalIncome({
+                  incomeId: openingCreated.income.id,
+                  tenantId: ctx.tenantId,
+                  sessionId: session.id,
+                  legacyImportKey: row.openingBalanceLegacyKey,
+                  legacyImportSource: 'historical_opening_balance',
+                  legacyImportMeta: {
+                    linkedIncomeRowKey: row.legacyImportKey,
+                    openingBalanceAmount: row.openingBalanceAmount,
+                  },
+                });
+                importedIncomeIdByLegacyKey.set(row.openingBalanceLegacyKey, openingCreated.income.id);
+                saleIdByLegacyKey.set(row.openingBalanceLegacyKey, openingCreated.income.id);
+              }
+            }
+
+            const sourceLegacyKey = row.matchedSaleLegacyKey;
+            const sourceIncomeId = sourceLegacyKey ? saleIdByLegacyKey.get(sourceLegacyKey) : null;
+            if (!sourceIncomeId) {
+              throw new Error('Repayment source could not be resolved.');
+            }
+
+            if (!importedIncomeIdByLegacyKey.has(row.legacyImportKey)) {
+              const created = await createIncomeEntry({
+                tenantId: ctx.tenantId,
+                userId: ctx.user.userId,
+                input: {
+                  entryDate: row.entryDate,
+                  managerUserId: row.managerUserId as string,
+                  customerNumber: row.customerNumber,
+                  customerName: row.customerName || undefined,
+                  telegramUsername: row.telegramUsername || undefined,
+                  type: 'repayment',
+                  debtSourceIncomeId: sourceIncomeId,
+                  paymentAmount: row.paymentAmount,
+                  deadline: row.deadline || undefined,
+                },
+                writeAuditLog: false,
+                allowHiddenCourseSelection: true,
+              });
+              await annotateHistoricalIncome({
+                incomeId: created.income.id,
+                tenantId: ctx.tenantId,
+                sessionId: session.id,
+                legacyImportKey: row.legacyImportKey,
+                legacyImportSource: 'income_ledger',
+                legacyImportMeta: buildHistoricalIncomeMeta(row),
+              });
+              importedIncomeIdByLegacyKey.set(row.legacyImportKey, created.income.id);
+            }
+          }
+
+          progress.importedIncomeRows += 1;
+          if (row.type === 'new_sale') {
+            progress.importedNewSaleRows += 1;
+          } else {
+            progress.importedRepaymentRows += 1;
+          }
+          progress.importedRows += 1;
+        } catch (error) {
+          failureReport.push({
+            scope: 'income',
+            rowNumber: row.rowNumber,
+            message: error instanceof Error ? error.message : 'Unknown historical income import error',
+          });
+          progress.failedRows += 1;
+        }
+
+        progress.processedIncomeRows = index + 1;
+        progress.processedRows = progress.processedIncomeRows + progress.processedCustomerRows;
+        progress.incomeCursor = index + 1;
+
+        if ((index + 1) % 25 === 0 || index === validIncomeRows.length - 1) {
+          await persistProgress(`Income import: ${progress.processedIncomeRows}/${progress.totalIncomeRows}`);
+        }
+        }
+
+        const customerNumbers = Array.from(new Set(validCustomerRows.map((row) => row.customerNumber).filter(Boolean)));
+        const existingCustomers = await prisma.customer.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          customerNumber: { in: customerNumbers },
+        },
+        select: {
+          id: true,
+          customerNumber: true,
+          name: true,
+          telegramUsername: true,
+          profileCourseId: true,
+          profileTariffId: true,
+          profileSubTariffId: true,
+        },
+      });
+        const customerByNumber = new Map(existingCustomers.map((customer) => [customer.customerNumber, customer] as const));
+
+        for (let index = progress.customerCursor || 0; index < validCustomerRows.length; index += 1) {
+        const row = validCustomerRows[index] as HistoricalPreparedCustomerRow;
+
+        if (index % 25 === 0) {
+          const statusCheck = await prisma.historicalImportSession.findFirst({
+            where: { id: session.id, tenantId: ctx.tenantId },
+            select: { status: true },
+          });
+          if (statusCheck?.status === HISTORICAL_IMPORT_STATUS_CANCELLING) {
+            await prisma.historicalImportSession.update({
+              where: { id: session.id },
+              data: {
+                status: HISTORICAL_IMPORT_STATUS_CANCELLED,
+                cancelledAt: new Date(),
+                progress: {
+                  ...progress,
+                  stage: 'cancelled',
+                  message: 'Import bekor qilindi',
+                } as unknown as Prisma.InputJsonValue,
+                failureReport: failureReport as unknown as Prisma.InputJsonValue,
+              },
+            });
+            return {
+              sessionId: session.id,
+              status: HISTORICAL_IMPORT_STATUS_CANCELLED,
+              progress,
+            };
+          }
+        }
+
+        try {
+          const existingCustomer = customerByNumber.get(row.customerNumber);
+          const courseId = row.courseName ? catalogMaps.courseIdByKey.get(normalizeKey(row.courseName)) || null : null;
+          const tariffId = row.courseName && row.tariffName && courseId
+            ? catalogMaps.tariffIdByCourseAndKey.get(`${courseId}:${normalizeKey(row.tariffName)}`) || null
+            : null;
+          let customerOperation: 'created' | 'updated' = 'updated';
+
+          if (existingCustomer) {
+            const updateData: Prisma.CustomerUpdateInput = {
+              legacyProfileImportKey: row.legacyProfileImportKey,
+              legacyProfileImportSource: 'customer_master',
+              historicalImportSessionId: session.id,
+              legacyProfileMeta: {
+                comment: row.comment,
+                rawCourseLabel: row.rawCourseLabel,
+                rawTariffLabel: row.rawTariffLabel,
+              } as unknown as Prisma.InputJsonValue,
+            };
+
+            if (shouldBackfillCustomerText(existingCustomer.name, row.customerName, row.customerNumber)) {
+              updateData.name = row.customerName || existingCustomer.name;
+            }
+            if (shouldBackfillCustomerText(existingCustomer.telegramUsername, row.telegramUsername, row.customerNumber)) {
+              updateData.telegramUsername = row.telegramUsername || null;
+            }
+            if (courseId) {
+              updateData.profileCourseId = courseId;
+              updateData.profileTariffId = tariffId;
+              updateData.profileSubTariffId = null;
+            }
+
+            const updatedCustomer = await prisma.customer.update({
+              where: { id: existingCustomer.id },
+              data: updateData,
+              select: {
+                id: true,
+                customerNumber: true,
+                name: true,
+                telegramUsername: true,
+                profileCourseId: true,
+                profileTariffId: true,
+                profileSubTariffId: true,
+              },
+            });
+            customerByNumber.set(updatedCustomer.customerNumber, updatedCustomer);
+          } else {
+            customerOperation = 'created';
+            if (!row.customerName) {
+              throw new Error('Customer name is required for profile-only customer creation.');
+            }
+            const createdCustomer = await prisma.customer.create({
+              data: {
+                tenantId: ctx.tenantId,
+                customerNumber: row.customerNumber,
+                name: row.customerName,
+                telegramUsername: row.telegramUsername || null,
+                profileCourseId: courseId,
+                profileTariffId: tariffId,
+                profileSubTariffId: null,
+                legacyProfileImportKey: row.legacyProfileImportKey,
+                legacyProfileImportSource: 'customer_master',
+                historicalImportSessionId: session.id,
+                legacyProfileMeta: {
+                  comment: row.comment,
+                  rawCourseLabel: row.rawCourseLabel,
+                  rawTariffLabel: row.rawTariffLabel,
+                } as unknown as Prisma.InputJsonValue,
+              },
+              select: {
+                id: true,
+                customerNumber: true,
+                name: true,
+                telegramUsername: true,
+                profileCourseId: true,
+                profileTariffId: true,
+                profileSubTariffId: true,
+              },
+            });
+            customerByNumber.set(createdCustomer.customerNumber, createdCustomer);
+          }
+
+          progress.importedCustomerRows += 1;
+          if (customerOperation === 'created') {
+            progress.createdCustomers += 1;
+          } else {
+            progress.updatedCustomers += 1;
+          }
+          progress.importedRows += 1;
+        } catch (error) {
+          failureReport.push({
+            scope: 'customer',
+            rowNumber: row.rowNumber,
+            message: error instanceof Error ? error.message : 'Unknown historical customer import error',
+          });
+          progress.failedRows += 1;
+        }
+
+        progress.processedCustomerRows = index + 1;
+        progress.processedRows = progress.processedIncomeRows + progress.processedCustomerRows;
+        progress.customerCursor = index + 1;
+
+        if ((index + 1) % 25 === 0 || index === validCustomerRows.length - 1) {
+          await persistProgress(`Customer import: ${progress.processedCustomerRows}/${progress.totalCustomerRows}`);
+        }
+        }
+
+        progress.stage = HISTORICAL_IMPORT_STATUS_COMPLETED;
+        progress.message = 'Tarixiy import yakunlandi';
+
+        await prisma.historicalImportSession.update({
+          where: { id: session.id },
+          data: {
+            status: HISTORICAL_IMPORT_STATUS_COMPLETED,
+            completedAt: new Date(),
+            progress: progress as unknown as Prisma.InputJsonValue,
+            failureReport: failureReport as unknown as Prisma.InputJsonValue,
+          },
+        });
+
+        await prisma.auditLog.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.user.userId,
+            action: 'historical_import_execute',
+            resource: 'historical_import_session',
+            resourceId: session.id,
+            metadata: {
+              progress,
+            },
+          },
+        });
+
+        return {
+          sessionId: session.id,
+          status: HISTORICAL_IMPORT_STATUS_COMPLETED,
+          progress,
+          failureReport,
+        };
+      } catch (error) {
+        progress.stage = HISTORICAL_IMPORT_STATUS_FAILED;
+        progress.message = 'Tarixiy import xatolik bilan toxtadi';
+        failureReport.push({
+          scope: 'income',
+          rowNumber: 0,
+          message: error instanceof Error ? error.message : 'Unknown historical import failure',
+        });
+        await prisma.historicalImportSession.update({
+          where: { id: session.id },
+          data: {
+            status: HISTORICAL_IMPORT_STATUS_FAILED,
+            errorMessage: error instanceof Error ? error.message : 'Historical import failed.',
+            progress: progress as unknown as Prisma.InputJsonValue,
+            failureReport: failureReport as unknown as Prisma.InputJsonValue,
+          },
+        });
+        throw error;
+      }
     }),
 
   listIncomes: protectedProcedure
