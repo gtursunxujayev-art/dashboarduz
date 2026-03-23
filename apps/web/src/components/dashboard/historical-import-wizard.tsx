@@ -58,6 +58,7 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
   const [localPreview, setLocalPreview] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [executionPending, setExecutionPending] = useState(false);
   const completionHandledRef = useRef(false);
 
   useEffect(() => {
@@ -84,23 +85,34 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
     },
   );
 
+  const prepareMutation = trpc.customerIncome.prepareHistoricalImport.useMutation();
+  const executeMutation = trpc.customerIncome.executeHistoricalImport.useMutation();
+  const cancelMutation = trpc.customerIncome.cancelHistoricalImport.useMutation();
+
   useEffect(() => {
     if (!sessionId) {
       return undefined;
     }
     const currentStatus = progressQuery.data?.status;
-    if (currentStatus !== 'running' && currentStatus !== 'cancelling') {
+    const shouldPoll = currentStatus === 'running'
+      || currentStatus === 'cancelling'
+      || executeMutation.isLoading
+      || executionPending;
+    if (!shouldPoll) {
       return undefined;
     }
     const timer = window.setInterval(() => {
       progressQuery.refetch().catch(() => undefined);
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [sessionId, progressQuery, progressQuery.data?.status]);
+  }, [sessionId, progressQuery, progressQuery.data?.status, executeMutation.isLoading, executionPending]);
 
   useEffect(() => {
     if (!progressQuery.data) {
       return;
+    }
+    if (['running', 'completed', 'cancelled', 'failed'].includes(progressQuery.data.status)) {
+      setExecutionPending(false);
     }
     if (progressQuery.data.status === 'completed' && !completionHandledRef.current) {
       completionHandledRef.current = true;
@@ -113,10 +125,6 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
       completionHandledRef.current = false;
     }
   }, [onImported, progressQuery.data]);
-
-  const prepareMutation = trpc.customerIncome.prepareHistoricalImport.useMutation();
-  const executeMutation = trpc.customerIncome.executeHistoricalImport.useMutation();
-  const cancelMutation = trpc.customerIncome.cancelHistoricalImport.useMutation();
 
   const preview = progressQuery.data?.preview || localPreview;
   const progress = progressQuery.data?.progress || null;
@@ -140,6 +148,9 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
         unresolvedManagersFullyMapped
       ),
   );
+  const isImportStarting = executionPending && currentStatus === 'prepared';
+  const displayStatus = isImportStarting ? 'starting' : (currentStatus || progress?.stage || '');
+  const displayMessage = isImportStarting ? 'Import ishga tushirilmoqda...' : (progress?.message || '-');
 
   const handleIncomeFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -229,6 +240,7 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
     }
     setError(null);
     setSuccess(null);
+    setExecutionPending(true);
     completionHandledRef.current = false;
     try {
       let targetSessionId = sessionId;
@@ -247,6 +259,7 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
         setSessionId(refreshed.sessionId);
         setLocalPreview(refreshed.preview);
         if (!refreshed.preview?.canExecute) {
+          setExecutionPending(false);
           await progressQuery.refetch();
           setError("Importni boshlashdan oldin previewdagi bloklovchi xatolarni ko'rib chiqing.");
           return;
@@ -255,6 +268,7 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
       await executeMutation.mutateAsync({ sessionId: targetSessionId });
       await Promise.all([progressQuery.refetch(), utils.customerIncome.formOptions.invalidate(), utils.customerIncome.listIncomes.invalidate()]);
     } catch (executeError: any) {
+      setExecutionPending(false);
       setError(executeError?.message || 'Tarixiy import ishga tushmadi.');
     }
   };
@@ -460,8 +474,8 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
           <div className="rounded-md border border-gray-200 p-4 dark:border-slate-700">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-medium text-gray-900 dark:text-slate-100">Holat: {currentStatus || progress.stage}</div>
-                <div className="text-xs text-gray-500 dark:text-slate-400">{progress.message || '-'}</div>
+                <div className="text-sm font-medium text-gray-900 dark:text-slate-100">Holat: {displayStatus}</div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">{displayMessage}</div>
               </div>
               <div className="text-sm text-gray-700 dark:text-slate-200">
                 {progress.processedRows || 0}/{progress.totalRows || 0}
