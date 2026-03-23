@@ -2104,6 +2104,13 @@ async function ensureHistoricalCatalogItems(params: {
   const ensuredCourses = new Map<string, { id: string; name: string; tariffsByKey: Map<string, string> }>();
 
   for (const item of params.items) {
+    // Temporary production-safe guard:
+    // If DB constraint for courses.category does not yet allow "additional_service",
+    // never attempt to create/update those catalog items during historical import.
+    if (item.category === 'additional_service') {
+      continue;
+    }
+
     const course = await prisma.course.upsert({
       where: {
         tenantId_name: {
