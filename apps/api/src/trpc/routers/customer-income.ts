@@ -15,7 +15,7 @@ import { decryptIntegrationTokens } from '../../services/security/encryption';
 import { telegramService } from '../../services/integrations/telegram';
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'Agent'] as const;
-const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive'] as const;
+const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'Manager', 'Organizator', 'Organizer']);
 const APPROVER_ROLES_REFUND = new Set(['Admin', 'Finance']);
@@ -379,7 +379,7 @@ function formatDateGmt5(dateValue: Date): string {
 
 function isOfflineOrIntensive(category: string | null | undefined): boolean {
   const normalized = String(category || '').trim().toLowerCase();
-  return normalized === 'offline' || normalized === 'intensive';
+  return normalized === 'offline' || normalized === 'intensive' || normalized === 'additional_service';
 }
 
 function isOnlineCategory(category: string | null | undefined): boolean {
@@ -1055,6 +1055,8 @@ type RowLookupContext = {
   managersByNormalizedName: Array<{ id: string; name: string }>;
   coursesByKey: Map<string, string>;
   tariffsByCourseIdAndKey: Map<string, string>;
+  subTariffsByTariffIdAndKey: Map<string, string>;
+  firstSubTariffIdByTariffId: Map<string, string>;
 };
 
 const ENTRY_DATE_HEADERS = ['entrydate', 'date', 'sana'];
@@ -1065,6 +1067,7 @@ const TELEGRAM_HEADERS = ['telegramusername', 'telegram', 'telegramuser'];
 const TYPE_HEADERS = ['type', 'incometype', 'transactiontype', 'turi'];
 const COURSE_HEADERS = ['course', 'coursename', 'kurs'];
 const TARIFF_HEADERS = ['tariff', 'tarif'];
+const SUB_TARIFF_HEADERS = ['subtariff', 'subtarif', 'sub_tariff', 'sub_tarif', 'subkurs', 'subkursi'];
 const COURSE_PRICE_HEADERS = ['courseprice', 'kursnarxi', 'price'];
 const PAYMENT_HEADERS = ['payment', 'paymentamount', 'tolov', 'toplov'];
 const DEADLINE_HEADERS = ['deadline', 'muddat'];
@@ -1221,6 +1224,9 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
         tenantId,
         isActive: true,
       },
+      orderBy: {
+        name: 'asc',
+      },
       select: {
         id: true,
         name: true,
@@ -1228,9 +1234,24 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
           where: {
             isActive: true,
           },
+          orderBy: {
+            name: 'asc',
+          },
           select: {
             id: true,
             name: true,
+            subTariffs: {
+              where: {
+                isActive: true,
+              },
+              orderBy: {
+                name: 'asc',
+              },
+              select: {
+                id: true,
+                name: true,
+              },
+            },
           },
         },
       },
@@ -1280,6 +1301,8 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
 
   const coursesByKey = new Map<string, string>();
   const tariffsByCourseIdAndKey = new Map<string, string>();
+  const subTariffsByTariffIdAndKey = new Map<string, string>();
+  const firstSubTariffIdByTariffId = new Map<string, string>();
 
   for (const course of courses) {
     coursesByKey.set(normalizeKey(course.id), course.id);
@@ -1288,6 +1311,16 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
     for (const tariff of course.tariffs) {
       tariffsByCourseIdAndKey.set(buildLookupKey(course.id, tariff.id), tariff.id);
       tariffsByCourseIdAndKey.set(buildLookupKey(course.id, tariff.name), tariff.id);
+
+      for (const subTariff of tariff.subTariffs) {
+        subTariffsByTariffIdAndKey.set(buildLookupKey(tariff.id, subTariff.id), subTariff.id);
+        subTariffsByTariffIdAndKey.set(buildLookupKey(tariff.id, subTariff.name), subTariff.id);
+      }
+
+      const firstSubTariff = tariff.subTariffs[0];
+      if (firstSubTariff?.id) {
+        firstSubTariffIdByTariffId.set(tariff.id, firstSubTariff.id);
+      }
     }
   }
 
@@ -1296,6 +1329,8 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
     managersByNormalizedName,
     coursesByKey,
     tariffsByCourseIdAndKey,
+    subTariffsByTariffIdAndKey,
+    firstSubTariffIdByTariffId,
   };
 }
 
@@ -1402,6 +1437,20 @@ function parseBulkRowToCreateIncomeInput(
       });
     }
 
+    const subTariffRaw = normalizeStringValue(getRowValue(row, SUB_TARIFF_HEADERS));
+    let subTariffId: string | undefined;
+    if (subTariffRaw) {
+      subTariffId = lookupContext.subTariffsByTariffIdAndKey.get(buildLookupKey(tariffId, subTariffRaw));
+      if (!subTariffId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Row ${rowNumber}: sub-tariff must match an active sub-tariff for the selected tariff.`,
+        });
+      }
+    } else {
+      subTariffId = lookupContext.firstSubTariffIdByTariffId.get(tariffId);
+    }
+
     const coursePriceAmount = parseAmountValue(getRowValue(row, COURSE_PRICE_HEADERS));
     if (coursePriceAmount <= 0) {
       throw new TRPCError({
@@ -1419,6 +1468,7 @@ function parseBulkRowToCreateIncomeInput(
       type,
       courseId,
       tariffId,
+      subTariffId,
       coursePriceAmount,
       paymentAmount,
       deadline,
@@ -2387,17 +2437,18 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Income entry not found.' });
       }
 
-      const linkedAdjustmentCount = await prisma.incomeAdjustmentRequest.count({
+      const linkedPendingAdjustmentCount = await prisma.incomeAdjustmentRequest.count({
         where: {
           tenantId: ctx.tenantId,
           incomeId: income.id,
+          status: ADJUSTMENT_STATUS_PENDING,
         },
       });
 
-      if (linkedAdjustmentCount > 0) {
+      if (linkedPendingAdjustmentCount > 0) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
-          message: 'This income entry has linked adjustment requests. Remove or resolve them first.',
+          message: 'This income entry has pending adjustment requests. Resolve them first.',
         });
       }
 
@@ -3375,6 +3426,332 @@ export const customerIncomeRouter = router({
       return { success: true };
     }),
 
+  customerEditorOptions: adminProcedure.query(async ({ ctx }) => {
+    const courses = await fetchCoursesWithTariffsSafe({
+      tenantId: ctx.tenantId,
+      onlyActive: true,
+    });
+
+    return (courses as Array<{
+      id: string;
+      name: string;
+      category: string;
+      tariffs: Array<{
+        id: string;
+        name: string;
+        subTariffs: Array<{ id: string; name: string; isActive: boolean }>;
+      }>;
+    }>).map((course) => ({
+      id: course.id,
+      name: course.name,
+      category: course.category,
+      tariffs: course.tariffs.map((tariff) => ({
+        id: tariff.id,
+        name: tariff.name,
+        subTariffs: Array.isArray(tariff.subTariffs)
+          ? tariff.subTariffs.filter((subTariff) => subTariff.isActive).map((subTariff) => ({
+              id: subTariff.id,
+              name: subTariff.name,
+            }))
+          : [],
+      })),
+    }));
+  }),
+
+  createCustomerOnly: adminProcedure
+    .input(
+      z.object({
+        customerNumber: z.string().min(1).max(64),
+        name: z.string().min(1).max(160),
+        telegramUsername: z.string().max(160).optional(),
+        courseId: z.string().uuid().optional(),
+        tariffId: z.string().uuid().optional(),
+        subTariffId: z.string().uuid().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const customerNumber = sanitizeCustomerNumber(input.customerNumber.trim());
+      if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Customer number must contain only digits.',
+        });
+      }
+
+      const name = input.name.trim();
+      if (!name) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Customer name is required.',
+        });
+      }
+
+      const normalizedTelegramUsername = input.telegramUsername
+        ? sanitizeTelegramUsername(input.telegramUsername.trim())
+        : null;
+      if (normalizedTelegramUsername && !TELEGRAM_USERNAME_REGEX.test(normalizedTelegramUsername)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Telegram username may contain only letters, digits, "_" and optional "@".',
+        });
+      }
+
+      if (!input.courseId && (input.tariffId || input.subTariffId)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Course is required when selecting tariff or sub-tariff.',
+        });
+      }
+      if (!input.tariffId && input.subTariffId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Tariff is required when selecting sub-tariff.',
+        });
+      }
+
+      const existing = await prisma.customer.findUnique({
+        where: {
+          tenantId_customerNumber: {
+            tenantId: ctx.tenantId,
+            customerNumber,
+          },
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Customer with this number already exists.',
+        });
+      }
+
+      if (input.courseId) {
+        const course = await prisma.course.findFirst({
+          where: { id: input.courseId, tenantId: ctx.tenantId, isActive: true },
+          select: { id: true },
+        });
+        if (!course) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected course not found.' });
+        }
+      }
+      if (input.tariffId && input.courseId) {
+        const tariff = await prisma.tariff.findFirst({
+          where: {
+            id: input.tariffId,
+            tenantId: ctx.tenantId,
+            courseId: input.courseId,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        if (!tariff) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected tariff not found for course.' });
+        }
+      }
+      if (input.subTariffId && input.tariffId) {
+        const subTariff = await prisma.subTariff.findFirst({
+          where: {
+            id: input.subTariffId,
+            tenantId: ctx.tenantId,
+            tariffId: input.tariffId,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        if (!subTariff) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected sub-tariff not found for tariff.' });
+        }
+      }
+
+      const created = await prisma.customer.create({
+        data: {
+          tenantId: ctx.tenantId,
+          customerNumber,
+          name,
+          telegramUsername: normalizedTelegramUsername || null,
+          profileCourseId: input.courseId || null,
+          profileTariffId: input.tariffId || null,
+          profileSubTariffId: input.subTariffId || null,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'customer_create_only',
+          resource: 'customer',
+          resourceId: created.id,
+          metadata: {
+            customerNumber: created.customerNumber,
+          },
+        },
+      });
+
+      return created;
+    }),
+
+  updateCustomersCourseAssignment: adminProcedure
+    .input(
+      z.object({
+        customerIds: z.array(z.string().uuid()).min(1).max(500),
+        courseId: z.string().uuid().nullable().optional(),
+        tariffId: z.string().uuid().nullable().optional(),
+        subTariffId: z.string().uuid().nullable().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const customerIds = Array.from(new Set(input.customerIds));
+      const courseId = input.courseId || null;
+      const tariffId = input.tariffId || null;
+      const subTariffId = input.subTariffId || null;
+
+      if (!courseId && (tariffId || subTariffId)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Course is required when selecting tariff or sub-tariff.',
+        });
+      }
+      if (!tariffId && subTariffId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Tariff is required when selecting sub-tariff.',
+        });
+      }
+
+      if (courseId) {
+        const course = await prisma.course.findFirst({
+          where: { id: courseId, tenantId: ctx.tenantId, isActive: true },
+          select: { id: true },
+        });
+        if (!course) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected course not found.' });
+        }
+      }
+      if (courseId && tariffId) {
+        const tariff = await prisma.tariff.findFirst({
+          where: { id: tariffId, tenantId: ctx.tenantId, courseId, isActive: true },
+          select: { id: true },
+        });
+        if (!tariff) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected tariff not found for course.' });
+        }
+      }
+      if (tariffId && subTariffId) {
+        const subTariff = await prisma.subTariff.findFirst({
+          where: { id: subTariffId, tenantId: ctx.tenantId, tariffId, isActive: true },
+          select: { id: true },
+        });
+        if (!subTariff) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected sub-tariff not found for tariff.' });
+        }
+      }
+
+      const updateResult = await prisma.customer.updateMany({
+        where: {
+          tenantId: ctx.tenantId,
+          id: { in: customerIds },
+        },
+        data: {
+          profileCourseId: courseId,
+          profileTariffId: tariffId,
+          profileSubTariffId: subTariffId,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'customer_bulk_course_assignment_update',
+          resource: 'customer',
+          metadata: {
+            customerCount: customerIds.length,
+            updatedCount: updateResult.count,
+            courseId,
+            tariffId,
+            subTariffId,
+          },
+        },
+      });
+
+      return {
+        updatedCount: updateResult.count,
+      };
+    }),
+
+  deleteCustomers: adminProcedure
+    .input(
+      z.object({
+        customerIds: z.array(z.string().uuid()).min(1).max(500),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const customerIds = Array.from(new Set(input.customerIds));
+      const customers = await prisma.customer.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          id: { in: customerIds },
+        },
+        select: {
+          id: true,
+          customerNumber: true,
+        },
+      });
+
+      if (!customers.length) {
+        return { deletedCount: 0 };
+      }
+
+      const existingCustomerIds = customers.map((customer) => customer.id);
+      const incomesGrouped = await prisma.income.groupBy({
+        by: ['customerId'],
+        where: {
+          tenantId: ctx.tenantId,
+          customerId: { in: existingCustomerIds },
+        },
+        _count: {
+          customerId: true,
+        },
+      });
+
+      if (incomesGrouped.length > 0) {
+        const blockedIds = new Set(incomesGrouped.map((item) => item.customerId));
+        const blockedCustomers = customers
+          .filter((customer) => blockedIds.has(customer.id))
+          .slice(0, 5)
+          .map((customer) => customer.customerNumber);
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: `Customers with income history cannot be deleted. Blocked: ${blockedCustomers.join(', ')}${blockedIds.size > blockedCustomers.length ? '...' : ''}`,
+        });
+      }
+
+      const deleteResult = await prisma.customer.deleteMany({
+        where: {
+          tenantId: ctx.tenantId,
+          id: { in: existingCustomerIds },
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'customer_bulk_delete',
+          resource: 'customer',
+          metadata: {
+            deletedCount: deleteResult.count,
+            requestedCount: customerIds.length,
+          },
+        },
+      });
+
+      return {
+        deletedCount: deleteResult.count,
+      };
+    }),
+
   listCustomers: protectedProcedure
     .input(
       z
@@ -3476,6 +3853,9 @@ export const customerIncomeRouter = router({
             customerNumber: true,
             name: true,
             telegramUsername: true,
+            profileCourseId: true,
+            profileTariffId: true,
+            profileSubTariffId: true,
             createdAt: true,
             updatedAt: true,
           },
@@ -3491,6 +3871,32 @@ export const customerIncomeRouter = router({
       }
 
       const customerIds = customers.map((customer) => customer.id);
+      const profileCourseIds = Array.from(new Set(customers.map((customer) => customer.profileCourseId).filter(Boolean))) as string[];
+      const profileTariffIds = Array.from(new Set(customers.map((customer) => customer.profileTariffId).filter(Boolean))) as string[];
+      const profileSubTariffIds = Array.from(new Set(customers.map((customer) => customer.profileSubTariffId).filter(Boolean))) as string[];
+      const [profileCourses, profileTariffs, profileSubTariffs] = await Promise.all([
+        profileCourseIds.length > 0
+          ? prisma.course.findMany({
+              where: { tenantId: ctx.tenantId, id: { in: profileCourseIds } },
+              select: { id: true, name: true },
+            })
+          : Promise.resolve([]),
+        profileTariffIds.length > 0
+          ? prisma.tariff.findMany({
+              where: { tenantId: ctx.tenantId, id: { in: profileTariffIds } },
+              select: { id: true, name: true },
+            })
+          : Promise.resolve([]),
+        profileSubTariffIds.length > 0
+          ? prisma.subTariff.findMany({
+              where: { tenantId: ctx.tenantId, id: { in: profileSubTariffIds } },
+              select: { id: true, name: true },
+            })
+          : Promise.resolve([]),
+      ]);
+      const profileCourseNameById = new Map(profileCourses.map((course) => [course.id, course.name]));
+      const profileTariffNameById = new Map(profileTariffs.map((tariff) => [tariff.id, tariff.name]));
+      const profileSubTariffNameById = new Map(profileSubTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
       const relatedIncomes = await prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -3565,13 +3971,24 @@ export const customerIncomeRouter = router({
       return {
         customers: customers.map((customer) => {
           const aggregate = aggregatesByCustomer.get(customer.id);
+          const profileCourseName = customer.profileCourseId ? profileCourseNameById.get(customer.profileCourseId) || null : null;
+          const profileTariffName = customer.profileTariffId ? profileTariffNameById.get(customer.profileTariffId) || null : null;
+          const profileSubTariffName = customer.profileSubTariffId ? profileSubTariffNameById.get(customer.profileSubTariffId) || null : null;
+          const profileCourseLabel = [profileCourseName, profileTariffName, profileSubTariffName].filter(Boolean).join(' / ');
+          const aggregateCourses = aggregate ? Array.from(aggregate.courses) : [];
+          const mergedCourses = profileCourseLabel && !aggregateCourses.includes(profileCourseLabel)
+            ? [profileCourseLabel, ...aggregateCourses]
+            : aggregateCourses;
           return {
             ...customer,
             totalDebtAmount: aggregate?.totalDebtAmount ?? 0,
             totalPaidAmount: aggregate?.totalPaidAmount ?? 0,
             hasDebt: aggregate?.hasDebt ?? false,
             lastActivityAt: aggregate?.lastActivityAt ?? null,
-            courses: aggregate ? Array.from(aggregate.courses) : [],
+            courses: mergedCourses,
+            profileCourseName,
+            profileTariffName,
+            profileSubTariffName,
           };
         }),
         courseOptions,
