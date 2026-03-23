@@ -349,7 +349,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="rounded-lg bg-white shadow">
-        <div className="px-4 py-3 sm:px-5 sm:py-4">
+        <div className="px-3 py-2 sm:px-5 sm:py-4">
           <div className="space-y-2">
             <div className="overflow-x-auto">
               <div className="inline-flex min-w-max rounded-md shadow-sm">
@@ -358,7 +358,7 @@ export default function DashboardPage() {
                     key={option}
                     type="button"
                     onClick={() => setRange(option)}
-                    className={`border border-gray-300 px-3 py-1.5 text-sm font-medium ${
+                    className={`border border-gray-300 px-2.5 py-1 text-xs font-medium sm:px-3 sm:py-1.5 sm:text-sm ${
                       range === option ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
                     } ${index === 0 ? 'rounded-l-md' : ''} ${
                       index === RANGE_OPTIONS.length - 1 ? 'rounded-r-md' : ''
@@ -376,14 +376,14 @@ export default function DashboardPage() {
                 value={dateFrom}
                 disabled={range !== 'custom'}
                 onChange={(event) => setDateFrom(event.target.value)}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 sm:px-3 sm:py-1.5 sm:text-sm"
               />
               <input
                 type="date"
                 value={dateTo}
                 disabled={range !== 'custom'}
                 onChange={(event) => setDateTo(event.target.value)}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 sm:px-3 sm:py-1.5 sm:text-sm"
               />
 
               {!isFinanceOnly && isAdmin && (
