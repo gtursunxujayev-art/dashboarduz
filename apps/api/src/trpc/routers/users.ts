@@ -8,7 +8,7 @@ import { hashPassword } from '../../services/auth/password';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { amocrmService } from '../../services/integrations/amocrm';
 
-const roleSchema = z.enum(['Admin', 'Manager', 'Agent', 'Finance']);
+const roleSchema = z.enum(['Admin', 'Manager', 'Agent', 'Finance', 'Tashkiliy']);
 
 function isMissingUserMappingColumnError(error: unknown) {
   const message = String((error as any)?.message || '');
