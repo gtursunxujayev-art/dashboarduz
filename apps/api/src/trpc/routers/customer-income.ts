@@ -99,6 +99,25 @@ function throwHistoricalImportMigrationError(): never {
   });
 }
 
+function isCourseCategoryConstraintOutdatedError(error: unknown): boolean {
+  const message = String((error as any)?.message || '').toLowerCase();
+  return (
+    message.includes('courses_category_check')
+    || (
+      message.includes('violates check constraint')
+      && message.includes('category')
+      && message.includes('courses')
+    )
+  );
+}
+
+function throwCourseCategoryMigrationError(): never {
+  throw new TRPCError({
+    code: 'PRECONDITION_FAILED',
+    message: "Kurs kategoriya cheklovi eskirgan. `additional_service` uchun yangi database migration ni ishga tushiring va keyin importni qayta boshlang.",
+  });
+}
+
 type CourseWithTariffsSafe = {
   id: string;
   name: string;
@@ -3303,6 +3322,9 @@ export const customerIncomeRouter = router({
       } catch (error) {
         if (isMissingHistoricalImportSchemaError(error)) {
           throwHistoricalImportMigrationError();
+        }
+        if (isCourseCategoryConstraintOutdatedError(error)) {
+          throwCourseCategoryMigrationError();
         }
         throw error;
       }
