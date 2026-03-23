@@ -13,6 +13,7 @@ const ROLE_LABELS: Record<string, string> = {
   Manager: 'Menejer',
   Agent: 'Agent',
   Finance: 'Moliya',
+  Tashkiliy: 'Tashkiliy',
 };
 
 export default function Header() {
