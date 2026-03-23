@@ -89,6 +89,13 @@ export default function DashboardPage() {
       && !roles.includes('Manager')
       && !roles.includes('Agent'),
   );
+  const isTashkiliyOnly = Boolean(
+    roles.includes('Tashkiliy')
+      && !roles.includes('Admin')
+      && !roles.includes('Manager')
+      && !roles.includes('Agent')
+      && !roles.includes('Finance'),
+  );
 
   const amoPipelinesQuery = trpc.integrations.getAmoCRMPipelines.useQuery(undefined, {
     retry: false,
@@ -173,64 +180,115 @@ export default function DashboardPage() {
     }, 0);
   }, [isAgentOnly, sellerPerformance]);
 
-  const metricCards = [
-    {
-      title: 'Sotuv shartnomasi',
-      value: String(stats?.newSalesCount ?? 0),
-      subtitle: formatAmount(stats?.newSalesAgreementAmount),
-      extra: null,
-    },
-    {
-      title: 'Sotuv - Onlayn',
-      value: String(stats?.onlineSalesCount ?? 0),
-      subtitle: formatAmount(stats?.onlineSalesAgreementAmount),
-      extra: null,
-    },
-    {
-      title: 'Sotuv - Oflayn',
-      value: String(stats?.offlineSalesCount ?? 0),
-      subtitle: formatAmount(stats?.offlineSalesAgreementAmount),
-      extra: null,
-    },
-    {
-      title: 'Sotuv - Intensiv',
-      value: String(stats?.intensiveSalesCount ?? 0),
-      subtitle: formatAmount(stats?.intensiveSalesAgreementAmount),
-      extra: null,
-    },
-    {
-      title: 'Tushum',
-      value: formatAmount(stats?.totalIncomeAmount),
-      subtitle: 'Tanlangan davr bo\'yicha',
-      extra: null,
-    },
-    {
-      title: 'Follow-up',
-      value: String(stats?.followUpCount ?? 0),
-      subtitle: 'Yakunlangan vazifalar',
-      extra: null,
-    },
-    {
-      title: 'Yozuvlar',
-      value: String(stats?.noteCount ?? 0),
-      subtitle: "Lid bo'yicha yozuvlar",
-      extra: null,
-    },
-    {
-      title: "Bosqich o'zgarishi",
-      value: String(stats?.stageChangeCount ?? 0),
-      subtitle: "CRM status o'zgarishlari",
-      extra: null,
-    },
-    ...(isAgentOnly
-      ? [{
-          title: "Qo'ng'iroqlar",
-          value: `${stats?.totalCalls ?? 0} ta`,
-          subtitle: "Jami qo'ng'iroq soni",
-          extra: `Davomiylik: ${formatDurationCompact(agentTalkDurationSeconds)}`,
-        }]
-      : []),
-  ];
+  const metricCards = isTashkiliyOnly
+    ? [
+        {
+          title: 'Yangi sotuvlar',
+          value: String(stats?.newSalesCount ?? 0),
+          subtitle: "Tanlangan davr bo'yicha",
+          extra: null,
+        },
+        {
+          title: 'Sotuv - Onlayn',
+          value: String(stats?.onlineSalesCount ?? 0),
+          subtitle: "Soni",
+          extra: null,
+        },
+        {
+          title: 'Sotuv - Oflayn',
+          value: String(stats?.offlineSalesCount ?? 0),
+          subtitle: "Soni",
+          extra: null,
+        },
+        {
+          title: 'Sotuv - Intensiv',
+          value: String(stats?.intensiveSalesCount ?? 0),
+          subtitle: "Soni",
+          extra: null,
+        },
+        {
+          title: 'Yangi lidlar',
+          value: String(stats?.totalLeads ?? 0),
+          subtitle: "Tanlangan davr bo'yicha",
+          extra: null,
+        },
+        {
+          title: 'Sifatli lidlar',
+          value: String(stats?.qualifiedLeads ?? 0),
+          subtitle: `${formatPercent(stats?.qualifiedLeadSharePercent)} ulush`,
+          extra: null,
+        },
+        {
+          title: 'Sifatsiz lidlar',
+          value: String(stats?.nonQualifiedLeads ?? 0),
+          subtitle: `${formatPercent(stats?.nonQualifiedLeadSharePercent)} ulush`,
+          extra: null,
+        },
+        {
+          title: 'Konversiya',
+          value: `${(stats?.conversionPercent ?? 0).toFixed(1)}%`,
+          subtitle: 'Sotuv / lid',
+          extra: null,
+        },
+      ]
+    : [
+        {
+          title: 'Sotuv shartnomasi',
+          value: String(stats?.newSalesCount ?? 0),
+          subtitle: formatAmount(stats?.newSalesAgreementAmount),
+          extra: null,
+        },
+        {
+          title: 'Sotuv - Onlayn',
+          value: String(stats?.onlineSalesCount ?? 0),
+          subtitle: formatAmount(stats?.onlineSalesAgreementAmount),
+          extra: null,
+        },
+        {
+          title: 'Sotuv - Oflayn',
+          value: String(stats?.offlineSalesCount ?? 0),
+          subtitle: formatAmount(stats?.offlineSalesAgreementAmount),
+          extra: null,
+        },
+        {
+          title: 'Sotuv - Intensiv',
+          value: String(stats?.intensiveSalesCount ?? 0),
+          subtitle: formatAmount(stats?.intensiveSalesAgreementAmount),
+          extra: null,
+        },
+        {
+          title: 'Tushum',
+          value: formatAmount(stats?.totalIncomeAmount),
+          subtitle: 'Tanlangan davr bo\'yicha',
+          extra: null,
+        },
+        {
+          title: 'Follow-up',
+          value: String(stats?.followUpCount ?? 0),
+          subtitle: 'Yakunlangan vazifalar',
+          extra: null,
+        },
+        {
+          title: 'Yozuvlar',
+          value: String(stats?.noteCount ?? 0),
+          subtitle: "Lid bo'yicha yozuvlar",
+          extra: null,
+        },
+        {
+          title: "Bosqich o'zgarishi",
+          value: String(stats?.stageChangeCount ?? 0),
+          subtitle: "CRM status o'zgarishlari",
+          extra: null,
+        },
+        ...(isAgentOnly
+          ? [{
+              title: "Qo'ng'iroqlar",
+              value: `${stats?.totalCalls ?? 0} ta`,
+              subtitle: "Jami qo'ng'iroq soni",
+              extra: `Davomiylik: ${formatDurationCompact(agentTalkDurationSeconds)}`,
+            }]
+          : []),
+      ];
 
   const financeCards = [
     {
@@ -513,8 +571,12 @@ export default function DashboardPage() {
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Follow-up</th>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Yozuvlar</th>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bosqich o'zgarishi</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Shartnoma summasi</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum summasi</th>
+                          {!isTashkiliyOnly && (
+                            <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Shartnoma summasi</th>
+                          )}
+                          {!isTashkiliyOnly && (
+                            <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum summasi</th>
+                          )}
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Suhbat vaqti</th>
                         </tr>
                       </thead>
@@ -534,16 +596,20 @@ export default function DashboardPage() {
                             <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                               {renderMetricValue(seller.stageChangeCount)}
                             </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {seller.agreementsAmount === null || seller.agreementsAmount === undefined
-                                ? '-'
-                                : formatAmount(seller.agreementsAmount)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {seller.incomeAmount === null || seller.incomeAmount === undefined
-                                ? '-'
-                                : formatAmount(seller.incomeAmount)}
-                            </td>
+                            {!isTashkiliyOnly && (
+                              <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                                {seller.agreementsAmount === null || seller.agreementsAmount === undefined
+                                  ? '-'
+                                  : formatAmount(seller.agreementsAmount)}
+                              </td>
+                            )}
+                            {!isTashkiliyOnly && (
+                              <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                                {seller.incomeAmount === null || seller.incomeAmount === undefined
+                                  ? '-'
+                                  : formatAmount(seller.incomeAmount)}
+                              </td>
+                            )}
                             <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                               {formatDuration(seller.talkedSeconds)}
                             </td>
