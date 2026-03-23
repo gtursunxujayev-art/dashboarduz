@@ -84,6 +84,11 @@ export default function AdjustmentsPage() {
     { enabled: Boolean(selectedCustomerId), retry: false },
   );
   const requestsQuery = trpc.customerIncome.listAdjustmentRequests.useQuery({ limit: 120 }, { retry: false });
+  const adjustmentBadgeQuery = trpc.customerIncome.adjustmentBadgeCount.useQuery(undefined, {
+    retry: false,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+  });
   const createRequestMutation = trpc.customerIncome.createAdjustmentRequest.useMutation();
   const approveRequestMutation = trpc.customerIncome.approveAdjustmentRequest.useMutation();
   const rejectRequestMutation = trpc.customerIncome.rejectAdjustmentRequest.useMutation();
@@ -201,7 +206,7 @@ export default function AdjustmentsPage() {
         setNewTariffId('');
         setNewAgreementInput('');
       }
-      await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch()]);
+      await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch(), adjustmentBadgeQuery.refetch()]);
     } catch (mutationError: any) {
       setError(mutationError?.message || "So'rov yuborishda xatolik yuz berdi.");
     }
@@ -213,7 +218,7 @@ export default function AdjustmentsPage() {
     try {
       await approveRequestMutation.mutateAsync({ requestId });
       setSuccess("So'rov tasdiqlandi.");
-      await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch()]);
+      await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch(), adjustmentBadgeQuery.refetch()]);
     } catch (mutationError: any) {
       setError(mutationError?.message || "Tasdiqlashda xatolik yuz berdi.");
     }
@@ -225,7 +230,7 @@ export default function AdjustmentsPage() {
     try {
       await rejectRequestMutation.mutateAsync({ requestId });
       setSuccess("So'rov rad etildi.");
-      await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch()]);
+      await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch(), adjustmentBadgeQuery.refetch()]);
     } catch (mutationError: any) {
       setError(mutationError?.message || 'Rad etishda xatolik yuz berdi.');
     }
@@ -234,7 +239,12 @@ export default function AdjustmentsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">Qaytarish / O&apos;zgarish</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">Qaytarish / O&apos;zgarish</h1>
+          <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-300">
+            Kutilmoqda: {adjustmentBadgeQuery.data?.pendingTotal ?? 0}
+          </span>
+        </div>
         <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
           Pul qaytarish yoki tarif o&apos;zgarishi bo&apos;yicha so&apos;rov yuboring va tasdiqlash holatini kuzating.
         </p>
