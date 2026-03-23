@@ -22,6 +22,13 @@ const FINANCE_ALLOWED_PATHS = [
   '/dashboard/analytics',
   '/dashboard/finance',
 ];
+const TASHKILIY_ALLOWED_PATHS = [
+  '/dashboard',
+  '/dashboard/adjustments',
+  '/dashboard/customers',
+  '/dashboard/courses',
+  '/dashboard/settings',
+];
 const MANAGER_BLOCKED_PATHS = [
   '/dashboard/integrations',
   '/dashboard/notifications',
@@ -37,6 +44,14 @@ function isFinanceOnly(roles: string[]): boolean {
 
 function isManagerOnly(roles: string[]): boolean {
   return roles.includes('Manager') && !roles.includes('Admin');
+}
+
+function isTashkiliyOnly(roles: string[]): boolean {
+  return roles.includes('Tashkiliy')
+    && !roles.includes('Admin')
+    && !roles.includes('Manager')
+    && !roles.includes('Agent')
+    && !roles.includes('Finance');
 }
 
 function isPathAllowed(pathname: string, allowedPaths: string[]): boolean {
@@ -60,6 +75,7 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
   const isAgentRestriction = Boolean(user && isAgentOnly(user.roles));
   const isFinanceRestriction = Boolean(user && isFinanceOnly(user.roles));
   const isManagerRestriction = Boolean(user && isManagerOnly(user.roles));
+  const isTashkiliyRestriction = Boolean(user && isTashkiliyOnly(user.roles));
 
   const isAllowed = isLeadPath
     ? canAccessLeads
@@ -67,6 +83,8 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
     ? isPathAllowed(normalizedPath, AGENT_ALLOWED_PATHS)
     : isFinanceRestriction
       ? isPathAllowed(normalizedPath, FINANCE_ALLOWED_PATHS)
+      : isTashkiliyRestriction
+        ? isPathAllowed(normalizedPath, TASHKILIY_ALLOWED_PATHS)
       : isManagerRestriction
         ? !isPathBlocked(normalizedPath, MANAGER_BLOCKED_PATHS)
         : true;
