@@ -1967,6 +1967,7 @@ const HISTORICAL_IMPORT_STATUS_CANCELLING = 'cancelling';
 const HISTORICAL_IMPORT_STATUS_CANCELLED = 'cancelled';
 const HISTORICAL_IMPORT_STATUS_FAILED = 'failed';
 const HISTORICAL_IMPORT_STATUS_COMPLETED = 'completed';
+const HISTORICAL_IMPORT_STALE_MS = 2 * 60 * 1000;
 
 const historicalRawRowSchema = z.record(z.union([z.string(), z.number(), z.boolean(), z.null()]));
 const historicalImportPrepareSchema = z.object({
@@ -2031,6 +2032,40 @@ function asHistoricalProgressState(value: unknown): HistoricalProgressState {
     message: raw.message ? String(raw.message) : undefined,
     incomeCursor: Number(raw.incomeCursor || 0),
     customerCursor: Number(raw.customerCursor || 0),
+  };
+}
+
+function isHistoricalImportSessionStale(status: string, updatedAt: Date | null | undefined): boolean {
+  if (status !== HISTORICAL_IMPORT_STATUS_RUNNING && status !== HISTORICAL_IMPORT_STATUS_CANCELLING) {
+    return false;
+  }
+  if (!(updatedAt instanceof Date)) {
+    return false;
+  }
+  return Date.now() - updatedAt.getTime() > HISTORICAL_IMPORT_STALE_MS;
+}
+
+function getHistoricalImportStaleResolution(status: string, progress: HistoricalProgressState) {
+  if (status === HISTORICAL_IMPORT_STATUS_CANCELLING) {
+    return {
+      nextStatus: HISTORICAL_IMPORT_STATUS_CANCELLED,
+      progress: {
+        ...progress,
+        stage: HISTORICAL_IMPORT_STATUS_CANCELLED,
+        message: "Import bekor qilindi.",
+      },
+      errorMessage: null,
+    };
+  }
+
+  return {
+    nextStatus: HISTORICAL_IMPORT_STATUS_FAILED,
+    progress: {
+      ...progress,
+      stage: HISTORICAL_IMPORT_STATUS_FAILED,
+      message: "Import jarayoni to'xtab qoldi. Preview ni qayta tayyorlab, qaytadan boshlang.",
+    },
+    errorMessage: "Historical import session became stale before completion.",
   };
 }
 
@@ -3255,12 +3290,16 @@ export const customerIncomeRouter = router({
             select: {
               id: true,
               status: true,
+              updatedAt: true,
             },
           });
           if (!existingSession) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
           }
-          if (existingSession.status === HISTORICAL_IMPORT_STATUS_RUNNING) {
+          if (
+            existingSession.status === HISTORICAL_IMPORT_STATUS_RUNNING
+            && !isHistoricalImportSessionStale(existingSession.status, existingSession.updatedAt)
+          ) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Historical import is already running.' });
           }
         }
@@ -3359,6 +3398,51 @@ export const customerIncomeRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
         }
 
+        if (isHistoricalImportSessionStale(session.status, session.updatedAt)) {
+          const currentProgress = asHistoricalProgressState(session.progress);
+          const resolution = getHistoricalImportStaleResolution(session.status, currentProgress);
+          const recoveredSession = await prisma.historicalImportSession.update({
+            where: { id: session.id },
+            data: {
+              status: resolution.nextStatus,
+              progress: resolution.progress as unknown as Prisma.InputJsonValue,
+              errorMessage: resolution.errorMessage,
+              ...(resolution.nextStatus === HISTORICAL_IMPORT_STATUS_CANCELLED
+                ? { cancelledAt: session.cancelledAt || new Date() }
+                : { completedAt: session.completedAt || new Date() }),
+            },
+            select: {
+              id: true,
+              status: true,
+              preview: true,
+              progress: true,
+              failureReport: true,
+              errorMessage: true,
+              createdAt: true,
+              updatedAt: true,
+              startedAt: true,
+              completedAt: true,
+              cancelledAt: true,
+              sourceFiles: true,
+            },
+          });
+
+          return {
+            sessionId: recoveredSession.id,
+            status: recoveredSession.status,
+            preview: (recoveredSession.preview || {}) as Record<string, unknown>,
+            progress: asHistoricalProgressState(recoveredSession.progress),
+            failureReport: Array.isArray(recoveredSession.failureReport) ? recoveredSession.failureReport : [],
+            errorMessage: recoveredSession.errorMessage,
+            sourceFiles: recoveredSession.sourceFiles || null,
+            createdAt: recoveredSession.createdAt,
+            updatedAt: recoveredSession.updatedAt,
+            startedAt: recoveredSession.startedAt,
+            completedAt: recoveredSession.completedAt,
+            cancelledAt: recoveredSession.cancelledAt,
+          };
+        }
+
         return {
           sessionId: session.id,
           status: session.status,
@@ -3393,6 +3477,9 @@ export const customerIncomeRouter = router({
           select: {
             id: true,
             status: true,
+            updatedAt: true,
+            progress: true,
+            cancelledAt: true,
           },
         });
         if (!session) {
@@ -3400,14 +3487,27 @@ export const customerIncomeRouter = router({
         }
 
         const nextStatus = session.status === HISTORICAL_IMPORT_STATUS_RUNNING
-          ? HISTORICAL_IMPORT_STATUS_CANCELLING
+          ? (
+              isHistoricalImportSessionStale(session.status, session.updatedAt)
+                ? HISTORICAL_IMPORT_STATUS_CANCELLED
+                : HISTORICAL_IMPORT_STATUS_CANCELLING
+            )
           : HISTORICAL_IMPORT_STATUS_CANCELLED;
+        const progress = asHistoricalProgressState(session.progress);
+        const nextProgress = nextStatus === HISTORICAL_IMPORT_STATUS_CANCELLED
+          ? {
+              ...progress,
+              stage: HISTORICAL_IMPORT_STATUS_CANCELLED,
+              message: "Import bekor qilindi.",
+            }
+          : progress;
 
         await prisma.historicalImportSession.update({
           where: { id: session.id },
           data: {
             status: nextStatus,
-            cancelledAt: nextStatus === HISTORICAL_IMPORT_STATUS_CANCELLED ? new Date() : null,
+            cancelledAt: nextStatus === HISTORICAL_IMPORT_STATUS_CANCELLED ? (session.cancelledAt || new Date()) : null,
+            progress: nextProgress as unknown as Prisma.InputJsonValue,
           },
         });
 
@@ -3426,6 +3526,9 @@ export const customerIncomeRouter = router({
   executeHistoricalImport: adminProcedure
     .input(historicalImportSessionSchema)
     .mutation(async ({ ctx, input }) => {
+      let failureSessionId: string | null = input.sessionId;
+      let failureProgress: HistoricalProgressState | null = null;
+      let failureReport: HistoricalImportFailure[] = [];
       try {
         const session = await prisma.historicalImportSession.findFirst({
           where: {
@@ -3449,6 +3552,7 @@ export const customerIncomeRouter = router({
         if (!session) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Historical import session not found.' });
         }
+        failureSessionId = session.id;
 
         const preview = (session.preview || {}) as {
           canExecute?: boolean;
@@ -3464,7 +3568,8 @@ export const customerIncomeRouter = router({
         const incomeRows = (Array.isArray(session.incomeRows) ? session.incomeRows : []) as unknown as HistoricalPreparedIncomeRow[];
         const customerRows = (Array.isArray(session.customerRows) ? session.customerRows : []) as unknown as HistoricalPreparedCustomerRow[];
         const progress = asHistoricalProgressState(session.progress);
-        const failureReport = (Array.isArray(session.failureReport) ? [...session.failureReport] : []) as HistoricalImportFailure[];
+        failureProgress = progress;
+        failureReport = (Array.isArray(session.failureReport) ? [...session.failureReport] : []) as HistoricalImportFailure[];
 
         await prisma.historicalImportSession.update({
           where: { id: session.id },
@@ -3894,8 +3999,32 @@ export const customerIncomeRouter = router({
           failureReport,
         };
       } catch (error) {
+        if (failureSessionId) {
+          try {
+            const stalledProgress = failureProgress || asHistoricalProgressState({});
+            await prisma.historicalImportSession.update({
+              where: { id: failureSessionId },
+              data: {
+                status: HISTORICAL_IMPORT_STATUS_FAILED,
+                completedAt: new Date(),
+                progress: {
+                  ...stalledProgress,
+                  stage: HISTORICAL_IMPORT_STATUS_FAILED,
+                  message: "Import xatolik bilan to'xtadi.",
+                } as unknown as Prisma.InputJsonValue,
+                failureReport: failureReport as unknown as Prisma.InputJsonValue,
+                errorMessage: error instanceof Error ? error.message : String(error),
+              },
+            });
+          } catch {
+            // Best-effort recovery only; preserve original error below.
+          }
+        }
         if (isMissingHistoricalImportSchemaError(error)) {
           throwHistoricalImportMigrationError();
+        }
+        if (isCourseCategoryConstraintOutdatedError(error)) {
+          throwCourseCategoryMigrationError();
         }
         throw error;
       }
