@@ -902,16 +902,18 @@ export function prepareHistoricalImportPreview(params: {
     }
     return left.rowNumber - right.rowNumber;
   });
+  const incomeValidRows = parsedIncome.rows.filter((row) => row.blockingIssues.length === 0).length;
+  const customerValidRows = parsedCustomers.rows.filter((row) => row.blockingIssues.length === 0).length;
 
   const preview: HistoricalImportPreview = {
-    canExecute: previewFailures.length === 0 && unresolvedManagers.length === 0,
+    canExecute: unresolvedManagers.length === 0 && (incomeValidRows + customerValidRows) > 0,
     counts: {
       incomeTotalRows: params.incomeRows.length,
-      incomeValidRows: parsedIncome.rows.filter((row) => row.blockingIssues.length === 0).length,
+      incomeValidRows,
       incomeSkippedRows: parsedIncome.skippedCount,
       incomeBlockedRows: parsedIncome.rows.filter((row) => row.blockingIssues.length > 0).length,
       customerTotalRows: params.customerRows.length,
-      customerValidRows: parsedCustomers.rows.filter((row) => row.blockingIssues.length === 0).length,
+      customerValidRows,
       customerSkippedRows: parsedCustomers.skippedCount,
       customerBlockedRows: parsedCustomers.rows.filter((row) => row.blockingIssues.length > 0).length,
       unresolvedManagerRows: parsedIncome.rows.filter((row) => row.managerNeedsMapping).length,
