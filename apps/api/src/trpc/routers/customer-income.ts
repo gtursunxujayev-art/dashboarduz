@@ -17,7 +17,7 @@ import { telegramService } from '../../services/integrations/telegram';
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'Agent'] as const;
 const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
-const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'Manager', 'Organizator', 'Organizer']);
+const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'Manager', 'Organizator', 'Organizer', 'Tashkiliy']);
 const APPROVER_ROLES_REFUND = new Set(['Admin', 'Finance']);
 const INCOME_LIFECYCLE_ACTIVE = 'active';
 const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
@@ -257,7 +257,7 @@ function isAgentOnly(roles: string[]): boolean {
 }
 
 function isPrivilegedAdjustmentViewer(roles: string[]): boolean {
-  return roles.some((role) => PRIVILEGED_ROLES.has(role) || role === 'Organizator' || role === 'Organizer');
+  return roles.some((role) => PRIVILEGED_ROLES.has(role) || role === 'Organizator' || role === 'Organizer' || role === 'Tashkiliy');
 }
 
 function canApproveRefundRequest(roles: string[]): boolean {
@@ -274,7 +274,8 @@ function getAdjustmentRoleScope(rolesInput: string[]) {
   const hasFinance = roles.includes('Finance');
   const hasManagerLike = roles.includes('Manager')
     || roles.includes('Organizator')
-    || roles.includes('Organizer');
+    || roles.includes('Organizer')
+    || roles.includes('Tashkiliy');
   const canSeeAll = isPrivilegedAdjustmentViewer(roles);
 
   const typeGuard: typeof ADJUSTMENT_TYPE_REFUND | typeof ADJUSTMENT_TYPE_TARIFF_CHANGE | null = canSeeAll && !isAdmin
@@ -316,6 +317,21 @@ function parseDateInput(input: string): Date {
   }
 
   return date;
+}
+
+function parseGmt5DateBoundary(input: string, endOfDay: boolean): Date {
+  const value = input.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date: ${input}` });
+  }
+
+  const timestamp = `${value}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date: ${input}` });
+  }
+
+  return parsed;
 }
 
 function parseTelegramGroupIds(rawValue: string | undefined): string[] {
@@ -2519,6 +2535,189 @@ export const customerIncomeRouter = router({
       return { success: true };
     }),
 
+  deleteIncomesByPeriod: adminProcedure
+    .input(
+      z.object({
+        dateFrom: z.string().min(1),
+        dateTo: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const rangeStart = parseGmt5DateBoundary(input.dateFrom, false);
+      const rangeEnd = parseGmt5DateBoundary(input.dateTo, true);
+
+      if (rangeEnd < rangeStart) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "Sana oralig'i noto'g'ri: tugash sanasi boshlanish sanasidan oldin bo'lmasligi kerak.",
+        });
+      }
+
+      const matchedIncomes = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          entryDate: {
+            gte: rangeStart,
+            lte: rangeEnd,
+          },
+        },
+        select: {
+          id: true,
+          type: true,
+          paymentAmount: true,
+          relatedDebtIncomeId: true,
+        },
+      });
+
+      if (!matchedIncomes.length) {
+        return {
+          success: true,
+          matchedCount: 0,
+          deletedCount: 0,
+          blockedCount: 0,
+          blocked: [] as Array<{ incomeId: string; reason: 'pending_adjustment' | 'has_linked_repayments' }>,
+        };
+      }
+
+      const incomeIds = matchedIncomes.map((income) => income.id);
+      const pendingAdjustments = await prisma.incomeAdjustmentRequest.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          incomeId: { in: incomeIds },
+          status: ADJUSTMENT_STATUS_PENDING,
+        },
+        select: {
+          incomeId: true,
+        },
+      });
+      const pendingAdjustmentSet = new Set(pendingAdjustments.map((item) => item.incomeId));
+
+      const newSaleIncomeIds = matchedIncomes
+        .filter((income) => income.type === 'new_sale')
+        .map((income) => income.id);
+
+      const linkedRepaymentGrouped = newSaleIncomeIds.length > 0
+        ? await prisma.income.groupBy({
+            by: ['relatedDebtIncomeId'],
+            where: {
+              tenantId: ctx.tenantId,
+              type: 'repayment',
+              relatedDebtIncomeId: { in: newSaleIncomeIds },
+            },
+            _count: { _all: true },
+          })
+        : [];
+
+      const linkedRepaymentSet = new Set(
+        linkedRepaymentGrouped
+          .map((row) => row.relatedDebtIncomeId)
+          .filter((value): value is string => typeof value === 'string' && value.length > 0),
+      );
+
+      const blocked = matchedIncomes
+        .map((income) => {
+          if (pendingAdjustmentSet.has(income.id)) {
+            return { incomeId: income.id, reason: 'pending_adjustment' as const };
+          }
+          if (income.type === 'new_sale' && linkedRepaymentSet.has(income.id)) {
+            return { incomeId: income.id, reason: 'has_linked_repayments' as const };
+          }
+          return null;
+        })
+        .filter((item): item is { incomeId: string; reason: 'pending_adjustment' | 'has_linked_repayments' } => Boolean(item));
+
+      const blockedSet = new Set(blocked.map((item) => item.incomeId));
+      const deletableIncomes = matchedIncomes.filter((income) => !blockedSet.has(income.id));
+
+      if (!deletableIncomes.length) {
+        return {
+          success: true,
+          matchedCount: matchedIncomes.length,
+          deletedCount: 0,
+          blockedCount: blocked.length,
+          blocked: blocked.slice(0, 50),
+        };
+      }
+
+      const debtRestoreMap = new Map<string, number>();
+      for (const income of deletableIncomes) {
+        if (income.type !== 'repayment' || !income.relatedDebtIncomeId) {
+          continue;
+        }
+        const current = debtRestoreMap.get(income.relatedDebtIncomeId) || 0;
+        debtRestoreMap.set(income.relatedDebtIncomeId, current + Number(income.paymentAmount || 0));
+      }
+
+      const deletedCount = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        if (debtRestoreMap.size > 0) {
+          const sourceIncomeIds = Array.from(debtRestoreMap.keys());
+          const sourceIncomes = await tx.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              id: { in: sourceIncomeIds },
+            },
+            select: {
+              id: true,
+              debtAmount: true,
+              remainingDebtAmount: true,
+            },
+          });
+
+          for (const sourceIncome of sourceIncomes) {
+            const restoreAmount = debtRestoreMap.get(sourceIncome.id) || 0;
+            if (restoreAmount <= 0) {
+              continue;
+            }
+
+            const restoredDebtRaw = (sourceIncome.remainingDebtAmount || 0) + restoreAmount;
+            const restoredDebt = sourceIncome.debtAmount !== null
+              ? Math.min(restoredDebtRaw, sourceIncome.debtAmount)
+              : restoredDebtRaw;
+
+            await tx.income.update({
+              where: { id: sourceIncome.id },
+              data: {
+                remainingDebtAmount: Math.max(restoredDebt, 0),
+              },
+            });
+          }
+        }
+
+        const deletionResult = await tx.income.deleteMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: deletableIncomes.map((income) => income.id) },
+          },
+        });
+
+        return deletionResult.count;
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'income_bulk_delete_by_period',
+          resource: 'income',
+          metadata: {
+            dateFrom: input.dateFrom,
+            dateTo: input.dateTo,
+            matchedCount: matchedIncomes.length,
+            deletedCount,
+            blockedCount: blocked.length,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        matchedCount: matchedIncomes.length,
+        deletedCount,
+        blockedCount: blocked.length,
+        blocked: blocked.slice(0, 50),
+      };
+    }),
+
   bulkImportRows: protectedProcedure
     .input(bulkIncomeImportSchema)
     .mutation(async ({ ctx, input }) => {
@@ -3197,7 +3396,7 @@ export const customerIncomeRouter = router({
       if (request.type === ADJUSTMENT_TYPE_TARIFF_CHANGE && !canApproveTariffChangeRequest(ctx.user.roles)) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'Admin, Manager, or Organizator role is required to approve tariff changes.',
+          message: "Admin, Manager, Tashkiliy, or Organizator role is required to approve tariff changes.",
         });
       }
 
@@ -3384,7 +3583,7 @@ export const customerIncomeRouter = router({
       if (request.type === ADJUSTMENT_TYPE_TARIFF_CHANGE && !canApproveTariffChangeRequest(ctx.user.roles)) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'Admin, Manager, or Organizator role is required to reject tariff changes.',
+          message: "Admin, Manager, Tashkiliy, or Organizator role is required to reject tariff changes.",
         });
       }
 
