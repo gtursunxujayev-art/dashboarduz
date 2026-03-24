@@ -87,6 +87,7 @@ export default function CustomersPage() {
       retry: false,
       refetchOnWindowFocus: false,
       staleTime: 30_000,
+      keepPreviousData: true,
     },
   );
 
@@ -171,7 +172,11 @@ export default function CustomersPage() {
       setSubTariffId('');
       return;
     }
-    if (tariffId && !filterTariffOptions.some((item: any) => item.id === tariffId)) {
+    if (
+      tariffId
+      && filterTariffOptions.length > 0
+      && !filterTariffOptions.some((item: any) => item.id === tariffId)
+    ) {
       setTariffId('');
       setSubTariffId('');
     }
@@ -182,7 +187,11 @@ export default function CustomersPage() {
       setSubTariffId('');
       return;
     }
-    if (subTariffId && !filterSubTariffOptions.some((item: any) => item.id === subTariffId)) {
+    if (
+      subTariffId
+      && filterSubTariffOptions.length > 0
+      && !filterSubTariffOptions.some((item: any) => item.id === subTariffId)
+    ) {
       setSubTariffId('');
     }
   }, [tariffId, subTariffId, filterSubTariffOptions]);
