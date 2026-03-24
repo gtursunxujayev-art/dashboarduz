@@ -17,6 +17,15 @@ const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 const sellerRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 type SellerRange = z.infer<typeof sellerRangeSchema>;
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
+const SELLERS_LIST_CACHE_TTL_MS = 2 * 60 * 1000;
+const SELLERS_ACTIVITY_CACHE_TTL_MS = 10 * 60 * 1000;
+
+type SellersListCacheEntry = {
+  expiresAt: number;
+  data: any[];
+};
+
+const sellersListCache = new Map<string, SellersListCacheEntry>();
 
 function asString(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -422,6 +431,18 @@ function resolveCallExtension(call: { from: string; to: string }): string | null
   return null;
 }
 
+function buildSellersListCacheKey(
+  tenantId: string,
+  scopedResponsibleUserId: string | null,
+  pipelineIds: string[],
+): string {
+  return [
+    tenantId,
+    scopedResponsibleUserId || 'all',
+    pipelineIds.slice().sort().join(','),
+  ].join('|');
+}
+
 export const sellersRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const startedAtMs = Date.now();
@@ -476,24 +497,66 @@ export const sellersRouter = router({
     timings.managerPreparationMs = Date.now() - managerPreparationStartedMs;
 
     const managerIdList = Array.from(managerIds);
-    const activeStatusFilters = buildStatusFilters(
+    const listCacheKey = buildSellersListCacheKey(
+      ctx.tenantId,
+      scope.isScoped ? (scope.responsibleUserId || '__unmapped__') : null,
       selectedPipelineIds,
-      pipelines,
-      pipelines
-        .flatMap((pipeline) => (Array.isArray(pipeline._embedded?.statuses) ? pipeline._embedded.statuses : []))
-        .map((status) => asString(status.id))
-        .filter((statusId): statusId is string => Boolean(statusId) && statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID),
     );
+    const cached = sellersListCache.get(listCacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      timings.totalMs = Date.now() - startedAtMs;
+      log(LogLevel.INFO, 'Sellers list timings', {
+        tenantId: ctx.tenantId,
+        userId: ctx.user.userId,
+        managerCount: managers.length,
+        selectedPipelineIds,
+        cacheHit: true,
+        timings,
+      });
+      return cached.data;
+    }
 
     const leadsFetchStartedMs = Date.now();
-    const activeLeads = await fetchLeadsByStatusFilters(
-      amoContext.accessToken,
-      amoContext.baseUrl,
-      selectedPipelineIds,
-      activeStatusFilters,
-      managerIdList,
-    );
+    const activeLeadsPromise = (async () => {
+      const allPipelineLeads = await amocrmService.fetchAllLeads(
+        amoContext.accessToken,
+        {
+          pipelineIds: selectedPipelineIds,
+          responsibleUserIds: managerIdList,
+          limit: 250,
+          maxPages: 300,
+        },
+        amoContext.baseUrl,
+      );
+      return allPipelineLeads.filter((lead) => {
+        const statusId = asString(lead.status_id);
+        return statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID;
+      });
+    })();
+
+    const activityFetchStartedMs = Date.now();
+    const roundedNow = new Date(Math.floor(Date.now() / (5 * 60 * 1000)) * (5 * 60 * 1000));
+    const activityPromise = getAmoCRMActivityMetrics({
+      tenantId: ctx.tenantId,
+      accessToken: amoContext.accessToken,
+      baseUrl: amoContext.baseUrl,
+      managerIds: managerIdList,
+      rangeStart: new Date(0),
+      rangeEnd: roundedNow,
+      cacheTtlMs: SELLERS_ACTIVITY_CACHE_TTL_MS,
+    });
+
+    const extensionMappingStartedMs = Date.now();
+    const extensionsByManagerPromise = getManagerExtensionsMap(ctx.tenantId, managerIdList);
+
+    const [activeLeads, activityByManager, extensionsByManager] = await Promise.all([
+      activeLeadsPromise,
+      activityPromise,
+      extensionsByManagerPromise,
+    ]);
     timings.amocrmLeadsMs = Date.now() - leadsFetchStartedMs;
+    timings.activityFetchMs = Date.now() - activityFetchStartedMs;
+    timings.extensionMappingMs = Date.now() - extensionMappingStartedMs;
 
     const leadsGroupingStartedMs = Date.now();
     const activeLeadsByManager = new Map<string, AmoCRMLead[]>();
@@ -508,28 +571,12 @@ export const sellersRouter = router({
     }
     timings.leadsGroupingMs = Date.now() - leadsGroupingStartedMs;
 
-    const activityFetchStartedMs = Date.now();
-    const activityRangeStart = new Date(0);
-    const activityRangeEnd = new Date();
-    const activityByManager = await getAmoCRMActivityMetrics({
-      tenantId: ctx.tenantId,
-      accessToken: amoContext.accessToken,
-      baseUrl: amoContext.baseUrl,
-      managerIds: managerIdList,
-      rangeStart: activityRangeStart,
-      rangeEnd: activityRangeEnd,
-    });
-    timings.activityFetchMs = Date.now() - activityFetchStartedMs;
-
-    const extensionMappingStartedMs = Date.now();
-    const extensionsByManager = await getManagerExtensionsMap(ctx.tenantId, managerIdList);
     const managerByExtension = new Map<string, string>();
     for (const [managerId, extensions] of extensionsByManager.entries()) {
       for (const extension of extensions) {
         managerByExtension.set(extension, managerId);
       }
     }
-    timings.extensionMappingMs = Date.now() - extensionMappingStartedMs;
 
     const callsFetchStartedMs = Date.now();
     const extensionValues = Array.from(new Set(Array.from(extensionsByManager.values()).flat()));
@@ -616,7 +663,13 @@ export const sellersRouter = router({
       activeLeadsCount: activeLeads.length,
       callsCount: calls.length,
       activityTotals: summarizeAmoCRMActivityMetrics(activityByManager),
+      cacheHit: false,
       timings,
+    });
+
+    sellersListCache.set(listCacheKey, {
+      expiresAt: Date.now() + SELLERS_LIST_CACHE_TTL_MS,
+      data: result,
     });
 
     return result;
