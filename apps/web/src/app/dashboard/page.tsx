@@ -647,6 +647,8 @@ export default function DashboardPage() {
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Follow-up</th>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Yozuvlar</th>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bosqich o'zgarishi</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Muddati o'tgan F/U</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bugungi F/U</th>
                           {!isTashkiliyOnly && (
                             <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Shartnoma summasi</th>
                           )}
@@ -671,6 +673,12 @@ export default function DashboardPage() {
                             </td>
                             <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                               {renderMetricValue(seller.stageChangeCount)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {renderMetricValue(seller.overdueFollowUpCount)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                              {renderMetricValue(seller.todayFollowUpCount)}
                             </td>
                             {!isTashkiliyOnly && (
                               <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
