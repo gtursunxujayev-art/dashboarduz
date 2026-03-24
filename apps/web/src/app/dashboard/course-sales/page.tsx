@@ -329,14 +329,18 @@ export default function CourseSalesPage() {
             {!isTashkiliyOnly && (
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                 <p className="text-xs uppercase tracking-wide text-gray-500">Kelishuv summasi</p>
-                <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summary?.rangeAgreementAmount)}</p>
+                <p className="mt-1 text-2xl font-semibold text-gray-900">
+                  {formatAmount(summary?.currentAgreementAmount ?? summary?.rangeAgreementAmount)}
+                </p>
               </div>
             )}
 
             {!isTashkiliyOnly && (
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                 <p className="text-xs uppercase tracking-wide text-gray-500">Tushum</p>
-                <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summary?.rangeIncomeAmount)}</p>
+                <p className="mt-1 text-2xl font-semibold text-gray-900">
+                  {formatAmount(summary?.currentIncomeAmount ?? summary?.rangeIncomeAmount)}
+                </p>
               </div>
             )}
 
@@ -369,6 +373,32 @@ export default function CourseSalesPage() {
               ))}
             </div>
           </div>
+
+          {tariffId && (summaryQuery.data?.subTariffDistribution?.length || 0) > 0 && (
+            <div className="rounded-lg bg-white p-4 shadow">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Subtariflar taqsimoti</h2>
+                <p className="text-xs text-gray-500">Tanlangan tarif bo&apos;yicha joriy mijozlar soni</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-8">
+                {(summaryQuery.data?.subTariffDistribution || []).map((item: any) => (
+                  <button
+                    key={item.subTariffId}
+                    type="button"
+                    onClick={() => setSubTariffId((current) => (current === item.subTariffId ? '' : item.subTariffId))}
+                    className={`rounded-md border px-3 py-2 text-left transition ${
+                      subTariffId === item.subTariffId || item.isSelected
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 bg-white hover:bg-gray-50'
+                    }`}
+                  >
+                    <p className="truncate text-xs text-gray-500">{item.subTariffName}</p>
+                    <p className="mt-1 text-base font-semibold text-gray-900">{item.customerCount}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="rounded-lg bg-white p-5 shadow">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -462,4 +492,3 @@ export default function CourseSalesPage() {
     </div>
   );
 }
-
