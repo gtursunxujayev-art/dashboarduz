@@ -206,6 +206,7 @@ export async function getAmoCRMActivityMetrics(params: {
   managerIds: string[];
   rangeStart: Date;
   rangeEnd: Date;
+  cacheTtlMs?: number;
 }): Promise<Map<string, AmoCRMActivityMetrics>> {
   const managerIds = params.managerIds
     .map((managerId) => managerId.trim())
@@ -348,7 +349,7 @@ export async function getAmoCRMActivityMetrics(params: {
   }
 
   metricsCache.set(cacheKey, {
-    expiresAt: Date.now() + CACHE_TTL_MS,
+    expiresAt: Date.now() + Math.max(5_000, params.cacheTtlMs || CACHE_TTL_MS),
     value: cloneMetricsMap(metricsByManager),
   });
 
