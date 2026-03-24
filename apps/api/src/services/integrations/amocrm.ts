@@ -510,6 +510,7 @@ export class AmoCRMService {
     page?: number;
     limit?: number;
     responsibleUserIds?: string[];
+    completed?: boolean;
     completedOnly?: boolean;
     dateFrom?: Date;
     dateTo?: Date;
@@ -523,8 +524,11 @@ export class AmoCRMService {
         queryParams.append('filter[responsible_user_id][]', responsibleUserId);
       });
     }
-    if (params?.completedOnly) {
-      queryParams.set('filter[is_completed]', '1');
+    const completedFilter = typeof params?.completed === 'boolean'
+      ? params.completed
+      : (typeof params?.completedOnly === 'boolean' ? params.completedOnly : null);
+    if (completedFilter !== null) {
+      queryParams.set('filter[is_completed]', completedFilter ? '1' : '0');
     }
     if (params?.dateFrom) {
       queryParams.set('filter[complete_till][from]', Math.floor(params.dateFrom.getTime() / 1000).toString());
@@ -556,6 +560,7 @@ export class AmoCRMService {
 
   async fetchAllTasks(accessToken: string, params?: {
     responsibleUserIds?: string[] | null;
+    completed?: boolean;
     completedOnly?: boolean;
     dateFrom?: Date;
     dateTo?: Date;
@@ -575,6 +580,7 @@ export class AmoCRMService {
           page,
           limit: pageSize,
           responsibleUserIds: params?.responsibleUserIds || undefined,
+          completed: params?.completed,
           completedOnly: params?.completedOnly,
           dateFrom: params?.dateFrom,
           dateTo: params?.dateTo,
