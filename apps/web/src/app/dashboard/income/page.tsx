@@ -13,6 +13,8 @@ type CustomerOption = {
   customerNumber: string;
   name: string;
   telegramUsername?: string | null;
+  responsibleManagerUserId?: string | null;
+  responsibleManagerLabel?: string | null;
 };
 
 type EditIncomeForm = {
@@ -207,6 +209,8 @@ export default function IncomePage() {
         customerNumber: customer.customerNumber,
         name: customer.name,
         telegramUsername: customer.telegramUsername,
+        responsibleManagerUserId: customer.responsibleManagerUserId || null,
+        responsibleManagerLabel: customer.responsibleManagerLabel || null,
       });
     }
 
@@ -710,6 +714,7 @@ export default function IncomePage() {
                           <span className="text-xs text-gray-600 dark:text-slate-300">
                             {customer.name}
                             {customer.telegramUsername ? ` • ${customer.telegramUsername}` : ''}
+                            {customer.responsibleManagerLabel ? ` • Mas'ul: ${customer.responsibleManagerLabel}` : ''}
                           </span>
                         </button>
                       ))}
@@ -752,6 +757,12 @@ export default function IncomePage() {
                 {fieldErrors.telegramUsername && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.telegramUsername}</p>}
               </div>
             </div>
+
+            {selectedCustomer && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                Mas&apos;ul agent: <span className="font-medium">{selectedCustomer.responsibleManagerLabel || '-'}</span>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
