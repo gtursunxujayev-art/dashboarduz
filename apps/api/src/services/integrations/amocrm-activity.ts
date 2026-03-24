@@ -151,6 +151,47 @@ function getTashkentDayBounds(baseDate: Date): { start: Date; end: Date } {
   return { start, end };
 }
 
+function getTashkentWeekBounds(baseDate: Date): { start: Date; end: Date } {
+  const offsetMs = 5 * 60 * 60 * 1000;
+  const shifted = new Date(baseDate.getTime() + offsetMs);
+  const year = shifted.getUTCFullYear();
+  const month = shifted.getUTCMonth();
+  const day = shifted.getUTCDate();
+  const weekDay = shifted.getUTCDay();
+  const daysSinceMonday = (weekDay + 6) % 7;
+  const start = new Date(Date.UTC(year, month, day - daysSinceMonday) - offsetMs);
+  const end = new Date(start.getTime() + (7 * 24 * 60 * 60 * 1000) - 1);
+  return { start, end };
+}
+
+function getTashkentMonthBounds(baseDate: Date): { start: Date; end: Date } {
+  const offsetMs = 5 * 60 * 60 * 1000;
+  const shifted = new Date(baseDate.getTime() + offsetMs);
+  const year = shifted.getUTCFullYear();
+  const month = shifted.getUTCMonth();
+  const start = new Date(Date.UTC(year, month, 1) - offsetMs);
+  const end = new Date(Date.UTC(year, month + 1, 1) - offsetMs - 1);
+  return { start, end };
+}
+
+function getPeriodFollowUpBounds(
+  rangeKind: 'today' | 'week' | 'month' | 'custom' | undefined,
+  rangeStart: Date,
+  rangeEnd: Date,
+): { start: Date; end: Date } {
+  const now = new Date();
+  if (rangeKind === 'week') {
+    return getTashkentWeekBounds(now);
+  }
+  if (rangeKind === 'month') {
+    return getTashkentMonthBounds(now);
+  }
+  if (rangeKind === 'custom') {
+    return { start: rangeStart, end: rangeEnd };
+  }
+  return getTashkentDayBounds(now);
+}
+
 function eventActorUserId(event: AmoCRMEvent): string {
   const objectEvent = event as Record<string, unknown>;
   return toStringId(objectEvent.created_by || objectEvent.user_id || objectEvent.responsible_user_id);
@@ -257,6 +298,7 @@ export async function getAmoCRMActivityMetrics(params: {
   managerIds: string[];
   rangeStart: Date;
   rangeEnd: Date;
+  rangeKind?: 'today' | 'week' | 'month' | 'custom';
   cacheTtlMs?: number;
 }): Promise<Map<string, AmoCRMActivityMetrics>> {
   const managerIds = params.managerIds
@@ -337,6 +379,11 @@ export async function getAmoCRMActivityMetrics(params: {
   }
 
   const { start: todayStart, end: todayEnd } = getTashkentDayBounds(new Date());
+  const { start: periodStart, end: periodEnd } = getPeriodFollowUpBounds(
+    params.rangeKind,
+    params.rangeStart,
+    params.rangeEnd,
+  );
   let pendingTasks: AmoCRMTask[] = [];
   try {
     pendingTasks = await amocrmService.fetchAllTasks(
@@ -398,7 +445,7 @@ export async function getAmoCRMActivityMetrics(params: {
       metrics.overdueFollowUpCount += 1;
       continue;
     }
-    if (dueDate >= todayStart && dueDate <= todayEnd) {
+    if (dueDate >= periodStart && dueDate <= periodEnd) {
       metrics.todayFollowUpCount += 1;
     }
   }
