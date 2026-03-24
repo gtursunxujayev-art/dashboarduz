@@ -284,6 +284,7 @@ export default function CustomersPage() {
       'Mijoz raqami',
       'Mijoz ismi',
       'Telegram',
+      "Mas'ul agent",
       'Profil kurs',
       'Profil tarif',
       'Profil subtarif',
@@ -297,6 +298,7 @@ export default function CustomersPage() {
       customer.customerNumber || '',
       customer.name || '',
       customer.telegramUsername || '',
+      customer.responsibleManagerLabel || '',
       customer.profileCourseName || '',
       customer.profileTariffName || '',
       customer.profileSubTariffName || '',
@@ -676,6 +678,7 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Mijoz raqami</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Mijoz ismi</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Telegram</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Mas&apos;ul agent</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Kurslar</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Qarz</th>
                     {!isTashkiliyOnly && (
@@ -700,6 +703,7 @@ export default function CustomersPage() {
                       <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900 dark:text-slate-100">{customer.customerNumber}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{customer.name}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{customer.telegramUsername || '-'}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{customer.responsibleManagerLabel || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
                         {Array.isArray(customer.courses) && customer.courses.length ? customer.courses.join(', ') : '-'}
                       </td>
