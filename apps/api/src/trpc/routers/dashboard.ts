@@ -901,8 +901,20 @@ export const dashboardRouter = router({
             incomeAmount: 0,
           };
           const activityStats = responsibleUserId
-            ? activityByManager.get(responsibleUserId) || { followUpCount: 0, noteCount: 0, stageChangeCount: 0 }
-            : { followUpCount: 0, noteCount: 0, stageChangeCount: 0 };
+            ? activityByManager.get(responsibleUserId) || {
+                followUpCount: 0,
+                noteCount: 0,
+                stageChangeCount: 0,
+                overdueFollowUpCount: 0,
+                todayFollowUpCount: 0,
+              }
+            : {
+                followUpCount: 0,
+                noteCount: 0,
+                stageChangeCount: 0,
+                overdueFollowUpCount: 0,
+                todayFollowUpCount: 0,
+              };
           const talkSeconds = talkSecondsByAgent.get(agent.id);
           const leadMetricsAvailable = leadsDataAvailable && Boolean(responsibleUserId);
           const conversionPercentByAgent = leadMetricsAvailable && (leadStats?.newLeads ?? 0) > 0
@@ -926,6 +938,8 @@ export const dashboardRouter = router({
             followUpCount: activityStats.followUpCount,
             noteCount: activityStats.noteCount,
             stageChangeCount: activityStats.stageChangeCount,
+            overdueFollowUpCount: activityStats.overdueFollowUpCount,
+            todayFollowUpCount: activityStats.todayFollowUpCount,
           };
         })
         .sort((a, b) => {
@@ -973,6 +987,8 @@ export const dashboardRouter = router({
           followUpCount: activityTotals.followUpCount,
           noteCount: activityTotals.noteCount,
           stageChangeCount: activityTotals.stageChangeCount,
+          overdueFollowUpCount: activityTotals.overdueFollowUpCount,
+          todayFollowUpCount: activityTotals.todayFollowUpCount,
         },
         pieCharts: {
           nonQualifiedByReason: {
