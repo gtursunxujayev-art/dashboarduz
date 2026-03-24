@@ -26,6 +26,8 @@ interface Seller {
     followUpCount: number;
     noteCount: number;
     stageChangeCount: number;
+    overdueFollowUpCount: number;
+    todayFollowUpCount: number;
   };
 }
 
