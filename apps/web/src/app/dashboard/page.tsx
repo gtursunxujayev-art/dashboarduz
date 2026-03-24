@@ -154,6 +154,59 @@ export default function DashboardPage() {
     retry: 1,
     refetchInterval: 5 * 60 * 1000,
   });
+  const [rangeLoadProgress, setRangeLoadProgress] = useState(0);
+  const [rangeLoadElapsedMs, setRangeLoadElapsedMs] = useState(0);
+  const [rangeLoadVisible, setRangeLoadVisible] = useState(false);
+
+  const activeRangeQueryFetching = isFinanceOnly ? financeSummaryQuery.isFetching : summaryQuery.isFetching;
+  const expectedLoadMs = useMemo(() => {
+    if (range === 'today') return 2200;
+    if (range === 'week') return 3400;
+    if (range === 'month') return 7000;
+    const from = new Date(`${dateFrom}T00:00:00`);
+    const to = new Date(`${dateTo}T23:59:59`);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      return 5000;
+    }
+    const dayDiff = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
+    return Math.min(12000, Math.max(3200, dayDiff * 190));
+  }, [range, dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (activeRangeQueryFetching) {
+      setRangeLoadVisible(true);
+      setRangeLoadProgress((previous) => (previous > 0 ? previous : 6));
+      const startedAt = Date.now();
+
+      const interval = window.setInterval(() => {
+        const elapsed = Date.now() - startedAt;
+        setRangeLoadElapsedMs(elapsed);
+        const linearPercent = Math.min(92, Math.round((elapsed / expectedLoadMs) * 100));
+        setRangeLoadProgress((previous) => {
+          if (linearPercent > previous) {
+            return linearPercent;
+          }
+          return Math.min(95, previous + 1);
+        });
+      }, 140);
+
+      return () => window.clearInterval(interval);
+    }
+
+    setRangeLoadProgress((previous) => (previous > 0 ? 100 : 0));
+    const doneTimer = window.setTimeout(() => {
+      setRangeLoadVisible(false);
+      setRangeLoadProgress(0);
+      setRangeLoadElapsedMs(0);
+    }, 320);
+
+    return () => window.clearTimeout(doneTimer);
+  }, [activeRangeQueryFetching, expectedLoadMs]);
+
+  const estimatedRemainingSeconds = Math.max(
+    1,
+    Math.ceil(Math.max(0, expectedLoadMs - rangeLoadElapsedMs) / 1000),
+  );
 
   const stats = summaryQuery.data?.summary;
   const sellerPerformance = useMemo(
@@ -409,6 +462,29 @@ export default function DashboardPage() {
       <div className="rounded-lg bg-white shadow">
         <div className="px-3 py-2 sm:px-5 sm:py-4">
           <div className="space-y-2">
+            {rangeLoadVisible && (
+              <div className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-2">
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-[11px] font-medium text-blue-700 sm:text-xs">
+                    {activeRangeQueryFetching
+                      ? `Yuklanmoqda: ${rangeLoadProgress}%`
+                      : 'Yangilandi'}
+                  </p>
+                  {activeRangeQueryFetching && (
+                    <p className="text-[11px] text-blue-600 sm:text-xs">
+                      Taxminan {estimatedRemainingSeconds} soniya
+                    </p>
+                  )}
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
+                  <div
+                    className="h-full rounded-full bg-blue-600 transition-[width] duration-200 ease-out"
+                    style={{ width: `${Math.max(0, Math.min(100, rangeLoadProgress))}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <div className="inline-flex min-w-max rounded-md shadow-sm">
                 {RANGE_OPTIONS.map((option, index) => (
