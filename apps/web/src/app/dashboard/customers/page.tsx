@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import * as XLSX from 'xlsx';
 
 type DebtFilter = 'all' | 'with_debt' | 'without_debt';
 
@@ -27,14 +28,6 @@ function sanitizeCustomerNumber(value: string): string {
 
 function sanitizeTelegram(value: string): string {
   return value.replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
-}
-
-function escapeCsvCell(value: unknown): string {
-  const text = String(value ?? '');
-  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
 }
 
 export default function CustomersPage() {
@@ -308,16 +301,16 @@ export default function CustomersPage() {
       formatDate(customer.lastActivityAt),
     ]));
 
-    const csvContent = [headers, ...rows]
-      .map((line) => line.map((cell: unknown) => escapeCsvCell(cell)).join(','))
-      .join('\n');
-
-    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Mijozlar');
+    const workbookBuffer = XLSX.write(workbook, { bookType: 'xls', type: 'array' });
+    const blob = new Blob([workbookBuffer], { type: 'application/vnd.ms-excel' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
     anchor.href = url;
-    anchor.download = `mijozlar-${today}.csv`;
+    anchor.download = `mijozlar-${today}.xls`;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
