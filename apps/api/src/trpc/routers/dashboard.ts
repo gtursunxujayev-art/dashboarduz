@@ -17,6 +17,18 @@ import { LogLevel, log } from '../../services/observability';
 import { adminProcedure, protectedProcedure, router } from '../trpc';
 
 const dashboardRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
+const dashboardWidgetIdSchema = z.string().min(1).max(120);
+const dashboardCustomSalesWidgetSchema = z.object({
+  id: z.string().min(1).max(120),
+  title: z.string().min(1).max(120),
+  courseId: z.string().uuid(),
+  tariffId: z.string().uuid().nullable().optional(),
+  subTariffId: z.string().uuid().nullable().optional(),
+});
+const dashboardLayoutInputSchema = z.object({
+  visibleWidgetIds: z.array(dashboardWidgetIdSchema).max(100),
+  customSalesWidgets: z.array(dashboardCustomSalesWidgetSchema).max(30),
+});
 
 const PIE_COLORS = [
   '#22C55E',
@@ -39,6 +51,7 @@ const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 const UTEL_MIN_EXTENSION = 100;
 const UTEL_MAX_EXTENSION = 150;
 const SALARY_CATEGORIES = ['online', 'offline', 'intensive'] as const;
+const SALARY_RULE_MODES = ['simple', 'tiered'] as const;
 const PLAN_BONUS_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 const PLAN_BONUS_PERIOD_MODES = ['monthly', 'all_time'] as const;
 const REPORT_MONTH_LABELS_UZ = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'] as const;
@@ -47,8 +60,20 @@ const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
 const INCOME_LIFECYCLE_REFUNDED = 'refunded';
 
 type SalaryCategory = (typeof SALARY_CATEGORIES)[number];
+type SalaryRuleMode = (typeof SALARY_RULE_MODES)[number];
 type SalaryBonusMode = 'on_income' | 'on_debt_closed';
 type SalaryBreakdown = Record<SalaryCategory, number>;
+type SalaryRuleTier = {
+  minSales: number;
+  maxSales: number | null;
+  percent: number;
+};
+type SalaryCategoryBonusRule = {
+  mode: SalaryRuleMode;
+  simplePercent: number;
+  tiers: SalaryRuleTier[];
+};
+type SalaryBonusRules = Record<SalaryCategory, SalaryCategoryBonusRule>;
 type PlanBonusCategory = (typeof PLAN_BONUS_CATEGORIES)[number];
 type PlanBonusPeriodMode = (typeof PLAN_BONUS_PERIOD_MODES)[number];
 type SalaryPlanBonus = {
@@ -60,6 +85,7 @@ type SalaryPlanBonus = {
   courseId: string | null;
   tariffId: string | null;
   subTariffId: string | null;
+  subTariffName: string | null;
   targetClosedSales: number;
   bonusAmount: number;
   createdAt: string;
@@ -69,6 +95,7 @@ type SalaryPlanBonus = {
 type SalarySettingsSnapshot = {
   bonusMode: SalaryBonusMode;
   bonusPercentages: SalaryBreakdown;
+  bonusRules: SalaryBonusRules;
   fixedSalaries: Map<string, number>;
   planBonuses: SalaryPlanBonus[];
 };
@@ -84,6 +111,46 @@ function normalizeTextToken(value: unknown): string {
 
 function normalizeDigits(value: unknown): string {
   return String(value || '').replace(/[^\d]/g, '');
+}
+
+type DashboardCustomSalesWidget = {
+  id: string;
+  title: string;
+  courseId: string;
+  tariffId: string | null;
+  subTariffId: string | null;
+};
+
+type DashboardUserLayout = {
+  visibleWidgetIds: string[];
+  customSalesWidgets: DashboardCustomSalesWidget[];
+};
+
+function normalizeDashboardUserLayout(value: unknown): DashboardUserLayout {
+  const row = asObject(value);
+  const visibleWidgetIds = asStringArray(row?.visibleWidgetIds);
+  const customSalesWidgets = Array.isArray(row?.customSalesWidgets)
+    ? row.customSalesWidgets
+        .map((item) => {
+          const parsed = dashboardCustomSalesWidgetSchema.safeParse(item);
+          if (!parsed.success) {
+            return null;
+          }
+          return {
+            id: parsed.data.id,
+            title: parsed.data.title.trim(),
+            courseId: parsed.data.courseId,
+            tariffId: parsed.data.tariffId ?? null,
+            subTariffId: parsed.data.subTariffId ?? null,
+          };
+        })
+        .filter((item): item is DashboardCustomSalesWidget => Boolean(item))
+    : [];
+
+  return {
+    visibleWidgetIds,
+    customSalesWidgets,
+  };
 }
 
 function isAllowedUtelManagerExtension(value: unknown): boolean {
@@ -458,9 +525,113 @@ function createZeroBreakdown(): SalaryBreakdown {
   };
 }
 
+function createSimpleBonusRule(percent: unknown): SalaryCategoryBonusRule {
+  return {
+    mode: 'simple',
+    simplePercent: normalizePercentage(percent),
+    tiers: [],
+  };
+}
+
+function normalizeSalaryTier(raw: unknown): SalaryRuleTier | null {
+  const row = asObject(raw);
+  if (!row) {
+    return null;
+  }
+  const minSales = Math.floor(toFiniteNumber(row.minSales, 0));
+  const maxRaw = row.maxSales;
+  const maxSales = maxRaw === null || maxRaw === undefined || maxRaw === ''
+    ? null
+    : Math.floor(toFiniteNumber(maxRaw, 0));
+  const percent = normalizePercentage(row.percent);
+  if (minSales <= 0 || percent <= 0) {
+    return null;
+  }
+  if (maxSales !== null && maxSales < minSales) {
+    return null;
+  }
+  return { minSales, maxSales, percent };
+}
+
+function isValidTierSequence(tiers: SalaryRuleTier[]): boolean {
+  if (!tiers.length) {
+    return false;
+  }
+  for (let index = 0; index < tiers.length; index += 1) {
+    const current = tiers[index];
+    if (!current) {
+      return false;
+    }
+    if (current.maxSales === null && index !== tiers.length - 1) {
+      return false;
+    }
+    if (index > 0) {
+      const prev = tiers[index - 1];
+      if (!prev) {
+        return false;
+      }
+      const prevMax = prev.maxSales ?? Number.MAX_SAFE_INTEGER;
+      if (current.minSales <= prevMax) {
+        return false;
+      }
+      if (prev.maxSales === null) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function normalizeCategoryBonusRule(raw: unknown, fallbackPercent: unknown): SalaryCategoryBonusRule {
+  const row = asObject(raw);
+  if (!row) {
+    return createSimpleBonusRule(fallbackPercent);
+  }
+  const mode: SalaryRuleMode = SALARY_RULE_MODES.includes(row.mode as SalaryRuleMode)
+    ? (row.mode as SalaryRuleMode)
+    : 'simple';
+  const simplePercent = normalizePercentage(row.simplePercent ?? fallbackPercent);
+  const tiers = (Array.isArray(row.tiers) ? row.tiers : [])
+    .map((item) => normalizeSalaryTier(item))
+    .filter((item): item is SalaryRuleTier => Boolean(item))
+    .sort((a, b) => a.minSales - b.minSales);
+
+  if (mode === 'tiered' && isValidTierSequence(tiers)) {
+    return {
+      mode: 'tiered',
+      simplePercent,
+      tiers,
+    };
+  }
+
+  return createSimpleBonusRule(simplePercent);
+}
+
+function resolveBonusPercent(rule: SalaryCategoryBonusRule, closedSalesCount: number): number {
+  if (rule.mode === 'simple') {
+    return normalizePercentage(rule.simplePercent);
+  }
+  if (closedSalesCount <= 0 || !rule.tiers.length) {
+    return 0;
+  }
+  let matchedPercent = 0;
+  for (const tier of rule.tiers) {
+    const withinMin = closedSalesCount >= tier.minSales;
+    const withinMax = tier.maxSales === null || closedSalesCount <= tier.maxSales;
+    if (withinMin && withinMax) {
+      matchedPercent = tier.percent;
+    }
+  }
+  return normalizePercentage(matchedPercent);
+}
+
 function toPositiveInteger(value: unknown): number {
   const parsed = Math.floor(toFiniteNumber(value, 0));
   return parsed > 0 ? parsed : 0;
+}
+
+function normalizeSubTariffName(value: unknown): string {
+  return String(value || '').trim().toLowerCase();
 }
 
 function normalizePlanBonus(raw: unknown): SalaryPlanBonus | null {
@@ -501,6 +672,7 @@ function normalizePlanBonus(raw: unknown): SalaryPlanBonus | null {
     courseId: typeof row.courseId === 'string' && row.courseId.trim() ? row.courseId.trim() : null,
     tariffId: typeof row.tariffId === 'string' && row.tariffId.trim() ? row.tariffId.trim() : null,
     subTariffId: typeof row.subTariffId === 'string' && row.subTariffId.trim() ? row.subTariffId.trim() : null,
+    subTariffName: typeof row.subTariffName === 'string' && row.subTariffName.trim() ? row.subTariffName.trim() : null,
     targetClosedSales,
     bonusAmount,
     createdAt,
@@ -512,6 +684,7 @@ function extractSalarySettings(settings: unknown): SalarySettingsSnapshot {
   const settingsObject = asObject(settings);
   const salarySettings = asObject(settingsObject?.salary);
   const rawPercentages = asObject(salarySettings?.bonusPercentages);
+  const rawRules = asObject(salarySettings?.bonusRules);
   const rawFixedSalaries = Array.isArray(salarySettings?.fixedSalaries) ? salarySettings.fixedSalaries : [];
   const rawPlanBonuses = Array.isArray(salarySettings?.planBonuses) ? salarySettings.planBonuses : [];
   const rawMode = typeof salarySettings?.bonusMode === 'string' ? salarySettings.bonusMode : null;
@@ -521,6 +694,11 @@ function extractSalarySettings(settings: unknown): SalarySettingsSnapshot {
     online: normalizePercentage(rawPercentages?.online),
     offline: normalizePercentage(rawPercentages?.offline),
     intensive: normalizePercentage(rawPercentages?.intensive),
+  };
+  const bonusRules: SalaryBonusRules = {
+    online: normalizeCategoryBonusRule(rawRules?.online, bonusPercentages.online),
+    offline: normalizeCategoryBonusRule(rawRules?.offline, bonusPercentages.offline),
+    intensive: normalizeCategoryBonusRule(rawRules?.intensive, bonusPercentages.intensive),
   };
 
   const fixedSalaries = new Map<string, number>();
@@ -543,6 +721,7 @@ function extractSalarySettings(settings: unknown): SalarySettingsSnapshot {
   return {
     bonusMode,
     bonusPercentages,
+    bonusRules,
     fixedSalaries,
     planBonuses,
   };
@@ -1671,6 +1850,93 @@ export const dashboardRouter = router({
       });
     }
 
+    const [fullyPaidNewSalesForBonus, closingRepaymentsForBonus] = await Promise.all([
+      prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          managerUserId: { in: agentIds },
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          remainingDebtAmount: 0,
+          entryDate: {
+            lte: monthEnd,
+          },
+        },
+        select: {
+          id: true,
+          managerUserId: true,
+          coursePriceAmount: true,
+          paymentAmount: true,
+          entryDate: true,
+          course: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      }),
+      prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'repayment',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          remainingDebtAmount: 0,
+          relatedDebtIncomeId: { not: null },
+          relatedDebtIncome: {
+            managerUserId: { in: agentIds },
+            type: 'new_sale',
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          },
+          entryDate: {
+            lte: monthEnd,
+          },
+        },
+        orderBy: {
+          entryDate: 'asc',
+        },
+        select: {
+          entryDate: true,
+          relatedDebtIncomeId: true,
+          relatedDebtIncome: {
+            select: {
+              id: true,
+              managerUserId: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const closeDateBySaleIdForBonus = new Map<string, Date>();
+    for (const repayment of closingRepaymentsForBonus) {
+      if (!repayment.relatedDebtIncomeId) {
+        continue;
+      }
+      if (!closeDateBySaleIdForBonus.has(repayment.relatedDebtIncomeId)) {
+        closeDateBySaleIdForBonus.set(repayment.relatedDebtIncomeId, repayment.entryDate);
+      }
+    }
+
+    const monthlyClosedCountsByAgent = new Map<string, SalaryBreakdown>();
+    const getMonthlyClosedCount = (agentId: string, category: SalaryCategory): number => {
+      const byAgent = monthlyClosedCountsByAgent.get(agentId);
+      return byAgent?.[category] ?? 0;
+    };
+
+    for (const sale of fullyPaidNewSalesForBonus) {
+      const closeDate = closeDateBySaleIdForBonus.get(sale.id) ?? sale.entryDate;
+      if (closeDate < monthStart || closeDate > monthEnd) {
+        continue;
+      }
+      const category = classifyCourseCategoryFromField(sale.course?.name);
+      if (category === 'other') {
+        continue;
+      }
+      const existing = monthlyClosedCountsByAgent.get(sale.managerUserId) ?? createZeroBreakdown();
+      existing[category] += 1;
+      monthlyClosedCountsByAgent.set(sale.managerUserId, existing);
+    }
+
     if (salarySettings.bonusMode === 'on_income') {
       const incomes = await prisma.income.findMany({
         where: {
@@ -1713,70 +1979,13 @@ export const dashboardRouter = router({
         if (!salaryRow) {
           continue;
         }
-
-        const bonusAmount = getBonusAmount(income.paymentAmount ?? 0, salarySettings.bonusPercentages[category]);
+        const closedCount = getMonthlyClosedCount(income.managerUserId, category);
+        const percentage = resolveBonusPercent(salarySettings.bonusRules[category], closedCount);
+        const bonusAmount = getBonusAmount(income.paymentAmount ?? 0, percentage);
         salaryRow.bonusAmount += bonusAmount;
         salaryRow.bonusBreakdown[category] += bonusAmount;
       }
     } else {
-      const [fullyPaidNewSales, closingRepayments] = await Promise.all([
-        prisma.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            type: 'new_sale',
-            managerUserId: { in: agentIds },
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            remainingDebtAmount: 0,
-            entryDate: {
-              gte: monthStart,
-              lte: monthEnd,
-            },
-          },
-          select: {
-            id: true,
-            managerUserId: true,
-            coursePriceAmount: true,
-            paymentAmount: true,
-            course: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        }),
-        prisma.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            type: 'repayment',
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            remainingDebtAmount: 0,
-            relatedDebtIncomeId: { not: null },
-            entryDate: {
-              gte: monthStart,
-              lte: monthEnd,
-            },
-            relatedDebtIncome: {
-              managerUserId: { in: agentIds },
-            },
-          },
-          select: {
-            relatedDebtIncome: {
-              select: {
-                id: true,
-                managerUserId: true,
-                coursePriceAmount: true,
-                paymentAmount: true,
-                course: {
-                  select: {
-                    name: true,
-                  },
-                },
-              },
-            },
-          },
-        }),
-      ]);
-
       const processedSaleIds = new Set<string>();
       const applyClosedSaleBonus = (sale: {
         id: string;
@@ -1784,11 +1993,16 @@ export const dashboardRouter = router({
         coursePriceAmount: number | null;
         paymentAmount: number;
         course: { name: string } | null;
+        entryDate: Date;
       }) => {
         if (processedSaleIds.has(sale.id)) {
           return;
         }
         processedSaleIds.add(sale.id);
+        const closeDate = closeDateBySaleIdForBonus.get(sale.id) ?? sale.entryDate;
+        if (closeDate < monthStart || closeDate > monthEnd) {
+          return;
+        }
 
         const category = classifyCourseCategoryFromField(sale.course?.name);
         if (category === 'other') {
@@ -1800,27 +2014,16 @@ export const dashboardRouter = router({
           return;
         }
 
+        const closedCount = getMonthlyClosedCount(sale.managerUserId, category);
+        const percentage = resolveBonusPercent(salarySettings.bonusRules[category], closedCount);
         const agreementAmount = sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
-        const bonusAmount = getBonusAmount(agreementAmount, salarySettings.bonusPercentages[category]);
+        const bonusAmount = getBonusAmount(agreementAmount, percentage);
         salaryRow.bonusAmount += bonusAmount;
         salaryRow.bonusBreakdown[category] += bonusAmount;
       };
 
-      for (const sale of fullyPaidNewSales) {
-        applyClosedSaleBonus({
-          id: sale.id,
-          managerUserId: sale.managerUserId,
-          coursePriceAmount: sale.coursePriceAmount,
-          paymentAmount: sale.paymentAmount,
-          course: sale.course,
-        });
-      }
-
-      for (const repayment of closingRepayments) {
-        if (!repayment.relatedDebtIncome) {
-          continue;
-        }
-        applyClosedSaleBonus(repayment.relatedDebtIncome);
+      for (const sale of fullyPaidNewSalesForBonus) {
+        applyClosedSaleBonus(sale);
       }
     }
 
@@ -1876,6 +2079,30 @@ export const dashboardRouter = router({
         }),
       ]);
 
+      const profileSubTariffIds = Array.from(
+        new Set(
+          closedSales
+            .map((sale) => sale.customer?.profileSubTariffId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+      const subTariffNameById = new Map<string, string>();
+      if (profileSubTariffIds.length > 0) {
+        const subTariffs = await prisma.subTariff.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: profileSubTariffIds },
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        });
+        for (const subTariff of subTariffs) {
+          subTariffNameById.set(subTariff.id, normalizeSubTariffName(subTariff.name));
+        }
+      }
+
       const closeDateBySaleId = new Map<string, Date>();
       for (const repayment of closingRepayments) {
         if (!repayment.relatedDebtIncomeId) {
@@ -1912,6 +2139,14 @@ export const dashboardRouter = router({
           }
           if (plan.subTariffId && plan.subTariffId !== sale.customer?.profileSubTariffId) {
             continue;
+          }
+          if (!plan.tariffId && plan.subTariffName) {
+            const saleSubTariffName = sale.customer?.profileSubTariffId
+              ? subTariffNameById.get(sale.customer.profileSubTariffId) || ''
+              : '';
+            if (!saleSubTariffName || saleSubTariffName !== normalizeSubTariffName(plan.subTariffName)) {
+              continue;
+            }
           }
           if (plan.periodMode === 'monthly' && (closeTimestamp < monthStartMs || closeTimestamp > monthEndMs)) {
             continue;
@@ -1982,6 +2217,223 @@ export const dashboardRouter = router({
       currentUser: byAgent.find((row) => row.userId === ctx.user.userId) || null,
     };
   }),
+
+  getUserLayout: protectedProcedure.query(async ({ ctx }) => {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: ctx.tenantId },
+      select: { settings: true },
+    });
+
+    if (!tenant) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
+    }
+
+    const settings = asObject(tenant.settings) || {};
+    const dashboardUserLayouts = asObject(settings?.dashboardUserLayouts) || {};
+    const userLayout = normalizeDashboardUserLayout(dashboardUserLayouts?.[ctx.user.userId]);
+
+    return userLayout;
+  }),
+
+  saveUserLayout: protectedProcedure
+    .input(dashboardLayoutInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: ctx.tenantId },
+        select: { settings: true },
+      });
+
+      if (!tenant) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
+      }
+
+      const uniqueVisibleWidgetIds = Array.from(
+        new Set(input.visibleWidgetIds.map((item) => item.trim()).filter(Boolean)),
+      );
+      const customWidgetById = new Map<string, DashboardCustomSalesWidget>();
+      for (const item of input.customSalesWidgets) {
+        const id = item.id.trim();
+        if (!id) {
+          continue;
+        }
+        customWidgetById.set(id, {
+          id,
+          title: item.title.trim(),
+          courseId: item.courseId,
+          tariffId: item.tariffId ?? null,
+          subTariffId: item.subTariffId ?? null,
+        });
+      }
+
+      const settings = asObject(tenant.settings) || {};
+      const dashboardUserLayouts = asObject(settings?.dashboardUserLayouts) || {};
+      dashboardUserLayouts[ctx.user.userId] = {
+        visibleWidgetIds: uniqueVisibleWidgetIds,
+        customSalesWidgets: Array.from(customWidgetById.values()),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await prisma.tenant.update({
+        where: { id: ctx.tenantId },
+        data: {
+          settings: JSON.parse(
+            JSON.stringify({
+              ...settings,
+              dashboardUserLayouts,
+            }),
+          ),
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'dashboard_layout_update',
+          resource: 'tenant_settings',
+          resourceId: ctx.tenantId,
+          metadata: {
+            visibleWidgetCount: uniqueVisibleWidgetIds.length,
+            customWidgetCount: customWidgetById.size,
+          },
+        },
+      });
+
+      return {
+        visibleWidgetIds: uniqueVisibleWidgetIds,
+        customSalesWidgets: Array.from(customWidgetById.values()),
+      };
+    }),
+
+  widgetCatalogOptions: protectedProcedure.query(async ({ ctx }) => {
+    const courses = await prisma.course.findMany({
+      where: {
+        tenantId: ctx.tenantId,
+        isActive: true,
+      },
+      orderBy: [{ name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        tariffs: {
+          where: { isActive: true },
+          orderBy: [{ name: 'asc' }],
+          select: {
+            id: true,
+            name: true,
+            subTariffs: {
+              where: { isActive: true },
+              orderBy: [{ name: 'asc' }],
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return {
+      courses: courses.map((course) => ({
+        id: course.id,
+        name: course.name,
+        category: String(course.category || '').trim().toLowerCase(),
+        tariffs: course.tariffs.map((tariff) => ({
+          id: tariff.id,
+          name: tariff.name,
+          subTariffs: tariff.subTariffs.map((subTariff) => ({
+            id: subTariff.id,
+            name: subTariff.name,
+          })),
+        })),
+      })),
+    };
+  }),
+
+  customSalesWidgets: protectedProcedure
+    .input(
+      z.object({
+        range: dashboardRangeSchema,
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        widgets: z
+          .array(
+            z.object({
+              id: z.string().min(1).max(120),
+              courseId: z.string().uuid(),
+              tariffId: z.string().uuid().nullable().optional(),
+              subTariffId: z.string().uuid().nullable().optional(),
+            }),
+          )
+          .max(30),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      if (!input.widgets.length) {
+        return { widgets: [] as Array<{ id: string; salesCount: number; agreementAmount: number }> };
+      }
+
+      const now = new Date();
+      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+
+      const incomes = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          entryDate: {
+            gte: rangeStart,
+            lte: rangeEnd,
+          },
+          ...(scope.isScoped
+            ? {
+                managerUserId: ctx.user.userId,
+              }
+            : {}),
+        },
+        select: {
+          courseId: true,
+          tariffId: true,
+          paymentAmount: true,
+          coursePriceAmount: true,
+          customer: {
+            select: {
+              profileSubTariffId: true,
+            },
+          },
+        },
+      });
+
+      const widgets = input.widgets.map((widget) => {
+        let salesCount = 0;
+        let agreementAmount = 0;
+        for (const income of incomes) {
+          if (income.courseId !== widget.courseId) {
+            continue;
+          }
+          if (widget.tariffId && income.tariffId !== widget.tariffId) {
+            continue;
+          }
+          if (widget.subTariffId && income.customer?.profileSubTariffId !== widget.subTariffId) {
+            continue;
+          }
+
+          salesCount += 1;
+          agreementAmount += income.coursePriceAmount ?? income.paymentAmount ?? 0;
+        }
+
+        return {
+          id: widget.id,
+          salesCount,
+          agreementAmount,
+        };
+      });
+
+      return { widgets };
+    }),
 
   fieldOptions: adminProcedure.query(async ({ ctx }) => {
     const catalogOptions = await collectCatalogFieldOptions(ctx.tenantId);
