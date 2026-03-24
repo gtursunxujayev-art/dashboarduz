@@ -59,6 +59,14 @@ const REFUND_PAYMENT_GROUP_ENV_KEYS = [
   'RETURN_GROUP_ID',
   'RETURN_GROUP_IDS',
 ] as const;
+const TARIFF_CHANGE_GROUP_ENV_KEYS = [
+  'TARIFF_CHANGE_GROUP_ID',
+  'TARIFF_CHANGE_GROUP_IDS',
+  'COURSE_CHANGE_GROUP_ID',
+  'COURSE_CHANGE_GROUP_IDS',
+  'CHANGE_GROUP_ID',
+  'CHANGE_GROUP_IDS',
+] as const;
 
 function isAdminUser(roles: string[]): boolean {
   return roles.includes('Admin');
@@ -494,6 +502,14 @@ function parseTelegramGroupIdsFromEnvKeys(keys: readonly string[]): string[] {
   return Array.from(
     new Set(keys.flatMap((key) => parseTelegramGroupIds(process.env[key]))),
   );
+}
+
+function resolveRefundGroupIds(): string[] {
+  const preferred = parseTelegramGroupIdsFromEnvKeys(['REFUND_GROUP_ID', 'REFUND_GROUP_IDS']);
+  if (preferred.length > 0) {
+    return preferred;
+  }
+  return parseTelegramGroupIdsFromEnvKeys(REFUND_PAYMENT_GROUP_ENV_KEYS);
 }
 
 function toHashtag(value: string | null | undefined): string | null {
@@ -1036,12 +1052,9 @@ async function sendTariffChangeRequestedTelegram(params: {
     return;
   }
 
-  const categoryGroupKeys = resolvePaymentGroupEnvKeysByCategory(request.newCourse.category);
-  if (!categoryGroupKeys) {
-    return;
-  }
-  const groupIds = parseTelegramGroupIdsFromEnvKeys(categoryGroupKeys);
+  const groupIds = parseTelegramGroupIdsFromEnvKeys(TARIFF_CHANGE_GROUP_ENV_KEYS);
   if (!groupIds.length) {
+    console.warn('[Income][Telegram] Tariff change group is missing. Set TARIFF_CHANGE_GROUP_ID (or CHANGE_GROUP_ID).');
     return;
   }
 
@@ -1151,12 +1164,9 @@ async function sendTariffChangeApprovedTelegram(params: {
     return;
   }
 
-  const categoryGroupKeys = resolvePaymentGroupEnvKeysByCategory(request.income.course.category);
-  if (!categoryGroupKeys) {
-    return;
-  }
-  const groupIds = parseTelegramGroupIdsFromEnvKeys(categoryGroupKeys);
+  const groupIds = parseTelegramGroupIdsFromEnvKeys(TARIFF_CHANGE_GROUP_ENV_KEYS);
   if (!groupIds.length) {
+    console.warn('[Income][Telegram] Tariff change group is missing. Set TARIFF_CHANGE_GROUP_ID (or CHANGE_GROUP_ID).');
     return;
   }
 
@@ -1211,7 +1221,7 @@ async function sendRefundApprovedTelegram(params: {
   requestId: string;
   reviewedByUserId: string;
 }) {
-  const groupIds = parseTelegramGroupIdsFromEnvKeys(REFUND_PAYMENT_GROUP_ENV_KEYS);
+  const groupIds = resolveRefundGroupIds();
   if (!groupIds.length) {
     console.warn('[Income][Telegram] Refund group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
     return;
@@ -1313,7 +1323,7 @@ async function sendRefundRequestedTelegram(params: {
   requestId: string;
   requestedByUserId: string;
 }) {
-  const groupIds = parseTelegramGroupIdsFromEnvKeys(REFUND_PAYMENT_GROUP_ENV_KEYS);
+  const groupIds = resolveRefundGroupIds();
   if (!groupIds.length) {
     console.warn('[Income][Telegram] Refund request group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
     return;
