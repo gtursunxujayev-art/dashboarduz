@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
 import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
@@ -170,9 +170,14 @@ export default function DashboardPage() {
   const [rangeLoadProgress, setRangeLoadProgress] = useState(0);
   const [rangeLoadElapsedMs, setRangeLoadElapsedMs] = useState(0);
   const [rangeLoadVisible, setRangeLoadVisible] = useState(false);
+  const [rangeLoadPredictedMs, setRangeLoadPredictedMs] = useState(0);
+  const [rangeDurationByKey, setRangeDurationByKey] = useState<Record<string, number>>({});
+  const rangeLoadStartedAtRef = useRef<number | null>(null);
+  const rangeTabsRef = useRef<HTMLDivElement | null>(null);
+  const [rangeTabsWidth, setRangeTabsWidth] = useState<number | null>(null);
 
   const activeRangeQueryFetching = isFinanceOnly ? financeSummaryQuery.isFetching : summaryQuery.isFetching;
-  const expectedLoadMs = useMemo(() => {
+  const defaultExpectedLoadMs = useMemo(() => {
     if (range === 'today') return 2200;
     if (range === 'week') return 3400;
     if (range === 'month') return 7000;
@@ -185,40 +190,94 @@ export default function DashboardPage() {
     return Math.min(12000, Math.max(3200, dayDiff * 190));
   }, [range, dateFrom, dateTo]);
 
+  const rangeLoadKey = useMemo(() => {
+    if (range !== 'custom') {
+      return range;
+    }
+    const from = new Date(`${dateFrom}T00:00:00`);
+    const to = new Date(`${dateTo}T23:59:59`);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      return 'custom';
+    }
+    const dayDiff = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
+    return `custom:${Math.min(120, dayDiff)}`;
+  }, [range, dateFrom, dateTo]);
+
+  const expectedLoadMs = rangeDurationByKey[rangeLoadKey] ?? defaultExpectedLoadMs;
+
+  useEffect(() => {
+    const node = rangeTabsRef.current;
+    if (!node) {
+      return;
+    }
+
+    const updateWidth = () => {
+      const measured = Math.round(node.getBoundingClientRect().width);
+      if (Number.isFinite(measured) && measured > 0) {
+        setRangeTabsWidth(measured);
+      }
+    };
+
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    window.addEventListener('resize', updateWidth);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateWidth);
+    };
+  }, []);
+
   useEffect(() => {
     if (activeRangeQueryFetching) {
       setRangeLoadVisible(true);
-      setRangeLoadProgress((previous) => (previous > 0 ? previous : 6));
-      const startedAt = Date.now();
+      const startedAt = rangeLoadStartedAtRef.current ?? Date.now();
+      rangeLoadStartedAtRef.current = startedAt;
+      setRangeLoadPredictedMs(expectedLoadMs);
 
       const interval = window.setInterval(() => {
         const elapsed = Date.now() - startedAt;
         setRangeLoadElapsedMs(elapsed);
-        const linearPercent = Math.min(92, Math.round((elapsed / expectedLoadMs) * 100));
-        setRangeLoadProgress((previous) => {
-          if (linearPercent > previous) {
-            return linearPercent;
-          }
-          return Math.min(95, previous + 1);
-        });
+        const predicted = Math.max(expectedLoadMs, elapsed + 900);
+        setRangeLoadPredictedMs(predicted);
+        const linearPercent = Math.min(99, Math.round((elapsed / predicted) * 100));
+        setRangeLoadProgress(Math.max(0, linearPercent));
       }, 140);
 
       return () => window.clearInterval(interval);
     }
 
-    setRangeLoadProgress((previous) => (previous > 0 ? 100 : 0));
+    const startedAt = rangeLoadStartedAtRef.current;
+    if (startedAt) {
+      const actualElapsed = Date.now() - startedAt;
+      setRangeDurationByKey((previous) => {
+        const previousEstimate = previous[rangeLoadKey];
+        const nextEstimate = previousEstimate
+          ? Math.round(previousEstimate * 0.7 + actualElapsed * 0.3)
+          : actualElapsed;
+        return {
+          ...previous,
+          [rangeLoadKey]: Math.max(900, Math.min(30_000, nextEstimate)),
+        };
+      });
+    }
+    rangeLoadStartedAtRef.current = null;
+
+    setRangeLoadProgress(100);
     const doneTimer = window.setTimeout(() => {
       setRangeLoadVisible(false);
       setRangeLoadProgress(0);
       setRangeLoadElapsedMs(0);
+      setRangeLoadPredictedMs(0);
     }, 320);
 
     return () => window.clearTimeout(doneTimer);
-  }, [activeRangeQueryFetching, expectedLoadMs]);
+  }, [activeRangeQueryFetching, expectedLoadMs, rangeLoadKey]);
 
   const estimatedRemainingSeconds = Math.max(
     1,
-    Math.ceil(Math.max(0, expectedLoadMs - rangeLoadElapsedMs) / 1000),
+    Math.ceil(Math.max(0, rangeLoadPredictedMs - rangeLoadElapsedMs) / 1000),
   );
 
   const stats = summaryQuery.data?.summary;
@@ -476,30 +535,35 @@ export default function DashboardPage() {
         <div className="px-3 py-2 sm:px-5 sm:py-4">
           <div className="space-y-2">
             {rangeLoadVisible && (
-              <div className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-2">
-                <div className="mb-1 flex items-center justify-between">
-                  <p className="text-[11px] font-medium text-blue-700 sm:text-xs">
-                    {activeRangeQueryFetching
-                      ? `Yuklanmoqda: ${rangeLoadProgress}%`
-                      : 'Yangilandi'}
-                  </p>
-                  {activeRangeQueryFetching && (
-                    <p className="text-[11px] text-blue-600 sm:text-xs">
-                      Taxminan {estimatedRemainingSeconds} soniya
+              <div className="overflow-x-auto">
+                <div
+                  className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-2"
+                  style={rangeTabsWidth ? { width: `${rangeTabsWidth}px` } : undefined}
+                >
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-[11px] font-medium text-blue-700 sm:text-xs">
+                      {activeRangeQueryFetching
+                        ? `Yuklanmoqda: ${rangeLoadProgress}%`
+                        : 'Yangilandi'}
                     </p>
-                  )}
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
-                  <div
-                    className="h-full rounded-full bg-blue-600 transition-[width] duration-200 ease-out"
-                    style={{ width: `${Math.max(0, Math.min(100, rangeLoadProgress))}%` }}
-                  />
+                    {activeRangeQueryFetching && (
+                      <p className="text-[11px] text-blue-600 sm:text-xs">
+                        Taxminan {estimatedRemainingSeconds} soniya
+                      </p>
+                    )}
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
+                    <div
+                      className="h-full rounded-full bg-blue-600 transition-[width] duration-200 ease-out"
+                      style={{ width: `${Math.max(0, Math.min(100, rangeLoadProgress))}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             )}
 
             <div className="overflow-x-auto">
-              <div className="inline-flex min-w-max rounded-md shadow-sm">
+              <div ref={rangeTabsRef} className="inline-flex min-w-max rounded-md shadow-sm">
                 {RANGE_OPTIONS.map((option, index) => (
                   <button
                     key={option}
