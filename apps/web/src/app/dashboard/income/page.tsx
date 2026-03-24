@@ -109,7 +109,7 @@ function getTelegramDispatchWarning(dispatch: any): string | null {
 
   const reason = String(dispatch.reason || '');
   if (reason === 'course_not_eligible') {
-    return null;
+    return "Telegram guruhiga yuborilmadi: kurs kategoriyasi bo'yicha mos guruh topilmadi (kurs/kategoriya sozlamasini tekshiring).";
   }
 
   if (reason === 'groups_missing') {
