@@ -39,6 +39,8 @@ const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
 const UTEL_MIN_EXTENSION = 100;
 const UTEL_MAX_EXTENSION = 150;
 const SALARY_CATEGORIES = ['online', 'offline', 'intensive'] as const;
+const PLAN_BONUS_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
+const PLAN_BONUS_PERIOD_MODES = ['monthly', 'all_time'] as const;
 const REPORT_MONTH_LABELS_UZ = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'] as const;
 const INCOME_LIFECYCLE_ACTIVE = 'active';
 const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
@@ -47,11 +49,28 @@ const INCOME_LIFECYCLE_REFUNDED = 'refunded';
 type SalaryCategory = (typeof SALARY_CATEGORIES)[number];
 type SalaryBonusMode = 'on_income' | 'on_debt_closed';
 type SalaryBreakdown = Record<SalaryCategory, number>;
+type PlanBonusCategory = (typeof PLAN_BONUS_CATEGORIES)[number];
+type PlanBonusPeriodMode = (typeof PLAN_BONUS_PERIOD_MODES)[number];
+type SalaryPlanBonus = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  periodMode: PlanBonusPeriodMode;
+  courseCategory: PlanBonusCategory;
+  courseId: string | null;
+  tariffId: string | null;
+  subTariffId: string | null;
+  targetClosedSales: number;
+  bonusAmount: number;
+  createdAt: string;
+  updatedAt: string;
+};
 
 type SalarySettingsSnapshot = {
   bonusMode: SalaryBonusMode;
   bonusPercentages: SalaryBreakdown;
   fixedSalaries: Map<string, number>;
+  planBonuses: SalaryPlanBonus[];
 };
 
 function isMissingUserMappingColumnError(error: unknown) {
@@ -439,11 +458,62 @@ function createZeroBreakdown(): SalaryBreakdown {
   };
 }
 
+function toPositiveInteger(value: unknown): number {
+  const parsed = Math.floor(toFiniteNumber(value, 0));
+  return parsed > 0 ? parsed : 0;
+}
+
+function normalizePlanBonus(raw: unknown): SalaryPlanBonus | null {
+  const row = asObject(raw);
+  if (!row) {
+    return null;
+  }
+  const id = typeof row.id === 'string' ? row.id.trim() : '';
+  const name = typeof row.name === 'string' ? row.name.trim() : '';
+  const periodMode = typeof row.periodMode === 'string' ? row.periodMode.trim() : '';
+  const courseCategory = typeof row.courseCategory === 'string' ? row.courseCategory.trim() : '';
+
+  if (!id || !name) {
+    return null;
+  }
+  if (!PLAN_BONUS_PERIOD_MODES.includes(periodMode as PlanBonusPeriodMode)) {
+    return null;
+  }
+  if (!PLAN_BONUS_CATEGORIES.includes(courseCategory as PlanBonusCategory)) {
+    return null;
+  }
+
+  const targetClosedSales = toPositiveInteger(row.targetClosedSales);
+  const bonusAmount = toPositiveInteger(row.bonusAmount);
+  if (targetClosedSales <= 0 || bonusAmount <= 0) {
+    return null;
+  }
+
+  const createdAt = typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString();
+  const updatedAt = typeof row.updatedAt === 'string' ? row.updatedAt : new Date().toISOString();
+
+  return {
+    id,
+    name,
+    isActive: row.isActive !== false,
+    periodMode: periodMode as PlanBonusPeriodMode,
+    courseCategory: courseCategory as PlanBonusCategory,
+    courseId: typeof row.courseId === 'string' && row.courseId.trim() ? row.courseId.trim() : null,
+    tariffId: typeof row.tariffId === 'string' && row.tariffId.trim() ? row.tariffId.trim() : null,
+    subTariffId: typeof row.subTariffId === 'string' && row.subTariffId.trim() ? row.subTariffId.trim() : null,
+    targetClosedSales,
+    bonusAmount,
+    createdAt,
+    updatedAt,
+  };
+}
+
 function extractSalarySettings(settings: unknown): SalarySettingsSnapshot {
   const settingsObject = asObject(settings);
   const salarySettings = asObject(settingsObject?.salary);
   const rawPercentages = asObject(salarySettings?.bonusPercentages);
   const rawFixedSalaries = Array.isArray(salarySettings?.fixedSalaries) ? salarySettings.fixedSalaries : [];
+  const rawPlanBonuses = Array.isArray(salarySettings?.planBonuses) ? salarySettings.planBonuses : [];
   const rawMode = typeof salarySettings?.bonusMode === 'string' ? salarySettings.bonusMode : null;
   const bonusMode: SalaryBonusMode = rawMode === 'on_debt_closed' ? 'on_debt_closed' : 'on_income';
 
@@ -456,6 +526,9 @@ function extractSalarySettings(settings: unknown): SalarySettingsSnapshot {
   const fixedSalaries = new Map<string, number>();
   for (const item of rawFixedSalaries) {
     const row = asObject(item);
+    if (!row) {
+      continue;
+    }
     const userId = typeof row?.userId === 'string' ? row.userId : '';
     if (!userId) {
       continue;
@@ -463,10 +536,15 @@ function extractSalarySettings(settings: unknown): SalarySettingsSnapshot {
     fixedSalaries.set(userId, Math.max(0, Math.round(toFiniteNumber(row?.amount, 0))));
   }
 
+  const planBonuses = rawPlanBonuses
+    .map((item) => normalizePlanBonus(item))
+    .filter((item): item is SalaryPlanBonus => Boolean(item));
+
   return {
     bonusMode,
     bonusPercentages,
     fixedSalaries,
+    planBonuses,
   };
 }
 
@@ -1529,6 +1607,7 @@ export const dashboardRouter = router({
         totals: {
           fixedSalary: 0,
           bonus: 0,
+          planBonus: 0,
           kpi: 0,
           salary: 0,
         },
@@ -1538,8 +1617,19 @@ export const dashboardRouter = router({
           fixedSalary: number;
           kpiAmount: number;
           bonusAmount: number;
+          planBonusAmount: number;
           totalSalary: number;
           bonusBreakdown: SalaryBreakdown;
+          planProgress: Array<{
+            planId: string;
+            name: string;
+            periodMode: PlanBonusPeriodMode;
+            target: number;
+            fact: number;
+            completionPercent: number;
+            completedUnits: number;
+            earnedAmount: number;
+          }>;
         }>,
         currentUser: null,
       };
@@ -1553,7 +1643,18 @@ export const dashboardRouter = router({
         fixedSalary: number;
         kpiAmount: number;
         bonusAmount: number;
+        planBonusAmount: number;
         bonusBreakdown: SalaryBreakdown;
+        planProgress: Array<{
+          planId: string;
+          name: string;
+          periodMode: PlanBonusPeriodMode;
+          target: number;
+          fact: number;
+          completionPercent: number;
+          completedUnits: number;
+          earnedAmount: number;
+        }>;
       }
     >();
 
@@ -1564,7 +1665,9 @@ export const dashboardRouter = router({
         fixedSalary: salarySettings.fixedSalaries.get(agent.id) ?? 0,
         kpiAmount: 0,
         bonusAmount: 0,
+        planBonusAmount: 0,
         bonusBreakdown: createZeroBreakdown(),
+        planProgress: [],
       });
     }
 
@@ -1721,10 +1824,133 @@ export const dashboardRouter = router({
       }
     }
 
+    const activePlanBonuses = salarySettings.planBonuses.filter((plan) => plan.isActive);
+    if (activePlanBonuses.length > 0) {
+      const [closedSales, closingRepayments] = await Promise.all([
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'new_sale',
+            managerUserId: { in: agentIds },
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            remainingDebtAmount: 0,
+          },
+          select: {
+            id: true,
+            managerUserId: true,
+            entryDate: true,
+            courseId: true,
+            tariffId: true,
+            customer: {
+              select: {
+                profileSubTariffId: true,
+              },
+            },
+            course: {
+              select: {
+                category: true,
+              },
+            },
+          },
+        }),
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'repayment',
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            remainingDebtAmount: 0,
+            relatedDebtIncomeId: { not: null },
+            relatedDebtIncome: {
+              managerUserId: { in: agentIds },
+              type: 'new_sale',
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            },
+          },
+          orderBy: {
+            entryDate: 'asc',
+          },
+          select: {
+            entryDate: true,
+            relatedDebtIncomeId: true,
+          },
+        }),
+      ]);
+
+      const closeDateBySaleId = new Map<string, Date>();
+      for (const repayment of closingRepayments) {
+        if (!repayment.relatedDebtIncomeId) {
+          continue;
+        }
+        if (!closeDateBySaleId.has(repayment.relatedDebtIncomeId)) {
+          closeDateBySaleId.set(repayment.relatedDebtIncomeId, repayment.entryDate);
+        }
+      }
+
+      const monthStartMs = monthStart.getTime();
+      const monthEndMs = monthEnd.getTime();
+      const closedSalesFactsByAgentAndPlan = new Map<string, number>();
+
+      const incrementPlanFact = (agentId: string, planId: string) => {
+        const key = `${agentId}:${planId}`;
+        closedSalesFactsByAgentAndPlan.set(key, (closedSalesFactsByAgentAndPlan.get(key) ?? 0) + 1);
+      };
+
+      for (const sale of closedSales) {
+        const closeDate = closeDateBySaleId.get(sale.id) ?? sale.entryDate;
+        const closeTimestamp = closeDate.getTime();
+        const saleCourseCategory = String(sale.course?.category || '').trim().toLowerCase();
+
+        for (const plan of activePlanBonuses) {
+          if (plan.courseCategory !== saleCourseCategory) {
+            continue;
+          }
+          if (plan.courseId && plan.courseId !== sale.courseId) {
+            continue;
+          }
+          if (plan.tariffId && plan.tariffId !== sale.tariffId) {
+            continue;
+          }
+          if (plan.subTariffId && plan.subTariffId !== sale.customer?.profileSubTariffId) {
+            continue;
+          }
+          if (plan.periodMode === 'monthly' && (closeTimestamp < monthStartMs || closeTimestamp > monthEndMs)) {
+            continue;
+          }
+
+          incrementPlanFact(sale.managerUserId, plan.id);
+        }
+      }
+
+      for (const salaryRow of salaryByAgent.values()) {
+        const planProgress = activePlanBonuses.map((plan) => {
+          const fact = closedSalesFactsByAgentAndPlan.get(`${salaryRow.userId}:${plan.id}`) ?? 0;
+          const completionPercent = plan.targetClosedSales > 0
+            ? Number(((fact / plan.targetClosedSales) * 100).toFixed(1))
+            : 0;
+          const completedUnits = Math.floor(fact / plan.targetClosedSales);
+          const earnedAmount = completedUnits * plan.bonusAmount;
+
+          return {
+            planId: plan.id,
+            name: plan.name,
+            periodMode: plan.periodMode,
+            target: plan.targetClosedSales,
+            fact,
+            completionPercent,
+            completedUnits,
+            earnedAmount,
+          };
+        });
+
+        salaryRow.planProgress = planProgress;
+        salaryRow.planBonusAmount = planProgress.reduce((sum, item) => sum + item.earnedAmount, 0);
+      }
+    }
+
     const byAgent = Array.from(salaryByAgent.values())
       .map((row) => ({
         ...row,
-        totalSalary: row.fixedSalary + row.kpiAmount + row.bonusAmount,
+        totalSalary: row.fixedSalary + row.kpiAmount + row.bonusAmount + row.planBonusAmount,
       }))
       .sort((a, b) => b.totalSalary - a.totalSalary);
 
@@ -1732,12 +1958,14 @@ export const dashboardRouter = router({
       (acc, row) => ({
         fixedSalary: acc.fixedSalary + row.fixedSalary,
         bonus: acc.bonus + row.bonusAmount,
+        planBonus: acc.planBonus + row.planBonusAmount,
         kpi: acc.kpi + row.kpiAmount,
         salary: acc.salary + row.totalSalary,
       }),
       {
         fixedSalary: 0,
         bonus: 0,
+        planBonus: 0,
         kpi: 0,
         salary: 0,
       },
