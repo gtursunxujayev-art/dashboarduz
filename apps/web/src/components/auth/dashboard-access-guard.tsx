@@ -13,12 +13,14 @@ const AGENT_ALLOWED_PATHS = [
   '/dashboard/adjustments',
   '/dashboard/sotuvchilar',
   '/dashboard/customers',
+  '/dashboard/course-sales',
   '/dashboard/analytics',
   '/dashboard/finance',
 ];
 const FINANCE_ALLOWED_PATHS = [
   '/dashboard',
   '/dashboard/adjustments',
+  '/dashboard/course-sales',
   '/dashboard/analytics',
   '/dashboard/finance',
 ];
@@ -26,6 +28,7 @@ const TASHKILIY_ALLOWED_PATHS = [
   '/dashboard',
   '/dashboard/adjustments',
   '/dashboard/customers',
+  '/dashboard/course-sales',
   '/dashboard/courses',
   '/dashboard/settings',
 ];
