@@ -29,6 +29,14 @@ function sanitizeTelegram(value: string): string {
   return value.replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
 }
 
+function escapeCsvCell(value: unknown): string {
+  const text = String(value ?? '');
+  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
 export default function CustomersPage() {
   const { user } = useAuth();
   const roles = user?.roles || [];
@@ -41,8 +49,11 @@ export default function CustomersPage() {
       && !roles.includes('Finance'),
   );
 
+  const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
   const [courseId, setCourseId] = useState('');
+  const [tariffId, setTariffId] = useState('');
+  const [subTariffId, setSubTariffId] = useState('');
   const [debtFilter, setDebtFilter] = useState<DebtFilter>('all');
 
   const [pageError, setPageError] = useState<string | null>(null);
@@ -67,6 +78,8 @@ export default function CustomersPage() {
     {
       query: query.trim() || undefined,
       courseId: courseId || undefined,
+      tariffId: tariffId || undefined,
+      subTariffId: subTariffId || undefined,
       debtFilter,
       limit: 500,
     },
@@ -90,7 +103,24 @@ export default function CustomersPage() {
 
   const customers = useMemo(() => customersQuery.data?.customers || [], [customersQuery.data]);
   const courseOptions = useMemo(() => customersQuery.data?.courseOptions || [], [customersQuery.data]);
+  const catalogOptions = useMemo(() => customersQuery.data?.catalogOptions || [], [customersQuery.data]);
   const withDebtCount = customers.filter((customer: any) => customer.hasDebt).length;
+
+  const filterTariffOptions = useMemo(() => {
+    if (!courseId) {
+      return [];
+    }
+    const course = (catalogOptions as any[]).find((item: any) => item.id === courseId);
+    return Array.isArray(course?.tariffs) ? course.tariffs : [];
+  }, [catalogOptions, courseId]);
+
+  const filterSubTariffOptions = useMemo(() => {
+    if (!tariffId) {
+      return [];
+    }
+    const tariff = (filterTariffOptions as any[]).find((item: any) => item.id === tariffId);
+    return Array.isArray(tariff?.subTariffs) ? tariff.subTariffs : [];
+  }, [filterTariffOptions, tariffId]);
 
   const editorCourses = useMemo(() => editorOptionsQuery.data || [], [editorOptionsQuery.data]);
 
@@ -134,6 +164,28 @@ export default function CustomersPage() {
       setBulkSubTariffId('');
     }
   }, [editMode]);
+
+  useEffect(() => {
+    if (!courseId) {
+      setTariffId('');
+      setSubTariffId('');
+      return;
+    }
+    if (tariffId && !filterTariffOptions.some((item: any) => item.id === tariffId)) {
+      setTariffId('');
+      setSubTariffId('');
+    }
+  }, [courseId, tariffId, filterTariffOptions]);
+
+  useEffect(() => {
+    if (!tariffId) {
+      setSubTariffId('');
+      return;
+    }
+    if (subTariffId && !filterSubTariffOptions.some((item: any) => item.id === subTariffId)) {
+      setSubTariffId('');
+    }
+  }, [tariffId, subTariffId, filterSubTariffOptions]);
 
   useEffect(() => {
     if (!bulkCourseId) {
@@ -191,10 +243,19 @@ export default function CustomersPage() {
 
   const handleToggleSelectAll = () => {
     if (isAllSelected) {
-      setSelectedCustomerIds([]);
+      setSelectedCustomerIds((prev) => prev.filter((id) => !allVisibleIds.includes(id)));
       return;
     }
-    setSelectedCustomerIds(allVisibleIds);
+    setSelectedCustomerIds((prev) => Array.from(new Set([...prev, ...allVisibleIds])));
+  };
+
+  const applySearch = () => {
+    setQuery(searchInput.trim());
+  };
+
+  const clearSearch = () => {
+    setSearchInput('');
+    setQuery('');
   };
 
   const handleRefresh = async () => {
@@ -202,6 +263,54 @@ export default function CustomersPage() {
     if (isAdmin) {
       await editorOptionsQuery.refetch();
     }
+  };
+
+  const handleDownloadFilteredCustomers = () => {
+    if (!customers.length) {
+      setPageError("Yuklab olish uchun mijozlar ro'yxati bo'sh.");
+      return;
+    }
+
+    const headers = [
+      'Mijoz raqami',
+      'Mijoz ismi',
+      'Telegram',
+      'Profil kurs',
+      'Profil tarif',
+      'Profil subtarif',
+      'Kurslar',
+      'Qarz',
+      'Jami tolangan',
+      'Oxirgi faollik',
+    ];
+
+    const rows = customers.map((customer: any) => ([
+      customer.customerNumber || '',
+      customer.name || '',
+      customer.telegramUsername || '',
+      customer.profileCourseName || '',
+      customer.profileTariffName || '',
+      customer.profileSubTariffName || '',
+      Array.isArray(customer.courses) ? customer.courses.join(' | ') : '',
+      customer.totalDebtAmount ?? 0,
+      customer.totalPaidAmount ?? 0,
+      formatDate(customer.lastActivityAt),
+    ]));
+
+    const csvContent = [headers, ...rows]
+      .map((line) => line.map((cell: unknown) => escapeCsvCell(cell)).join(','))
+      .join('\n');
+
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
+    anchor.href = url;
+    anchor.download = `mijozlar-${today}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   };
 
   const handleBulkAssign = async () => {
@@ -319,13 +428,34 @@ export default function CustomersPage() {
             </p>
           )}
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_280px_220px]">
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Raqam, ism yoki telegram bo'yicha qidirish"
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                applySearch();
+              }}
+              className="flex gap-2 md:col-span-2"
+            >
+              <input
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="Raqam yoki ism bo'yicha qidirish"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              />
+              <button
+                type="submit"
+                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Qidirish
+              </button>
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Tozalash
+              </button>
+            </form>
 
             <select
               value={courseId}
@@ -339,6 +469,36 @@ export default function CustomersPage() {
                 </option>
               ))}
             </select>
+
+            <select
+              value={tariffId}
+              onChange={(event) => setTariffId(event.target.value)}
+              disabled={!courseId}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+            >
+              <option value="">Barcha tariflar</option>
+              {filterTariffOptions.map((tariff: any) => (
+                <option key={tariff.id} value={tariff.id}>
+                  {tariff.name}
+                </option>
+              ))}
+            </select>
+
+            {filterSubTariffOptions.length > 0 && (
+              <select
+                value={subTariffId}
+                onChange={(event) => setSubTariffId(event.target.value)}
+                disabled={!tariffId}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+              >
+                <option value="">Barcha subtariflar</option>
+                {filterSubTariffOptions.map((subTariff: any) => (
+                  <option key={subTariff.id} value={subTariff.id}>
+                    {subTariff.name}
+                  </option>
+                ))}
+              </select>
+            )}
 
             <select
               value={debtFilter}
@@ -382,6 +542,17 @@ export default function CustomersPage() {
               </button>
             </div>
           )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadFilteredCustomers}
+              disabled={customersQuery.isLoading || customers.length === 0}
+              className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-700 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-900/40"
+            >
+              Filtrlangan ro&apos;yxatni yuklab olish
+            </button>
+          </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
