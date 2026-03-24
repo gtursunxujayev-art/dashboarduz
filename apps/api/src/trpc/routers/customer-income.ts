@@ -100,11 +100,30 @@ function throwHistoricalImportMigrationError(): never {
 }
 
 function isCourseCategoryConstraintOutdatedError(error: unknown): boolean {
-  const message = String((error as any)?.message || '').toLowerCase();
+  let details = '';
+  try {
+    details = JSON.stringify(error);
+  } catch {
+    details = '';
+  }
+  const message = [
+    String((error as any)?.message || ''),
+    String((error as any)?.cause || ''),
+    String((error as any)?.meta?.database_error || ''),
+    String((error as any)?.meta?.cause || ''),
+    details,
+  ]
+    .join(' ')
+    .toLowerCase();
   return (
     message.includes('courses_category_check')
     || (
       message.includes('violates check constraint')
+      && message.includes('category')
+      && message.includes('courses')
+    )
+    || (
+      message.includes('23514')
       && message.includes('category')
       && message.includes('courses')
     )
@@ -116,6 +135,38 @@ function throwCourseCategoryMigrationError(): never {
     code: 'PRECONDITION_FAILED',
     message: "Kurs kategoriya cheklovi eskirgan. `additional_service` uchun yangi database migration ni ishga tushiring va keyin importni qayta boshlang.",
   });
+}
+
+async function ensureCourseCategoryConstraintSupportsAdditionalService(): Promise<void> {
+  await prisma.$transaction([
+    prisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '5000ms'`),
+    prisma.$executeRawUnsafe(`SET LOCAL statement_timeout = '15000ms'`),
+    prisma.$executeRawUnsafe(`
+      UPDATE "courses"
+      SET "category" = 'offline'
+      WHERE "category" IS NULL
+         OR LENGTH(TRIM("category")) = 0
+         OR "category" NOT IN ('online', 'offline', 'intensive', 'additional_service');
+    `),
+    prisma.$executeRawUnsafe(`ALTER TABLE "courses" DROP CONSTRAINT IF EXISTS "courses_category_check"`),
+    prisma.$executeRawUnsafe(`
+      ALTER TABLE "courses"
+      ADD CONSTRAINT "courses_category_check"
+      CHECK ("category" IN ('online', 'offline', 'intensive', 'additional_service'));
+    `),
+  ]);
+}
+
+async function ensureAdditionalServiceCategoryReady(requestedCategory: string | null | undefined): Promise<void> {
+  if (requestedCategory !== 'additional_service') {
+    return;
+  }
+
+  try {
+    await ensureCourseCategoryConstraintSupportsAdditionalService();
+  } catch {
+    throwCourseCategoryMigrationError();
+  }
 }
 
 function normalizeHistoricalImportErrorMessage(error: unknown): string {
@@ -2444,26 +2495,38 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course name is required.' });
       }
 
-      try {
-        return await prisma.course.upsert({
-          where: {
-            tenantId_name: {
-              tenantId: ctx.tenantId,
-              name,
-            },
-          },
-          create: {
+      await ensureAdditionalServiceCategoryReady(input.category);
+
+      const upsertCourse = () => prisma.course.upsert({
+        where: {
+          tenantId_name: {
             tenantId: ctx.tenantId,
             name,
-            category: input.category,
-            isActive: true,
           },
-          update: {
-            category: input.category,
-            isActive: true,
-          },
-        });
+        },
+        create: {
+          tenantId: ctx.tenantId,
+          name,
+          category: input.category,
+          isActive: true,
+        },
+        update: {
+          category: input.category,
+          isActive: true,
+        },
+      });
+
+      try {
+        return await upsertCourse();
       } catch (error) {
+        if (isCourseCategoryConstraintOutdatedError(error)) {
+          try {
+            await ensureCourseCategoryConstraintSupportsAdditionalService();
+            return await upsertCourse();
+          } catch {
+            throwCourseCategoryMigrationError();
+          }
+        }
         if (!isMissingCourseCategoryColumnError(error)) {
           throw error;
         }
@@ -2630,12 +2693,24 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
       }
 
+      await ensureAdditionalServiceCategoryReady(data.category);
+
+      const updateCourse = () => prisma.course.update({
+        where: { id: input.courseId },
+        data,
+      });
+
       try {
-        return await prisma.course.update({
-          where: { id: input.courseId },
-          data,
-        });
+        return await updateCourse();
       } catch (error) {
+        if (isCourseCategoryConstraintOutdatedError(error)) {
+          try {
+            await ensureCourseCategoryConstraintSupportsAdditionalService();
+            return await updateCourse();
+          } catch {
+            throwCourseCategoryMigrationError();
+          }
+        }
         if (!isMissingCourseCategoryColumnError(error) && !isMissingCourseHiddenFromIncomeFormColumnError(error)) {
           throw error;
         }
