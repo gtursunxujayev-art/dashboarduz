@@ -891,42 +891,51 @@ export const dashboardRouter = router({
         ? (callCountByAgent.get(ctx.user.userId) ?? 0)
         : callsForSellers.length;
 
-      const sellerPerformance = agentUsers.map((agent) => {
-        const responsibleUserId = agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId) : '';
-        const leadStats = responsibleUserId ? leadsByResponsibleUser.get(responsibleUserId) : undefined;
-        const salesStats = salesByManager.get(agent.id) || {
-          sales: 0,
-          agreementsAmount: 0,
-          incomeAmount: 0,
-        };
-        const activityStats = responsibleUserId
-          ? activityByManager.get(responsibleUserId) || { followUpCount: 0, noteCount: 0, stageChangeCount: 0 }
-          : { followUpCount: 0, noteCount: 0, stageChangeCount: 0 };
-        const talkSeconds = talkSecondsByAgent.get(agent.id);
-        const leadMetricsAvailable = leadsDataAvailable && Boolean(responsibleUserId);
-        const conversionPercentByAgent = leadMetricsAvailable && (leadStats?.newLeads ?? 0) > 0
-          ? Number(((salesStats.sales / (leadStats?.newLeads || 0)) * 100).toFixed(2))
-          : (leadMetricsAvailable ? 0 : null);
-        const talkedSecondsValue = talkSecondsByAgent.has(agent.id)
-          ? (talkSeconds ?? 0)
-          : null;
+      const sellerPerformance = agentUsers
+        .map((agent) => {
+          const responsibleUserId = agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId) : '';
+          const leadStats = responsibleUserId ? leadsByResponsibleUser.get(responsibleUserId) : undefined;
+          const salesStats = salesByManager.get(agent.id) || {
+            sales: 0,
+            agreementsAmount: 0,
+            incomeAmount: 0,
+          };
+          const activityStats = responsibleUserId
+            ? activityByManager.get(responsibleUserId) || { followUpCount: 0, noteCount: 0, stageChangeCount: 0 }
+            : { followUpCount: 0, noteCount: 0, stageChangeCount: 0 };
+          const talkSeconds = talkSecondsByAgent.get(agent.id);
+          const leadMetricsAvailable = leadsDataAvailable && Boolean(responsibleUserId);
+          const conversionPercentByAgent = leadMetricsAvailable && (leadStats?.newLeads ?? 0) > 0
+            ? Number(((salesStats.sales / (leadStats?.newLeads || 0)) * 100).toFixed(2))
+            : (leadMetricsAvailable ? 0 : null);
+          const talkedSecondsValue = talkSecondsByAgent.has(agent.id)
+            ? (talkSeconds ?? 0)
+            : null;
 
-        return {
-          userId: agent.id,
-          name: agent.name || agent.username || agent.id,
-          newLeads: leadMetricsAvailable ? (leadStats?.newLeads ?? 0) : null,
-          qualifiedLeads: leadMetricsAvailable ? (leadStats?.qualifiedLeads ?? 0) : null,
-          sales: salesStats.sales,
-          conversionPercent: conversionPercentByAgent,
-          agreementsAmount: tashkiliyOnly ? 0 : salesStats.agreementsAmount,
-          incomeAmount: tashkiliyOnly ? 0 : salesStats.incomeAmount,
-          talkedSeconds: talkedSecondsValue,
-          callsCount: callCountByAgent.get(agent.id) ?? 0,
-          followUpCount: activityStats.followUpCount,
-          noteCount: activityStats.noteCount,
-          stageChangeCount: activityStats.stageChangeCount,
-        };
-      });
+          return {
+            userId: agent.id,
+            name: agent.name || agent.username || agent.id,
+            newLeads: leadMetricsAvailable ? (leadStats?.newLeads ?? 0) : null,
+            qualifiedLeads: leadMetricsAvailable ? (leadStats?.qualifiedLeads ?? 0) : null,
+            sales: salesStats.sales,
+            conversionPercent: conversionPercentByAgent,
+            agreementsAmount: tashkiliyOnly ? 0 : salesStats.agreementsAmount,
+            incomeAmount: tashkiliyOnly ? 0 : salesStats.incomeAmount,
+            talkedSeconds: talkedSecondsValue,
+            callsCount: callCountByAgent.get(agent.id) ?? 0,
+            followUpCount: activityStats.followUpCount,
+            noteCount: activityStats.noteCount,
+            stageChangeCount: activityStats.stageChangeCount,
+          };
+        })
+        .sort((a, b) => {
+          const aDuration = a.talkedSeconds ?? -1;
+          const bDuration = b.talkedSeconds ?? -1;
+          if (bDuration !== aDuration) {
+            return bDuration - aDuration;
+          }
+          return a.name.localeCompare(b.name, 'uz');
+        });
 
       log(LogLevel.INFO, 'Dashboard summary activity timings', {
         tenantId: ctx.tenantId,
