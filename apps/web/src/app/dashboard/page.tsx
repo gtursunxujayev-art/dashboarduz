@@ -67,6 +67,19 @@ function getRangeLabel(range: DashboardRange): string {
   return 'Bugun';
 }
 
+function getPeriodFollowUpLabel(range: DashboardRange): string {
+  if (range === 'week') {
+    return 'Haftalik F/U';
+  }
+  if (range === 'month') {
+    return 'Oylik F/U';
+  }
+  if (range === 'custom') {
+    return 'Davr F/U';
+  }
+  return 'Bugungi F/U';
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const roles = user?.roles || [];
@@ -648,7 +661,7 @@ export default function DashboardPage() {
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Yozuvlar</th>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bosqich o'zgarishi</th>
                           <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Muddati o'tgan F/U</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bugungi F/U</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{getPeriodFollowUpLabel(range)}</th>
                           {!isTashkiliyOnly && (
                             <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Shartnoma summasi</th>
                           )}
