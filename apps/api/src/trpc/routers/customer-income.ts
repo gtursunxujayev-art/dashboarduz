@@ -4106,11 +4106,16 @@ export const customerIncomeRouter = router({
           id: input.requestId,
           tenantId: ctx.tenantId,
         },
-        select: {
-          id: true,
-          type: true,
-          status: true,
-          incomeId: true,
+        include: {
+          income: {
+            select: {
+              id: true,
+              customerId: true,
+              courseId: true,
+              tariffId: true,
+              lifecycleStatus: true,
+            },
+          },
         },
       });
 
@@ -4134,14 +4139,20 @@ export const customerIncomeRouter = router({
       }
 
       await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        if (request.type === ADJUSTMENT_TYPE_REFUND) {
-          await tx.income.update({
-            where: { id: request.incomeId },
-            data: {
-              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            },
-          });
-        }
+        await tx.income.update({
+          where: { id: request.income.id },
+          data: {
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          },
+        });
+
+        await tx.customer.update({
+          where: { id: request.income.customerId },
+          data: {
+            profileCourseId: request.income.courseId ?? null,
+            profileTariffId: request.income.tariffId ?? null,
+          },
+        });
 
         await tx.incomeAdjustmentRequest.update({
           where: { id: request.id },
@@ -4163,7 +4174,7 @@ export const customerIncomeRouter = router({
           resourceId: request.id,
           metadata: {
             type: request.type,
-            incomeId: request.incomeId,
+            incomeId: request.income.id,
           },
         },
       });
