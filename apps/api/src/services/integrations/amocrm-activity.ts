@@ -69,6 +69,18 @@ function toDate(value: unknown): Date | null {
     return Number.isNaN(value.getTime()) ? null : value;
   }
 
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return (
+      toDate(record.timestamp)
+      || toDate(record.ts)
+      || toDate(record.value)
+      || toDate(record.datetime)
+      || toDate(record.date)
+      || null
+    );
+  }
+
   return null;
 }
 
@@ -80,14 +92,18 @@ function isWithinRange(value: Date | null, start: Date, end: Date): boolean {
 }
 
 function isCompletedTask(task: AmoCRMTask): boolean {
-  const value = task.is_completed;
+  const value = task.is_completed ?? (task as Record<string, unknown>).completed ?? (task as Record<string, unknown>).isCompleted;
   if (typeof value === 'boolean') {
     return value;
   }
   if (typeof value === 'number') {
     return value === 1;
   }
-  return toStringId(value) === '1';
+  const normalized = toStringId(value).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'done';
 }
 
 function isLeadTask(task: AmoCRMTask): boolean {
@@ -99,7 +115,21 @@ function isLeadTask(task: AmoCRMTask): boolean {
 }
 
 function taskResponsibleUserId(task: AmoCRMTask): string {
-  return toStringId(task.responsible_user_id);
+  const source = task as Record<string, unknown>;
+  const direct = toStringId(task.responsible_user_id);
+  if (direct) {
+    return direct;
+  }
+
+  const nestedResponsible = source.responsible_user as Record<string, unknown> | undefined;
+  const nestedByEmbedded = (source._embedded as Record<string, unknown> | undefined)?.responsible_user as Record<string, unknown> | undefined;
+  return (
+    toStringId(nestedResponsible?.id)
+    || toStringId(nestedResponsible?.user_id)
+    || toStringId(nestedByEmbedded?.id)
+    || toStringId(nestedByEmbedded?.user_id)
+    || ''
+  );
 }
 
 function taskActionDate(task: AmoCRMTask): Date | null {
@@ -313,10 +343,11 @@ export async function getAmoCRMActivityMetrics(params: {
       params.accessToken,
       {
         responsibleUserIds: managerIds,
+        completed: false,
         dateTo: todayEnd,
         entityType: 'leads',
         limit: 250,
-        maxPages: 80,
+        maxPages: 30,
       },
       params.baseUrl,
     );
@@ -326,9 +357,10 @@ export async function getAmoCRMActivityMetrics(params: {
         params.accessToken,
         {
           responsibleUserIds: managerIds,
+          completed: false,
           dateTo: todayEnd,
           limit: 250,
-          maxPages: 80,
+          maxPages: 30,
         },
         params.baseUrl,
       );
