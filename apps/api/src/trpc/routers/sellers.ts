@@ -225,6 +225,8 @@ function buildMetrics(
     followUpCount: 0,
     noteCount: 0,
     stageChangeCount: 0,
+    overdueFollowUpCount: 0,
+    todayFollowUpCount: 0,
   };
 
   return {
@@ -250,6 +252,8 @@ function buildMetrics(
     followUpCount: activityMetrics.followUpCount,
     noteCount: activityMetrics.noteCount,
     stageChangeCount: activityMetrics.stageChangeCount,
+    overdueFollowUpCount: activityMetrics.overdueFollowUpCount,
+    todayFollowUpCount: activityMetrics.todayFollowUpCount,
   };
 }
 
