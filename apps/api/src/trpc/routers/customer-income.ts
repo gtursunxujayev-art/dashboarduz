@@ -4491,6 +4491,8 @@ export const customerIncomeRouter = router({
         .object({
           query: z.string().optional(),
           courseId: z.string().uuid().optional(),
+          tariffId: z.string().uuid().optional(),
+          subTariffId: z.string().uuid().optional(),
           debtFilter: z.enum(['all', 'with_debt', 'without_debt']).default('all'),
           limit: z.number().int().positive().max(1000).default(300),
         })
@@ -4523,17 +4525,53 @@ export const customerIncomeRouter = router({
 
       if (input?.courseId) {
         andConditions.push({
-          incomes: {
-            some: {
-              ...(scopedManagerUserId
-                ? {
-                    managerUserId: scopedManagerUserId,
-                  }
-                : {}),
-              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-              courseId: input.courseId,
+          OR: [
+            {
+              incomes: {
+                some: {
+                  ...(scopedManagerUserId
+                    ? {
+                        managerUserId: scopedManagerUserId,
+                      }
+                    : {}),
+                  lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                  courseId: input.courseId,
+                },
+              },
             },
-          },
+            {
+              profileCourseId: input.courseId,
+            },
+          ],
+        });
+      }
+
+      if (input?.tariffId) {
+        andConditions.push({
+          OR: [
+            {
+              incomes: {
+                some: {
+                  ...(scopedManagerUserId
+                    ? {
+                        managerUserId: scopedManagerUserId,
+                      }
+                    : {}),
+                  lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                  tariffId: input.tariffId,
+                },
+              },
+            },
+            {
+              profileTariffId: input.tariffId,
+            },
+          ],
+        });
+      }
+
+      if (input?.subTariffId) {
+        andConditions.push({
+          profileSubTariffId: input.subTariffId,
         });
       }
 
@@ -4576,7 +4614,7 @@ export const customerIncomeRouter = router({
         ...(andConditions.length ? { AND: andConditions } : {}),
       };
 
-      const [customers, courseOptions] = await Promise.all([
+      const [customers, courseOptions, catalogCourses] = await Promise.all([
         prisma.customer.findMany({
           where,
           orderBy: { createdAt: 'desc' },
@@ -4594,12 +4632,38 @@ export const customerIncomeRouter = router({
           },
         }),
         fetchCourseOptionsSafe(ctx.tenantId),
+        fetchCoursesWithTariffsSafe({
+          tenantId: ctx.tenantId,
+          onlyActive: true,
+        }),
       ]);
 
       if (!customers.length) {
         return {
           customers: [],
           courseOptions,
+          catalogOptions: (catalogCourses as Array<{
+            id: string;
+            name: string;
+            tariffs: Array<{
+              id: string;
+              name: string;
+              subTariffs: Array<{ id: string; name: string; isActive: boolean }>;
+            }>;
+          }>).map((course) => ({
+            id: course.id,
+            name: course.name,
+            tariffs: course.tariffs.map((tariff) => ({
+              id: tariff.id,
+              name: tariff.name,
+              subTariffs: Array.isArray(tariff.subTariffs)
+                ? tariff.subTariffs.filter((subTariff) => subTariff.isActive).map((subTariff) => ({
+                    id: subTariff.id,
+                    name: subTariff.name,
+                  }))
+                : [],
+            })),
+          })),
         };
       }
 
@@ -4725,6 +4789,28 @@ export const customerIncomeRouter = router({
           };
         }),
         courseOptions,
+        catalogOptions: (catalogCourses as Array<{
+          id: string;
+          name: string;
+          tariffs: Array<{
+            id: string;
+            name: string;
+            subTariffs: Array<{ id: string; name: string; isActive: boolean }>;
+          }>;
+        }>).map((course) => ({
+          id: course.id,
+          name: course.name,
+          tariffs: course.tariffs.map((tariff) => ({
+            id: tariff.id,
+            name: tariff.name,
+            subTariffs: Array.isArray(tariff.subTariffs)
+              ? tariff.subTariffs.filter((subTariff) => subTariff.isActive).map((subTariff) => ({
+                  id: subTariff.id,
+                  name: subTariff.name,
+                }))
+              : [],
+          })),
+        })),
       };
     }),
 });
