@@ -2069,6 +2069,17 @@ const historicalImportSessionSchema = z.object({
   sessionId: z.string().uuid(),
 });
 
+const updateIncomeSchema = z.object({
+  incomeId: z.string().uuid(),
+  entryDate: z.string().min(1).optional(),
+  managerUserId: z.string().uuid().optional(),
+  paymentAmount: z.number().int().min(0).optional(),
+  deadline: z.string().min(1).nullable().optional(),
+  courseId: z.string().uuid().optional(),
+  tariffId: z.string().uuid().optional(),
+  coursePriceAmount: z.number().int().min(0).optional(),
+});
+
 type HistoricalProgressState = {
   stage: string;
   totalRows: number;
@@ -2849,6 +2860,265 @@ export const customerIncomeRouter = router({
       return {
         income: result.income,
         telegramDispatch: result.telegramDispatch,
+      };
+    }),
+
+  updateIncome: adminProcedure
+    .input(updateIncomeSchema)
+    .mutation(async ({ ctx, input }) => {
+      const income = await prisma.income.findFirst({
+        where: {
+          id: input.incomeId,
+          tenantId: ctx.tenantId,
+        },
+        select: {
+          id: true,
+          type: true,
+          customerId: true,
+          managerUserId: true,
+          courseId: true,
+          tariffId: true,
+          entryDate: true,
+          deadline: true,
+          paymentAmount: true,
+          coursePriceAmount: true,
+          debtAmount: true,
+          remainingDebtAmount: true,
+          relatedDebtIncomeId: true,
+          lifecycleStatus: true,
+        },
+      });
+
+      if (!income) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Income entry not found.' });
+      }
+
+      if (income.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Only active income entries can be edited.',
+        });
+      }
+
+      const linkedPendingAdjustmentCount = await prisma.incomeAdjustmentRequest.count({
+        where: {
+          tenantId: ctx.tenantId,
+          incomeId: income.id,
+          status: ADJUSTMENT_STATUS_PENDING,
+        },
+      });
+
+      if (linkedPendingAdjustmentCount > 0) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'This income entry has pending adjustment requests. Resolve them first.',
+        });
+      }
+
+      const parsedEntryDate = input.entryDate ? parseDateInput(input.entryDate) : null;
+      const parsedDeadline = input.deadline === undefined
+        ? undefined
+        : (input.deadline === null ? null : parseDateInput(input.deadline));
+
+      if (income.type === 'new_sale') {
+        const linkedRepayments = await prisma.income.count({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'repayment',
+            relatedDebtIncomeId: income.id,
+          },
+        });
+
+        if (linkedRepayments > 0) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'This sale has repayments. Edit repayments first.',
+          });
+        }
+
+        const nextManagerUserId = input.managerUserId ?? income.managerUserId;
+        await assertManagerBelongsToTenant(ctx.tenantId, nextManagerUserId);
+
+        const nextCourseId = input.courseId ?? income.courseId;
+        const nextTariffId = input.tariffId ?? income.tariffId;
+        const nextCoursePriceAmount = input.coursePriceAmount ?? income.coursePriceAmount ?? 0;
+        const nextPaymentAmount = input.paymentAmount ?? income.paymentAmount;
+
+        if (!nextCourseId || !nextTariffId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Course and tariff are required for a new sale.',
+          });
+        }
+
+        const [course, tariff] = await Promise.all([
+          prisma.course.findFirst({
+            where: {
+              id: nextCourseId,
+              tenantId: ctx.tenantId,
+              isActive: true,
+            },
+            select: { id: true },
+          }),
+          prisma.tariff.findFirst({
+            where: {
+              id: nextTariffId,
+              tenantId: ctx.tenantId,
+              courseId: nextCourseId,
+              isActive: true,
+            },
+            select: { id: true },
+          }),
+        ]);
+
+        if (!course || !tariff) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course or tariff not found.' });
+        }
+
+        const remainingDebtAmount = Math.max(nextCoursePriceAmount - nextPaymentAmount, 0);
+
+        const updated = await prisma.income.update({
+          where: { id: income.id },
+          data: {
+            managerUserId: nextManagerUserId,
+            entryDate: parsedEntryDate ?? income.entryDate,
+            deadline: remainingDebtAmount > 0
+              ? (parsedDeadline !== undefined ? parsedDeadline : income.deadline)
+              : null,
+            courseId: nextCourseId,
+            tariffId: nextTariffId,
+            coursePriceAmount: nextCoursePriceAmount,
+            debtAmount: nextCoursePriceAmount,
+            paymentAmount: nextPaymentAmount,
+            remainingDebtAmount,
+          },
+        });
+
+        await prisma.auditLog.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.user.userId,
+            action: 'income_update',
+            resource: 'income',
+            resourceId: income.id,
+            metadata: {
+              type: income.type,
+              mode: 'new_sale',
+            },
+          },
+        });
+
+        return {
+          success: true,
+          income: updated,
+        };
+      }
+
+      if (input.courseId !== undefined || input.tariffId !== undefined || input.coursePriceAmount !== undefined) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Repayment rows do not support course or tariff edits.',
+        });
+      }
+
+      const nextManagerUserId = input.managerUserId ?? income.managerUserId;
+      await assertManagerBelongsToTenant(ctx.tenantId, nextManagerUserId);
+
+      const nextPaymentAmount = input.paymentAmount ?? income.paymentAmount;
+      if (nextPaymentAmount <= 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Repayment amount must be greater than zero.',
+        });
+      }
+
+      if (!income.relatedDebtIncomeId) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'This repayment does not have a source debt.',
+        });
+      }
+
+      const sourceIncome = await prisma.income.findFirst({
+        where: {
+          id: income.relatedDebtIncomeId,
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+        },
+        select: {
+          id: true,
+          debtAmount: true,
+          remainingDebtAmount: true,
+        },
+      });
+
+      if (!sourceIncome) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Debt source income was not found.',
+        });
+      }
+
+      const sourceDebtAtRepaymentTime = income.debtAmount ?? (sourceIncome.remainingDebtAmount + income.paymentAmount);
+      if (nextPaymentAmount > sourceDebtAtRepaymentTime) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Repayment amount cannot exceed source debt.',
+        });
+      }
+
+      const paymentDelta = nextPaymentAmount - income.paymentAmount;
+      const nextSourceRemainingDebtRaw = sourceIncome.remainingDebtAmount - paymentDelta;
+      const nextSourceRemainingDebt = sourceIncome.debtAmount !== null
+        ? Math.min(nextSourceRemainingDebtRaw, sourceIncome.debtAmount)
+        : nextSourceRemainingDebtRaw;
+
+      if (nextSourceRemainingDebt < 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Repayment amount cannot exceed source debt.',
+        });
+      }
+
+      const nextRepaymentRemainingDebt = Math.max(sourceDebtAtRepaymentTime - nextPaymentAmount, 0);
+
+      const [, updatedRepayment] = await prisma.$transaction([
+        prisma.income.update({
+          where: { id: sourceIncome.id },
+          data: {
+            remainingDebtAmount: nextSourceRemainingDebt,
+          },
+        }),
+        prisma.income.update({
+          where: { id: income.id },
+          data: {
+            managerUserId: nextManagerUserId,
+            entryDate: parsedEntryDate ?? income.entryDate,
+            deadline: parsedDeadline !== undefined ? parsedDeadline : income.deadline,
+            debtAmount: sourceDebtAtRepaymentTime,
+            paymentAmount: nextPaymentAmount,
+            remainingDebtAmount: nextRepaymentRemainingDebt,
+          },
+        }),
+      ]);
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'income_update',
+          resource: 'income',
+          resourceId: income.id,
+          metadata: {
+            type: income.type,
+            mode: 'repayment',
+          },
+        },
+      });
+
+      return {
+        success: true,
+        income: updatedRepayment,
       };
     }),
 
