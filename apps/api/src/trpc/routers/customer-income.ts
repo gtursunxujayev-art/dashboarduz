@@ -512,6 +512,73 @@ function resolveRefundGroupIds(): string[] {
   return parseTelegramGroupIdsFromEnvKeys(REFUND_PAYMENT_GROUP_ENV_KEYS);
 }
 
+async function fetchLatestResponsibleManagerByCustomer(params: {
+  tenantId: string;
+  customerIds: string[];
+  scopedManagerUserId?: string | null;
+}): Promise<Map<string, { managerUserId: string | null; managerLabel: string | null }>> {
+  if (!params.customerIds.length) {
+    return new Map();
+  }
+
+  const latestIncomes = await prisma.income.findMany({
+    where: {
+      tenantId: params.tenantId,
+      customerId: { in: params.customerIds },
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      ...(params.scopedManagerUserId
+        ? {
+            managerUserId: params.scopedManagerUserId,
+          }
+        : {}),
+    },
+    orderBy: [
+      { entryDate: 'desc' },
+      { createdAt: 'desc' },
+    ],
+    select: {
+      customerId: true,
+      managerUserId: true,
+      manager: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+        },
+      },
+    },
+  });
+
+  const result = new Map<string, { managerUserId: string | null; managerLabel: string | null }>();
+  for (const income of latestIncomes) {
+    if (result.has(income.customerId)) {
+      continue;
+    }
+    const managerLabel = income.manager?.name || income.manager?.username || income.managerUserId || null;
+    result.set(income.customerId, {
+      managerUserId: income.managerUserId || null,
+      managerLabel,
+    });
+  }
+
+  return result;
+}
+
+function buildTelegramChatIdCandidates(groupId: string): string[] {
+  const normalized = String(groupId || '').trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const candidates = new Set<string>([normalized]);
+  if (/^-100\d+$/.test(normalized)) {
+    candidates.add(`-${normalized.slice(4)}`);
+  } else if (/^-\d+$/.test(normalized) && !normalized.startsWith('-100')) {
+    candidates.add(`-100${normalized.slice(1)}`);
+  }
+  return Array.from(candidates);
+}
+
 function toHashtag(value: string | null | undefined): string | null {
   if (!value) {
     return null;
@@ -1070,25 +1137,39 @@ async function sendTariffChangeRequestedTelegram(params: {
     ? (customer.telegramUsername.startsWith('@') ? customer.telegramUsername : `@${customer.telegramUsername}`)
     : '-';
 
-  const messageLines = [
+  const hashtags = [
     "#Tarif_o'zgarishi_so'rovi",
     ...(toHashtag(request.newCourse.name) ? [toHashtag(request.newCourse.name)] : []),
     ...(toHashtag(request.newTariff?.name) ? [toHashtag(request.newTariff?.name)] : []),
     ...(toHashtag(managerLabel) ? [toHashtag(managerLabel)] : []),
-    '',
+  ].join('\n');
+
+  const customerBlock = [
     `1.Mijoz: ${customer.name}`,
     `2.Tel: ${customer.customerNumber}`,
     `3.Tg: ${telegramUsername}`,
-    '',
+  ].join('\n');
+
+  const courseChangeBlock = [
     `Eski kurs/tarif: ${[request.income.course?.name, request.income.tariff?.name].filter(Boolean).join(' / ') || '-'}`,
     `Yangi kurs/tarif: ${[request.newCourse?.name, request.newTariff?.name].filter(Boolean).join(' / ') || '-'}`,
-    `Yangi kelishuv: ${formatAmountUz(request.newAgreementAmount ?? 0)}`,
+  ].join('\n');
+
+  const agreementBlock = `Yangi kelishuv: ${formatAmountUz(request.newAgreementAmount ?? 0)}`;
+
+  const metaBlock = [
     `So'rov yuborgan: ${requesterLabel}`,
     `So'rov vaqti: ${formatDateGmt5(request.createdAt)}`,
     ...(request.reason ? [`Izoh: ${request.reason}`] : []),
-  ];
+  ].join('\n');
 
-  const message = messageLines.join('\n');
+  const message = [
+    hashtags,
+    customerBlock,
+    courseChangeBlock,
+    agreementBlock,
+    metaBlock,
+  ].filter(Boolean).join('\n\n');
   for (const groupId of groupIds) {
     try {
       await telegramService.sendMessage(botToken, groupId, message, {
@@ -1303,16 +1384,29 @@ async function sendRefundApprovedTelegram(params: {
   const message = messageLines.join('\n');
 
   for (const groupId of groupIds) {
-    try {
-      await telegramService.sendMessage(botToken, groupId, message, {
-        disable_web_page_preview: true,
-      });
-    } catch (error) {
+    const chatIdCandidates = buildTelegramChatIdCandidates(groupId);
+    let delivered = false;
+    let lastError = '';
+
+    for (const candidate of chatIdCandidates) {
+      try {
+        await telegramService.sendMessage(botToken, candidate, message, {
+          disable_web_page_preview: true,
+        });
+        delivered = true;
+        break;
+      } catch (error) {
+        lastError = String((error as any)?.message || error);
+      }
+    }
+
+    if (!delivered) {
       console.error('[Income][Telegram] Failed to send refund message', {
         tenantId: params.tenantId,
         requestId: params.requestId,
         groupId,
-        error: String((error as any)?.message || error),
+        chatIdCandidates,
+        error: lastError,
       });
     }
   }
@@ -1422,16 +1516,29 @@ async function sendRefundRequestedTelegram(params: {
   const message = messageLines.join('\n');
 
   for (const groupId of groupIds) {
-    try {
-      await telegramService.sendMessage(botToken, groupId, message, {
-        disable_web_page_preview: true,
-      });
-    } catch (error) {
+    const chatIdCandidates = buildTelegramChatIdCandidates(groupId);
+    let delivered = false;
+    let lastError = '';
+
+    for (const candidate of chatIdCandidates) {
+      try {
+        await telegramService.sendMessage(botToken, candidate, message, {
+          disable_web_page_preview: true,
+        });
+        delivered = true;
+        break;
+      } catch (error) {
+        lastError = String((error as any)?.message || error);
+      }
+    }
+
+    if (!delivered) {
       console.error('[Income][Telegram] Failed to send refund request message', {
         tenantId: params.tenantId,
         requestId: params.requestId,
         groupId,
-        error: String((error as any)?.message || error),
+        chatIdCandidates,
+        error: lastError,
       });
     }
   }
@@ -2679,6 +2786,12 @@ export const customerIncomeRouter = router({
       }),
     ]);
 
+    const responsibleManagerMap = await fetchLatestResponsibleManagerByCustomer({
+      tenantId: ctx.tenantId,
+      customerIds: (customers as Array<{ id: string }>).map((customer) => customer.id),
+      scopedManagerUserId,
+    });
+
     return {
       managers: (managers as Array<{
         id: string;
@@ -2690,7 +2803,19 @@ export const customerIncomeRouter = router({
         label: manager.name || manager.username || manager.id,
         roles: manager.roles,
       })),
-      customers,
+      customers: (customers as Array<{
+        id: string;
+        customerNumber: string;
+        name: string;
+        telegramUsername: string | null;
+      }>).map((customer) => {
+        const responsibleManager = responsibleManagerMap.get(customer.id);
+        return {
+          ...customer,
+          responsibleManagerUserId: responsibleManager?.managerUserId ?? null,
+          responsibleManagerLabel: responsibleManager?.managerLabel ?? null,
+        };
+      }),
       courses: (courses as Array<{
         id: string;
         name: string;
@@ -2736,7 +2861,7 @@ export const customerIncomeRouter = router({
     .query(async ({ ctx, input }) => {
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
       const query = input.query?.trim();
-      return prisma.customer.findMany({
+      const customers = await prisma.customer.findMany({
         where: {
           tenantId: ctx.tenantId,
           ...(scopedManagerUserId
@@ -2767,6 +2892,21 @@ export const customerIncomeRouter = router({
           name: true,
           telegramUsername: true,
         },
+      });
+
+      const responsibleManagerMap = await fetchLatestResponsibleManagerByCustomer({
+        tenantId: ctx.tenantId,
+        customerIds: customers.map((customer) => customer.id),
+        scopedManagerUserId,
+      });
+
+      return customers.map((customer) => {
+        const responsibleManager = responsibleManagerMap.get(customer.id);
+        return {
+          ...customer,
+          responsibleManagerUserId: responsibleManager?.managerUserId ?? null,
+          responsibleManagerLabel: responsibleManager?.managerLabel ?? null,
+        };
       });
     }),
 
@@ -4991,6 +5131,13 @@ export const customerIncomeRouter = router({
           paymentAmount: true,
           remainingDebtAmount: true,
           entryDate: true,
+          managerUserId: true,
+          manager: {
+            select: {
+              name: true,
+              username: true,
+            },
+          },
           course: {
             select: {
               id: true,
@@ -5008,6 +5155,8 @@ export const customerIncomeRouter = router({
           hasDebt: boolean;
           lastActivityAt: Date | null;
           courses: Set<string>;
+          responsibleManagerUserId: string | null;
+          responsibleManagerLabel: string | null;
         }
       >();
 
@@ -5017,6 +5166,8 @@ export const customerIncomeRouter = router({
         paymentAmount: number;
         remainingDebtAmount: number;
         entryDate: Date;
+        managerUserId: string | null;
+        manager: { name: string | null; username: string | null } | null;
         course: { id: string; name: string } | null;
       }>) {
         const current = aggregatesByCustomer.get(income.customerId) || {
@@ -5025,6 +5176,8 @@ export const customerIncomeRouter = router({
           hasDebt: false,
           lastActivityAt: null as Date | null,
           courses: new Set<string>(),
+          responsibleManagerUserId: null as string | null,
+          responsibleManagerLabel: null as string | null,
         };
 
         current.totalPaidAmount += income.paymentAmount || 0;
@@ -5039,6 +5192,11 @@ export const customerIncomeRouter = router({
 
         if (income.course?.name) {
           current.courses.add(income.course.name);
+        }
+
+        if (!current.responsibleManagerLabel) {
+          current.responsibleManagerUserId = income.managerUserId || null;
+          current.responsibleManagerLabel = income.manager?.name || income.manager?.username || income.managerUserId || null;
         }
 
         aggregatesByCustomer.set(income.customerId, current);
@@ -5062,6 +5220,8 @@ export const customerIncomeRouter = router({
             hasDebt: aggregate?.hasDebt ?? false,
             lastActivityAt: aggregate?.lastActivityAt ?? null,
             courses: mergedCourses,
+            responsibleManagerUserId: aggregate?.responsibleManagerUserId ?? null,
+            responsibleManagerLabel: aggregate?.responsibleManagerLabel ?? null,
             profileCourseName,
             profileTariffName,
             profileSubTariffName,
