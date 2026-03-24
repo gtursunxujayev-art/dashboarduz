@@ -5,8 +5,30 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 
 type BonusMode = 'on_income' | 'on_debt_closed';
+type CourseBonusMode = 'simple' | 'tiered';
+type SalaryCategory = 'online' | 'offline' | 'intensive';
 type PlanCategory = 'online' | 'offline' | 'intensive' | 'additional_service';
 type PlanPeriodMode = 'monthly' | 'all_time';
+type BonusTier = {
+  minSales: number;
+  maxSales: number | null;
+  percent: number;
+};
+type CategoryBonusRule = {
+  mode: CourseBonusMode;
+  simplePercent: number;
+  tiers: BonusTier[];
+};
+type CategoryBonusRuleState = {
+  mode: CourseBonusMode;
+  simplePercent: string;
+  tiers: Array<{
+    minSales: string;
+    maxSales: string;
+    percent: string;
+  }>;
+};
+type BonusRulesState = Record<SalaryCategory, CategoryBonusRuleState>;
 
 type AgentUserOption = {
   id: string;
@@ -22,6 +44,7 @@ type BonusPlan = {
   courseId: string | null;
   tariffId: string | null;
   subTariffId: string | null;
+  subTariffName?: string | null;
   targetClosedSales: number;
   bonusAmount: number;
   createdAt: string;
@@ -46,6 +69,11 @@ type CatalogCourse = {
   tariffs: CatalogTariff[];
 };
 
+type SubTariffOption = {
+  value: string;
+  label: string;
+};
+
 function parsePercentInput(value: string): number {
   const parsed = Number.parseFloat(value.trim());
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -55,6 +83,11 @@ function parsePercentInput(value: string): number {
     return 100;
   }
   return Number(parsed.toFixed(2));
+}
+
+function parsePositiveInt(value: string): number {
+  const parsed = Number.parseInt(value.replace(/[^\d]/g, ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 function parseAmountInput(value: string): number {
@@ -81,6 +114,46 @@ function getPeriodLabel(mode: PlanPeriodMode): string {
   return mode === 'monthly' ? 'Oylik' : 'Umumiy';
 }
 
+function normalizeSubTariffName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function getSalaryCategoryLabel(category: SalaryCategory): string {
+  if (category === 'online') return 'Online';
+  if (category === 'offline') return 'Offline';
+  return 'Intensiv';
+}
+
+function createDefaultBonusRulesState(): BonusRulesState {
+  const emptyTier = { minSales: '', maxSales: '', percent: '' };
+  return {
+    online: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
+    offline: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
+    intensive: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
+  };
+}
+
+function mapRuleToState(rule: CategoryBonusRule | undefined): CategoryBonusRuleState {
+  if (!rule || rule.mode === 'simple') {
+    return {
+      mode: 'simple',
+      simplePercent: String(rule?.simplePercent ?? 0),
+      tiers: [{ minSales: '', maxSales: '', percent: '' }],
+    };
+  }
+  return {
+    mode: 'tiered',
+    simplePercent: String(rule.simplePercent ?? 0),
+    tiers: rule.tiers.length
+      ? rule.tiers.map((tier) => ({
+        minSales: String(tier.minSales),
+        maxSales: tier.maxSales === null ? '' : String(tier.maxSales),
+        percent: String(tier.percent),
+      }))
+      : [{ minSales: '', maxSales: '', percent: '' }],
+  };
+}
+
 export default function BonusPage() {
   const { user } = useAuth();
   const roles = user?.roles || [];
@@ -89,11 +162,8 @@ export default function BonusPage() {
   const canView = isAdmin || isManager;
 
   const [salaryBonusMode, setSalaryBonusMode] = useState<BonusMode>('on_income');
-  const [bonusOnlinePercent, setBonusOnlinePercent] = useState('0');
-  const [bonusOfflinePercent, setBonusOfflinePercent] = useState('0');
-  const [bonusIntensivePercent, setBonusIntensivePercent] = useState('0');
+  const [bonusRulesState, setBonusRulesState] = useState<BonusRulesState>(() => createDefaultBonusRulesState());
   const [fixedSalaryByAgent, setFixedSalaryByAgent] = useState<Record<string, string>>({});
-  const [salaryExtraSettings, setSalaryExtraSettings] = useState<Record<string, unknown>>({});
 
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [planName, setPlanName] = useState('');
@@ -101,6 +171,7 @@ export default function BonusPage() {
   const [planCourseId, setPlanCourseId] = useState('');
   const [planTariffId, setPlanTariffId] = useState('');
   const [planSubTariffId, setPlanSubTariffId] = useState('');
+  const [planSubTariffName, setPlanSubTariffName] = useState('');
   const [planPeriodMode, setPlanPeriodMode] = useState<PlanPeriodMode>('monthly');
   const [planTargetClosedSales, setPlanTargetClosedSales] = useState('');
   const [planBonusAmount, setPlanBonusAmount] = useState('');
@@ -111,8 +182,9 @@ export default function BonusPage() {
   const [planError, setPlanError] = useState<string | null>(null);
   const [planSuccess, setPlanSuccess] = useState<string | null>(null);
 
-  const tenantQuery = trpc.tenant.get.useQuery(undefined, {
+  const salaryConfigQuery = trpc.bonus.getSalaryConfig.useQuery(undefined, {
     enabled: canView,
+    retry: false,
   });
   const usersQuery = trpc.users.list.useQuery(undefined, {
     enabled: canView,
@@ -127,27 +199,26 @@ export default function BonusPage() {
     retry: false,
   });
 
-  const updateTenant = trpc.tenant.update.useMutation();
+  const updateBonusRulesMutation = trpc.bonus.updateBonusRules.useMutation();
+  const updateFixedSalariesMutation = trpc.bonus.updateFixedSalaries.useMutation();
   const createPlan = trpc.bonus.createPlan.useMutation();
   const updatePlan = trpc.bonus.updatePlan.useMutation();
   const deletePlan = trpc.bonus.deletePlan.useMutation();
 
   useEffect(() => {
-    if (!tenantQuery.data) {
+    if (!salaryConfigQuery.data) {
       return;
     }
 
-    const settings = (tenantQuery.data.settings as Record<string, unknown> | null) || {};
-    const salarySettings = ((settings.salary as Record<string, unknown> | null) || {});
-    setSalaryBonusMode(salarySettings.bonusMode === 'on_debt_closed' ? 'on_debt_closed' : 'on_income');
+    setSalaryBonusMode(salaryConfigQuery.data.bonusMode === 'on_debt_closed' ? 'on_debt_closed' : 'on_income');
+    setBonusRulesState({
+      online: mapRuleToState(salaryConfigQuery.data.bonusRules.online as CategoryBonusRule),
+      offline: mapRuleToState(salaryConfigQuery.data.bonusRules.offline as CategoryBonusRule),
+      intensive: mapRuleToState(salaryConfigQuery.data.bonusRules.intensive as CategoryBonusRule),
+    });
 
-    const salaryPercentages = ((salarySettings.bonusPercentages as Record<string, unknown> | null) || {});
-    setBonusOnlinePercent(String(salaryPercentages.online ?? 0));
-    setBonusOfflinePercent(String(salaryPercentages.offline ?? 0));
-    setBonusIntensivePercent(String(salaryPercentages.intensive ?? 0));
-
-    const fixedRows = Array.isArray(salarySettings.fixedSalaries)
-      ? salarySettings.fixedSalaries
+    const fixedRows = Array.isArray(salaryConfigQuery.data.fixedSalaries)
+      ? salaryConfigQuery.data.fixedSalaries
       : [];
     const nextFixed: Record<string, string> = {};
     for (const row of fixedRows as Array<Record<string, unknown>>) {
@@ -159,12 +230,7 @@ export default function BonusPage() {
       nextFixed[userId] = Number.isFinite(amount) && amount > 0 ? String(Math.round(amount)) : '';
     }
     setFixedSalaryByAgent(nextFixed);
-
-    const extraEntries = Object.entries(salarySettings).filter(
-      ([key]) => key !== 'bonusMode' && key !== 'bonusPercentages' && key !== 'fixedSalaries',
-    );
-    setSalaryExtraSettings(Object.fromEntries(extraEntries));
-  }, [tenantQuery.data]);
+  }, [salaryConfigQuery.data]);
 
   const agentUsers = useMemo<AgentUserOption[]>(() => {
     const users = usersQuery.data || [];
@@ -220,10 +286,34 @@ export default function BonusPage() {
     [tariffOptions, planTariffId],
   );
 
-  const subTariffOptions = useMemo(
-    () => selectedTariff?.subTariffs || [],
+  const singleTariffSubTariffOptions = useMemo<SubTariffOption[]>(
+    () => (selectedTariff?.subTariffs || []).map((subTariff) => ({
+      value: subTariff.id,
+      label: subTariff.name,
+    })),
     [selectedTariff],
   );
+
+  const allTariffsSubTariffOptions = useMemo<SubTariffOption[]>(() => {
+    if (!selectedCourse) {
+      return [];
+    }
+    const uniqueByNormalizedName = new Map<string, string>();
+    for (const tariff of selectedCourse.tariffs) {
+      for (const subTariff of tariff.subTariffs) {
+        const key = normalizeSubTariffName(subTariff.name);
+        if (!key || uniqueByNormalizedName.has(key)) {
+          continue;
+        }
+        uniqueByNormalizedName.set(key, subTariff.name);
+      }
+    }
+    return Array.from(uniqueByNormalizedName.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [selectedCourse]);
+
+  const subTariffOptions = planTariffId ? singleTariffSubTariffOptions : allTariffsSubTariffOptions;
 
   const resetPlanForm = () => {
     setEditingPlanId(null);
@@ -232,19 +322,124 @@ export default function BonusPage() {
     setPlanCourseId('');
     setPlanTariffId('');
     setPlanSubTariffId('');
+    setPlanSubTariffName('');
     setPlanPeriodMode('monthly');
     setPlanTargetClosedSales('');
     setPlanBonusAmount('');
     setPlanActive(true);
   };
 
-  const handleSaveSalarySettings = async (event: React.FormEvent) => {
+  const validateAndBuildBonusRulesPayload = (): { bonusRules: Record<SalaryCategory, CategoryBonusRule> } | null => {
+    const categories: SalaryCategory[] = ['online', 'offline', 'intensive'];
+    const payload = {} as Record<SalaryCategory, CategoryBonusRule>;
+
+    for (const category of categories) {
+      const currentRule = bonusRulesState[category];
+      if (!currentRule) {
+        setError(`${getSalaryCategoryLabel(category)} qoidasi topilmadi.`);
+        return null;
+      }
+
+      if (currentRule.mode === 'simple') {
+        const simplePercent = parsePercentInput(currentRule.simplePercent);
+        payload[category] = {
+          mode: 'simple',
+          simplePercent,
+          tiers: [],
+        };
+        continue;
+      }
+
+      const normalizedTiers = currentRule.tiers
+        .map((tier) => ({
+          minSales: parsePositiveInt(tier.minSales),
+          maxSales: tier.maxSales.trim() ? parsePositiveInt(tier.maxSales) : null,
+          percent: parsePercentInput(tier.percent),
+        }))
+        .filter((tier) => tier.minSales > 0 && tier.percent > 0)
+        .sort((a, b) => a.minSales - b.minSales);
+
+      if (!normalizedTiers.length) {
+        setError(`${getSalaryCategoryLabel(category)} uchun kamida bitta tier kiriting.`);
+        return null;
+      }
+
+      for (let index = 0; index < normalizedTiers.length; index += 1) {
+        const tier = normalizedTiers[index];
+        if (!tier) {
+          setError(`${getSalaryCategoryLabel(category)} tierlari noto'g'ri.`);
+          return null;
+        }
+        if (tier.maxSales !== null && tier.maxSales < tier.minSales) {
+          setError(`${getSalaryCategoryLabel(category)}: diapazon oxiri boshlanishdan kichik bo'lmasligi kerak.`);
+          return null;
+        }
+        if (tier.maxSales === null && index !== normalizedTiers.length - 1) {
+          setError(`${getSalaryCategoryLabel(category)}: ochiq diapazon faqat oxirgi qatorda bo'lishi kerak.`);
+          return null;
+        }
+        if (index > 0) {
+          const prev = normalizedTiers[index - 1];
+          if (!prev) {
+            setError(`${getSalaryCategoryLabel(category)}: tier tartibi xato.`);
+            return null;
+          }
+          const prevMax = prev.maxSales ?? Number.MAX_SAFE_INTEGER;
+          if (tier.minSales <= prevMax) {
+            setError(`${getSalaryCategoryLabel(category)}: tier diapazonlari kesishmasligi kerak.`);
+            return null;
+          }
+          if (prev.maxSales === null) {
+            setError(`${getSalaryCategoryLabel(category)}: ochiq diapazondan keyin yangi diapazon bo'lishi mumkin emas.`);
+            return null;
+          }
+        }
+      }
+
+      payload[category] = {
+        mode: 'tiered',
+        simplePercent: parsePercentInput(currentRule.simplePercent),
+        tiers: normalizedTiers,
+      };
+    }
+
+    return { bonusRules: payload };
+  };
+
+  const handleSaveBonusRules = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
     setSuccess(null);
 
     if (!isAdmin) {
       setError("Faqat admin bonus sozlamalarini o'zgartira oladi.");
+      return;
+    }
+
+    const prepared = validateAndBuildBonusRulesPayload();
+    if (!prepared) {
+      return;
+    }
+
+    try {
+      await updateBonusRulesMutation.mutateAsync({
+        bonusMode: salaryBonusMode,
+        bonusRules: prepared.bonusRules,
+      });
+      await Promise.all([salaryConfigQuery.refetch(), plansQuery.refetch()]);
+      setSuccess("Bonus qoidalari muvaffaqiyatli saqlandi.");
+    } catch (saveError: any) {
+      setError(saveError?.message || "Bonus qoidalarini saqlashda xatolik.");
+    }
+  };
+
+  const handleSaveFixedSalaries = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    if (!isAdmin) {
+      setError("Faqat admin fiks maoshni o'zgartira oladi.");
       return;
     }
 
@@ -256,24 +451,13 @@ export default function BonusPage() {
       .filter((row: { userId: string; amount: number }) => row.amount > 0);
 
     try {
-      await updateTenant.mutateAsync({
-        settings: {
-          salary: {
-            ...salaryExtraSettings,
-            bonusMode: salaryBonusMode,
-            bonusPercentages: {
-              online: parsePercentInput(bonusOnlinePercent),
-              offline: parsePercentInput(bonusOfflinePercent),
-              intensive: parsePercentInput(bonusIntensivePercent),
-            },
-            fixedSalaries,
-          },
-        },
+      await updateFixedSalariesMutation.mutateAsync({
+        fixedSalaries,
       });
-      await Promise.all([tenantQuery.refetch(), usersQuery.refetch(), plansQuery.refetch()]);
-      setSuccess("Bonus sozlamalari muvaffaqiyatli saqlandi.");
+      await salaryConfigQuery.refetch();
+      setSuccess("Fiks maoshlar muvaffaqiyatli saqlandi.");
     } catch (saveError: any) {
-      setError(saveError?.message || "Bonus sozlamalarini saqlashda xatolik.");
+      setError(saveError?.message || "Fiks maoshlarni saqlashda xatolik.");
     }
   };
 
@@ -309,7 +493,8 @@ export default function BonusPage() {
       courseCategory: planCategory,
       courseId: planCourseId || null,
       tariffId: planTariffId || null,
-      subTariffId: planSubTariffId || null,
+      subTariffId: planTariffId ? (planSubTariffId || null) : null,
+      subTariffName: !planTariffId && planSubTariffName ? planSubTariffName : null,
       targetClosedSales,
       bonusAmount,
     } as const;
@@ -338,7 +523,8 @@ export default function BonusPage() {
     setPlanCategory(plan.courseCategory);
     setPlanCourseId(plan.courseId || '');
     setPlanTariffId(plan.tariffId || '');
-    setPlanSubTariffId(plan.subTariffId || '');
+    setPlanSubTariffId(plan.tariffId ? (plan.subTariffId || '') : '');
+    setPlanSubTariffName(!plan.tariffId ? normalizeSubTariffName(plan.subTariffName || '') : '');
     setPlanPeriodMode(plan.periodMode);
     setPlanTargetClosedSales(String(plan.targetClosedSales));
     setPlanBonusAmount(String(plan.bonusAmount));
@@ -381,6 +567,90 @@ export default function BonusPage() {
     }
   };
 
+  const handleRuleModeChange = (category: SalaryCategory, mode: CourseBonusMode) => {
+    setBonusRulesState((prev) => {
+      const current = prev[category];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [category]: {
+          ...current,
+          mode,
+          tiers: current.tiers.length ? current.tiers : [{ minSales: '', maxSales: '', percent: '' }],
+        },
+      };
+    });
+  };
+
+  const handleSimplePercentChange = (category: SalaryCategory, value: string) => {
+    setBonusRulesState((prev) => {
+      const current = prev[category];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [category]: {
+          ...current,
+          simplePercent: value,
+        },
+      };
+    });
+  };
+
+  const handleTierChange = (
+    category: SalaryCategory,
+    tierIndex: number,
+    field: 'minSales' | 'maxSales' | 'percent',
+    value: string,
+  ) => {
+    setBonusRulesState((prev) => {
+      const current = prev[category];
+      if (!current) return prev;
+      const nextTiers = [...current.tiers];
+      const target = nextTiers[tierIndex];
+      if (!target) return prev;
+      nextTiers[tierIndex] = {
+        ...target,
+        [field]: field === 'percent' ? value : value.replace(/[^\d]/g, ''),
+      };
+      return {
+        ...prev,
+        [category]: {
+          ...current,
+          tiers: nextTiers,
+        },
+      };
+    });
+  };
+
+  const handleAddTier = (category: SalaryCategory) => {
+    setBonusRulesState((prev) => {
+      const current = prev[category];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [category]: {
+          ...current,
+          tiers: [...current.tiers, { minSales: '', maxSales: '', percent: '' }],
+        },
+      };
+    });
+  };
+
+  const handleRemoveTier = (category: SalaryCategory, tierIndex: number) => {
+    setBonusRulesState((prev) => {
+      const current = prev[category];
+      if (!current) return prev;
+      const nextTiers = current.tiers.filter((_, index) => index !== tierIndex);
+      return {
+        ...prev,
+        [category]: {
+          ...current,
+          tiers: nextTiers.length ? nextTiers : [{ minSales: '', maxSales: '', percent: '' }],
+        },
+      };
+    });
+  };
+
   if (!canView) {
     return (
       <div className="space-y-6">
@@ -409,19 +679,27 @@ export default function BonusPage() {
 
           {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
           {success && <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
-          {tenantQuery.error && (
-            <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{tenantQuery.error.message}</p>
+          {salaryConfigQuery.error && (
+            <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{salaryConfigQuery.error.message}</p>
           )}
           {usersQuery.error && (
             <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
               Agentlar ro&apos;yxatini yuklashda xatolik.
             </p>
           )}
+        </div>
+      </div>
 
-          <form onSubmit={handleSaveSalarySettings} className="space-y-4">
+      <div className="rounded-lg bg-white shadow">
+        <div className="border-b border-gray-100 px-6 py-5">
+          <h2 className="text-lg font-semibold text-gray-900">Bonus qoidalari</h2>
+          <p className="mt-1 text-sm text-gray-500">Simple yoki tiered rejimni har bir kurs turi uchun alohida sozlang.</p>
+        </div>
+        <div className="p-6">
+          <form onSubmit={handleSaveBonusRules} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Bonus hisoblash rejimi</label>
+                <label className="block text-sm font-medium text-gray-700">Bonus hisoblash bazasi</label>
                 <select
                   value={salaryBonusMode}
                   onChange={(event) => setSalaryBonusMode(event.target.value as BonusMode)}
@@ -434,44 +712,128 @@ export default function BonusPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Online bonus %</label>
-                <input
-                  value={bonusOnlinePercent}
-                  onChange={(event) => setBonusOnlinePercent(event.target.value)}
-                  disabled={!isAdmin}
-                  inputMode="decimal"
-                  placeholder="0"
-                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Offline bonus %</label>
-                <input
-                  value={bonusOfflinePercent}
-                  onChange={(event) => setBonusOfflinePercent(event.target.value)}
-                  disabled={!isAdmin}
-                  inputMode="decimal"
-                  placeholder="0"
-                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Intensiv bonus %</label>
-                <input
-                  value={bonusIntensivePercent}
-                  onChange={(event) => setBonusIntensivePercent(event.target.value)}
-                  disabled={!isAdmin}
-                  inputMode="decimal"
-                  placeholder="0"
-                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                />
-              </div>
-            </div>
+            {(['online', 'offline', 'intensive'] as SalaryCategory[]).map((category) => {
+              const rule = bonusRulesState[category];
+              if (!rule) return null;
+              return (
+                <div key={category} className="rounded-md border border-gray-200 bg-gray-50 p-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{getSalaryCategoryLabel(category)}</p>
+                      <p className="mt-1 text-xs text-gray-500">Bonus qoidasi</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Rejim</label>
+                      <select
+                        value={rule.mode}
+                        onChange={(event) => handleRuleModeChange(category, event.target.value as CourseBonusMode)}
+                        disabled={!isAdmin}
+                        className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                      >
+                        <option value="simple">Simple</option>
+                        <option value="tiered">Tiered</option>
+                      </select>
+                    </div>
+                    {rule.mode === 'simple' ? (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Foiz (%)</label>
+                        <input
+                          value={rule.simplePercent}
+                          onChange={(event) => handleSimplePercentChange(category, event.target.value)}
+                          disabled={!isAdmin}
+                          inputMode="decimal"
+                          placeholder="0"
+                          className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Simple foiz (fallback)</label>
+                        <input
+                          value={rule.simplePercent}
+                          onChange={(event) => handleSimplePercentChange(category, event.target.value)}
+                          disabled={!isAdmin}
+                          inputMode="decimal"
+                          placeholder="0"
+                          className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                        />
+                      </div>
+                    )}
+                  </div>
 
+                  {rule.mode === 'tiered' && (
+                    <div className="mt-4 space-y-2">
+                      {rule.tiers.map((tier, tierIndex) => (
+                        <div key={`${category}-tier-${tierIndex}`} className="grid grid-cols-1 gap-2 md:grid-cols-4">
+                          <input
+                            value={tier.minSales}
+                            onChange={(event) => handleTierChange(category, tierIndex, 'minSales', event.target.value)}
+                            disabled={!isAdmin}
+                            inputMode="numeric"
+                            placeholder="Boshlanish (min)"
+                            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                          />
+                          <input
+                            value={tier.maxSales}
+                            onChange={(event) => handleTierChange(category, tierIndex, 'maxSales', event.target.value)}
+                            disabled={!isAdmin}
+                            inputMode="numeric"
+                            placeholder="Tugash (max), bo'sh=ochiq"
+                            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                          />
+                          <input
+                            value={tier.percent}
+                            onChange={(event) => handleTierChange(category, tierIndex, 'percent', event.target.value)}
+                            disabled={!isAdmin}
+                            inputMode="decimal"
+                            placeholder="Foiz (%)"
+                            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleAddTier(category)}
+                              disabled={!isAdmin}
+                              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                            >
+                              +
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTier(category, tierIndex)}
+                              disabled={!isAdmin}
+                              className="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              -
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <button
+              type="submit"
+              disabled={!isAdmin || updateBonusRulesMutation.isLoading || salaryConfigQuery.isLoading}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {updateBonusRulesMutation.isLoading ? 'Saqlanmoqda...' : "Bonus qoidalarini saqlash"}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-white shadow">
+        <div className="border-b border-gray-100 px-6 py-5">
+          <h2 className="text-lg font-semibold text-gray-900">Fiks maosh</h2>
+          <p className="mt-1 text-sm text-gray-500">Agentlar bo&apos;yicha fiks maoshni alohida saqlang.</p>
+        </div>
+        <div className="p-6">
+          <form onSubmit={handleSaveFixedSalaries} className="space-y-4">
             <div className="mt-2">
-              <p className="text-sm font-medium text-gray-700">Agentlar bo&apos;yicha fiks maosh</p>
               <p className="mt-1 text-xs text-gray-500">
                 Formula: Fiks maosh + KPI + Bonus + Plan Bonus.
               </p>
@@ -503,10 +865,10 @@ export default function BonusPage() {
 
             <button
               type="submit"
-              disabled={!isAdmin || updateTenant.isLoading || tenantQuery.isLoading}
+              disabled={!isAdmin || updateFixedSalariesMutation.isLoading || salaryConfigQuery.isLoading}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {updateTenant.isLoading ? 'Saqlanmoqda...' : 'Bonus sozlamalarini saqlash'}
+              {updateFixedSalariesMutation.isLoading ? 'Saqlanmoqda...' : "Fiks maoshni saqlash"}
             </button>
           </form>
         </div>
@@ -561,6 +923,7 @@ export default function BonusPage() {
                     setPlanCourseId('');
                     setPlanTariffId('');
                     setPlanSubTariffId('');
+                    setPlanSubTariffName('');
                   }}
                   disabled={!isAdmin}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
@@ -579,6 +942,7 @@ export default function BonusPage() {
                     setPlanCourseId(event.target.value);
                     setPlanTariffId('');
                     setPlanSubTariffId('');
+                    setPlanSubTariffName('');
                   }}
                   disabled={!isAdmin}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
@@ -596,6 +960,7 @@ export default function BonusPage() {
                   onChange={(event) => {
                     setPlanTariffId(event.target.value);
                     setPlanSubTariffId('');
+                    setPlanSubTariffName('');
                   }}
                   disabled={!isAdmin || !planCourseId}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
@@ -609,14 +974,20 @@ export default function BonusPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700">Subtarif (ixtiyoriy)</label>
                 <select
-                  value={planSubTariffId}
-                  onChange={(event) => setPlanSubTariffId(event.target.value)}
-                  disabled={!isAdmin || !planTariffId}
+                  value={planTariffId ? planSubTariffId : planSubTariffName}
+                  onChange={(event) => {
+                    if (planTariffId) {
+                      setPlanSubTariffId(event.target.value);
+                      return;
+                    }
+                    setPlanSubTariffName(event.target.value);
+                  }}
+                  disabled={!isAdmin || !planCourseId}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                 >
                   <option value="">Barcha subtariflar</option>
                   {subTariffOptions.map((subTariff) => (
-                    <option key={subTariff.id} value={subTariff.id}>{subTariff.name}</option>
+                    <option key={subTariff.value} value={subTariff.value}>{subTariff.label}</option>
                   ))}
                 </select>
               </div>
@@ -703,7 +1074,7 @@ export default function BonusPage() {
                         {getCategoryLabel(plan.courseCategory)} | {getPeriodLabel(plan.periodMode)}
                       </p>
                       <p className="text-xs text-gray-600">
-                        Kurs: {plan.courseId ? (courseNameById.get(plan.courseId) || '-') : 'Barchasi'} | Tarif: {plan.tariffId ? (courseNameById.get(plan.tariffId) || '-') : 'Barchasi'} | Subtarif: {plan.subTariffId ? (courseNameById.get(plan.subTariffId) || '-') : 'Barchasi'}
+                        Kurs: {plan.courseId ? (courseNameById.get(plan.courseId) || '-') : 'Barchasi'} | Tarif: {plan.tariffId ? (courseNameById.get(plan.tariffId) || '-') : 'Barchasi'} | Subtarif: {plan.subTariffId ? (courseNameById.get(plan.subTariffId) || '-') : (plan.subTariffName || 'Barchasi')}
                       </p>
                       <p className="text-xs text-gray-600">
                         Maqsad: {plan.targetClosedSales} ta | Bonus: {formatAmount(plan.bonusAmount)}
