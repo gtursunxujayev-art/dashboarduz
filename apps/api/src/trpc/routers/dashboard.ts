@@ -36,6 +36,8 @@ type DashboardRange = z.infer<typeof dashboardRangeSchema>;
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 const REPORT_TZ_OFFSET_MS = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+const UTEL_MIN_EXTENSION = 100;
+const UTEL_MAX_EXTENSION = 150;
 const SALARY_CATEGORIES = ['online', 'offline', 'intensive'] as const;
 const REPORT_MONTH_LABELS_UZ = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'] as const;
 const INCOME_LIFECYCLE_ACTIVE = 'active';
@@ -61,6 +63,19 @@ function normalizeTextToken(value: unknown): string {
   return String(value || '').trim().toLowerCase();
 }
 
+function normalizeDigits(value: unknown): string {
+  return String(value || '').replace(/[^\d]/g, '');
+}
+
+function isAllowedUtelManagerExtension(value: unknown): boolean {
+  const digits = normalizeDigits(value);
+  if (!digits) {
+    return false;
+  }
+  const parsed = Number.parseInt(digits, 10);
+  return Number.isFinite(parsed) && parsed >= UTEL_MIN_EXTENSION && parsed <= UTEL_MAX_EXTENSION;
+}
+
 function extractUtelManagerKey(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== 'object') {
     return null;
@@ -72,6 +87,40 @@ function extractUtelManagerKey(metadata: unknown): string | null {
     data.manager || data.agent || data.user || data.operator || data.responsible || data.employee,
   );
   return extension || managerName || null;
+}
+
+function resolveCallExtension(call: { from: string; to: string; direction: string; metadata: unknown }): string | null {
+  const metadataData = call.metadata && typeof call.metadata === 'object'
+    ? (call.metadata as Record<string, unknown>)
+    : null;
+  const metadataExtension = normalizeDigits(
+    metadataData?.normalized_extension
+    || metadataData?.extension
+    || metadataData?.ext
+    || metadataData?.internal
+    || metadataData?.line,
+  );
+  if (isAllowedUtelManagerExtension(metadataExtension)) {
+    return metadataExtension;
+  }
+
+  const fromDigits = normalizeDigits(call.from);
+  const toDigits = normalizeDigits(call.to);
+  const direction = String(call.direction || '').toLowerCase();
+
+  if (direction === 'outbound') {
+    if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
+    if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
+  }
+
+  if (direction === 'inbound') {
+    if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
+    if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
+  }
+
+  if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
+  if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
+  return null;
 }
 
 async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
@@ -490,23 +539,7 @@ export const dashboardRouter = router({
         }
       }
 
-      const [totalCalls, pendingNotifications, activeIntegrations, totalIncomeAggregate, newSalesIncomes, incomesForSellers, callsForSellers] = await Promise.all([
-        prisma.call.count({
-          where: {
-            tenantId: ctx.tenantId,
-            startedAt: {
-              gte: rangeStart,
-              lte: rangeEnd,
-            },
-            ...(scope.isScoped
-              ? {
-                  lead: {
-                    responsibleUserId: scope.responsibleUserId || '__unmapped__',
-                  },
-                }
-              : {}),
-          },
-        }),
+      const [pendingNotifications, activeIntegrations, totalIncomeAggregate, newSalesIncomes, incomesForSellers, callsForSellers] = await Promise.all([
         scope.isScoped
           ? Promise.resolve(0)
           : prisma.notification.count({
@@ -597,12 +630,16 @@ export const dashboardRouter = router({
         prisma.call.findMany({
           where: {
             tenantId: ctx.tenantId,
+            provider: 'utel',
             startedAt: {
               gte: rangeStart,
               lte: rangeEnd,
             },
           },
           select: {
+            from: true,
+            to: true,
+            direction: true,
             duration: true,
             metadata: true,
             lead: {
@@ -807,35 +844,52 @@ export const dashboardRouter = router({
       }
 
       const talkSecondsByAgent = new Map<string, number>();
+      const callCountByAgent = new Map<string, number>();
       for (const agent of agentUsers) {
         const keyByUtel = normalizeTextToken(agent.utelManagerExternalId);
+        const extensionByUtel = normalizeDigits(agent.utelManagerExternalId);
         const keyByAmo = normalizeTextToken(agent.amocrmResponsibleUserId);
-        const hasCallMapping = Boolean(keyByUtel || keyByAmo);
+        const hasCallMapping = Boolean(
+          keyByUtel
+          || keyByAmo
+          || (extensionByUtel && isAllowedUtelManagerExtension(extensionByUtel)),
+        );
 
         if (!hasCallMapping) {
           continue;
         }
 
         let talkSeconds = 0;
+        let callCount = 0;
         for (const call of callsForSellers) {
-          const callDuration = call.duration ?? 0;
-          if (!callDuration) {
-            continue;
-          }
-
           const callLeadResponsibleId = normalizeTextToken(call.lead?.responsibleUserId);
           const metadataKey = extractUtelManagerKey(call.metadata);
           const normalizedMetadataKey = normalizeTextToken(metadataKey);
+          const callExtension = resolveCallExtension({
+            from: call.from,
+            to: call.to,
+            direction: call.direction,
+            metadata: call.metadata,
+          });
+          const normalizedCallExtension = normalizeDigits(callExtension);
           const matched = (keyByAmo && callLeadResponsibleId && keyByAmo === callLeadResponsibleId)
-            || (keyByUtel && normalizedMetadataKey && keyByUtel === normalizedMetadataKey);
+            || (keyByUtel && normalizedMetadataKey && keyByUtel === normalizedMetadataKey)
+            || (extensionByUtel && normalizedCallExtension && extensionByUtel === normalizedCallExtension);
 
           if (matched) {
+            callCount += 1;
+            const callDuration = Math.max(0, call.duration ?? 0);
             talkSeconds += callDuration;
           }
         }
 
         talkSecondsByAgent.set(agent.id, talkSeconds);
+        callCountByAgent.set(agent.id, callCount);
       }
+
+      const scopedTotalCalls = scope.isScoped
+        ? (callCountByAgent.get(ctx.user.userId) ?? 0)
+        : callsForSellers.length;
 
       const sellerPerformance = agentUsers.map((agent) => {
         const responsibleUserId = agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId) : '';
@@ -867,6 +921,7 @@ export const dashboardRouter = router({
           agreementsAmount: tashkiliyOnly ? 0 : salesStats.agreementsAmount,
           incomeAmount: tashkiliyOnly ? 0 : salesStats.incomeAmount,
           talkedSeconds: talkedSecondsValue,
+          callsCount: callCountByAgent.get(agent.id) ?? 0,
           followUpCount: activityStats.followUpCount,
           noteCount: activityStats.noteCount,
           stageChangeCount: activityStats.stageChangeCount,
@@ -891,7 +946,7 @@ export const dashboardRouter = router({
           totalLeads,
           qualifiedLeads,
           nonQualifiedLeads,
-          totalCalls,
+          totalCalls: scopedTotalCalls,
           pendingNotifications,
           activeIntegrations,
           totalIncomeAmount: tashkiliyOnly ? 0 : totalIncomeAmount,
