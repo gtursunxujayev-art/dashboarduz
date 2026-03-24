@@ -149,6 +149,28 @@ export const courseSalesRouter = router({
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
+      const scopedFilters: Record<string, unknown>[] = [];
+      if (input.courseId) {
+        scopedFilters.push({
+          OR: [
+            { courseId: input.courseId },
+            { customer: { profileCourseId: input.courseId } },
+          ],
+        });
+      }
+      if (input.tariffId) {
+        scopedFilters.push({
+          OR: [
+            { tariffId: input.tariffId },
+            { customer: { profileTariffId: input.tariffId } },
+          ],
+        });
+      }
+      if (input.subTariffId) {
+        scopedFilters.push({
+          customer: { profileSubTariffId: input.subTariffId },
+        });
+      }
 
       const [course, matchedSales, profileSubTariffs] = await Promise.all([
         prisma.course.findFirst({
@@ -176,16 +198,8 @@ export const courseSalesRouter = router({
             tenantId: ctx.tenantId,
             type: 'new_sale',
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            courseId: input.courseId,
-            ...(input.tariffId ? { tariffId: input.tariffId } : {}),
             ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
-            ...(input.subTariffId
-              ? {
-                  customer: {
-                    profileSubTariffId: input.subTariffId,
-                  },
-                }
-              : {}),
+            ...(scopedFilters.length ? { AND: scopedFilters } : {}),
           },
           select: {
             id: true,
@@ -195,6 +209,11 @@ export const courseSalesRouter = router({
             paymentAmount: true,
             remainingDebtAmount: true,
             entryDate: true,
+            customer: {
+              select: {
+                profileTariffId: true,
+              },
+            },
           },
         }),
         input.subTariffId
@@ -261,10 +280,11 @@ export const courseSalesRouter = router({
         tariffCustomerSets.set(tariff.id, new Set());
       }
       for (const sale of matchedSales) {
-        if (!sale.tariffId) {
+        const effectiveTariffId = sale.customer.profileTariffId || sale.tariffId;
+        if (!effectiveTariffId) {
           continue;
         }
-        const set = tariffCustomerSets.get(sale.tariffId);
+        const set = tariffCustomerSets.get(effectiveTariffId);
         if (set) {
           set.add(sale.customerId);
         }
@@ -316,21 +336,35 @@ export const courseSalesRouter = router({
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
       const query = input.query?.trim();
       const skip = (input.page - 1) * input.limit;
+      const scopedFilters: Record<string, unknown>[] = [];
+      if (input.courseId) {
+        scopedFilters.push({
+          OR: [
+            { courseId: input.courseId },
+            { customer: { profileCourseId: input.courseId } },
+          ],
+        });
+      }
+      if (input.tariffId) {
+        scopedFilters.push({
+          OR: [
+            { tariffId: input.tariffId },
+            { customer: { profileTariffId: input.tariffId } },
+          ],
+        });
+      }
+      if (input.subTariffId) {
+        scopedFilters.push({
+          customer: { profileSubTariffId: input.subTariffId },
+        });
+      }
 
       const where = {
         tenantId: ctx.tenantId,
         type: 'new_sale',
         lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-        courseId: input.courseId,
-        ...(input.tariffId ? { tariffId: input.tariffId } : {}),
         ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
-        ...(input.subTariffId
-          ? {
-              customer: {
-                profileSubTariffId: input.subTariffId,
-              },
-            }
-          : {}),
+        ...(scopedFilters.length ? { AND: scopedFilters } : {}),
         ...(query
           ? {
               OR: [
@@ -360,6 +394,8 @@ export const courseSalesRouter = router({
                 customerNumber: true,
                 name: true,
                 telegramUsername: true,
+                profileCourseId: true,
+                profileTariffId: true,
                 profileSubTariffId: true,
               },
             },
@@ -394,8 +430,22 @@ export const courseSalesRouter = router({
             .filter((value): value is string => Boolean(value)),
         ),
       );
+      const profileCourseIds = Array.from(
+        new Set(
+          sales
+            .map((sale) => sale.customer.profileCourseId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+      const profileTariffIds = Array.from(
+        new Set(
+          sales
+            .map((sale) => sale.customer.profileTariffId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
 
-      const [incomes, subTariffs] = await Promise.all([
+      const [incomes, subTariffs, profileCourses, profileTariffs] = await Promise.all([
         saleIds.length > 0
           ? prisma.income.findMany({
               where: {
@@ -426,9 +476,35 @@ export const courseSalesRouter = router({
               },
             })
           : Promise.resolve([]),
+        profileCourseIds.length > 0
+          ? prisma.course.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                id: { in: profileCourseIds },
+              },
+              select: {
+                id: true,
+                name: true,
+              },
+            })
+          : Promise.resolve([]),
+        profileTariffIds.length > 0
+          ? prisma.tariff.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                id: { in: profileTariffIds },
+              },
+              select: {
+                id: true,
+                name: true,
+              },
+            })
+          : Promise.resolve([]),
       ]);
 
       const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
+      const profileCourseNameById = new Map(profileCourses.map((course) => [course.id, course.name]));
+      const profileTariffNameById = new Map(profileTariffs.map((tariff) => [tariff.id, tariff.name]));
       const paidBySaleId = new Map<string, number>();
       const lastActivityBySaleId = new Map<string, Date>();
       const saleIdSet = new Set(saleIds);
@@ -453,6 +529,12 @@ export const courseSalesRouter = router({
         rows: sales.map((sale) => {
           const paidAmount = paidBySaleId.get(sale.id) ?? (sale.paymentAmount ?? 0);
           const managerLabel = sale.manager.name || sale.manager.username || sale.manager.id;
+          const profileCourseName = sale.customer.profileCourseId
+            ? profileCourseNameById.get(sale.customer.profileCourseId) || null
+            : null;
+          const profileTariffName = sale.customer.profileTariffId
+            ? profileTariffNameById.get(sale.customer.profileTariffId) || null
+            : null;
           const profileSubTariffName = sale.customer.profileSubTariffId
             ? subTariffNameById.get(sale.customer.profileSubTariffId) || null
             : null;
@@ -464,8 +546,8 @@ export const courseSalesRouter = router({
             telegramUsername: sale.customer.telegramUsername || null,
             managerUserId: sale.manager.id,
             managerLabel,
-            courseName: sale.course?.name || null,
-            tariffName: sale.tariff?.name || null,
+            courseName: profileCourseName || sale.course?.name || null,
+            tariffName: profileTariffName || sale.tariff?.name || null,
             subTariffName: profileSubTariffName,
             agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
             paidAmount,
@@ -492,6 +574,28 @@ export const courseSalesRouter = router({
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
+      const scopedFilters: Record<string, unknown>[] = [];
+      if (input.courseId) {
+        scopedFilters.push({
+          OR: [
+            { courseId: input.courseId },
+            { customer: { profileCourseId: input.courseId } },
+          ],
+        });
+      }
+      if (input.tariffId) {
+        scopedFilters.push({
+          OR: [
+            { tariffId: input.tariffId },
+            { customer: { profileTariffId: input.tariffId } },
+          ],
+        });
+      }
+      if (input.subTariffId) {
+        scopedFilters.push({
+          customer: { profileSubTariffId: input.subTariffId },
+        });
+      }
 
       const [course, sales] = await Promise.all([
         prisma.course.findFirst({
@@ -519,16 +623,8 @@ export const courseSalesRouter = router({
             tenantId: ctx.tenantId,
             type: 'new_sale',
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            courseId: input.courseId,
-            ...(input.tariffId ? { tariffId: input.tariffId } : {}),
             ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
-            ...(input.subTariffId
-              ? {
-                  customer: {
-                    profileSubTariffId: input.subTariffId,
-                  },
-                }
-              : {}),
+            ...(scopedFilters.length ? { AND: scopedFilters } : {}),
           },
           select: {
             id: true,
@@ -541,6 +637,7 @@ export const courseSalesRouter = router({
             remainingDebtAmount: true,
             customer: {
               select: {
+                profileTariffId: true,
                 profileSubTariffId: true,
               },
             },
@@ -679,8 +776,9 @@ export const courseSalesRouter = router({
       >();
 
       for (const sale of sales) {
-        if (sale.tariffId) {
-          const row = tariffRowMap.get(sale.tariffId);
+        const effectiveTariffId = sale.customer.profileTariffId || sale.tariffId;
+        if (effectiveTariffId) {
+          const row = tariffRowMap.get(effectiveTariffId);
           if (row) {
             row.saleIds.push(sale.id);
             row.customerIds.add(sale.customerId);
