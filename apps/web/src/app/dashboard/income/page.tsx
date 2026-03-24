@@ -127,9 +127,6 @@ export default function IncomePage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [recentLimit, setRecentLimit] = useState(10);
-  const [periodDeleteFrom, setPeriodDeleteFrom] = useState(getTashkentToday());
-  const [periodDeleteTo, setPeriodDeleteTo] = useState(getTashkentToday());
-  const [isDeletingPeriod, setIsDeletingPeriod] = useState(false);
   const customerInputWrapperRef = useRef<HTMLDivElement | null>(null);
   const [isCustomerSuggestionsOpen, setIsCustomerSuggestionsOpen] = useState(false);
 
@@ -154,7 +151,6 @@ export default function IncomePage() {
   );
   const createIncomeMutation = trpc.customerIncome.createIncome.useMutation();
   const deleteIncomeMutation = trpc.customerIncome.deleteIncome.useMutation();
-  const deleteIncomesByPeriodMutation = trpc.customerIncome.deleteIncomesByPeriod.useMutation();
   const [deletingIncomeId, setDeletingIncomeId] = useState<string | null>(null);
 
   const managers = useMemo(() => formOptionsQuery.data?.managers || [], [formOptionsQuery.data]);
@@ -380,70 +376,6 @@ export default function IncomePage() {
       setError(deleteError?.message || "Tushum yozuvini o'chirib bo'lmadi.");
     } finally {
       setDeletingIncomeId(null);
-    }
-  };
-
-  const handleDeleteIncomesByPeriod = async () => {
-    if (!isAdmin) {
-      return;
-    }
-
-    if (!periodDeleteFrom || !periodDeleteTo) {
-      setError("Boshlanish va tugash sanasini kiriting.");
-      setSuccess(null);
-      return;
-    }
-
-    if (periodDeleteTo < periodDeleteFrom) {
-      setError("Tugash sanasi boshlanish sanasidan oldin bo'lmasligi kerak.");
-      setSuccess(null);
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `${periodDeleteFrom} dan ${periodDeleteTo} gacha tushumlarni o'chirmoqchimisiz? Bu amalni ortga qaytarib bo'lmaydi.`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    setError(null);
-    setSuccess(null);
-    setIsDeletingPeriod(true);
-
-    try {
-      const result = await deleteIncomesByPeriodMutation.mutateAsync({
-        dateFrom: periodDeleteFrom,
-        dateTo: periodDeleteTo,
-      });
-
-      if (result.matchedCount === 0) {
-        setSuccess("Tanlangan davrda o'chirish uchun tushum topilmadi.");
-      } else {
-        const blockedReasons = (result.blocked || [])
-          .slice(0, 3)
-          .map((item: any) => {
-            if (item.reason === 'pending_adjustment') {
-              return `${item.incomeId}: pending request`;
-            }
-            return `${item.incomeId}: repayment linked`;
-          })
-          .join(' | ');
-
-        const blockedMessage = result.blockedCount > 0
-          ? ` Bloklangan: ${result.blockedCount}.${blockedReasons ? ` ${blockedReasons}` : ''}`
-          : '';
-
-        setSuccess(
-          `Davr bo'yicha o'chirish yakunlandi: ${result.deletedCount}/${result.matchedCount} o'chirildi.${blockedMessage}`,
-        );
-      }
-
-      await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
-    } catch (deleteError: any) {
-      setError(deleteError?.message || "Davr bo'yicha tushumlarni o'chirib bo'lmadi.");
-    } finally {
-      setIsDeletingPeriod(false);
     }
   };
 
@@ -910,37 +842,6 @@ export default function IncomePage() {
         </div>
 
         <div className="p-6">
-          {isAdmin && (
-            <div className="mb-5 rounded-md border border-red-200 bg-red-50/60 p-4 dark:border-red-800 dark:bg-red-950/30">
-              <h3 className="text-sm font-semibold text-red-800 dark:text-red-200">Davr bo'yicha tushumlarni o'chirish (Admin)</h3>
-              <p className="mt-1 text-xs text-red-700 dark:text-red-300">
-                Faqat tanlangan davrdagi yozuvlar o'chiriladi. Pending so'rovi bor yoki repayment bog'langan yozuvlar bloklanadi.
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_auto]">
-                <input
-                  type="date"
-                  value={periodDeleteFrom}
-                  onChange={(event) => setPeriodDeleteFrom(event.target.value)}
-                  className="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 dark:border-red-700 dark:bg-slate-900 dark:text-slate-100"
-                />
-                <input
-                  type="date"
-                  value={periodDeleteTo}
-                  onChange={(event) => setPeriodDeleteTo(event.target.value)}
-                  className="rounded-md border border-red-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 dark:border-red-700 dark:bg-slate-900 dark:text-slate-100"
-                />
-                <button
-                  type="button"
-                  onClick={handleDeleteIncomesByPeriod}
-                  disabled={isDeletingPeriod}
-                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isDeletingPeriod ? "O'chirilmoqda..." : "Davr bo'yicha o'chirish"}
-                </button>
-              </div>
-            </div>
-          )}
-
           {incomesQuery.isLoading ? (
             <p className="text-sm text-gray-600 dark:text-slate-300">Tushumlar yuklanmoqda...</p>
           ) : incomesQuery.data?.length ? (
