@@ -892,15 +892,47 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   ];
 
   const message = messageLines.join('\n');
+  const splitMessage = (text: string): string[] => {
+    const maxLength = 3500;
+    if (text.length <= maxLength) {
+      return [text];
+    }
+    const lines = text.split('\n');
+    const chunks: string[] = [];
+    let current = '';
+    for (const line of lines) {
+      const next = current ? `${current}\n${line}` : line;
+      if (next.length > maxLength) {
+        if (current) {
+          chunks.push(current);
+        }
+        if (line.length > maxLength) {
+          chunks.push(line.slice(0, maxLength));
+          current = line.slice(maxLength);
+        } else {
+          current = line;
+        }
+      } else {
+        current = next;
+      }
+    }
+    if (current) {
+      chunks.push(current);
+    }
+    return chunks.length ? chunks : [text];
+  };
+  const messageChunks = splitMessage(message);
 
   let sentCount = 0;
   const sendErrors: string[] = [];
 
   for (const groupId of groupIds) {
     try {
-      await telegramService.sendMessage(botToken, groupId, message, {
-        disable_web_page_preview: true,
-      });
+      for (const chunk of messageChunks) {
+        await telegramService.sendMessage(botToken, groupId, chunk, {
+          disable_web_page_preview: true,
+        });
+      }
       sentCount += 1;
     } catch (error) {
       const errorMessage = String((error as any)?.message || error);
@@ -933,6 +965,245 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   }
 
   return dispatchResult;
+}
+
+async function sendTariffChangeRequestedTelegram(params: {
+  tenantId: string;
+  requestId: string;
+  requestedByUserId: string;
+}) {
+  const request = await prisma.incomeAdjustmentRequest.findFirst({
+    where: {
+      id: params.requestId,
+      tenantId: params.tenantId,
+      type: ADJUSTMENT_TYPE_TARIFF_CHANGE,
+      status: ADJUSTMENT_STATUS_PENDING,
+    },
+    select: {
+      id: true,
+      reason: true,
+      newAgreementAmount: true,
+      createdAt: true,
+      requestedBy: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+        },
+      },
+      income: {
+        select: {
+          customer: {
+            select: {
+              name: true,
+              customerNumber: true,
+              telegramUsername: true,
+            },
+          },
+          manager: {
+            select: {
+              name: true,
+              username: true,
+            },
+          },
+          course: {
+            select: {
+              name: true,
+            },
+          },
+          tariff: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      newCourse: {
+        select: {
+          name: true,
+          category: true,
+        },
+      },
+      newTariff: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!request?.income?.customer || !request.newCourse) {
+    return;
+  }
+
+  const categoryGroupKeys = resolvePaymentGroupEnvKeysByCategory(request.newCourse.category);
+  if (!categoryGroupKeys) {
+    return;
+  }
+  const groupIds = parseTelegramGroupIdsFromEnvKeys(categoryGroupKeys);
+  if (!groupIds.length) {
+    return;
+  }
+
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  if (!botToken) {
+    return;
+  }
+
+  const customer = request.income.customer;
+  const requesterLabel = request.requestedBy?.name || request.requestedBy?.username || params.requestedByUserId;
+  const managerLabel = request.income.manager?.name || request.income.manager?.username || null;
+  const telegramUsername = customer.telegramUsername
+    ? (customer.telegramUsername.startsWith('@') ? customer.telegramUsername : `@${customer.telegramUsername}`)
+    : '-';
+
+  const messageLines = [
+    "#Tarif_o'zgarishi_so'rovi",
+    ...(toHashtag(request.newCourse.name) ? [toHashtag(request.newCourse.name)] : []),
+    ...(toHashtag(request.newTariff?.name) ? [toHashtag(request.newTariff?.name)] : []),
+    ...(toHashtag(managerLabel) ? [toHashtag(managerLabel)] : []),
+    '',
+    `1.Mijoz: ${customer.name}`,
+    `2.Tel: ${customer.customerNumber}`,
+    `3.Tg: ${telegramUsername}`,
+    '',
+    `Eski kurs/tarif: ${[request.income.course?.name, request.income.tariff?.name].filter(Boolean).join(' / ') || '-'}`,
+    `Yangi kurs/tarif: ${[request.newCourse?.name, request.newTariff?.name].filter(Boolean).join(' / ') || '-'}`,
+    `Yangi kelishuv: ${formatAmountUz(request.newAgreementAmount ?? 0)}`,
+    `So'rov yuborgan: ${requesterLabel}`,
+    `So'rov vaqti: ${formatDateGmt5(request.createdAt)}`,
+    ...(request.reason ? [`Izoh: ${request.reason}`] : []),
+  ];
+
+  const message = messageLines.join('\n');
+  for (const groupId of groupIds) {
+    try {
+      await telegramService.sendMessage(botToken, groupId, message, {
+        disable_web_page_preview: true,
+      });
+    } catch (error) {
+      console.error('[Income][Telegram] Failed to send tariff-change requested message', {
+        tenantId: params.tenantId,
+        requestId: params.requestId,
+        groupId,
+        error: String((error as any)?.message || error),
+      });
+    }
+  }
+}
+
+async function sendTariffChangeApprovedTelegram(params: {
+  tenantId: string;
+  requestId: string;
+  reviewedByUserId: string;
+}) {
+  const request = await prisma.incomeAdjustmentRequest.findFirst({
+    where: {
+      id: params.requestId,
+      tenantId: params.tenantId,
+      type: ADJUSTMENT_TYPE_TARIFF_CHANGE,
+      status: ADJUSTMENT_STATUS_APPROVED,
+    },
+    select: {
+      id: true,
+      reason: true,
+      newAgreementAmount: true,
+      reviewedAt: true,
+      reviewedBy: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+        },
+      },
+      income: {
+        select: {
+          customer: {
+            select: {
+              name: true,
+              customerNumber: true,
+              telegramUsername: true,
+            },
+          },
+          manager: {
+            select: {
+              name: true,
+              username: true,
+            },
+          },
+          course: {
+            select: {
+              name: true,
+              category: true,
+            },
+          },
+          tariff: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!request?.income?.customer || !request.income.course) {
+    return;
+  }
+
+  const categoryGroupKeys = resolvePaymentGroupEnvKeysByCategory(request.income.course.category);
+  if (!categoryGroupKeys) {
+    return;
+  }
+  const groupIds = parseTelegramGroupIdsFromEnvKeys(categoryGroupKeys);
+  if (!groupIds.length) {
+    return;
+  }
+
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  if (!botToken) {
+    return;
+  }
+
+  const customer = request.income.customer;
+  const reviewerLabel = request.reviewedBy?.name || request.reviewedBy?.username || params.reviewedByUserId;
+  const managerLabel = request.income.manager?.name || request.income.manager?.username || null;
+  const telegramUsername = customer.telegramUsername
+    ? (customer.telegramUsername.startsWith('@') ? customer.telegramUsername : `@${customer.telegramUsername}`)
+    : '-';
+
+  const messageLines = [
+    "#Tarif_o'zgarishi_tasdiqlandi",
+    ...(toHashtag(request.income.course?.name) ? [toHashtag(request.income.course?.name)] : []),
+    ...(toHashtag(request.income.tariff?.name) ? [toHashtag(request.income.tariff?.name)] : []),
+    ...(toHashtag(managerLabel) ? [toHashtag(managerLabel)] : []),
+    '',
+    `1.Mijoz: ${customer.name}`,
+    `2.Tel: ${customer.customerNumber}`,
+    `3.Tg: ${telegramUsername}`,
+    '',
+    `Yangi kurs/tarif: ${[request.income.course?.name, request.income.tariff?.name].filter(Boolean).join(' / ') || '-'}`,
+    `Yangi kelishuv: ${formatAmountUz(request.newAgreementAmount ?? 0)}`,
+    `Tasdiqlagan: ${reviewerLabel}`,
+    `Tasdiqlangan vaqt: ${request.reviewedAt ? formatDateGmt5(request.reviewedAt) : '-'}`,
+    ...(request.reason ? [`Izoh: ${request.reason}`] : []),
+  ];
+
+  const message = messageLines.join('\n');
+  for (const groupId of groupIds) {
+    try {
+      await telegramService.sendMessage(botToken, groupId, message, {
+        disable_web_page_preview: true,
+      });
+    } catch (error) {
+      console.error('[Income][Telegram] Failed to send tariff-change approved message', {
+        tenantId: params.tenantId,
+        requestId: params.requestId,
+        groupId,
+        error: String((error as any)?.message || error),
+      });
+    }
+  }
 }
 
 async function sendRefundApprovedTelegram(params: {
@@ -1010,29 +1281,13 @@ async function sendRefundApprovedTelegram(params: {
 
   const customer = request.income.customer;
   const managerLabel = request.income.manager?.name || request.income.manager?.username || null;
-  const reviewerLabel = request.reviewedBy?.name || request.reviewedBy?.username || params.reviewedByUserId;
-  const telegramUsername = customer.telegramUsername
-    ? (customer.telegramUsername.startsWith('@') ? customer.telegramUsername : `@${customer.telegramUsername}`)
-    : '-';
 
   const messageLines = [
-    '#Pul_qaytarish',
-    ...(toHashtag(request.income.course?.name) ? [toHashtag(request.income.course?.name)] : []),
-    ...(toHashtag(request.income.tariff?.name) ? [toHashtag(request.income.tariff?.name)] : []),
     ...(toHashtag(managerLabel) ? [toHashtag(managerLabel)] : []),
-    '',
-    `1.Mijoz: ${customer.name}`,
-    `2.Tel: ${customer.customerNumber}`,
-    `3.Tg: ${telegramUsername}`,
-    '',
-    `Qaytarilgan summa: ${formatAmountUz(request.requestedAmount ?? request.income.paymentAmount ?? 0)}`,
-    `To'lov sanasi: ${formatDateGmt5(request.income.entryDate)}`,
-    `Tasdiqlagan: ${reviewerLabel}`,
-    `Tasdiqlangan vaqt: ${request.reviewedAt ? formatDateGmt5(request.reviewedAt) : '-'}`,
-    ...(request.reason ? [`Izoh: ${request.reason}`] : []),
-    '',
-    '@Moliya_b0limi',
-    '@najotnur_oflayn',
+    `${customer.name}`,
+    `${customer.customerNumber}`,
+    `Summa - ${formatAmountUz(request.requestedAmount ?? request.income.paymentAmount ?? 0)}`,
+    '✅ Qaytarildi',
   ];
 
   const message = messageLines.join('\n');
@@ -3890,6 +4145,20 @@ export const customerIncomeRouter = router({
           });
         } catch (error) {
           console.error('[Income][Telegram] Refund request notification failed (non-blocking)', {
+            tenantId: ctx.tenantId,
+            requestId: createdRequest.id,
+            error: String((error as any)?.message || error),
+          });
+        }
+      } else if (input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE) {
+        try {
+          await sendTariffChangeRequestedTelegram({
+            tenantId: ctx.tenantId,
+            requestId: createdRequest.id,
+            requestedByUserId: ctx.user.userId,
+          });
+        } catch (error) {
+          console.error('[Income][Telegram] Tariff-change request notification failed (non-blocking)', {
             tenantId: ctx.tenantId,
             requestId: createdRequest.id,
             error: String((error as any)?.message || error),
