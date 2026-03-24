@@ -64,6 +64,7 @@ export default function SettingsPage() {
   const [bonusOfflinePercent, setBonusOfflinePercent] = useState('0');
   const [bonusIntensivePercent, setBonusIntensivePercent] = useState('0');
   const [fixedSalaryByAgent, setFixedSalaryByAgent] = useState<Record<string, string>>({});
+  const [salaryExtraSettings, setSalaryExtraSettings] = useState<Record<string, unknown>>({});
   const [currentPassword, setCurrentPassword] = useState('');
   const [newLogin, setNewLogin] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -136,6 +137,11 @@ export default function SettingsPage() {
       nextFixed[userId] = Number.isFinite(amount) && amount > 0 ? String(Math.round(amount)) : '';
     }
     setFixedSalaryByAgent(nextFixed);
+
+    const extraEntries = Object.entries(salarySettings).filter(
+      ([key]) => key !== 'bonusMode' && key !== 'bonusPercentages' && key !== 'fixedSalaries',
+    );
+    setSalaryExtraSettings(Object.fromEntries(extraEntries));
   }, [tenantQuery.data]);
 
   const fieldOptions = useMemo<FieldOption[]>(() => {
@@ -213,6 +219,7 @@ export default function SettingsPage() {
             nonQualifiedValues,
           },
           salary: {
+            ...salaryExtraSettings,
             bonusMode: salaryBonusMode,
             bonusPercentages: {
               online: parsePercentInput(bonusOnlinePercent),
