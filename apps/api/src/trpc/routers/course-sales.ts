@@ -189,6 +189,14 @@ export const courseSalesRouter = router({
               select: {
                 id: true,
                 name: true,
+                subTariffs: {
+                  where: { isActive: true },
+                  orderBy: [{ name: 'asc' }],
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
               },
             },
           },
@@ -212,6 +220,7 @@ export const courseSalesRouter = router({
             customer: {
               select: {
                 profileTariffId: true,
+                profileSubTariffId: true,
               },
             },
           },
@@ -234,26 +243,44 @@ export const courseSalesRouter = router({
       const saleIds = matchedSales.map((sale) => sale.id);
       const saleIdSet = new Set(saleIds);
       const rangeIncomeBySaleId = new Map<string, number>();
+      const currentIncomeBySaleId = new Map<string, number>();
       if (saleIds.length > 0) {
-        const rangeIncomes = await prisma.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            entryDate: {
-              gte: rangeStart,
-              lte: rangeEnd,
+        const [rangeIncomes, allIncomes] = await Promise.all([
+          prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              entryDate: {
+                gte: rangeStart,
+                lte: rangeEnd,
+              },
+              OR: [
+                { id: { in: saleIds } },
+                { relatedDebtIncomeId: { in: saleIds } },
+              ],
             },
-            OR: [
-              { id: { in: saleIds } },
-              { relatedDebtIncomeId: { in: saleIds } },
-            ],
-          },
-          select: {
-            id: true,
-            relatedDebtIncomeId: true,
-            paymentAmount: true,
-          },
-        });
+            select: {
+              id: true,
+              relatedDebtIncomeId: true,
+              paymentAmount: true,
+            },
+          }),
+          prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              OR: [
+                { id: { in: saleIds } },
+                { relatedDebtIncomeId: { in: saleIds } },
+              ],
+            },
+            select: {
+              id: true,
+              relatedDebtIncomeId: true,
+              paymentAmount: true,
+            },
+          }),
+        ]);
 
         for (const income of rangeIncomes) {
           const saleId = income.relatedDebtIncomeId || income.id;
@@ -262,22 +289,42 @@ export const courseSalesRouter = router({
           }
           rangeIncomeBySaleId.set(saleId, (rangeIncomeBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
         }
+
+        for (const income of allIncomes) {
+          const saleId = income.relatedDebtIncomeId || income.id;
+          if (!saleIdSet.has(saleId)) {
+            continue;
+          }
+          currentIncomeBySaleId.set(saleId, (currentIncomeBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
+        }
       }
 
       let rangeAgreementAmount = 0;
+      let currentAgreementAmount = 0;
       let currentDebtAmount = 0;
       for (const sale of matchedSales) {
+        currentAgreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
           rangeAgreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
         }
         currentDebtAmount += sale.remainingDebtAmount ?? 0;
       }
       const rangeIncomeAmount = Array.from(rangeIncomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
+      const currentIncomeAmount = Array.from(currentIncomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
       const currentCustomerCount = new Set(matchedSales.map((sale) => sale.customerId)).size;
 
       const tariffCustomerSets = new Map<string, Set<string>>();
       for (const tariff of course.tariffs) {
         tariffCustomerSets.set(tariff.id, new Set());
+      }
+      const selectedTariff = input.tariffId
+        ? course.tariffs.find((tariff) => tariff.id === input.tariffId) || null
+        : null;
+      const subTariffCustomerSets = new Map<string, Set<string>>();
+      if (selectedTariff) {
+        for (const subTariff of selectedTariff.subTariffs || []) {
+          subTariffCustomerSets.set(subTariff.id, new Set());
+        }
       }
       for (const sale of matchedSales) {
         const effectiveTariffId = sale.customer.profileTariffId || sale.tariffId;
@@ -287,6 +334,12 @@ export const courseSalesRouter = router({
         const set = tariffCustomerSets.get(effectiveTariffId);
         if (set) {
           set.add(sale.customerId);
+        }
+        if (selectedTariff && effectiveTariffId === selectedTariff.id && sale.customer.profileSubTariffId) {
+          const subTariffSet = subTariffCustomerSets.get(sale.customer.profileSubTariffId);
+          if (subTariffSet) {
+            subTariffSet.add(sale.customerId);
+          }
         }
       }
 
@@ -307,6 +360,8 @@ export const courseSalesRouter = router({
         selectedSubTariffName,
         totals: {
           currentCustomerCount,
+          currentAgreementAmount,
+          currentIncomeAmount,
           rangeAgreementAmount,
           rangeIncomeAmount,
           currentDebtAmount,
@@ -317,6 +372,14 @@ export const courseSalesRouter = router({
           customerCount: tariffCustomerSets.get(tariff.id)?.size ?? 0,
           isSelected: input.tariffId ? input.tariffId === tariff.id : false,
         })),
+        subTariffDistribution: selectedTariff
+          ? (selectedTariff.subTariffs || []).map((subTariff) => ({
+              subTariffId: subTariff.id,
+              subTariffName: subTariff.name,
+              customerCount: subTariffCustomerSets.get(subTariff.id)?.size ?? 0,
+              isSelected: input.subTariffId ? input.subTariffId === subTariff.id : false,
+            }))
+          : [],
         updatedAt: now.toISOString(),
       };
     }),
@@ -665,7 +728,7 @@ export const courseSalesRouter = router({
         ),
       );
 
-      const [rangeIncomes, subTariffs] = await Promise.all([
+      const [rangeIncomes, allIncomes, subTariffs] = await Promise.all([
         saleIds.length > 0
           ? prisma.income.findMany({
               where: {
@@ -675,6 +738,23 @@ export const courseSalesRouter = router({
                   gte: rangeStart,
                   lte: rangeEnd,
                 },
+                OR: [
+                  { id: { in: saleIds } },
+                  { relatedDebtIncomeId: { in: saleIds } },
+                ],
+              },
+              select: {
+                id: true,
+                relatedDebtIncomeId: true,
+                paymentAmount: true,
+              },
+            })
+          : Promise.resolve([]),
+        saleIds.length > 0
+          ? prisma.income.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
                 OR: [
                   { id: { in: saleIds } },
                   { relatedDebtIncomeId: { in: saleIds } },
@@ -703,6 +783,7 @@ export const courseSalesRouter = router({
 
       const saleIdSet = new Set(saleIds);
       const incomeBySaleId = new Map<string, number>();
+      const currentIncomeBySaleId = new Map<string, number>();
       for (const income of rangeIncomes) {
         const saleId = income.relatedDebtIncomeId || income.id;
         if (!saleIdSet.has(saleId)) {
@@ -710,14 +791,23 @@ export const courseSalesRouter = router({
         }
         incomeBySaleId.set(saleId, (incomeBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
       }
+      for (const income of allIncomes) {
+        const saleId = income.relatedDebtIncomeId || income.id;
+        if (!saleIdSet.has(saleId)) {
+          continue;
+        }
+        currentIncomeBySaleId.set(saleId, (currentIncomeBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
+      }
 
       const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, normalizeSubTariffName(subTariff.name)]));
 
       let rangeAgreementAmount = 0;
+      let currentAgreementAmount = 0;
       let currentDebtAmount = 0;
       let vipCount = 0;
       let standartCount = 0;
       for (const sale of sales) {
+        currentAgreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
           rangeAgreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
         }
@@ -734,6 +824,7 @@ export const courseSalesRouter = router({
       }
       const currentCustomerCount = new Set(sales.map((sale) => sale.customerId)).size;
       const rangeIncomeAmount = Array.from(incomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
+      const currentIncomeAmount = Array.from(currentIncomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
       const collectionPercent = rangeAgreementAmount > 0
         ? Number(((rangeIncomeAmount / rangeAgreementAmount) * 100).toFixed(1))
         : 0;
@@ -877,6 +968,8 @@ export const courseSalesRouter = router({
         summary: {
           factSalesCount: sales.length,
           currentCustomerCount,
+          currentAgreementAmount,
+          currentIncomeAmount,
           rangeAgreementAmount,
           rangeIncomeAmount,
           currentDebtAmount,
