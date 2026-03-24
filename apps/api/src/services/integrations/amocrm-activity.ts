@@ -5,6 +5,8 @@ export type AmoCRMActivityMetrics = {
   followUpCount: number;
   noteCount: number;
   stageChangeCount: number;
+  overdueFollowUpCount: number;
+  todayFollowUpCount: number;
 };
 
 type CacheEntry = {
@@ -20,6 +22,8 @@ function createEmptyMetrics(): AmoCRMActivityMetrics {
     followUpCount: 0,
     noteCount: 0,
     stageChangeCount: 0,
+    overdueFollowUpCount: 0,
+    todayFollowUpCount: 0,
   };
 }
 
@@ -31,6 +35,8 @@ function cloneMetricsMap(input: Map<string, AmoCRMActivityMetrics>): Map<string,
         followUpCount: value.followUpCount,
         noteCount: value.noteCount,
         stageChangeCount: value.stageChangeCount,
+        overdueFollowUpCount: value.overdueFollowUpCount,
+        todayFollowUpCount: value.todayFollowUpCount,
       },
     ]),
   );
@@ -98,6 +104,21 @@ function taskResponsibleUserId(task: AmoCRMTask): string {
 
 function taskActionDate(task: AmoCRMTask): Date | null {
   return toDate(task.complete_till) || toDate(task.updated_at) || toDate(task.created_at);
+}
+
+function taskDueDate(task: AmoCRMTask): Date | null {
+  return toDate(task.complete_till);
+}
+
+function getTashkentDayBounds(baseDate: Date): { start: Date; end: Date } {
+  const offsetMs = 5 * 60 * 60 * 1000;
+  const shifted = new Date(baseDate.getTime() + offsetMs);
+  const year = shifted.getUTCFullYear();
+  const month = shifted.getUTCMonth();
+  const day = shifted.getUTCDate();
+  const start = new Date(Date.UTC(year, month, day) - offsetMs);
+  const end = new Date(start.getTime() + (24 * 60 * 60 * 1000) - 1);
+  return { start, end };
 }
 
 function eventActorUserId(event: AmoCRMEvent): string {
@@ -285,6 +306,71 @@ export async function getAmoCRMActivityMetrics(params: {
     metrics.followUpCount += 1;
   }
 
+  const { start: todayStart, end: todayEnd } = getTashkentDayBounds(new Date());
+  let pendingTasks: AmoCRMTask[] = [];
+  try {
+    pendingTasks = await amocrmService.fetchAllTasks(
+      params.accessToken,
+      {
+        responsibleUserIds: managerIds,
+        dateTo: todayEnd,
+        entityType: 'leads',
+        limit: 250,
+        maxPages: 80,
+      },
+      params.baseUrl,
+    );
+  } catch (error: any) {
+    try {
+      pendingTasks = await amocrmService.fetchAllTasks(
+        params.accessToken,
+        {
+          responsibleUserIds: managerIds,
+          dateTo: todayEnd,
+          limit: 250,
+          maxPages: 80,
+        },
+        params.baseUrl,
+      );
+      log(LogLevel.WARN, 'AmoCRM activity: pending tasks fetched with fallback filter', {
+        tenantId: params.tenantId,
+        warning: String(error?.message || error),
+      });
+    } catch (fallbackError: any) {
+      log(LogLevel.WARN, 'AmoCRM activity: failed to fetch pending tasks', {
+        tenantId: params.tenantId,
+        error: String(fallbackError?.message || fallbackError),
+      });
+      pendingTasks = [];
+    }
+  }
+
+  for (const task of pendingTasks) {
+    if (!isLeadTask(task) || isCompletedTask(task)) {
+      continue;
+    }
+    const managerId = taskResponsibleUserId(task);
+    if (!managerIdSet.has(managerId)) {
+      continue;
+    }
+    const dueDate = taskDueDate(task);
+    if (!dueDate) {
+      continue;
+    }
+    const metrics = metricsByManager.get(managerId);
+    if (!metrics) {
+      continue;
+    }
+
+    if (dueDate < todayStart) {
+      metrics.overdueFollowUpCount += 1;
+      continue;
+    }
+    if (dueDate >= todayStart && dueDate <= todayEnd) {
+      metrics.todayFollowUpCount += 1;
+    }
+  }
+
   let events: AmoCRMEvent[] = [];
   try {
     events = await amocrmService.fetchAllEvents(
@@ -364,6 +450,8 @@ export function summarizeAmoCRMActivityMetrics(
     totals.followUpCount += metrics.followUpCount;
     totals.noteCount += metrics.noteCount;
     totals.stageChangeCount += metrics.stageChangeCount;
+    totals.overdueFollowUpCount += metrics.overdueFollowUpCount;
+    totals.todayFollowUpCount += metrics.todayFollowUpCount;
   }
   return totals;
 }
