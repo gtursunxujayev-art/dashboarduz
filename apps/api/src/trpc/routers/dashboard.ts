@@ -726,6 +726,7 @@ export const dashboardRouter = router({
             managerIds: activityManagerIds,
             rangeStart,
             rangeEnd,
+            rangeKind: input.range,
           })
         : new Map();
       activityFetchMs = Date.now() - activityFetchStartedMs;
