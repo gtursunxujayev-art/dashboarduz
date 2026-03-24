@@ -8,6 +8,22 @@ import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 const RANGE_OPTIONS: DashboardRange[] = ['today', 'week', 'month', 'custom'];
 
+type DashboardCard = {
+  id: string;
+  title: string;
+  value: string;
+  subtitle: string;
+  extra: string | null;
+};
+
+type DashboardCustomSalesWidget = {
+  id: string;
+  title: string;
+  courseId: string;
+  tariffId: string | null;
+  subTariffId: string | null;
+};
+
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Tashkent',
@@ -109,10 +125,29 @@ export default function DashboardPage() {
       && !roles.includes('Agent')
       && !roles.includes('Finance'),
   );
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [layoutInitialized, setLayoutInitialized] = useState(false);
+  const [visibleWidgetIds, setVisibleWidgetIds] = useState<string[]>([]);
+  const [customSalesWidgets, setCustomSalesWidgets] = useState<DashboardCustomSalesWidget[]>([]);
+  const [newWidgetTitle, setNewWidgetTitle] = useState('');
+  const [newWidgetCourseId, setNewWidgetCourseId] = useState('');
+  const [newWidgetTariffId, setNewWidgetTariffId] = useState('');
+  const [newWidgetSubTariffId, setNewWidgetSubTariffId] = useState('');
 
   const amoPipelinesQuery = trpc.integrations.getAmoCRMPipelines.useQuery(undefined, {
     retry: false,
     enabled: isAdmin && !isFinanceOnly,
+  });
+
+  const dashboardLayoutQuery = trpc.dashboard.getUserLayout.useQuery(undefined, {
+    retry: 1,
+    staleTime: 5 * 60 * 1000,
+  });
+  const saveDashboardLayoutMutation = trpc.dashboard.saveUserLayout.useMutation();
+  const widgetCatalogQuery = trpc.dashboard.widgetCatalogOptions.useQuery(undefined, {
+    enabled: isEditMode,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
   });
 
   const pipelineOptions = useMemo(() => {
@@ -158,6 +193,24 @@ export default function DashboardPage() {
     },
     {
       enabled: isFinanceOnly,
+      retry: 1,
+      refetchInterval: 5 * 60 * 1000,
+    },
+  );
+  const customSalesWidgetsQuery = trpc.dashboard.customSalesWidgets.useQuery(
+    {
+      range,
+      dateFrom: range === 'custom' ? dateFrom : undefined,
+      dateTo: range === 'custom' ? dateTo : undefined,
+      widgets: customSalesWidgets.map((widget) => ({
+        id: widget.id,
+        courseId: widget.courseId,
+        tariffId: widget.tariffId,
+        subTariffId: widget.subTariffId,
+      })),
+    },
+    {
+      enabled: customSalesWidgets.length > 0,
       retry: 1,
       refetchInterval: 5 * 60 * 1000,
     },
@@ -304,52 +357,59 @@ export default function DashboardPage() {
       return sum + Math.max(0, seconds);
     }, 0);
   }, [isAgentOnly, sellerPerformance]);
-
-  const metricCards = isTashkiliyOnly
+  const metricCards: DashboardCard[] = isTashkiliyOnly
     ? [
         {
+          id: 'new-sales',
           title: 'Yangi sotuvlar',
           value: String(stats?.newSalesCount ?? 0),
           subtitle: "Tanlangan davr bo'yicha",
           extra: null,
         },
         {
+          id: 'online-sales',
           title: 'Sotuv - Onlayn',
           value: String(stats?.onlineSalesCount ?? 0),
-          subtitle: "Soni",
+          subtitle: 'Soni',
           extra: null,
         },
         {
+          id: 'offline-sales',
           title: 'Sotuv - Oflayn',
           value: String(stats?.offlineSalesCount ?? 0),
-          subtitle: "Soni",
+          subtitle: 'Soni',
           extra: null,
         },
         {
+          id: 'intensive-sales',
           title: 'Sotuv - Intensiv',
           value: String(stats?.intensiveSalesCount ?? 0),
-          subtitle: "Soni",
+          subtitle: 'Soni',
           extra: null,
         },
         {
+          id: 'all-leads',
           title: 'Yangi lidlar',
           value: String(stats?.totalLeads ?? 0),
           subtitle: "Tanlangan davr bo'yicha",
           extra: null,
         },
         {
+          id: 'qualified-leads',
           title: 'Sifatli lidlar',
           value: String(stats?.qualifiedLeads ?? 0),
           subtitle: `${formatPercent(stats?.qualifiedLeadSharePercent)} ulush`,
           extra: null,
         },
         {
+          id: 'non-qualified-leads',
           title: 'Sifatsiz lidlar',
           value: String(stats?.nonQualifiedLeads ?? 0),
           subtitle: `${formatPercent(stats?.nonQualifiedLeadSharePercent)} ulush`,
           extra: null,
         },
         {
+          id: 'conversion',
           title: 'Konversiya',
           value: `${(stats?.conversionPercent ?? 0).toFixed(1)}%`,
           subtitle: 'Sotuv / lid',
@@ -358,85 +418,274 @@ export default function DashboardPage() {
       ]
     : [
         {
+          id: 'sales-contracts',
           title: 'Sotuv shartnomasi',
           value: String(stats?.newSalesCount ?? 0),
           subtitle: formatAmount(stats?.newSalesAgreementAmount),
           extra: null,
         },
         {
+          id: 'online-sales',
           title: 'Sotuv - Onlayn',
           value: String(stats?.onlineSalesCount ?? 0),
           subtitle: formatAmount(stats?.onlineSalesAgreementAmount),
           extra: null,
         },
         {
+          id: 'offline-sales',
           title: 'Sotuv - Oflayn',
           value: String(stats?.offlineSalesCount ?? 0),
           subtitle: formatAmount(stats?.offlineSalesAgreementAmount),
           extra: null,
         },
         {
+          id: 'intensive-sales',
           title: 'Sotuv - Intensiv',
           value: String(stats?.intensiveSalesCount ?? 0),
           subtitle: formatAmount(stats?.intensiveSalesAgreementAmount),
           extra: null,
         },
         {
+          id: 'total-income',
           title: 'Tushum',
           value: formatAmount(stats?.totalIncomeAmount),
-          subtitle: 'Tanlangan davr bo\'yicha',
+          subtitle: "Tanlangan davr bo'yicha",
           extra: null,
         },
         {
+          id: 'follow-up',
           title: 'Follow-up',
           value: String(stats?.followUpCount ?? 0),
           subtitle: 'Yakunlangan vazifalar',
           extra: null,
         },
         {
+          id: 'notes',
           title: 'Yozuvlar',
           value: String(stats?.noteCount ?? 0),
           subtitle: "Lid bo'yicha yozuvlar",
           extra: null,
         },
         {
+          id: 'stage-changes',
           title: "Bosqich o'zgarishi",
           value: String(stats?.stageChangeCount ?? 0),
           subtitle: "CRM status o'zgarishlari",
           extra: null,
         },
         ...(isAgentOnly
-          ? [{
-              title: "Qo'ng'iroqlar",
-              value: `${stats?.totalCalls ?? 0} ta`,
-              subtitle: "Jami qo'ng'iroq soni",
-              extra: `Davomiylik: ${formatDurationCompact(agentTalkDurationSeconds)}`,
-            }]
+          ? [
+              {
+                id: 'agent-calls',
+                title: "Qo'ng'iroqlar",
+                value: `${stats?.totalCalls ?? 0} ta`,
+                subtitle: "Jami qo'ng'iroq soni",
+                extra: `Davomiylik: ${formatDurationCompact(agentTalkDurationSeconds)}`,
+              },
+            ]
           : []),
       ];
 
-  const financeCards = [
+  const financeCards: DashboardCard[] = [
     {
+      id: 'finance-total-income',
       title: 'Jami tushum',
       value: formatAmount(financeTotals?.totalIncomeAmount),
+      subtitle: "Tanlangan davr bo'yicha",
+      extra: null,
     },
     {
+      id: 'finance-new-sales',
       title: 'Yangi sotuvlar',
       value: String(financeTotals?.newSalesCount ?? 0),
+      subtitle: 'Sotuvlar soni',
+      extra: null,
     },
     {
-      title: 'Qayta to\'lovlar',
+      id: 'finance-repayments',
+      title: "Qayta to'lovlar",
       value: String(financeTotals?.repaymentCount ?? 0),
+      subtitle: "To'lovlar soni",
+      extra: null,
     },
     {
+      id: 'finance-debtors',
       title: 'Qarzdor mijozlar',
       value: String(financeTotals?.debtorsCount ?? 0),
+      subtitle: "Qarz bilan mijozlar",
+      extra: null,
     },
     {
+      id: 'finance-total-debt',
       title: 'Jami qarzdorlik',
       value: formatAmount(financeTotals?.totalDebtAmount),
+      subtitle: "Qolgan qarz summasi",
+      extra: null,
     },
   ];
+
+  const baseDashboardCards = isFinanceOnly ? financeCards : metricCards;
+  const widgetMetricById = useMemo(() => {
+    const entries = (customSalesWidgetsQuery.data?.widgets || []) as Array<{
+      id: string;
+      salesCount: number;
+      agreementAmount: number;
+    }>;
+    return new Map(entries.map((entry) => [entry.id, entry]));
+  }, [customSalesWidgetsQuery.data?.widgets]);
+  const customMetricCards: DashboardCard[] = useMemo(
+    () => customSalesWidgets.map((widget) => {
+      const metric = widgetMetricById.get(widget.id);
+      const salesCount = metric?.salesCount ?? 0;
+      const agreementAmount = metric?.agreementAmount ?? 0;
+      return {
+        id: `custom:${widget.id}`,
+        title: widget.title,
+        value: String(salesCount),
+        subtitle: isTashkiliyOnly ? `${salesCount} ta sotuv` : formatAmount(agreementAmount),
+        extra: isTashkiliyOnly ? null : `${salesCount} ta sotuv`,
+      };
+    }),
+    [customSalesWidgets, isTashkiliyOnly, widgetMetricById],
+  );
+  const allDashboardCards = useMemo(
+    () => [...baseDashboardCards, ...customMetricCards],
+    [baseDashboardCards, customMetricCards],
+  );
+  const availableWidgetIds = useMemo(() => allDashboardCards.map((card) => card.id), [allDashboardCards]);
+  const defaultVisibleWidgetIds = useMemo(
+    () => [...baseDashboardCards.map((card) => card.id), ...customMetricCards.map((card) => card.id)],
+    [baseDashboardCards, customMetricCards],
+  );
+
+  useEffect(() => {
+    if (layoutInitialized || dashboardLayoutQuery.isLoading) {
+      return;
+    }
+
+    const savedLayout = dashboardLayoutQuery.data;
+    setCustomSalesWidgets(savedLayout?.customSalesWidgets || []);
+    setVisibleWidgetIds(savedLayout?.visibleWidgetIds || []);
+    setLayoutInitialized(true);
+  }, [dashboardLayoutQuery.data, dashboardLayoutQuery.isLoading, layoutInitialized]);
+
+  useEffect(() => {
+    if (!layoutInitialized) {
+      return;
+    }
+
+    const availableSet = new Set(availableWidgetIds);
+    setVisibleWidgetIds((previous) => {
+      const initial = previous.length ? previous : defaultVisibleWidgetIds;
+      const normalized = Array.from(new Set(initial.filter((widgetId) => availableSet.has(widgetId))));
+      const fallback = defaultVisibleWidgetIds.length ? defaultVisibleWidgetIds : availableWidgetIds;
+      if (!normalized.length && fallback.length) {
+        return fallback;
+      }
+      if (normalized.join('|') === previous.join('|')) {
+        return previous;
+      }
+      return normalized;
+    });
+  }, [availableWidgetIds, defaultVisibleWidgetIds, layoutInitialized]);
+
+  const visibleWidgetSet = useMemo(() => new Set(visibleWidgetIds), [visibleWidgetIds]);
+  const effectiveVisibleWidgetSet = useMemo(
+    () => (layoutInitialized ? visibleWidgetSet : new Set(defaultVisibleWidgetIds)),
+    [defaultVisibleWidgetIds, layoutInitialized, visibleWidgetSet],
+  );
+  const visibleDashboardCards = useMemo(
+    () => allDashboardCards.filter((card) => effectiveVisibleWidgetSet.has(card.id)),
+    [allDashboardCards, effectiveVisibleWidgetSet],
+  );
+
+  const widgetCourses = widgetCatalogQuery.data?.courses || [];
+  const selectedWidgetCourse = useMemo(
+    () => widgetCourses.find((course: any) => course.id === newWidgetCourseId) || null,
+    [newWidgetCourseId, widgetCourses],
+  );
+  const selectedWidgetTariff = useMemo(
+    () => selectedWidgetCourse?.tariffs.find((tariff: any) => tariff.id === newWidgetTariffId) || null,
+    [newWidgetTariffId, selectedWidgetCourse],
+  );
+  const availableSubTariffs = useMemo(() => {
+    if (!selectedWidgetCourse) {
+      return [];
+    }
+    if (selectedWidgetTariff) {
+      return selectedWidgetTariff.subTariffs || [];
+    }
+    const subTariffById = new Map<string, { id: string; name: string }>();
+    for (const tariff of selectedWidgetCourse.tariffs || []) {
+      for (const subTariff of tariff.subTariffs || []) {
+        if (!subTariffById.has(subTariff.id)) {
+          subTariffById.set(subTariff.id, subTariff);
+        }
+      }
+    }
+    return Array.from(subTariffById.values());
+  }, [selectedWidgetCourse, selectedWidgetTariff]);
+
+  const toggleWidgetVisibility = (widgetId: string) => {
+    setVisibleWidgetIds((previous) => (
+      previous.includes(widgetId)
+        ? previous.filter((current) => current !== widgetId)
+        : [...previous, widgetId]
+    ));
+  };
+
+  const restoreLayoutFromServer = () => {
+    const savedLayout = dashboardLayoutQuery.data;
+    setCustomSalesWidgets(savedLayout?.customSalesWidgets || []);
+    setVisibleWidgetIds(savedLayout?.visibleWidgetIds || []);
+    setIsEditMode(false);
+  };
+
+  const addCustomSalesWidget = () => {
+    if (!selectedWidgetCourse) {
+      return;
+    }
+
+    const title = newWidgetTitle.trim() || [
+      selectedWidgetCourse.name,
+      selectedWidgetTariff?.name,
+      availableSubTariffs.find((subTariff: any) => subTariff.id === newWidgetSubTariffId)?.name,
+    ].filter(Boolean).join(' / ');
+    if (!title) {
+      return;
+    }
+
+    const widgetId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `widget_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const nextWidget: DashboardCustomSalesWidget = {
+      id: widgetId,
+      title,
+      courseId: selectedWidgetCourse.id,
+      tariffId: selectedWidgetTariff?.id || null,
+      subTariffId: newWidgetSubTariffId || null,
+    };
+
+    setCustomSalesWidgets((previous) => [...previous, nextWidget]);
+    setVisibleWidgetIds((previous) => Array.from(new Set([...previous, `custom:${widgetId}`])));
+    setNewWidgetTitle('');
+    setNewWidgetTariffId('');
+    setNewWidgetSubTariffId('');
+  };
+
+  const removeCustomSalesWidget = (widgetId: string) => {
+    setCustomSalesWidgets((previous) => previous.filter((widget) => widget.id !== widgetId));
+    setVisibleWidgetIds((previous) => previous.filter((item) => item !== `custom:${widgetId}`));
+  };
+
+  const saveDashboardLayout = async () => {
+    await saveDashboardLayoutMutation.mutateAsync({
+      visibleWidgetIds,
+      customSalesWidgets,
+    });
+    await dashboardLayoutQuery.refetch();
+    setIsEditMode(false);
+  };
   const salarySection = showSalarySection ? (
     <div className="rounded-lg bg-white shadow">
       <div className="px-4 py-5 sm:p-6">
@@ -573,6 +822,153 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-gray-500">Boshqaruv kartalarini moslashtirish</div>
+        <button
+          type="button"
+          onClick={() => setIsEditMode((prev) => !prev)}
+          className={`rounded-md border px-3 py-1.5 text-sm font-medium transition ${
+            isEditMode
+              ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          {isEditMode ? 'Tahrirlashni yopish' : 'Tahrirlash'}
+        </button>
+      </div>
+
+      {isEditMode && (
+        <div className="rounded-lg bg-white shadow">
+          <div className="space-y-4 px-4 py-4 sm:px-5">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Kartalarni ko'rsatish/yashirish</h3>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {allDashboardCards.map((card) => (
+                  <label key={`toggle-${card.id}`} className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={effectiveVisibleWidgetSet.has(card.id)}
+                      onChange={() => toggleWidgetVisibility(card.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-gray-800">{card.title}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-md border border-gray-200 p-3">
+              <h4 className="text-sm font-semibold text-gray-900">Maxsus sotuv kartasi qo'shish</h4>
+              <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
+                <input
+                  type="text"
+                  value={newWidgetTitle}
+                  onChange={(event) => setNewWidgetTitle(event.target.value)}
+                  placeholder="Karta nomi (ixtiyoriy)"
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+                <select
+                  value={newWidgetCourseId}
+                  onChange={(event) => {
+                    setNewWidgetCourseId(event.target.value);
+                    setNewWidgetTariffId('');
+                    setNewWidgetSubTariffId('');
+                  }}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Kurs tanlang</option>
+                  {widgetCourses.map((course: any) => (
+                    <option key={course.id} value={course.id}>{course.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={newWidgetTariffId}
+                  onChange={(event) => {
+                    setNewWidgetTariffId(event.target.value);
+                    setNewWidgetSubTariffId('');
+                  }}
+                  disabled={!selectedWidgetCourse}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+                >
+                  <option value="">Barcha tariflar</option>
+                  {(selectedWidgetCourse?.tariffs || []).map((tariff: any) => (
+                    <option key={tariff.id} value={tariff.id}>{tariff.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={newWidgetSubTariffId}
+                  onChange={(event) => setNewWidgetSubTariffId(event.target.value)}
+                  disabled={!selectedWidgetCourse}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+                >
+                  <option value="">Barcha subtariflar</option>
+                  {availableSubTariffs.map((subTariff: any) => (
+                    <option key={subTariff.id} value={subTariff.id}>{subTariff.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={addCustomSalesWidget}
+                  disabled={!newWidgetCourseId}
+                  className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                >
+                  Qo'shish
+                </button>
+              </div>
+
+              {customSalesWidgets.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {customSalesWidgets.map((widget) => {
+                    const widgetId = `custom:${widget.id}`;
+                    return (
+                      <div key={widget.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2">
+                        <label className="flex items-center gap-2 text-sm text-gray-800">
+                          <input
+                            type="checkbox"
+                            checked={effectiveVisibleWidgetSet.has(widgetId)}
+                            onChange={() => toggleWidgetVisibility(widgetId)}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span>{widget.title}</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeCustomSalesWidget(widget.id)}
+                          className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                        >
+                          O'chirish
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => saveDashboardLayout().catch(() => null)}
+                disabled={saveDashboardLayoutMutation.isPending}
+                className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-green-300"
+              >
+                {saveDashboardLayoutMutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}
+              </button>
+              <button
+                type="button"
+                onClick={restoreLayoutFromServer}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Bekor qilish
+              </button>
+              {saveDashboardLayoutMutation.error && (
+                <p className="text-sm text-red-600">{saveDashboardLayoutMutation.error.message}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-lg bg-white shadow">
         <div className="px-3 py-2 sm:px-5 sm:py-4">
           <div className="space-y-2">
@@ -685,13 +1081,17 @@ export default function DashboardPage() {
           )}
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {financeCards.map((card) => (
+            {visibleDashboardCards.map((card) => (
               <div
-                key={card.title}
+                key={card.id}
                 className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
               >
                 <p className="text-sm text-gray-500">{card.title}</p>
                 <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{card.value}</p>
+                <p className="mt-2 text-sm text-gray-600">{card.subtitle}</p>
+                {card.extra ? (
+                  <p className="mt-1 text-sm font-medium text-gray-700">{card.extra}</p>
+                ) : null}
               </div>
             ))}
           </div>
@@ -733,9 +1133,9 @@ export default function DashboardPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {metricCards.map((card) => (
+            {visibleDashboardCards.map((card) => (
               <div
-                key={card.title}
+                key={card.id}
                 className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
               >
                 <p className="text-sm text-gray-500">{card.title}</p>
