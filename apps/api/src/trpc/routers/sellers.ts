@@ -547,6 +547,7 @@ export const sellersRouter = router({
       managerIds: managerIdList,
       rangeStart: new Date(0),
       rangeEnd: roundedNow,
+      rangeKind: 'today',
       cacheTtlMs: SELLERS_ACTIVITY_CACHE_TTL_MS,
     });
 
@@ -858,6 +859,7 @@ export const sellersRouter = router({
           managerIds: [input.id],
           rangeStart,
           rangeEnd,
+          rangeKind: input.range,
         })
       ).get(input.id) || null;
 
