@@ -1,10 +1,8 @@
 ﻿'use client';
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
-import * as XLSX from 'xlsx';
 import { useAuth } from '@/contexts/auth-context';
-import { HistoricalImportWizard } from '@/components/dashboard/historical-import-wizard';
 
 type IncomeType = 'new_sale' | 'repayment';
 type IncomeTypeChoice = '' | IncomeType;
@@ -17,35 +15,7 @@ type CustomerOption = {
   telegramUsername?: string | null;
 };
 
-type BulkImportResult = {
-  totalRows: number;
-  importedCount: number;
-  failedCount: number;
-  failures: Array<{ rowNumber: number; message: string }>;
-};
-
-type BulkFailureItem = {
-  rowNumber: number;
-  message: string;
-};
-
-const BULK_TEMPLATE_HEADERS = [
-  'entry_date',
-  'sales_manager',
-  'customer_number',
-  'customer_name',
-  'telegram_username',
-  'income_type',
-  'course',
-  'tariff',
-  'course_price',
-  'payment',
-  'deadline',
-  'debt_source_income_id',
-];
-const BULK_IMPORT_CHUNK_SIZE = 25;
 const TELEGRAM_USERNAME_PATTERN = /^@?[A-Za-z0-9_]+$/;
-const GOOGLE_SPREADSHEET_ID_PATTERN = /^[a-zA-Z0-9-_]{20,}$/;
 
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -93,142 +63,6 @@ function sanitizeCustomerNumber(value: string): string {
 
 function sanitizeTelegramUsername(value: string): string {
   return value.replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
-}
-
-function parseBulkImportError(error: unknown): string {
-  if (error && typeof error === 'object') {
-    const trpcErrorMessage = (error as { data?: { zodError?: { fieldErrors?: { rows?: string[] } } } }).data?.zodError
-      ?.fieldErrors?.rows?.[0];
-    if (trpcErrorMessage) {
-      return trpcErrorMessage;
-    }
-    const message = (error as { message?: string }).message;
-    if (message) {
-      return message;
-    }
-  }
-  return 'Bulk import muvaffaqiyatsiz.';
-}
-
-function summarizeBulkResult(result: BulkImportResult): string {
-  if (result.failedCount === 0) {
-    return `${result.importedCount}/${result.totalRows} qator muvaffaqiyatli import qilindi.`;
-  }
-
-  const preview = result.failures.slice(0, 5).map((item) => `Row ${item.rowNumber}: ${item.message}`).join(' | ');
-  return `${result.importedCount}/${result.totalRows} qator import qilindi. Xato: ${result.failedCount}. ${preview}`;
-}
-
-function resolveGoogleSheetCsvUrlClient(sheetUrlInput: string): string {
-  const trimmedInput = sheetUrlInput.trim();
-  if (!trimmedInput) {
-    throw new Error('Google Sheets URL majburiy.');
-  }
-
-  if (GOOGLE_SPREADSHEET_ID_PATTERN.test(trimmedInput)) {
-    return `https://docs.google.com/spreadsheets/d/${trimmedInput}/export?format=csv`;
-  }
-
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(trimmedInput);
-  } catch {
-    throw new Error('Google Sheets URL noto‘g‘ri.');
-  }
-
-  const host = parsedUrl.hostname.toLowerCase();
-  if (!host.includes('google.com')) {
-    throw new Error('Faqat docs.google.com Google Sheets URL qo‘llab-quvvatlanadi.');
-  }
-
-  if (parsedUrl.pathname.includes('/export') && parsedUrl.searchParams.get('format') === 'csv') {
-    return parsedUrl.toString();
-  }
-
-  const idMatch = parsedUrl.pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (!idMatch?.[1]) {
-    throw new Error('Google Sheets URL dan spreadsheet ID topilmadi.');
-  }
-
-  const gidFromSearch = parsedUrl.searchParams.get('gid');
-  const hashMatch = parsedUrl.hash.match(/gid=(\d+)/);
-  const gid = gidFromSearch || hashMatch?.[1];
-
-  return `https://docs.google.com/spreadsheets/d/${idMatch[1]}/export?format=csv${gid ? `&gid=${gid}` : ''}`;
-}
-
-function parseCsvRowsClient(csvContent: string): Array<Record<string, string | number | boolean | null>> {
-  const rows: string[][] = [];
-  let currentCell = '';
-  let currentRow: string[] = [];
-  let inQuotes = false;
-
-  for (let index = 0; index < csvContent.length; index += 1) {
-    const char = csvContent[index];
-    const nextChar = csvContent[index + 1];
-
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        currentCell += '"';
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (char === ',' && !inQuotes) {
-      currentRow.push(currentCell);
-      currentCell = '';
-      continue;
-    }
-
-    if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && nextChar === '\n') {
-        index += 1;
-      }
-
-      currentRow.push(currentCell);
-      currentCell = '';
-      if (currentRow.some((cell) => cell.trim().length > 0)) {
-        rows.push(currentRow);
-      }
-      currentRow = [];
-      continue;
-    }
-
-    currentCell += char;
-  }
-
-  if (currentCell.length > 0 || currentRow.length > 0) {
-    currentRow.push(currentCell);
-    if (currentRow.some((cell) => cell.trim().length > 0)) {
-      rows.push(currentRow);
-    }
-  }
-
-  if (!rows.length) {
-    return [];
-  }
-
-  const headerRow = rows[0] ?? [];
-  if (!headerRow.length) {
-    return [];
-  }
-
-  const bodyRows = rows.slice(1);
-  const headers = headerRow.map((header) => header.trim());
-
-  return bodyRows.map((line) => {
-    const result: Record<string, string | number | boolean | null> = {};
-    headers.forEach((header, index) => {
-      if (!header) {
-        return;
-      }
-      result[header] = line[index] ?? '';
-    });
-    return result;
-  });
 }
 
 function buildFieldClass(fieldErrors: FieldErrors, field: string, extra = ''): string {
@@ -291,15 +125,6 @@ export default function IncomePage() {
   const [deadline, setDeadline] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [bulkError, setBulkError] = useState<string | null>(null);
-  const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
-  const [isBulkUploading, setIsBulkUploading] = useState(false);
-  const [bulkProgressTotal, setBulkProgressTotal] = useState(0);
-  const [bulkProgressProcessed, setBulkProgressProcessed] = useState(0);
-  const [bulkProgressImported, setBulkProgressImported] = useState(0);
-  const [bulkFailureItems, setBulkFailureItems] = useState<BulkFailureItem[]>([]);
-  const [googleSheetUrl, setGoogleSheetUrl] = useState('');
-  const [bulkFallbackManagerUserId, setBulkFallbackManagerUserId] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [recentLimit, setRecentLimit] = useState(10);
   const [periodDeleteFrom, setPeriodDeleteFrom] = useState(getTashkentToday());
@@ -310,8 +135,16 @@ export default function IncomePage() {
 
   const formOptionsQuery = trpc.customerIncome.formOptions.useQuery(undefined, {
     retry: false,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
-  const incomesQuery = trpc.customerIncome.listIncomes.useQuery({ limit: recentLimit }, { retry: false });
+  const incomesQuery = trpc.customerIncome.listIncomes.useQuery({ limit: recentLimit }, {
+    retry: false,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
   const searchCustomersQuery = trpc.customerIncome.searchCustomers.useQuery(
     { query: customerNumber.trim(), limit: 30 },
     {
@@ -321,11 +154,8 @@ export default function IncomePage() {
   );
   const createIncomeMutation = trpc.customerIncome.createIncome.useMutation();
   const deleteIncomeMutation = trpc.customerIncome.deleteIncome.useMutation();
-  const bulkImportRowsMutation = trpc.customerIncome.bulkImportRows.useMutation();
-  const bulkImportFromSheetMutation = trpc.customerIncome.bulkImportFromGoogleSheet.useMutation();
   const deleteIncomesByPeriodMutation = trpc.customerIncome.deleteIncomesByPeriod.useMutation();
   const [deletingIncomeId, setDeletingIncomeId] = useState<string | null>(null);
-  const isBulkBusy = isBulkUploading || bulkImportRowsMutation.isLoading || bulkImportFromSheetMutation.isLoading;
 
   const managers = useMemo(() => formOptionsQuery.data?.managers || [], [formOptionsQuery.data]);
   const courseOptions = useMemo(() => formOptionsQuery.data?.courses || [], [formOptionsQuery.data]);
@@ -449,12 +279,6 @@ export default function IncomePage() {
   }, [managerUserId, managers]);
 
   useEffect(() => {
-    if (!bulkFallbackManagerUserId && managers.length > 0) {
-      setBulkFallbackManagerUserId(managers[0].id);
-    }
-  }, [bulkFallbackManagerUserId, managers]);
-
-  useEffect(() => {
     if (!selectedCustomer) {
       return;
     }
@@ -535,185 +359,6 @@ export default function IncomePage() {
       setSubTariffId('');
     }
   }, [tariffId, subTariffId, subTariffOptions]);
-
-  const handleDownloadTemplate = () => {
-    const sampleRows: Array<Record<string, string>> = [
-      {
-        entry_date: getTashkentToday(),
-        sales_manager: managers[0]?.label || 'Admin',
-        customer_number: '998901234567',
-        customer_name: 'Ali Valiyev',
-        telegram_username: '@ali_valiyev',
-        income_type: 'new_sale',
-        course: courseOptions[0]?.name || 'English',
-        tariff: courseOptions[0]?.tariffs?.[0]?.name || 'Standard',
-        course_price: '1500000',
-        payment: '500000',
-        deadline: getTashkentToday(),
-        debt_source_income_id: '',
-      },
-      {
-        entry_date: getTashkentToday(),
-        sales_manager: managers[0]?.label || 'Admin',
-        customer_number: '998901234567',
-        customer_name: '',
-        telegram_username: '',
-        income_type: 'repayment',
-        course: '',
-        tariff: '',
-        course_price: '',
-        payment: '300000',
-        deadline: '',
-        debt_source_income_id: '',
-      },
-    ];
-
-    const worksheet = XLSX.utils.json_to_sheet(sampleRows, { header: BULK_TEMPLATE_HEADERS });
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'IncomeImport');
-    XLSX.writeFile(workbook, 'income-import-template.xlsx');
-  };
-
-  const runBulkImport = async (rows: Array<Record<string, string | number | boolean | null>>) => {
-    if (!rows.length) {
-      setBulkError("Faylda import uchun qatorlar topilmadi.");
-      return;
-    }
-
-    setBulkError(null);
-    setBulkSuccess(null);
-    setIsBulkUploading(true);
-    setBulkProgressTotal(rows.length);
-    setBulkProgressProcessed(0);
-    setBulkProgressImported(0);
-    setBulkFailureItems([]);
-
-    try {
-      let totalImported = 0;
-      let totalFailed = 0;
-      const allFailures: BulkFailureItem[] = [];
-
-      for (let start = 0; start < rows.length; start += BULK_IMPORT_CHUNK_SIZE) {
-        const chunkRows = rows.slice(start, start + BULK_IMPORT_CHUNK_SIZE);
-        const result = await bulkImportRowsMutation.mutateAsync({
-          rows: chunkRows,
-          fallbackManagerUserId: bulkFallbackManagerUserId || undefined,
-        }) as BulkImportResult;
-
-        totalImported += result.importedCount;
-        totalFailed += result.failedCount;
-
-        const mappedFailures = (result.failures || []).map((failure) => ({
-          rowNumber: start + failure.rowNumber,
-          message: failure.message,
-        }));
-
-        setBulkProgressProcessed(Math.min(start + chunkRows.length, rows.length));
-        setBulkProgressImported(totalImported);
-
-        if (mappedFailures.length > 0) {
-          allFailures.push(...mappedFailures);
-          setBulkFailureItems((prev) => [...prev, ...mappedFailures]);
-        }
-      }
-
-      if (totalFailed > 0) {
-        const uniqueRows = Array.from(new Set(allFailures.map((item) => item.rowNumber))).sort((a, b) => a - b);
-        const rowPreview = uniqueRows.slice(0, 20).join(', ');
-        setBulkError(`Xato qatorlar: ${rowPreview}${uniqueRows.length > 20 ? ' ...' : ''}`);
-      }
-
-      setBulkSuccess(
-        `Yuklash yakunlandi: ${totalImported}/${rows.length}. Xatolar: ${totalFailed}.`,
-      );
-      await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
-    } catch (bulkImportError) {
-      setBulkError(parseBulkImportError(bulkImportError));
-    } finally {
-      setIsBulkUploading(false);
-    }
-  };
-
-  const handleFileImport = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) {
-      return;
-    }
-
-    setBulkError(null);
-    setBulkSuccess(null);
-
-    try {
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-      const firstSheetName = workbook.SheetNames[0];
-      if (!firstSheetName) {
-        setBulkError("Tanlangan faylda worksheet yo'q.");
-        return;
-      }
-
-      const worksheet = workbook.Sheets[firstSheetName];
-      const rows = XLSX.utils.sheet_to_json<Record<string, string | number | boolean | null>>(worksheet, {
-        defval: '',
-        raw: false,
-      });
-
-      await runBulkImport(rows);
-    } catch (fileImportError) {
-      setBulkError(parseBulkImportError(fileImportError));
-    }
-  };
-
-  const handleGoogleSheetImport = async () => {
-    const trimmedUrl = googleSheetUrl.trim();
-    if (!trimmedUrl) {
-      setBulkError('Google Sheets URL majburiy.');
-      return;
-    }
-
-    setBulkError(null);
-    setBulkSuccess(null);
-
-    try {
-      const csvUrl = resolveGoogleSheetCsvUrlClient(trimmedUrl);
-      const response = await fetch(csvUrl, {
-        headers: {
-          Accept: 'text/csv,text/plain,*/*',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Google Sheet CSV yuklab bo'lmadi (${response.status}).`);
-      }
-
-      const csvContent = await response.text();
-      if (!csvContent.trim()) {
-        throw new Error("Google Sheet bo'sh.");
-      }
-      if (csvContent.trimStart().startsWith('<')) {
-        throw new Error("Google Sheet CSV qaytarmadi. Sheet ochiq (public) ekanini tekshiring.");
-      }
-
-      const rows = parseCsvRowsClient(csvContent);
-      if (!rows.length) {
-        throw new Error("Google Sheet CSV da ma'lumot qatorlari topilmadi.");
-      }
-
-      await runBulkImport(rows);
-    } catch (sheetImportError: any) {
-      try {
-        const result = await bulkImportFromSheetMutation.mutateAsync({
-          sheetUrl: trimmedUrl,
-          fallbackManagerUserId: bulkFallbackManagerUserId || undefined,
-        }) as BulkImportResult;
-        setBulkSuccess(`${summarizeBulkResult(result)} (Server import ishlatildi)`);
-        await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
-      } catch (fallbackError) {
-        const preferredMessage = sheetImportError?.message || parseBulkImportError(fallbackError);
-        setBulkError(preferredMessage);
-      }
-    }
-  };
 
   const handleDeleteIncome = async (incomeId: string) => {
     if (!isAdmin) {
@@ -800,10 +445,6 @@ export default function IncomePage() {
     } finally {
       setIsDeletingPeriod(false);
     }
-  };
-
-  const handleHistoricalImported = async () => {
-    await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -921,108 +562,6 @@ export default function IncomePage() {
           Mijoz bo'yicha yangi sotuv va qarz to'lovlarini qo'shing.
         </p>
       </div>
-
-      {isAdmin && (
-        <div className="rounded-lg bg-white shadow dark:bg-slate-900">
-          <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
-            <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">Ommaviy yuklash</h2>
-            <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-              Avval namunani yuklab oling, so'ng Excel/CSV yuklang yoki Google Sheets dan import qiling.
-            </p>
-          </div>
-
-          <div className="space-y-4 p-6">
-            {bulkError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{bulkError}</p>}
-            {bulkSuccess && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{bulkSuccess}</p>}
-            {(isBulkUploading || bulkProgressTotal > 0) && (
-              <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-                <div className="font-medium">
-                  Yuklanmoqda: {bulkProgressProcessed}/{bulkProgressTotal}
-                </div>
-                <div className="mt-1 text-xs">
-                  Muvaffaqiyatli: {bulkProgressImported} | Xato: {bulkFailureItems.length}
-                </div>
-                {bulkFailureItems.length > 0 && (
-                  <div className="mt-1 text-xs text-red-700">
-                    {bulkFailureItems.slice(0, 20).map((item) => (
-                      <div key={`${item.rowNumber}-${item.message}`}>
-                        xato - {item.rowNumber}
-                      </div>
-                    ))}
-                    {bulkFailureItems.length > 20 && <div>...</div>}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Zaxira sotuv menedjeri (mos kelmagan ism uchun)</label>
-              <select
-                value={bulkFallbackManagerUserId}
-                onChange={(event) => {
-                  setBulkFallbackManagerUserId(event.target.value);
-                  clearFieldError('bulkFallbackManagerUserId');
-                }}
-                className={buildFieldClass(fieldErrors, 'bulkFallbackManagerUserId')}
-              >
-                <option value="">Zaxira menedjer yo'q</option>
-                {managers.map((manager: any) => (
-                  <option key={`bulk-fallback-${manager.id}`} value={manager.id}>
-                    {manager.label}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-                Excel/Sheets dagi ism tizim foydalanuvchisiga mos kelmasa, shu menedjer ishlatiladi.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={handleDownloadTemplate}
-                className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
-              >
-                Excel namunasini yuklash
-              </button>
-              <label className="cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
-                Excel/CSV yuklash
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={handleFileImport}
-                  className="hidden"
-                  disabled={isBulkBusy}
-                />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
-              <input
-                value={googleSheetUrl}
-                onChange={(event) => setGoogleSheetUrl(event.target.value)}
-                placeholder="Google Sheets URL yoki Spreadsheet ID"
-                className={buildFieldClass(fieldErrors, 'googleSheetUrl', 'mt-0')}
-              />
-              <button
-                type="button"
-                onClick={handleGoogleSheetImport}
-                disabled={isBulkBusy}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                {bulkImportFromSheetMutation.isLoading || isBulkUploading ? 'Import qilinmoqda...' : 'Google Sheets dan import'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isAdmin && (
-        <HistoricalImportWizard
-          managers={managers}
-          onImported={handleHistoricalImported}
-        />
-      )}
 
       <div className="rounded-lg bg-white shadow dark:bg-slate-900">
         <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
