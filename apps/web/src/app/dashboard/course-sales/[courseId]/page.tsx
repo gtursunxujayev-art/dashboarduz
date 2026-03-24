@@ -281,13 +281,17 @@ export default function CourseSalesDetailPage() {
           {!isTashkiliyOnly && (
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
               <p className="text-xs uppercase tracking-wide text-gray-500">Kelishuv summasi</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summary?.rangeAgreementAmount)}</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-900">
+                {formatAmount(summary?.currentAgreementAmount ?? summary?.rangeAgreementAmount)}
+              </p>
             </div>
           )}
           {!isTashkiliyOnly && (
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
               <p className="text-xs uppercase tracking-wide text-gray-500">Tushum</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summary?.rangeIncomeAmount)}</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-900">
+                {formatAmount(summary?.currentIncomeAmount ?? summary?.rangeIncomeAmount)}
+              </p>
             </div>
           )}
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -478,4 +482,3 @@ export default function CourseSalesDetailPage() {
     </div>
   );
 }
-
