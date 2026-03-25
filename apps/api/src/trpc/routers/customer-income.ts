@@ -4766,6 +4766,98 @@ export const customerIncomeRouter = router({
       return created;
     }),
 
+  updateCustomerIdentity: adminProcedure
+    .input(
+      z.object({
+        customerId: z.string().uuid(),
+        customerNumber: z.string().min(1).max(64),
+        name: z.string().min(1).max(160),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const customerNumber = sanitizeCustomerNumber(input.customerNumber.trim());
+      if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Customer number must contain only digits.',
+        });
+      }
+
+      const name = input.name.trim();
+      if (!name) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Customer name is required.',
+        });
+      }
+
+      const current = await prisma.customer.findFirst({
+        where: {
+          tenantId: ctx.tenantId,
+          id: input.customerId,
+        },
+        select: {
+          id: true,
+          customerNumber: true,
+          name: true,
+        },
+      });
+
+      if (!current) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Customer not found.',
+        });
+      }
+
+      const duplicate = await prisma.customer.findFirst({
+        where: {
+          tenantId: ctx.tenantId,
+          customerNumber,
+          id: { not: current.id },
+        },
+        select: { id: true },
+      });
+
+      if (duplicate) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Another customer with this number already exists.',
+        });
+      }
+
+      const updated = await prisma.customer.update({
+        where: { id: current.id },
+        data: {
+          customerNumber,
+          name,
+        },
+        select: {
+          id: true,
+          customerNumber: true,
+          name: true,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'customer_identity_update',
+          resource: 'customer',
+          resourceId: updated.id,
+          metadata: {
+            previousCustomerNumber: current.customerNumber,
+            previousName: current.name,
+            customerNumber: updated.customerNumber,
+            name: updated.name,
+          },
+        },
+      });
+
+      return updated;
+    }),
+
   updateCustomersCourseAssignment: adminProcedure
     .input(
       z.object({
