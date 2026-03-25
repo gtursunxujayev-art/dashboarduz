@@ -1544,6 +1544,276 @@ async function sendRefundRequestedTelegram(params: {
   }
 }
 
+function buildRefundDetailsBlock(params: {
+  customerName: string;
+  customerNumber: string;
+  telegramUsername?: string | null;
+  amount: number;
+  courseName?: string | null;
+  tariffName?: string | null;
+  requesterLabel?: string | null;
+  reviewerLabel?: string | null;
+  createdAt?: Date | null;
+  reviewedAt?: Date | null;
+  reason?: string | null;
+  reviewNote?: string | null;
+}): string {
+  const tg = params.telegramUsername
+    ? (params.telegramUsername.startsWith('@') ? params.telegramUsername : `@${params.telegramUsername}`)
+    : '-';
+  const details = [
+    `1.Mijoz: ${params.customerName}`,
+    `2.Tel: ${params.customerNumber}`,
+    `3.Tg: ${tg}`,
+    '',
+    `Summa: ${formatAmountUz(params.amount)}`,
+    `Kurs/Tarif: ${[params.courseName, params.tariffName].filter(Boolean).join(' / ') || '-'}`,
+    ...(params.requesterLabel ? [`So'rov yuborgan: ${params.requesterLabel}`] : []),
+    ...(params.reviewerLabel ? [`Ko'rib chiqqan: ${params.reviewerLabel}`] : []),
+    ...(params.createdAt ? [`So'rov vaqti: ${formatDateGmt5(params.createdAt)}`] : []),
+    ...(params.reviewedAt ? [`Ko'rib chiqilgan vaqt: ${formatDateGmt5(params.reviewedAt)}`] : []),
+    ...(params.reason ? [`Izoh: ${params.reason}`] : []),
+    ...(params.reviewNote ? [`Javob izohi: ${params.reviewNote}`] : []),
+  ];
+  return details.join('\n');
+}
+
+async function sendMessageToTelegramChat(
+  botToken: string,
+  chatId: string,
+  text: string,
+): Promise<void> {
+  const normalized = String(chatId || '').trim();
+  if (!normalized) {
+    throw new Error('Empty Telegram chat id');
+  }
+
+  const candidates = buildTelegramChatIdCandidates(normalized);
+  let lastError = '';
+  for (const candidate of candidates) {
+    try {
+      await telegramService.sendMessage(botToken, candidate, text, {
+        disable_web_page_preview: true,
+      });
+      return;
+    } catch (error) {
+      lastError = String((error as any)?.message || error);
+    }
+  }
+
+  throw new Error(lastError || 'Failed to send Telegram message');
+}
+
+async function notifyFinanceUsersRefundRequested(params: {
+  tenantId: string;
+  requestId: string;
+  requestedByUserId: string;
+}) {
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  if (!botToken) {
+    return;
+  }
+
+  const [request, financeUsers] = await Promise.all([
+    prisma.incomeAdjustmentRequest.findFirst({
+      where: {
+        id: params.requestId,
+        tenantId: params.tenantId,
+        type: ADJUSTMENT_TYPE_REFUND,
+        status: ADJUSTMENT_STATUS_PENDING,
+      },
+      select: {
+        requestedAmount: true,
+        reason: true,
+        createdAt: true,
+        requestedBy: {
+          select: {
+            name: true,
+            username: true,
+          },
+        },
+        income: {
+          select: {
+            paymentAmount: true,
+            course: {
+              select: {
+                name: true,
+              },
+            },
+            tariff: {
+              select: {
+                name: true,
+              },
+            },
+            customer: {
+              select: {
+                name: true,
+                customerNumber: true,
+                telegramUsername: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.user.findMany({
+      where: {
+        tenantId: params.tenantId,
+        isActive: true,
+        roles: {
+          has: 'Finance',
+        },
+        telegramId: {
+          not: null,
+        },
+      },
+      select: {
+        id: true,
+        telegramId: true,
+      },
+    }),
+  ]);
+
+  if (!request?.income?.customer || financeUsers.length === 0) {
+    return;
+  }
+
+  const requesterLabel = request.requestedBy?.name || request.requestedBy?.username || params.requestedByUserId;
+  const details = buildRefundDetailsBlock({
+    customerName: request.income.customer.name,
+    customerNumber: request.income.customer.customerNumber,
+    telegramUsername: request.income.customer.telegramUsername || null,
+    amount: request.requestedAmount ?? request.income.paymentAmount ?? 0,
+    courseName: request.income.course?.name || null,
+    tariffName: request.income.tariff?.name || null,
+    requesterLabel,
+    createdAt: request.createdAt,
+    reason: request.reason || null,
+  });
+  const message = `Pul qaytarish uchun yangi so'rov\n\n${details}`;
+
+  for (const financeUser of financeUsers) {
+    const chatId = String(financeUser.telegramId || '').trim();
+    if (!chatId) {
+      continue;
+    }
+    try {
+      await sendMessageToTelegramChat(botToken, chatId, message);
+    } catch (error) {
+      console.error('[Income][Telegram] Failed to notify finance user about refund request', {
+        tenantId: params.tenantId,
+        requestId: params.requestId,
+        financeUserId: financeUser.id,
+        chatId,
+        error: String((error as any)?.message || error),
+      });
+    }
+  }
+}
+
+async function notifyRefundRequesterReviewResult(params: {
+  tenantId: string;
+  requestId: string;
+  status: 'approved' | 'rejected';
+}) {
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  if (!botToken) {
+    return;
+  }
+
+  const request = await prisma.incomeAdjustmentRequest.findFirst({
+    where: {
+      id: params.requestId,
+      tenantId: params.tenantId,
+      type: ADJUSTMENT_TYPE_REFUND,
+      status: params.status,
+    },
+    select: {
+      requestedAmount: true,
+      reason: true,
+      reviewNote: true,
+      createdAt: true,
+      reviewedAt: true,
+      requestedBy: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          telegramId: true,
+        },
+      },
+      reviewedBy: {
+        select: {
+          name: true,
+          username: true,
+        },
+      },
+      income: {
+        select: {
+          paymentAmount: true,
+          course: {
+            select: {
+              name: true,
+            },
+          },
+          tariff: {
+            select: {
+              name: true,
+            },
+          },
+          customer: {
+            select: {
+              name: true,
+              customerNumber: true,
+              telegramUsername: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const requesterChatId = String(request?.requestedBy?.telegramId || '').trim();
+  if (!request?.income?.customer || !requesterChatId) {
+    return;
+  }
+
+  const reviewerLabel = request.reviewedBy?.name || request.reviewedBy?.username || null;
+  const requesterLabel = request.requestedBy?.name || request.requestedBy?.username || request.requestedBy?.id || '-';
+  const details = buildRefundDetailsBlock({
+    customerName: request.income.customer.name,
+    customerNumber: request.income.customer.customerNumber,
+    telegramUsername: request.income.customer.telegramUsername || null,
+    amount: request.requestedAmount ?? request.income.paymentAmount ?? 0,
+    courseName: request.income.course?.name || null,
+    tariffName: request.income.tariff?.name || null,
+    requesterLabel,
+    reviewerLabel,
+    createdAt: request.createdAt,
+    reviewedAt: request.reviewedAt,
+    reason: request.reason || null,
+    reviewNote: request.reviewNote || null,
+  });
+
+  const header = params.status === 'approved'
+    ? '✅ Pul qaytarildi'
+    : '❌ Qaytarish rad etildi';
+  const message = `${header}\n\n${details}`;
+
+  try {
+    await sendMessageToTelegramChat(botToken, requesterChatId, message);
+  } catch (error) {
+    console.error('[Income][Telegram] Failed to notify requester about refund review result', {
+      tenantId: params.tenantId,
+      requestId: params.requestId,
+      requesterUserId: request.requestedBy?.id || null,
+      chatId: requesterChatId,
+      status: params.status,
+      error: String((error as any)?.message || error),
+    });
+  }
+}
+
 async function assertManagerBelongsToTenant(tenantId: string, managerUserId: string) {
   const manager = await prisma.user.findFirst({
     where: {
@@ -4300,6 +4570,20 @@ export const customerIncomeRouter = router({
             error: String((error as any)?.message || error),
           });
         }
+
+        try {
+          await notifyFinanceUsersRefundRequested({
+            tenantId: ctx.tenantId,
+            requestId: createdRequest.id,
+            requestedByUserId: ctx.user.userId,
+          });
+        } catch (error) {
+          console.error('[Income][Telegram] Finance direct notification for refund request failed (non-blocking)', {
+            tenantId: ctx.tenantId,
+            requestId: createdRequest.id,
+            error: String((error as any)?.message || error),
+          });
+        }
       } else if (input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE) {
         try {
           await sendTariffChangeRequestedTelegram({
@@ -4507,6 +4791,20 @@ export const customerIncomeRouter = router({
             error: String((error as any)?.message || error),
           });
         }
+
+        try {
+          await notifyRefundRequesterReviewResult({
+            tenantId: ctx.tenantId,
+            requestId: request.id,
+            status: 'approved',
+          });
+        } catch (error) {
+          console.error('[Income][Telegram] Requester approved-refund notification failed (non-blocking)', {
+            tenantId: ctx.tenantId,
+            requestId: request.id,
+            error: String((error as any)?.message || error),
+          });
+        }
       }
 
       return { success: true };
@@ -4597,6 +4895,22 @@ export const customerIncomeRouter = router({
           },
         },
       });
+
+      if (request.type === ADJUSTMENT_TYPE_REFUND) {
+        try {
+          await notifyRefundRequesterReviewResult({
+            tenantId: ctx.tenantId,
+            requestId: request.id,
+            status: 'rejected',
+          });
+        } catch (error) {
+          console.error('[Income][Telegram] Requester rejected-refund notification failed (non-blocking)', {
+            tenantId: ctx.tenantId,
+            requestId: request.id,
+            error: String((error as any)?.message || error),
+          });
+        }
+      }
 
       return { success: true };
     }),
