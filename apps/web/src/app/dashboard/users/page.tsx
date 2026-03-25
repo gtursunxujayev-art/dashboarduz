@@ -22,6 +22,9 @@ export default function UsersPage() {
   const utelManagersQuery = trpc.users.utelManagers.useQuery(undefined, {
     retry: false,
   });
+  const telegramRecipientsQuery = trpc.users.telegramRecipients.useQuery(undefined, {
+    retry: false,
+  });
   const createUser = trpc.users.create.useMutation();
   const updateRole = trpc.users.updateRole.useMutation();
   const updateCredentials = trpc.users.updateCredentials.useMutation();
@@ -35,33 +38,39 @@ export default function UsersPage() {
   const [newRole, setNewRole] = useState<UserRole>('Agent');
   const [newAmoManagerId, setNewAmoManagerId] = useState('');
   const [newUtelManagerId, setNewUtelManagerId] = useState('');
+  const [newTelegramChatId, setNewTelegramChatId] = useState('');
 
   const [roleDrafts, setRoleDrafts] = useState<Record<string, UserRole>>({});
   const [managerDrafts, setManagerDrafts] = useState<Record<string, string>>({});
   const [utelDrafts, setUtelDrafts] = useState<Record<string, string>>({});
+  const [telegramDrafts, setTelegramDrafts] = useState<Record<string, string>>({});
   const [loginDrafts, setLoginDrafts] = useState<Record<string, string>>({});
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
 
   const amocrmManagers = useMemo(() => amocrmManagersQuery.data || [], [amocrmManagersQuery.data]);
   const utelManagers = useMemo(() => utelManagersQuery.data || [], [utelManagersQuery.data]);
+  const telegramRecipients = useMemo(() => telegramRecipientsQuery.data || [], [telegramRecipientsQuery.data]);
 
   useEffect(() => {
     const users = usersQuery.data || [];
     const nextRoleDrafts: Record<string, UserRole> = {};
     const nextManagerDrafts: Record<string, string> = {};
     const nextUtelDrafts: Record<string, string> = {};
+    const nextTelegramDrafts: Record<string, string> = {};
     const nextLoginDrafts: Record<string, string> = {};
 
     for (const user of users as any[]) {
       nextRoleDrafts[user.id] = (user.roles?.[0] || 'Agent') as UserRole;
       nextManagerDrafts[user.id] = user.amocrmResponsibleUserId || '';
       nextUtelDrafts[user.id] = user.utelManagerExternalId || '';
+      nextTelegramDrafts[user.id] = user.telegramId || '';
       nextLoginDrafts[user.id] = user.username || '';
     }
 
     setRoleDrafts(nextRoleDrafts);
     setManagerDrafts(nextManagerDrafts);
     setUtelDrafts(nextUtelDrafts);
+    setTelegramDrafts(nextTelegramDrafts);
     setLoginDrafts(nextLoginDrafts);
   }, [usersQuery.data]);
 
@@ -77,6 +86,7 @@ export default function UsersPage() {
         role: newRole,
         amocrmResponsibleUserId: newRole === 'Agent' ? (newAmoManagerId || undefined) : undefined,
         utelManagerExternalId: newRole === 'Agent' ? (newUtelManagerId || undefined) : undefined,
+        telegramChatId: newTelegramChatId || undefined,
       });
 
       setCreatedCredentials(created.credentials);
@@ -84,6 +94,7 @@ export default function UsersPage() {
       setNewRole('Agent');
       setNewAmoManagerId('');
       setNewUtelManagerId('');
+      setNewTelegramChatId('');
       setSuccess("Foydalanuvchi muvaffaqiyatli yaratildi.");
       await usersQuery.refetch();
     } catch (mutationError: any) {
@@ -106,6 +117,7 @@ export default function UsersPage() {
         utelManagerExternalId: (roleDrafts[userId] || 'Agent') === 'Agent'
           ? (utelDrafts[userId] || undefined)
           : undefined,
+        telegramChatId: telegramDrafts[userId] || undefined,
       });
       setSuccess("Foydalanuvchi roli va menejer bog'lanishi saqlandi.");
       await usersQuery.refetch();
@@ -173,13 +185,18 @@ export default function UsersPage() {
               UTeL menejerlari topilmadi. Ro'yxat uchun UTeL qo'ng'iroqlari kelishi kerak.
             </p>
           )}
+          {telegramRecipientsQuery.error && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              Telegram bot foydalanuvchilari topilmadi. Integratsiyalar bo'limida botni ulang va /start yuboring.
+            </p>
+          )}
           {createdCredentials && (
             <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
               Foydalanuvchi yaratildi. Login: <strong>{createdCredentials.login}</strong>, Parol: <strong>{createdCredentials.password}</strong>
             </p>
           )}
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_160px_1fr_1fr_auto]">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_160px_1fr_1fr_1fr_auto]">
             <input
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
@@ -223,6 +240,18 @@ export default function UsersPage() {
                 </option>
               ))}
             </select>
+            <select
+              value={newTelegramChatId}
+              onChange={(event) => setNewTelegramChatId(event.target.value)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">Telegram foydalanuvchisini tanlang (ixtiyoriy)</option>
+              {telegramRecipients.map((recipient: any) => (
+                <option key={recipient.id} value={recipient.id}>
+                  {recipient.name}{recipient.username ? ` (@${recipient.username})` : ''}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               onClick={handleCreateUser}
@@ -249,7 +278,7 @@ export default function UsersPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Foydalanuvchi</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Rol + CRM/UTeL menejer</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Rol + CRM/UTeL/Telegram</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Login/Parol</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Oxirgi kirish</th>
                   </tr>
@@ -267,7 +296,7 @@ export default function UsersPage() {
                         <div className="text-xs text-gray-500">ID: {user.id}</div>
                       </td>
                       <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-[140px_1fr_1fr_auto]">
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-[140px_1fr_1fr_1fr_auto]">
                           <select
                             value={roleDrafts[user.id] || 'Agent'}
                             onChange={(event) =>
@@ -316,6 +345,20 @@ export default function UsersPage() {
                             {utelManagers.map((manager: any) => (
                               <option key={manager.id} value={manager.id}>
                                 {manager.name}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={telegramDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setTelegramDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
+                          >
+                            <option value="">Telegram foydalanuvchisi (ixtiyoriy)</option>
+                            {telegramRecipients.map((recipient: any) => (
+                              <option key={recipient.id} value={recipient.id}>
+                                {recipient.name}{recipient.username ? ` (@${recipient.username})` : ''}
                               </option>
                             ))}
                           </select>
