@@ -10,6 +10,8 @@ interface JWTPayload {
   userId: string;
   tenantId: string;
   roles: UserRole[];
+  username?: string;
+  name?: string;
   email?: string;
   phone?: string;
 }
@@ -52,6 +54,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userId: response.data.id,
           tenantId: response.data.tenantId,
           roles: response.data.roles as UserRole[],
+          username: response.data.username || undefined,
+          name: response.data.name || undefined,
           email: response.data.email || undefined,
           phone: response.data.phone || undefined,
         };
@@ -97,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
     setUser(userData);
+    void refreshUser();
     router.push('/dashboard');
   };
 
