@@ -77,6 +77,11 @@ export default function Header() {
 
   const tenantName = tenantQuery.data?.name || 'Ish maydoni';
   const tenantPlan = (tenantQuery.data?.plan || 'free').toString();
+  const accountDisplayName = user?.name?.trim()
+    || user?.username?.trim()
+    || user?.email?.split('@')[0]
+    || user?.phone
+    || 'Akkaunt';
 
   return (
     <header className="relative z-30 border-b border-gray-200 bg-white">
@@ -158,7 +163,7 @@ export default function Header() {
             </Link>
 
             <div className="text-right">
-              <p className="max-w-[80px] truncate text-xs font-medium text-gray-800 sm:max-w-none sm:text-sm">{user?.email?.split('@')[0] || user?.phone || 'Akkaunt'}</p>
+              <p className="max-w-[80px] truncate text-xs font-medium text-gray-800 sm:max-w-none sm:text-sm">{accountDisplayName}</p>
               <p className="text-[11px] text-gray-500 sm:text-xs">
                 {user?.roles?.map((role: string) => ROLE_LABELS[role] || role).join(', ')}
               </p>
