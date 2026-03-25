@@ -5,6 +5,7 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 
 type AdjustmentMode = '' | 'refund' | 'tariff_change';
+type ReviewAction = 'approve' | 'reject';
 
 function toDigits(value: string): string {
   return value.replace(/\D/g, '');
@@ -75,6 +76,8 @@ export default function AdjustmentsPage() {
   const [newTariffId, setNewTariffId] = useState('');
   const [newAgreementInput, setNewAgreementInput] = useState('');
   const [reason, setReason] = useState('');
+  const [reviewModal, setReviewModal] = useState<{ requestId: string; action: ReviewAction } | null>(null);
+  const [reviewNote, setReviewNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -216,27 +219,61 @@ export default function AdjustmentsPage() {
     }
   };
 
-  const handleApprove = async (requestId: string) => {
+  const openReviewModal = (requestId: string, action: ReviewAction) => {
+    setError(null);
+    setSuccess(null);
+    setReviewNote('');
+    setReviewModal({ requestId, action });
+  };
+
+  const closeReviewModal = () => {
+    if (approveRequestMutation.isLoading || rejectRequestMutation.isLoading) return;
+    setReviewModal(null);
+    setReviewNote('');
+  };
+
+  const handleApprove = async (requestId: string, note?: string): Promise<boolean> => {
     setError(null);
     setSuccess(null);
     try {
-      await approveRequestMutation.mutateAsync({ requestId });
+      await approveRequestMutation.mutateAsync({ requestId, reviewNote: note?.trim() || undefined });
       setSuccess("So'rov tasdiqlandi.");
       await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch(), adjustmentBadgeQuery.refetch()]);
+      return true;
     } catch (mutationError: any) {
       setError(mutationError?.message || "Tasdiqlashda xatolik yuz berdi.");
+      return false;
     }
   };
 
-  const handleReject = async (requestId: string) => {
+  const handleReject = async (requestId: string, note?: string): Promise<boolean> => {
     setError(null);
     setSuccess(null);
     try {
-      await rejectRequestMutation.mutateAsync({ requestId });
+      await rejectRequestMutation.mutateAsync({ requestId, reviewNote: note?.trim() || undefined });
       setSuccess("So'rov rad etildi.");
       await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch(), adjustmentBadgeQuery.refetch()]);
+      return true;
     } catch (mutationError: any) {
       setError(mutationError?.message || 'Rad etishda xatolik yuz berdi.');
+      return false;
+    }
+  };
+
+  const handleReviewSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!reviewModal) return;
+
+    let ok = false;
+    if (reviewModal.action === 'approve') {
+      ok = await handleApprove(reviewModal.requestId, reviewNote);
+    } else {
+      ok = await handleReject(reviewModal.requestId, reviewNote);
+    }
+
+    if (ok) {
+      setReviewModal(null);
+      setReviewNote('');
     }
   };
 
@@ -444,7 +481,7 @@ export default function AdjustmentsPage() {
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => handleApprove(request.id)}
+                                onClick={() => openReviewModal(request.id, 'approve')}
                                 disabled={approveRequestMutation.isLoading || rejectRequestMutation.isLoading}
                                 className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                               >
@@ -452,7 +489,7 @@ export default function AdjustmentsPage() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleReject(request.id)}
+                                onClick={() => openReviewModal(request.id, 'reject')}
                                 disabled={approveRequestMutation.isLoading || rejectRequestMutation.isLoading}
                                 className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
                               >
@@ -474,6 +511,58 @@ export default function AdjustmentsPage() {
           )}
         </div>
       </div>
+
+      {reviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
+          <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl dark:bg-slate-900">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100">
+              {reviewModal.action === 'approve' ? "So'rovni qabul qilish" : "So'rovni rad etish"}
+            </h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+              Iltimos, qaror bo&apos;yicha izoh qoldiring.
+            </p>
+
+            <form onSubmit={handleReviewSubmit} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Izoh</label>
+                <textarea
+                  value={reviewNote}
+                  onChange={(event) => setReviewNote(event.target.value)}
+                  rows={4}
+                  placeholder="Izoh kiriting..."
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeReviewModal}
+                  disabled={approveRequestMutation.isLoading || rejectRequestMutation.isLoading}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  disabled={approveRequestMutation.isLoading || rejectRequestMutation.isLoading}
+                  className={`rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+                    reviewModal.action === 'approve'
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : 'bg-red-600 hover:bg-red-700'
+                  }`}
+                >
+                  {approveRequestMutation.isLoading || rejectRequestMutation.isLoading
+                    ? 'Saqlanmoqda...'
+                    : reviewModal.action === 'approve'
+                      ? 'Qabul qilish'
+                      : 'Rad etish'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
