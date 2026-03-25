@@ -67,6 +67,11 @@ export default function CustomersPage() {
   const [newTariffId, setNewTariffId] = useState('');
   const [newSubTariffId, setNewSubTariffId] = useState('');
 
+  const [isIdentityModalOpen, setIsIdentityModalOpen] = useState(false);
+  const [identityCustomerId, setIdentityCustomerId] = useState('');
+  const [identityCustomerNumber, setIdentityCustomerNumber] = useState('');
+  const [identityCustomerName, setIdentityCustomerName] = useState('');
+
   const customersQuery = trpc.customerIncome.listCustomers.useQuery(
     {
       query: query.trim() || undefined,
@@ -92,6 +97,7 @@ export default function CustomersPage() {
   });
 
   const createCustomerOnlyMutation = trpc.customerIncome.createCustomerOnly.useMutation();
+  const updateCustomerIdentityMutation = trpc.customerIncome.updateCustomerIdentity.useMutation();
   const updateCustomersCourseAssignmentMutation = trpc.customerIncome.updateCustomersCourseAssignment.useMutation();
   const deleteCustomersMutation = trpc.customerIncome.deleteCustomers.useMutation();
 
@@ -376,6 +382,58 @@ export default function CustomersPage() {
     setNewCourseId('');
     setNewTariffId('');
     setNewSubTariffId('');
+  };
+
+  const resetIdentityModal = () => {
+    setIdentityCustomerId('');
+    setIdentityCustomerNumber('');
+    setIdentityCustomerName('');
+  };
+
+  const openIdentityModal = (customer: any) => {
+    setPageError(null);
+    setPageSuccess(null);
+    setIdentityCustomerId(customer.id);
+    setIdentityCustomerNumber(customer.customerNumber || '');
+    setIdentityCustomerName(customer.name || '');
+    setIsIdentityModalOpen(true);
+  };
+
+  const handleUpdateCustomerIdentity = async () => {
+    setPageError(null);
+    setPageSuccess(null);
+
+    const customerNumber = sanitizeCustomerNumber(identityCustomerNumber);
+    const name = identityCustomerName.trim();
+
+    if (!identityCustomerId) {
+      setPageError("Mijoz identifikatori topilmadi.");
+      return;
+    }
+
+    if (!customerNumber) {
+      setPageError("Mijoz raqami kiritilishi shart.");
+      return;
+    }
+
+    if (!name) {
+      setPageError("Mijoz ismi kiritilishi shart.");
+      return;
+    }
+
+    try {
+      await updateCustomerIdentityMutation.mutateAsync({
+        customerId: identityCustomerId,
+        customerNumber,
+        name,
+      });
+      setPageSuccess("Mijoz raqami va ismi yangilandi.");
+      setIsIdentityModalOpen(false);
+      resetIdentityModal();
+      await handleRefresh();
+    } catch (error: any) {
+      setPageError(error?.message || "Mijoz ma'lumotlarini yangilab bo'lmadi.");
+    }
   };
 
   const handleCreateCustomerOnly = async () => {
@@ -678,6 +736,9 @@ export default function CustomersPage() {
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Jami to&apos;langan</th>
                     )}
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Oxirgi faollik</th>
+                    {isAdmin && editMode && (
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Amal</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
@@ -709,6 +770,17 @@ export default function CustomersPage() {
                         <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(customer.totalPaidAmount || 0)}</td>
                       )}
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatDate(customer.lastActivityAt)}</td>
+                      {isAdmin && editMode && (
+                        <td className="whitespace-nowrap px-4 py-3 text-sm">
+                          <button
+                            type="button"
+                            onClick={() => openIdentityModal(customer)}
+                            className="rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+                          >
+                            Ism/raqam
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -830,6 +902,61 @@ export default function CustomersPage() {
                 className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {createCustomerOnlyMutation.isLoading ? "Qo'shilmoqda..." : "Qo'shish"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAdmin && isIdentityModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white shadow-xl dark:bg-slate-900">
+            <div className="border-b border-gray-100 px-6 py-4 dark:border-slate-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Mijoz ma&apos;lumotini o&apos;zgartirish</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+                Bu o&apos;zgarish Tushum, Mijozlar va Kurslar sotuvi bo&apos;limlarida ham aks etadi.
+              </p>
+            </div>
+
+            <div className="space-y-4 px-6 py-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mijoz raqami</label>
+                <input
+                  value={identityCustomerNumber}
+                  onChange={(event) => setIdentityCustomerNumber(sanitizeCustomerNumber(event.target.value))}
+                  placeholder="Faqat raqam"
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mijoz ismi</label>
+                <input
+                  value={identityCustomerName}
+                  onChange={(event) => setIdentityCustomerName(event.target.value)}
+                  placeholder="Ism familya"
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-gray-100 px-6 py-4 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsIdentityModalOpen(false);
+                  resetIdentityModal();
+                }}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Bekor qilish
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateCustomerIdentity}
+                disabled={updateCustomerIdentityMutation.isLoading}
+                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {updateCustomerIdentityMutation.isLoading ? 'Saqlanmoqda...' : 'Saqlash'}
               </button>
             </div>
           </div>
