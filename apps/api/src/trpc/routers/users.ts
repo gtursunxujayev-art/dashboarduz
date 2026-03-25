@@ -7,12 +7,27 @@ import crypto from 'crypto';
 import { hashPassword } from '../../services/auth/password';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { amocrmService } from '../../services/integrations/amocrm';
+import { parseTelegramRecipients } from '../../services/integrations/telegram-recipients';
 
 const roleSchema = z.enum(['Admin', 'Manager', 'Agent', 'Finance', 'Tashkiliy']);
 
 function isMissingUserMappingColumnError(error: unknown) {
   const message = String((error as any)?.message || '');
-  return message.includes('amocrmResponsibleUserId') || message.includes('utelManagerExternalId');
+  return (
+    message.includes('amocrmResponsibleUserId')
+    || message.includes('utelManagerExternalId')
+    || message.includes('telegramId')
+  );
+}
+
+function isTelegramMappingConflictError(error: unknown): boolean {
+  const errorCode = String((error as any)?.code || '');
+  const message = String((error as any)?.message || '').toLowerCase();
+  return (
+    (errorCode === 'P2002' && message.includes('telegramid'))
+    || message.includes('users_telegramid_key')
+    || message.includes('telegramid')
+  );
 }
 
 function toNormalizedText(value: unknown): string {
@@ -183,6 +198,34 @@ export const usersRouter = router({
       .sort((a, b) => a.name.localeCompare(b.name));
   }),
 
+  telegramRecipients: managerProcedure.query(async ({ ctx }) => {
+    const integration = await prisma.integration.findUnique({
+      where: {
+        tenantId_type: {
+          tenantId: ctx.tenantId,
+          type: 'telegram',
+        },
+      },
+      select: {
+        status: true,
+        config: true,
+      },
+    });
+
+    if (!integration || integration.status !== 'active') {
+      return [];
+    }
+
+    return parseTelegramRecipients(integration.config)
+      .filter((recipient) => recipient.started)
+      .map((recipient) => ({
+        id: recipient.chatId,
+        name: recipient.displayName,
+        username: recipient.username,
+        lastSeenAt: recipient.lastSeenAt,
+      }));
+  }),
+
   list: managerProcedure.query(async ({ ctx }) => {
     try {
       return await prisma.user.findMany({
@@ -197,6 +240,7 @@ export const usersRouter = router({
           roles: true,
           amocrmResponsibleUserId: true,
           utelManagerExternalId: true,
+          telegramId: true,
           isActive: true,
           lastLoginAt: true,
           createdAt: true,
@@ -237,6 +281,7 @@ export const usersRouter = router({
         ...user,
         amocrmResponsibleUserId: null,
         utelManagerExternalId: null,
+        telegramId: null,
       }));
     }
   }),
@@ -248,6 +293,7 @@ export const usersRouter = router({
         role: roleSchema,
         amocrmResponsibleUserId: z.string().optional(),
         utelManagerExternalId: z.string().optional(),
+        telegramChatId: z.string().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -277,6 +323,7 @@ export const usersRouter = router({
         createData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || null;
         createData.utelManagerExternalId = input.utelManagerExternalId || null;
       }
+      createData.telegramId = input.telegramChatId || null;
 
       let created: { id: string; username: string | null; name: string | null; roles: string[] };
       try {
@@ -290,6 +337,12 @@ export const usersRouter = router({
           },
         });
       } catch (error: any) {
+        if (isTelegramMappingConflictError(error)) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: "Tanlangan Telegram foydalanuvchisi allaqachon boshqa akkauntga biriktirilgan.",
+          });
+        }
         if (isMissingUserMappingColumnError(error)) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
@@ -310,6 +363,7 @@ export const usersRouter = router({
             role,
             amocrmResponsibleUserId: input.amocrmResponsibleUserId || null,
             utelManagerExternalId: input.utelManagerExternalId || null,
+            telegramChatId: input.telegramChatId || null,
           },
         },
       });
@@ -330,6 +384,7 @@ export const usersRouter = router({
         roles: z.array(roleSchema).min(1),
         amocrmResponsibleUserId: z.string().optional(),
         utelManagerExternalId: z.string().optional(),
+        telegramChatId: z.string().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -380,24 +435,50 @@ export const usersRouter = router({
         updateData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || previousAmoResponsibleUserId || null;
         updateData.utelManagerExternalId = input.utelManagerExternalId || previousUtelManagerExternalId || null;
       }
+      updateData.telegramId = input.telegramChatId || null;
 
-      const updated = await prisma.user.update({
-        where: { id: user.id },
-        data: updateData,
-        select: {
-          id: true,
-          username: true,
-          name: true,
-          email: true,
-          phone: true,
-          roles: true,
-          amocrmResponsibleUserId: true,
-          utelManagerExternalId: true,
-          isActive: true,
-          lastLoginAt: true,
-          createdAt: true,
-        },
-      });
+      let updated: {
+        id: string;
+        username: string | null;
+        name: string | null;
+        email: string | null;
+        phone: string | null;
+        roles: string[];
+        amocrmResponsibleUserId: string | null;
+        utelManagerExternalId: string | null;
+        telegramId: string | null;
+        isActive: boolean;
+        lastLoginAt: Date | null;
+        createdAt: Date;
+      };
+      try {
+        updated = await prisma.user.update({
+          where: { id: user.id },
+          data: updateData,
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            email: true,
+            phone: true,
+            roles: true,
+            amocrmResponsibleUserId: true,
+            utelManagerExternalId: true,
+            telegramId: true,
+            isActive: true,
+            lastLoginAt: true,
+            createdAt: true,
+          },
+        });
+      } catch (error: any) {
+        if (isTelegramMappingConflictError(error)) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: "Tanlangan Telegram foydalanuvchisi allaqachon boshqa akkauntga biriktirilgan.",
+          });
+        }
+        throw error;
+      }
 
       await prisma.auditLog.create({
         data: {
@@ -410,6 +491,7 @@ export const usersRouter = router({
             roles: input.roles,
             amocrmResponsibleUserId: input.amocrmResponsibleUserId || null,
             utelManagerExternalId: input.utelManagerExternalId || null,
+            telegramChatId: input.telegramChatId || null,
           },
         },
       });
