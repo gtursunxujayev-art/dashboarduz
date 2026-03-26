@@ -213,6 +213,30 @@ export default function CourseSalesPage() {
         )}
       </div>
 
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <Link
+          href="/dashboard/course-sales/intensive"
+          className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
+        >
+          <p className="text-sm font-semibold text-gray-900">Intensiv sahifasi</p>
+          <p className="mt-1 text-xs text-gray-500">Intensiv bo&apos;yicha sotilgan, to&apos;langan va qarz holati.</p>
+        </Link>
+        <Link
+          href="/dashboard/course-sales/online"
+          className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
+        >
+          <p className="text-sm font-semibold text-gray-900">Online sahifasi</p>
+          <p className="mt-1 text-xs text-gray-500">Online kurslar bo&apos;yicha joriy ko&apos;rsatkichlar.</p>
+        </Link>
+        <Link
+          href="/dashboard/course-sales/offline"
+          className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
+        >
+          <p className="text-sm font-semibold text-gray-900">Oflayn sahifasi</p>
+          <p className="mt-1 text-xs text-gray-500">Oflayn kurslar bo&apos;yicha joriy ko&apos;rsatkichlar.</p>
+        </Link>
+      </div>
+
       <div className="rounded-lg bg-white p-5 shadow">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_180px_1fr_1fr]">
           <select
