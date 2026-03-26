@@ -99,6 +99,11 @@ export default function Sidebar() {
         ? navigation
         : navigation.filter((item) => !ADMIN_ONLY_HREFS.has(item.href)))
     .filter((item) => item.href !== '/dashboard/bonus' || canSeeBonusPage);
+  const isItemActive = (href: string) => (
+    href === '/dashboard'
+      ? pathname === href
+      : pathname === href || pathname.startsWith(`${href}/`)
+  );
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -152,14 +157,14 @@ export default function Sidebar() {
                       href={item.href}
                       onClick={() => setSidebarOpen(false)}
                       className={`group flex items-center px-2 py-2 text-base font-medium rounded-md ${
-                        pathname === item.href
+                        isItemActive(item.href)
                           ? 'bg-gray-100 text-gray-900'
                           : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                       }`}
                     >
                       <svg
                         className={`mr-4 h-6 w-6 ${
-                          pathname === item.href ? 'text-gray-500' : 'text-gray-400 group-hover:text-gray-500'
+                          isItemActive(item.href) ? 'text-gray-500' : 'text-gray-400 group-hover:text-gray-500'
                         }`}
                         fill="none"
                         viewBox="0 0 24 24"
@@ -213,14 +218,14 @@ export default function Sidebar() {
                     key={item.name}
                     href={item.href}
                     className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                      pathname === item.href
+                      isItemActive(item.href)
                         ? 'bg-gray-100 text-gray-900'
                         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     }`}
                   >
                     <svg
                       className={`mr-3 h-6 w-6 ${
-                        pathname === item.href ? 'text-gray-500' : 'text-gray-400 group-hover:text-gray-500'
+                        isItemActive(item.href) ? 'text-gray-500' : 'text-gray-400 group-hover:text-gray-500'
                       }`}
                       fill="none"
                       viewBox="0 0 24 24"
