@@ -196,17 +196,17 @@ export default function UsersPage() {
             </p>
           )}
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_160px_1fr_1fr_1fr_auto]">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <input
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
               placeholder="Foydalanuvchi ismi (ixtiyoriy)"
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <select
               value={newRole}
               onChange={(event) => setNewRole(event.target.value as UserRole)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               {availableRoles.map((role) => (
                 <option key={role} value={role}>
@@ -218,7 +218,7 @@ export default function UsersPage() {
               value={newAmoManagerId}
               onChange={(event) => setNewAmoManagerId(event.target.value)}
               disabled={newRole !== 'Agent'}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
             >
               <option value="">{newRole === 'Agent' ? 'AmoCRM menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
               {amocrmManagers.map((manager: any) => (
@@ -231,7 +231,7 @@ export default function UsersPage() {
               value={newUtelManagerId}
               onChange={(event) => setNewUtelManagerId(event.target.value)}
               disabled={newRole !== 'Agent'}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
             >
               <option value="">{newRole === 'Agent' ? 'UTeL menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
               {utelManagers.map((manager: any) => (
@@ -243,9 +243,9 @@ export default function UsersPage() {
             <select
               value={newTelegramChatId}
               onChange={(event) => setNewTelegramChatId(event.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              <option value="">Telegram foydalanuvchisini tanlang (ixtiyoriy)</option>
+              <option value="">Telegram (ixtiyoriy)</option>
               {telegramRecipients.map((recipient: any) => (
                 <option key={recipient.id} value={recipient.id}>
                   {recipient.name}{recipient.username ? ` (@${recipient.username})` : ''}
@@ -256,7 +256,7 @@ export default function UsersPage() {
               type="button"
               onClick={handleCreateUser}
               disabled={createUser.isLoading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 xl:whitespace-nowrap"
             >
               {createUser.isLoading ? 'Yaratilmoqda...' : "Foydalanuvchi qo'shish"}
             </button>
@@ -296,13 +296,13 @@ export default function UsersPage() {
                         <div className="text-xs text-gray-500">ID: {user.id}</div>
                       </td>
                       <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-[140px_1fr_1fr_1fr_auto]">
+                        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-[130px_1fr_1fr_1fr_auto]">
                           <select
                             value={roleDrafts[user.id] || 'Agent'}
                             onChange={(event) =>
                               setRoleDrafts((prev) => ({ ...prev, [user.id]: event.target.value as UserRole }))
                             }
-                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
+                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
                           >
                             {availableRoles.map((role) => (
                               <option key={role} value={role}>
@@ -316,7 +316,7 @@ export default function UsersPage() {
                               setManagerDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
                             }
                             disabled={(roleDrafts[user.id] || 'Agent') !== 'Agent'}
-                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
+                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
                           >
                             <option value="">
                               {(roleDrafts[user.id] || 'Agent') === 'Agent'
@@ -335,7 +335,7 @@ export default function UsersPage() {
                               setUtelDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
                             }
                             disabled={(roleDrafts[user.id] || 'Agent') !== 'Agent'}
-                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
+                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
                           >
                             <option value="">
                               {(roleDrafts[user.id] || 'Agent') === 'Agent'
@@ -353,9 +353,9 @@ export default function UsersPage() {
                             onChange={(event) =>
                               setTelegramDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
                             }
-                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
+                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
                           >
-                            <option value="">Telegram foydalanuvchisi (ixtiyoriy)</option>
+                            <option value="">Telegram (ixtiyoriy)</option>
                             {telegramRecipients.map((recipient: any) => (
                               <option key={recipient.id} value={recipient.id}>
                                 {recipient.name}{recipient.username ? ` (@${recipient.username})` : ''}
