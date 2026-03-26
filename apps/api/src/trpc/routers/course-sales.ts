@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc';
 
 const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
+const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 const INCOME_LIFECYCLE_ACTIVE = 'active';
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
@@ -133,6 +134,486 @@ export const courseSalesRouter = router({
       })),
     };
   }),
+
+  typeOptions: protectedProcedure
+    .input(
+      z.object({
+        category: courseSalesTypeCategorySchema,
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const courses = await prisma.course.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          isActive: true,
+          category: input.category,
+        },
+        orderBy: [{ name: 'asc' }],
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          tariffs: {
+            where: { isActive: true },
+            orderBy: [{ name: 'asc' }],
+            select: {
+              id: true,
+              name: true,
+              subTariffs: {
+                where: { isActive: true },
+                orderBy: [{ name: 'asc' }],
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return {
+        category: input.category,
+        categoryLabel: buildCategoryLabel(input.category),
+        courses: courses.map((course) => ({
+          id: course.id,
+          name: course.name,
+          category: String(course.category || '').trim().toLowerCase(),
+          categoryLabel: buildCategoryLabel(String(course.category || '')),
+          tariffs: course.tariffs.map((tariff) => ({
+            id: tariff.id,
+            name: tariff.name,
+            subTariffs: tariff.subTariffs.map((subTariff) => ({
+              id: subTariff.id,
+              name: subTariff.name,
+            })),
+          })),
+        })),
+      };
+    }),
+
+  typeSummary: protectedProcedure
+    .input(
+      z.object({
+        category: courseSalesTypeCategorySchema,
+        courseId: z.string().uuid().optional(),
+        tariffId: z.string().uuid().optional(),
+        subTariffId: z.string().uuid().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
+      const categoryCourses = await prisma.course.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          isActive: true,
+          category: input.category,
+        },
+        select: { id: true, name: true },
+      });
+      const categoryCourseIds = categoryCourses.map((course) => course.id);
+      if (categoryCourseIds.length === 0) {
+        return {
+          category: input.category,
+          categoryLabel: buildCategoryLabel(input.category),
+          selectedCourseId: input.courseId || null,
+          selectedTariffId: input.tariffId || null,
+          selectedSubTariffId: input.subTariffId || null,
+          totals: {
+            soldCount: 0,
+            fullyPaidCount: 0,
+            debtorsCount: 0,
+            agreementAmount: 0,
+            paidAmount: 0,
+            remainingDebtAmount: 0,
+            customerCount: 0,
+          },
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      const scopedFilters: Record<string, unknown>[] = [];
+      if (input.courseId) {
+        if (!categoryCourseIds.includes(input.courseId)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: "Kurs tanlangan turga tegishli emas." });
+        }
+        scopedFilters.push({
+          OR: [
+            { courseId: input.courseId },
+            { customer: { profileCourseId: input.courseId } },
+          ],
+        });
+      } else {
+        scopedFilters.push({
+          OR: [
+            { courseId: { in: categoryCourseIds } },
+            { customer: { profileCourseId: { in: categoryCourseIds } } },
+          ],
+        });
+      }
+
+      if (input.tariffId) {
+        scopedFilters.push({
+          OR: [
+            { tariffId: input.tariffId },
+            { customer: { profileTariffId: input.tariffId } },
+          ],
+        });
+      }
+      if (input.subTariffId) {
+        scopedFilters.push({
+          customer: { profileSubTariffId: input.subTariffId },
+        });
+      }
+
+      const matchedSales = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
+          ...(scopedFilters.length ? { AND: scopedFilters } : {}),
+        },
+        select: {
+          id: true,
+          customerId: true,
+          coursePriceAmount: true,
+          paymentAmount: true,
+          remainingDebtAmount: true,
+        },
+      });
+
+      const saleIds = matchedSales.map((sale) => sale.id);
+      const saleIdSet = new Set(saleIds);
+      const paidBySaleId = new Map<string, number>();
+      if (saleIds.length > 0) {
+        const paidIncomes = await prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            OR: [
+              { id: { in: saleIds } },
+              { relatedDebtIncomeId: { in: saleIds } },
+            ],
+          },
+          select: {
+            id: true,
+            relatedDebtIncomeId: true,
+            paymentAmount: true,
+          },
+        });
+        for (const income of paidIncomes) {
+          const saleId = income.relatedDebtIncomeId || income.id;
+          if (!saleIdSet.has(saleId)) {
+            continue;
+          }
+          paidBySaleId.set(saleId, (paidBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
+        }
+      }
+
+      let agreementAmount = 0;
+      let remainingDebtAmount = 0;
+      let fullyPaidCount = 0;
+      let debtorsCount = 0;
+      for (const sale of matchedSales) {
+        agreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
+        const debt = sale.remainingDebtAmount ?? 0;
+        remainingDebtAmount += debt;
+        if (debt <= 0) {
+          fullyPaidCount += 1;
+        } else {
+          debtorsCount += 1;
+        }
+      }
+      const paidAmount = Array.from(paidBySaleId.values()).reduce((sum, value) => sum + value, 0);
+
+      return {
+        category: input.category,
+        categoryLabel: buildCategoryLabel(input.category),
+        selectedCourseId: input.courseId || null,
+        selectedTariffId: input.tariffId || null,
+        selectedSubTariffId: input.subTariffId || null,
+        totals: {
+          soldCount: matchedSales.length,
+          fullyPaidCount,
+          debtorsCount,
+          agreementAmount,
+          paidAmount,
+          remainingDebtAmount,
+          customerCount: new Set(matchedSales.map((sale) => sale.customerId)).size,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+    }),
+
+  typeCustomers: protectedProcedure
+    .input(
+      z.object({
+        category: courseSalesTypeCategorySchema,
+        courseId: z.string().uuid().optional(),
+        tariffId: z.string().uuid().optional(),
+        subTariffId: z.string().uuid().optional(),
+        query: z.string().trim().max(120).optional(),
+        page: z.number().int().min(1).default(1),
+        limit: z.number().int().min(1).max(200).default(50),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
+      const query = input.query?.trim();
+      const skip = (input.page - 1) * input.limit;
+
+      const categoryCourses = await prisma.course.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          isActive: true,
+          category: input.category,
+        },
+        select: { id: true },
+      });
+      const categoryCourseIds = categoryCourses.map((course) => course.id);
+      if (categoryCourseIds.length === 0) {
+        return {
+          page: input.page,
+          limit: input.limit,
+          total: 0,
+          totalPages: 1,
+          rows: [],
+        };
+      }
+
+      const scopedFilters: Record<string, unknown>[] = [];
+      if (input.courseId) {
+        if (!categoryCourseIds.includes(input.courseId)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: "Kurs tanlangan turga tegishli emas." });
+        }
+        scopedFilters.push({
+          OR: [
+            { courseId: input.courseId },
+            { customer: { profileCourseId: input.courseId } },
+          ],
+        });
+      } else {
+        scopedFilters.push({
+          OR: [
+            { courseId: { in: categoryCourseIds } },
+            { customer: { profileCourseId: { in: categoryCourseIds } } },
+          ],
+        });
+      }
+      if (input.tariffId) {
+        scopedFilters.push({
+          OR: [
+            { tariffId: input.tariffId },
+            { customer: { profileTariffId: input.tariffId } },
+          ],
+        });
+      }
+      if (input.subTariffId) {
+        scopedFilters.push({
+          customer: { profileSubTariffId: input.subTariffId },
+        });
+      }
+
+      const where = {
+        tenantId: ctx.tenantId,
+        type: 'new_sale',
+        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+        ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
+        ...(scopedFilters.length ? { AND: scopedFilters } : {}),
+        ...(query
+          ? {
+              OR: [
+                { customer: { customerNumber: { contains: query, mode: 'insensitive' as const } } },
+                { customer: { name: { contains: query, mode: 'insensitive' as const } } },
+              ],
+            }
+          : {}),
+      };
+
+      const [total, sales] = await Promise.all([
+        prisma.income.count({ where }),
+        prisma.income.findMany({
+          where,
+          orderBy: [{ updatedAt: 'desc' }],
+          skip,
+          take: input.limit,
+          select: {
+            id: true,
+            customerId: true,
+            entryDate: true,
+            coursePriceAmount: true,
+            paymentAmount: true,
+            remainingDebtAmount: true,
+            customer: {
+              select: {
+                customerNumber: true,
+                name: true,
+                telegramUsername: true,
+                profileCourseId: true,
+                profileTariffId: true,
+                profileSubTariffId: true,
+              },
+            },
+            manager: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+              },
+            },
+            course: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            tariff: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+      const saleIds = sales.map((sale) => sale.id);
+      const profileSubTariffIds = Array.from(
+        new Set(
+          sales
+            .map((sale) => sale.customer.profileSubTariffId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+      const profileCourseIds = Array.from(
+        new Set(
+          sales
+            .map((sale) => sale.customer.profileCourseId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+      const profileTariffIds = Array.from(
+        new Set(
+          sales
+            .map((sale) => sale.customer.profileTariffId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+
+      const [incomes, subTariffs, profileCourses, profileTariffs] = await Promise.all([
+        saleIds.length > 0
+          ? prisma.income.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                OR: [
+                  { id: { in: saleIds } },
+                  { relatedDebtIncomeId: { in: saleIds } },
+                ],
+              },
+              select: {
+                id: true,
+                relatedDebtIncomeId: true,
+                paymentAmount: true,
+                entryDate: true,
+              },
+            })
+          : Promise.resolve([]),
+        profileSubTariffIds.length > 0
+          ? prisma.subTariff.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                id: { in: profileSubTariffIds },
+              },
+              select: {
+                id: true,
+                name: true,
+              },
+            })
+          : Promise.resolve([]),
+        profileCourseIds.length > 0
+          ? prisma.course.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                id: { in: profileCourseIds },
+              },
+              select: {
+                id: true,
+                name: true,
+              },
+            })
+          : Promise.resolve([]),
+        profileTariffIds.length > 0
+          ? prisma.tariff.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                id: { in: profileTariffIds },
+              },
+              select: {
+                id: true,
+                name: true,
+              },
+            })
+          : Promise.resolve([]),
+      ]);
+
+      const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
+      const profileCourseNameById = new Map(profileCourses.map((course) => [course.id, course.name]));
+      const profileTariffNameById = new Map(profileTariffs.map((tariff) => [tariff.id, tariff.name]));
+      const paidBySaleId = new Map<string, number>();
+      const lastActivityBySaleId = new Map<string, Date>();
+      const saleIdSet = new Set(saleIds);
+
+      for (const income of incomes) {
+        const saleId = income.relatedDebtIncomeId || income.id;
+        if (!saleIdSet.has(saleId)) {
+          continue;
+        }
+        paidBySaleId.set(saleId, (paidBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
+        const currentLast = lastActivityBySaleId.get(saleId);
+        if (!currentLast || income.entryDate > currentLast) {
+          lastActivityBySaleId.set(saleId, income.entryDate);
+        }
+      }
+
+      return {
+        page: input.page,
+        limit: input.limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / input.limit)),
+        rows: sales.map((sale) => {
+          const paidAmount = paidBySaleId.get(sale.id) ?? (sale.paymentAmount ?? 0);
+          const managerLabel = sale.manager.name || sale.manager.username || sale.manager.id;
+          const profileCourseName = sale.customer.profileCourseId
+            ? profileCourseNameById.get(sale.customer.profileCourseId) || null
+            : null;
+          const profileTariffName = sale.customer.profileTariffId
+            ? profileTariffNameById.get(sale.customer.profileTariffId) || null
+            : null;
+          const profileSubTariffName = sale.customer.profileSubTariffId
+            ? subTariffNameById.get(sale.customer.profileSubTariffId) || null
+            : null;
+          return {
+            saleId: sale.id,
+            customerId: sale.customerId,
+            customerNumber: sale.customer.customerNumber,
+            customerName: sale.customer.name,
+            telegramUsername: sale.customer.telegramUsername || null,
+            managerUserId: sale.manager.id,
+            managerLabel,
+            courseName: profileCourseName || sale.course?.name || null,
+            tariffName: profileTariffName || sale.tariff?.name || null,
+            subTariffName: profileSubTariffName,
+            agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
+            paidAmount,
+            debtAmount: sale.remainingDebtAmount ?? 0,
+            entryDate: sale.entryDate.toISOString(),
+            lastActivityAt: (lastActivityBySaleId.get(sale.id) || sale.entryDate).toISOString(),
+          };
+        }),
+      };
+    }),
 
   summary: protectedProcedure
     .input(
