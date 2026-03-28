@@ -4328,6 +4328,129 @@ export const customerIncomeRouter = router({
       };
     }),
 
+  customerPaymentHistory: protectedProcedure
+    .input(z.object({ customerId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+
+      const customer = await prisma.customer.findFirst({
+        where: {
+          id: input.customerId,
+          tenantId: ctx.tenantId,
+          ...(scopedManagerUserId
+            ? {
+                incomes: {
+                  some: {
+                    managerUserId: scopedManagerUserId,
+                  },
+                },
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          customerNumber: true,
+          name: true,
+          telegramUsername: true,
+        },
+      });
+
+      if (!customer) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Customer not found.' });
+      }
+
+      const [courseSales, paymentHistory] = await Promise.all([
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            customerId: customer.id,
+            type: 'new_sale',
+            ...(scopedManagerUserId
+              ? {
+                  managerUserId: scopedManagerUserId,
+                }
+              : {}),
+          },
+          orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+          select: {
+            id: true,
+            type: true,
+            lifecycleStatus: true,
+            entryDate: true,
+            coursePriceAmount: true,
+            paymentAmount: true,
+            remainingDebtAmount: true,
+            course: { select: { id: true, name: true } },
+            tariff: { select: { id: true, name: true } },
+            manager: { select: { id: true, name: true, username: true } },
+          },
+        }),
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            customerId: customer.id,
+            paymentAmount: { gt: 0 },
+            ...(scopedManagerUserId
+              ? {
+                  managerUserId: scopedManagerUserId,
+                }
+              : {}),
+          },
+          orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+          select: {
+            id: true,
+            type: true,
+            lifecycleStatus: true,
+            entryDate: true,
+            paymentAmount: true,
+            remainingDebtAmount: true,
+            relatedDebtIncomeId: true,
+            course: { select: { id: true, name: true } },
+            tariff: { select: { id: true, name: true } },
+            relatedDebtIncome: {
+              select: {
+                id: true,
+                course: { select: { id: true, name: true } },
+                tariff: { select: { id: true, name: true } },
+              },
+            },
+            manager: { select: { id: true, name: true, username: true } },
+          },
+        }),
+      ]);
+
+      return {
+        customer,
+        courses: courseSales.map((sale) => ({
+          saleIncomeId: sale.id,
+          lifecycleStatus: getIncomeLifecycleLabel(sale.lifecycleStatus),
+          entryDate: sale.entryDate,
+          courseName: sale.course?.name || '-',
+          tariffName: sale.tariff?.name || '-',
+          agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
+          firstPaymentAmount: sale.paymentAmount ?? 0,
+          remainingDebtAmount: sale.remainingDebtAmount ?? 0,
+          managerLabel: sale.manager.name || sale.manager.username || sale.manager.id,
+        })),
+        payments: paymentHistory.map((income) => {
+          const fallbackCourse = income.relatedDebtIncome?.course?.name || '-';
+          const fallbackTariff = income.relatedDebtIncome?.tariff?.name || '-';
+          return {
+            id: income.id,
+            type: income.type,
+            lifecycleStatus: getIncomeLifecycleLabel(income.lifecycleStatus),
+            entryDate: income.entryDate,
+            paymentAmount: income.paymentAmount ?? 0,
+            remainingDebtAmount: income.remainingDebtAmount ?? 0,
+            courseName: income.course?.name || fallbackCourse,
+            tariffName: income.tariff?.name || fallbackTariff,
+            managerLabel: income.manager.name || income.manager.username || income.manager.id,
+            debtSourceIncomeId: income.relatedDebtIncomeId || income.id,
+          };
+        }),
+      };
+    }),
+
   listAdjustmentRequests: protectedProcedure
     .input(
       z
