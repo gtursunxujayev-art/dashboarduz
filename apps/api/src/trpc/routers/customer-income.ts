@@ -4212,15 +4212,43 @@ export const customerIncomeRouter = router({
     }),
 
   listIncomes: protectedProcedure
-    .input(z.object({ limit: z.number().int().positive().max(200).default(30) }).optional())
+    .input(
+      z
+        .object({
+          limit: z.number().int().positive().max(200).default(30),
+          query: z.string().trim().max(120).optional(),
+        })
+        .optional(),
+    )
     .query(async ({ ctx, input }) => {
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const searchQuery = (input?.query || '').trim();
       const incomes = await prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           ...(scopedManagerUserId
             ? {
                 managerUserId: scopedManagerUserId,
+              }
+            : {}),
+          ...(searchQuery
+            ? {
+                customer: {
+                  OR: [
+                    {
+                      customerNumber: {
+                        contains: searchQuery,
+                        mode: 'insensitive',
+                      },
+                    },
+                    {
+                      name: {
+                        contains: searchQuery,
+                        mode: 'insensitive',
+                      },
+                    },
+                  ],
+                },
               }
             : {}),
         },
