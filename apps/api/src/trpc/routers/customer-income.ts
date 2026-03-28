@@ -184,6 +184,70 @@ async function ensureAdditionalServiceCategoryReady(requestedCategory: string | 
   }
 }
 
+async function refreshCustomerProfileFromLatestActiveSale(
+  tx: Prisma.TransactionClient,
+  params: {
+    tenantId: string;
+    customerId: string;
+  },
+): Promise<void> {
+  const latestActiveSale = await tx.income.findFirst({
+    where: {
+      tenantId: params.tenantId,
+      customerId: params.customerId,
+      type: 'new_sale',
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+    },
+    orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      courseId: true,
+      tariffId: true,
+    },
+  });
+
+  if (!latestActiveSale) {
+    await tx.customer.update({
+      where: { id: params.customerId },
+      data: {
+        profileCourseId: null,
+        profileTariffId: null,
+        profileSubTariffId: null,
+      },
+    });
+    return;
+  }
+
+  let nextSubTariffId: string | null = null;
+  if (latestActiveSale.tariffId) {
+    const customer = await tx.customer.findUnique({
+      where: { id: params.customerId },
+      select: { profileSubTariffId: true },
+    });
+
+    if (customer?.profileSubTariffId) {
+      const subTariff = await tx.subTariff.findFirst({
+        where: {
+          tenantId: params.tenantId,
+          id: customer.profileSubTariffId,
+          tariffId: latestActiveSale.tariffId,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      nextSubTariffId = subTariff?.id || null;
+    }
+  }
+
+  await tx.customer.update({
+    where: { id: params.customerId },
+    data: {
+      profileCourseId: latestActiveSale.courseId ?? null,
+      profileTariffId: latestActiveSale.tariffId ?? null,
+      profileSubTariffId: nextSubTariffId,
+    },
+  });
+}
+
 function normalizeHistoricalImportErrorMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error || '');
   const normalized = raw.toLowerCase();
@@ -5310,6 +5374,107 @@ export const customerIncomeRouter = router({
       };
     }),
 
+  deleteCustomerCourse: adminProcedure
+    .input(
+      z.object({
+        saleIncomeId: z.string().uuid(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const saleIncome = await prisma.income.findFirst({
+        where: {
+          id: input.saleIncomeId,
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+        },
+        select: {
+          id: true,
+          customerId: true,
+          managerUserId: true,
+        },
+      });
+
+      if (!saleIncome) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: "O'chiriladigan aktiv kurs topilmadi.",
+        });
+      }
+
+      const saleChain = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          OR: [
+            { id: saleIncome.id },
+            { relatedDebtIncomeId: saleIncome.id },
+          ],
+        },
+        select: {
+          id: true,
+        },
+      });
+      const saleChainIds = saleChain.map((item) => item.id);
+      if (!saleChainIds.length) {
+        return {
+          success: true,
+          deletedCount: 0,
+        };
+      }
+
+      const pendingAdjustmentCount = await prisma.incomeAdjustmentRequest.count({
+        where: {
+          tenantId: ctx.tenantId,
+          incomeId: { in: saleChainIds },
+          status: ADJUSTMENT_STATUS_PENDING,
+        },
+      });
+
+      if (pendingAdjustmentCount > 0) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: "Bu kurs bo'yicha kutilayotgan so'rovlar bor. Avval so'rovlarni yakunlang.",
+        });
+      }
+
+      const deleteResult = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const deleted = await tx.income.deleteMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: saleChainIds },
+          },
+        });
+
+        await refreshCustomerProfileFromLatestActiveSale(tx, {
+          tenantId: ctx.tenantId,
+          customerId: saleIncome.customerId,
+        });
+
+        return deleted;
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'customer_course_delete',
+          resource: 'income',
+          resourceId: saleIncome.id,
+          metadata: {
+            customerId: saleIncome.customerId,
+            saleIncomeId: saleIncome.id,
+            managerUserId: saleIncome.managerUserId,
+            deletedCount: deleteResult.count,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        deletedCount: deleteResult.count,
+      };
+    }),
+
   listCustomers: protectedProcedure
     .input(
       z
@@ -5519,39 +5684,73 @@ export const customerIncomeRouter = router({
       const profileCourseNameById = new Map(profileCourses.map((course) => [course.id, course.name]));
       const profileTariffNameById = new Map(profileTariffs.map((tariff) => [tariff.id, tariff.name]));
       const profileSubTariffNameById = new Map(profileSubTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
-      const relatedIncomes = await prisma.income.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          customerId: { in: customerIds },
-          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          ...(scopedManagerUserId
-            ? {
-                managerUserId: scopedManagerUserId,
-              }
-            : {}),
-        },
-        orderBy: { entryDate: 'desc' },
-        select: {
-          customerId: true,
-          type: true,
-          paymentAmount: true,
-          remainingDebtAmount: true,
-          entryDate: true,
-          managerUserId: true,
-          manager: {
-            select: {
-              name: true,
-              username: true,
+      const [relatedIncomes, activeSales] = await Promise.all([
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            customerId: { in: customerIds },
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            ...(scopedManagerUserId
+              ? {
+                  managerUserId: scopedManagerUserId,
+                }
+              : {}),
+          },
+          orderBy: { entryDate: 'desc' },
+          select: {
+            customerId: true,
+            type: true,
+            paymentAmount: true,
+            remainingDebtAmount: true,
+            entryDate: true,
+            managerUserId: true,
+            manager: {
+              select: {
+                name: true,
+                username: true,
+              },
+            },
+            course: {
+              select: {
+                id: true,
+                name: true,
+              },
             },
           },
-          course: {
-            select: {
-              id: true,
-              name: true,
+        }),
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            customerId: { in: customerIds },
+            type: 'new_sale',
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            ...(scopedManagerUserId
+              ? {
+                  managerUserId: scopedManagerUserId,
+                }
+              : {}),
+          },
+          orderBy: [{ entryDate: 'desc' }],
+          select: {
+            id: true,
+            customerId: true,
+            entryDate: true,
+            remainingDebtAmount: true,
+            course: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            tariff: {
+              select: {
+                id: true,
+                name: true,
+              },
             },
           },
-        },
-      });
+        }),
+      ]);
 
       const aggregatesByCustomer = new Map<
         string,
@@ -5565,6 +5764,43 @@ export const customerIncomeRouter = router({
           responsibleManagerLabel: string | null;
         }
       >();
+      const courseEntriesByCustomer = new Map<
+        string,
+        Array<{
+          saleIncomeId: string;
+          courseId: string | null;
+          tariffId: string | null;
+          courseName: string | null;
+          tariffName: string | null;
+          label: string;
+          entryDate: string;
+          remainingDebtAmount: number;
+        }>
+      >();
+
+      for (const sale of activeSales as Array<{
+        id: string;
+        customerId: string;
+        entryDate: Date;
+        remainingDebtAmount: number;
+        course: { id: string; name: string } | null;
+        tariff: { id: string; name: string } | null;
+      }>) {
+        const labelParts = [sale.course?.name || null, sale.tariff?.name || null].filter(Boolean);
+        const label = labelParts.length ? labelParts.join(' / ') : "Noma'lum kurs";
+        const list = courseEntriesByCustomer.get(sale.customerId) || [];
+        list.push({
+          saleIncomeId: sale.id,
+          courseId: sale.course?.id || null,
+          tariffId: sale.tariff?.id || null,
+          courseName: sale.course?.name || null,
+          tariffName: sale.tariff?.name || null,
+          label,
+          entryDate: sale.entryDate.toISOString(),
+          remainingDebtAmount: sale.remainingDebtAmount || 0,
+        });
+        courseEntriesByCustomer.set(sale.customerId, list);
+      }
 
       for (const income of relatedIncomes as Array<{
         customerId: string;
@@ -5611,11 +5847,15 @@ export const customerIncomeRouter = router({
       return {
         customers: customers.map((customer) => {
           const aggregate = aggregatesByCustomer.get(customer.id);
+          const courseEntries = courseEntriesByCustomer.get(customer.id) || [];
           const profileCourseName = customer.profileCourseId ? profileCourseNameById.get(customer.profileCourseId) || null : null;
           const profileTariffName = customer.profileTariffId ? profileTariffNameById.get(customer.profileTariffId) || null : null;
           const profileSubTariffName = customer.profileSubTariffId ? profileSubTariffNameById.get(customer.profileSubTariffId) || null : null;
           const profileCourseLabel = [profileCourseName, profileTariffName, profileSubTariffName].filter(Boolean).join(' / ');
-          const aggregateCourses = aggregate ? Array.from(aggregate.courses) : [];
+          const aggregateCoursesFromEntries = courseEntries.map((entry) => entry.label);
+          const aggregateCourses = aggregateCoursesFromEntries.length
+            ? aggregateCoursesFromEntries
+            : (aggregate ? Array.from(aggregate.courses) : []);
           const mergedCourses = profileCourseLabel && !aggregateCourses.includes(profileCourseLabel)
             ? [profileCourseLabel, ...aggregateCourses]
             : aggregateCourses;
@@ -5626,6 +5866,7 @@ export const customerIncomeRouter = router({
             hasDebt: aggregate?.hasDebt ?? false,
             lastActivityAt: aggregate?.lastActivityAt ?? null,
             courses: mergedCourses,
+            courseEntries,
             responsibleManagerUserId: aggregate?.responsibleManagerUserId ?? null,
             responsibleManagerLabel: aggregate?.responsibleManagerLabel ?? null,
             profileCourseName,
