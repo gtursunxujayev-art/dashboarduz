@@ -74,6 +74,12 @@ export default function CustomersPage() {
   const [deletingCourseSaleId, setDeletingCourseSaleId] = useState('');
   const [detailsCustomerId, setDetailsCustomerId] = useState('');
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isCourseEditorModalOpen, setIsCourseEditorModalOpen] = useState(false);
+  const [courseEditorCustomerId, setCourseEditorCustomerId] = useState('');
+  const [editingSaleIncomeId, setEditingSaleIncomeId] = useState('');
+  const [courseEditCourseId, setCourseEditCourseId] = useState('');
+  const [courseEditTariffId, setCourseEditTariffId] = useState('');
+  const [courseEditSubTariffId, setCourseEditSubTariffId] = useState('');
 
   const customersQuery = trpc.customerIncome.listCustomers.useQuery(
     {
@@ -104,6 +110,7 @@ export default function CustomersPage() {
   const updateCustomersCourseAssignmentMutation = trpc.customerIncome.updateCustomersCourseAssignment.useMutation();
   const deleteCustomersMutation = trpc.customerIncome.deleteCustomers.useMutation();
   const deleteCustomerCourseMutation = trpc.customerIncome.deleteCustomerCourse.useMutation();
+  const updateCustomerCourseSaleMutation = trpc.customerIncome.updateCustomerCourseSale.useMutation();
   const customerHistoryQuery = trpc.customerIncome.customerPaymentHistory.useQuery(
     { customerId: detailsCustomerId || '00000000-0000-0000-0000-000000000000' },
     {
@@ -118,6 +125,10 @@ export default function CustomersPage() {
   const courseOptions = useMemo(() => customersQuery.data?.courseOptions || [], [customersQuery.data]);
   const catalogOptions = useMemo(() => customersQuery.data?.catalogOptions || [], [customersQuery.data]);
   const withDebtCount = customers.filter((customer: any) => customer.hasDebt).length;
+  const courseEditorCustomer = useMemo(
+    () => customers.find((customer: any) => customer.id === courseEditorCustomerId) || null,
+    [customers, courseEditorCustomerId],
+  );
 
   const filterTariffOptions = useMemo(() => {
     if (!courseId) {
@@ -168,6 +179,22 @@ export default function CustomersPage() {
     const tariff = newTariffOptions.find((item: any) => item.id === newTariffId);
     return Array.isArray(tariff?.subTariffs) ? tariff.subTariffs : [];
   }, [newTariffId, newTariffOptions]);
+
+  const editTariffOptions = useMemo(() => {
+    if (!courseEditCourseId) {
+      return [];
+    }
+    const course = editorCourses.find((item: any) => item.id === courseEditCourseId);
+    return Array.isArray(course?.tariffs) ? course.tariffs : [];
+  }, [editorCourses, courseEditCourseId]);
+
+  const editSubTariffOptions = useMemo(() => {
+    if (!courseEditTariffId) {
+      return [];
+    }
+    const tariff = editTariffOptions.find((item: any) => item.id === courseEditTariffId);
+    return Array.isArray(tariff?.subTariffs) ? tariff.subTariffs : [];
+  }, [courseEditTariffId, editTariffOptions]);
 
   useEffect(() => {
     if (!editMode) {
@@ -251,6 +278,28 @@ export default function CustomersPage() {
       setNewSubTariffId('');
     }
   }, [newTariffId, newSubTariffId, newSubTariffOptions]);
+
+  useEffect(() => {
+    if (!courseEditCourseId) {
+      setCourseEditTariffId('');
+      setCourseEditSubTariffId('');
+      return;
+    }
+    if (courseEditTariffId && !editTariffOptions.some((item: any) => item.id === courseEditTariffId)) {
+      setCourseEditTariffId('');
+      setCourseEditSubTariffId('');
+    }
+  }, [courseEditCourseId, courseEditTariffId, editTariffOptions]);
+
+  useEffect(() => {
+    if (!courseEditTariffId) {
+      setCourseEditSubTariffId('');
+      return;
+    }
+    if (courseEditSubTariffId && !editSubTariffOptions.some((item: any) => item.id === courseEditSubTariffId)) {
+      setCourseEditSubTariffId('');
+    }
+  }, [courseEditTariffId, courseEditSubTariffId, editSubTariffOptions]);
 
   const selectedCount = selectedCustomerIds.length;
   const allVisibleIds = useMemo(() => customers.map((customer: any) => customer.id), [customers]);
@@ -352,7 +401,9 @@ export default function CustomersPage() {
         tariffId: bulkTariffId || null,
         subTariffId: bulkSubTariffId || null,
       });
-      setPageSuccess(`${result.updatedCount} ta mijoz uchun kurs/tarif yangilandi.`);
+      setPageSuccess(
+        `${result.updatedCount} ta mijoz yangilandi. Aktiv income: ${result.updatedSalesCount || 0} ta sotuv, ${result.updatedRepaymentsCount || 0} ta to'lov yozuvi.`,
+      );
       await handleRefresh();
       setSelectedCustomerIds([]);
     } catch (error: any) {
@@ -504,6 +555,72 @@ export default function CustomersPage() {
   const openDetailsModal = (customerId: string) => {
     setDetailsCustomerId(customerId);
     setIsDetailsModalOpen(true);
+  };
+
+  const openCourseEditorModal = (customerId: string) => {
+    setPageError(null);
+    setPageSuccess(null);
+    setCourseEditorCustomerId(customerId);
+    setIsCourseEditorModalOpen(true);
+    setEditingSaleIncomeId('');
+    setCourseEditCourseId('');
+    setCourseEditTariffId('');
+    setCourseEditSubTariffId('');
+  };
+
+  const closeCourseEditorModal = () => {
+    setIsCourseEditorModalOpen(false);
+    setCourseEditorCustomerId('');
+    setEditingSaleIncomeId('');
+    setCourseEditCourseId('');
+    setCourseEditTariffId('');
+    setCourseEditSubTariffId('');
+  };
+
+  const startCourseChange = (entry: any) => {
+    if (!courseEditorCustomer) {
+      return;
+    }
+    const initialSubTariffId = courseEditorCustomer.profileTariffId === entry.tariffId
+      ? (courseEditorCustomer.profileSubTariffId || '')
+      : '';
+
+    setEditingSaleIncomeId(entry.saleIncomeId);
+    setCourseEditCourseId(entry.courseId || '');
+    setCourseEditTariffId(entry.tariffId || '');
+    setCourseEditSubTariffId(initialSubTariffId);
+  };
+
+  const handleSaveCourseChange = async () => {
+    setPageError(null);
+    setPageSuccess(null);
+
+    if (!editingSaleIncomeId) {
+      setPageError("Tahrirlanadigan kurs topilmadi.");
+      return;
+    }
+    if (!courseEditCourseId) {
+      setPageError('Yangi kursni tanlang.');
+      return;
+    }
+
+    try {
+      await updateCustomerCourseSaleMutation.mutateAsync({
+        saleIncomeId: editingSaleIncomeId,
+        newCourseId: courseEditCourseId,
+        newTariffId: courseEditTariffId || undefined,
+        newSubTariffId: courseEditSubTariffId || undefined,
+      });
+
+      setPageSuccess("Mijoz kursi muvaffaqiyatli yangilandi.");
+      setEditingSaleIncomeId('');
+      setCourseEditCourseId('');
+      setCourseEditTariffId('');
+      setCourseEditSubTariffId('');
+      await handleRefresh();
+    } catch (error: any) {
+      setPageError(error?.message || "Mijoz kursini yangilab bo'lmadi.");
+    }
   };
 
   const handleUpdateCustomerIdentity = async () => {
@@ -870,20 +987,21 @@ export default function CustomersPage() {
                         {Array.isArray(customer.courseEntries) && customer.courseEntries.length ? (
                           <div className="space-y-1">
                             {customer.courseEntries.map((entry: any) => (
-                              <div key={entry.saleIncomeId} className="flex items-center justify-between gap-2">
+                              <div key={entry.saleIncomeId} className="flex items-center gap-2">
                                 <span className="truncate">{entry.label}</span>
-                                {isAdmin && editMode && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteCustomerCourse(entry, customer.courseEntries || [])}
-                                    disabled={deletingCourseSaleId === entry.saleIncomeId}
-                                    className="rounded border border-red-300 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
-                                  >
-                                    {deletingCourseSaleId === entry.saleIncomeId ? "O'chirilmoqda..." : "Kursni o'chirish"}
-                                  </button>
-                                )}
                               </div>
                             ))}
+                            {isAdmin && editMode && (
+                              <div className="pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => openCourseEditorModal(customer.id)}
+                                  className="rounded border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
+                                >
+                                  Tahrirlash
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ) : Array.isArray(customer.courses) && customer.courses.length ? (
                           customer.courses.join(', ')
@@ -1097,6 +1215,148 @@ export default function CustomersPage() {
               >
                 {updateCustomerIdentityMutation.isLoading ? 'Saqlanmoqda...' : 'Saqlash'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAdmin && editMode && isCourseEditorModalOpen && courseEditorCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-4xl rounded-lg bg-white shadow-xl dark:bg-slate-900">
+            <div className="border-b border-gray-100 px-6 py-4 dark:border-slate-700">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Mijoz kurslarini tahrirlash</h2>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+                    {courseEditorCustomer.customerNumber} - {courseEditorCustomer.name}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeCourseEditorModal}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  Yopish
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-[75vh] space-y-4 overflow-auto px-6 py-5">
+              {Array.isArray(courseEditorCustomer.courseEntries) && courseEditorCustomer.courseEntries.length ? (
+                courseEditorCustomer.courseEntries.map((entry: any) => (
+                  <div
+                    key={entry.saleIncomeId}
+                    className="rounded-md border border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-800"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">{entry.label}</p>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                          Sana: {formatDate(entry.entryDate)} | Joriy qarz: {formatAmount(entry.remainingDebtAmount || 0)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => startCourseChange(entry)}
+                          className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50"
+                        >
+                          Kursni o&apos;zgartirish
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCustomerCourse(entry, courseEditorCustomer.courseEntries || [])}
+                          disabled={deletingCourseSaleId === entry.saleIncomeId}
+                          className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
+                        >
+                          {deletingCourseSaleId === entry.saleIncomeId ? "O'chirilmoqda..." : "Kursni o'chirish"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {editingSaleIncomeId === entry.saleIncomeId && (
+                      <div className="mt-4 space-y-3 rounded-md border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/30">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                          <div>
+                            <label className="block text-xs font-medium uppercase text-gray-600 dark:text-slate-300">Yangi kurs</label>
+                            <select
+                              value={courseEditCourseId}
+                              onChange={(event) => setCourseEditCourseId(event.target.value)}
+                              className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                            >
+                              <option value="">Kurs tanlang</option>
+                              {editorCourses.map((course: any) => (
+                                <option key={course.id} value={course.id}>
+                                  {course.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-medium uppercase text-gray-600 dark:text-slate-300">Yangi tarif</label>
+                            <select
+                              value={courseEditTariffId}
+                              onChange={(event) => setCourseEditTariffId(event.target.value)}
+                              disabled={!courseEditCourseId}
+                              className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                            >
+                              <option value="">Tarif tanlanmagan</option>
+                              {editTariffOptions.map((tariff: any) => (
+                                <option key={tariff.id} value={tariff.id}>
+                                  {tariff.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-medium uppercase text-gray-600 dark:text-slate-300">Yangi subtarif</label>
+                            <select
+                              value={courseEditSubTariffId}
+                              onChange={(event) => setCourseEditSubTariffId(event.target.value)}
+                              disabled={!courseEditTariffId || !editSubTariffOptions.length}
+                              className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                            >
+                              <option value="">Subtarif tanlanmagan</option>
+                              {editSubTariffOptions.map((subTariff: any) => (
+                                <option key={subTariff.id} value={subTariff.id}>
+                                  {subTariff.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={handleSaveCourseChange}
+                            disabled={updateCustomerCourseSaleMutation.isLoading}
+                            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {updateCustomerCourseSaleMutation.isLoading ? 'Saqlanmoqda...' : "O'zgarishni saqlash"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingSaleIncomeId('');
+                              setCourseEditCourseId('');
+                              setCourseEditTariffId('');
+                              setCourseEditSubTariffId('');
+                            }}
+                            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                          >
+                            Bekor qilish
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-slate-400">Bu mijozda aktiv kurs topilmadi.</p>
+              )}
             </div>
           </div>
         </div>
