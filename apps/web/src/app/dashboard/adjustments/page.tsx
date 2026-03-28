@@ -56,6 +56,11 @@ function getRequestStatusLabel(status: string): string {
   return 'Kutilmoqda';
 }
 
+function formatCourseBundle(courseName?: string | null, tariffName?: string | null, subTariffName?: string | null): string {
+  const parts = [courseName, tariffName, subTariffName].filter(Boolean);
+  return parts.length ? parts.join(' / ') : '-';
+}
+
 export default function AdjustmentsPage() {
   const { user } = useAuth();
   const roles = (user?.roles || []).map((role) => String(role));
@@ -127,6 +132,10 @@ export default function AdjustmentsPage() {
   const selectedIncome = useMemo(
     () => incomeOptions.find((income: any) => income.id === selectedIncomeId) || null,
     [incomeOptions, selectedIncomeId],
+  );
+  const reviewRequest = useMemo(
+    () => (reviewModal ? (requestsQuery.data || []).find((request: any) => request.id === reviewModal.requestId) || null : null),
+    [reviewModal, requestsQuery.data],
   );
 
   const courseOptions = useMemo(() => formOptionsQuery.data?.courses || [], [formOptionsQuery.data]);
@@ -523,6 +532,50 @@ export default function AdjustmentsPage() {
             </p>
 
             <form onSubmit={handleReviewSubmit} className="mt-4 space-y-4">
+              {reviewRequest && (
+                <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <p><span className="font-medium">So&apos;rov turi:</span> {getRequestTypeLabel(reviewRequest.type)}</p>
+                    <p>
+                      <span className="font-medium">Mijoz:</span> {reviewRequest.income.customer.customerNumber} - {reviewRequest.income.customer.name}
+                    </p>
+                  </div>
+
+                  <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-slate-600 dark:bg-slate-900">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">Oldingi ma&apos;lumot</p>
+                    <div className="mt-2 grid grid-cols-1 gap-1">
+                      <p>
+                        <span className="font-medium">Kurs / Tarif / Subtarif:</span>{' '}
+                        {formatCourseBundle(
+                          reviewRequest.income.course?.name,
+                          reviewRequest.income.tariff?.name,
+                          reviewRequest.income.profileSubTariffName,
+                        )}
+                      </p>
+                      <p><span className="font-medium">Kelishuv:</span> {formatAmount(reviewRequest.income.coursePriceAmount)} UZS</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/30">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Yangi ma&apos;lumot</p>
+                    <div className="mt-2 grid grid-cols-1 gap-1">
+                      <p>
+                        <span className="font-medium">Kurs / Tarif / Subtarif:</span>{' '}
+                        {formatCourseBundle(
+                          reviewRequest.newCourse?.name || reviewRequest.income.course?.name,
+                          reviewRequest.newTariff?.name || reviewRequest.income.tariff?.name,
+                          reviewRequest.inferredNewSubTariffName || reviewRequest.income.profileSubTariffName || null,
+                        )}
+                      </p>
+                      <p>
+                        <span className="font-medium">Kelishuv:</span>{' '}
+                        {formatAmount(reviewRequest.newAgreementAmount ?? reviewRequest.income.coursePriceAmount)} UZS
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Izoh</label>
                 <textarea
