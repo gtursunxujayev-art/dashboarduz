@@ -48,6 +48,7 @@ export default function CourseTypeSalesView({
 }: CourseTypeSalesViewProps) {
   const { user } = useAuth();
   const roles = user?.roles || [];
+  const isAdmin = Boolean(roles.includes('Admin'));
   const isTashkiliyOnly = Boolean(
     roles.includes('Tashkiliy')
       && !roles.includes('Admin')
@@ -63,6 +64,9 @@ export default function CourseTypeSalesView({
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [limit] = useState(50);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [deletingCourseSaleId, setDeletingCourseSaleId] = useState('');
 
   const optionsQuery = trpc.courseSales.typeOptions.useQuery(
     { category },
@@ -71,6 +75,7 @@ export default function CourseTypeSalesView({
       staleTime: 60_000,
     },
   );
+  const deleteCustomerCourseMutation = trpc.customerIncome.deleteCustomerCourse.useMutation();
 
   const courses = useMemo(() => optionsQuery.data?.courses || [], [optionsQuery.data]);
   const selectedCourse = useMemo(
@@ -206,6 +211,27 @@ export default function CourseTypeSalesView({
     XLSX.writeFile(workbook, `kurs-turi-${toSlug(category)}-${Date.now()}.xlsx`);
   };
 
+  const handleDeleteCustomerCourse = async (saleIncomeId: string, label: string) => {
+    const confirmed = window.confirm(`"${label}" kursini mijozdan o'chirmoqchimisiz?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      setDeletingCourseSaleId(saleIncomeId);
+      const result = await deleteCustomerCourseMutation.mutateAsync({ saleIncomeId });
+      await Promise.all([summaryQuery.refetch(), customersQuery.refetch()]);
+      setActionSuccess(`Kurs o'chirildi. O'chirilgan yozuvlar: ${result.deletedCount}.`);
+    } catch (error: any) {
+      setActionError(error?.message || "Mijoz kursini o'chirib bo'lmadi.");
+    } finally {
+      setDeletingCourseSaleId('');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -295,6 +321,18 @@ export default function CourseTypeSalesView({
         </div>
       )}
 
+      {actionError && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+
+      {actionSuccess && (
+        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {actionSuccess}
+        </div>
+      )}
+
       <div className={`grid grid-cols-1 gap-3 ${isTashkiliyOnly ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-2 xl:grid-cols-6'}`}>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-500">Sotilganlar soni</p>
@@ -376,8 +414,27 @@ export default function CourseTypeSalesView({
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.customerName}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.telegramUsername || '-'}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.managerLabel}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {[row.courseName, row.tariffName, row.subTariffName].filter(Boolean).join(' / ') || '-'}
+                    <td className="px-3 py-2 text-sm text-gray-700">
+                      <div className="space-y-1">
+                        {(Array.isArray(row.customerCourses) && row.customerCourses.length ? row.customerCourses : [{
+                          saleIncomeId: row.saleId,
+                          label: [row.courseName, row.tariffName, row.subTariffName].filter(Boolean).join(' / ') || '-',
+                        }]).map((entry: any) => (
+                          <div key={entry.saleIncomeId} className="flex items-center justify-between gap-2">
+                            <span className="truncate">{entry.label}</span>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCustomerCourse(entry.saleIncomeId, entry.label || "Kurs")}
+                                disabled={deletingCourseSaleId === entry.saleIncomeId}
+                                className="rounded border border-red-300 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {deletingCourseSaleId === entry.saleIncomeId ? "O'chirilmoqda..." : "Kursni o'chirish"}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </td>
                     {!isTashkiliyOnly && (
                       <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.agreementAmount)}</td>
