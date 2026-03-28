@@ -588,6 +588,7 @@ export default function IncomePage() {
     if (type === 'new_sale') {
       if (!courseId) nextErrors.courseId = 'Kurs tanlang.';
       if (!tariffId) nextErrors.tariffId = 'Tarif tanlang.';
+      if (subTariffOptions.length > 0 && !subTariffId) nextErrors.subTariffId = 'Subtarif tanlang.';
       if (coursePriceAmount <= 0) nextErrors.coursePriceInput = "Kurs narxi 0 dan katta bo'lsin.";
       if (paymentAmount < 0) nextErrors.paymentInput = "To'lov manfiy bo'lishi mumkin emas.";
     }
@@ -971,10 +972,13 @@ export default function IncomePage() {
                 {subTariffOptions.length > 0 && (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Subtarif</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Subtarif <span className="text-red-500">*</span></label>
                       <select
                         value={subTariffId}
-                        onChange={(event) => setSubTariffId(event.target.value)}
+                        onChange={(event) => {
+                          setSubTariffId(event.target.value);
+                          clearFieldError('subTariffId');
+                        }}
                         disabled={!tariffId}
                         className={buildFieldClass(fieldErrors, 'subTariffId', 'disabled:bg-gray-100 disabled:text-gray-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400')}
                       >
@@ -985,6 +989,7 @@ export default function IncomePage() {
                           </option>
                         ))}
                       </select>
+                      {fieldErrors.subTariffId && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.subTariffId}</p>}
                     </div>
                   </div>
                 )}
