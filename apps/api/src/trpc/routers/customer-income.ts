@@ -2459,8 +2459,16 @@ async function createIncomeEntry(params: {
   input: CreateIncomeInput;
   writeAuditLog?: boolean;
   allowHiddenCourseSelection?: boolean;
+  skipTelegramNotification?: boolean;
 }) {
-  const { tenantId, userId, input, writeAuditLog = true, allowHiddenCourseSelection = false } = params;
+  const {
+    tenantId,
+    userId,
+    input,
+    writeAuditLog = true,
+    allowHiddenCourseSelection = false,
+    skipTelegramNotification = false,
+  } = params;
 
   await assertManagerBelongsToTenant(tenantId, input.managerUserId);
   const entryDate = parseDateInput(input.entryDate);
@@ -2722,26 +2730,36 @@ async function createIncomeEntry(params: {
       },
     });
 
-    try {
-      telegramDispatch = await sendOfflineOrIntensivePaymentTelegram({
-        tenantId,
-        incomeId: createdIncome.id,
-        preferredSubTariffId: selectedSubTariffId,
-      });
-    } catch (error) {
-      console.error('[Income][Telegram] Payment notification failed (non-blocking)', {
-        tenantId,
-        incomeId: createdIncome.id,
-        error: String((error as any)?.message || error),
-      });
+    if (skipTelegramNotification) {
       telegramDispatch = {
-        attempted: true,
+        attempted: false,
         delivered: false,
         sentCount: 0,
         failedCount: 0,
-        reason: 'send_failed',
-        errors: [String((error as any)?.message || error)],
+        reason: 'skipped_by_admin',
       };
+    } else {
+      try {
+        telegramDispatch = await sendOfflineOrIntensivePaymentTelegram({
+          tenantId,
+          incomeId: createdIncome.id,
+          preferredSubTariffId: selectedSubTariffId,
+        });
+      } catch (error) {
+        console.error('[Income][Telegram] Payment notification failed (non-blocking)', {
+          tenantId,
+          incomeId: createdIncome.id,
+          error: String((error as any)?.message || error),
+        });
+        telegramDispatch = {
+          attempted: true,
+          delivered: false,
+          sentCount: 0,
+          failedCount: 0,
+          reason: 'send_failed',
+          errors: [String((error as any)?.message || error)],
+        };
+      }
     }
   }
 
@@ -3651,10 +3669,14 @@ export const customerIncomeRouter = router({
         });
       }
 
+      const isAdmin = isAdminUser(ctx.user.roles);
+      const skipTelegramNotification = isAdmin && Boolean(input.skipTelegramNotification);
+
       const result = await createIncomeEntry({
         tenantId: ctx.tenantId,
         userId: ctx.user.userId,
         input,
+        skipTelegramNotification,
       });
 
       return {
