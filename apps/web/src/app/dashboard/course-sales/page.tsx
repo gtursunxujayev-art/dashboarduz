@@ -347,10 +347,20 @@ export default function CourseSalesPage() {
   };
 
   const startCourseChange = (entry: any) => {
+    const initialCourseId = entry.courseId || courseEditorCustomer?.profileCourseId || '';
+    const initialTariffId = entry.tariffId || courseEditorCustomer?.profileTariffId || '';
+    const initialSubTariffId = entry.subTariffId
+      || (
+        courseEditorCustomer?.profileCourseId === initialCourseId
+        && courseEditorCustomer?.profileTariffId === initialTariffId
+          ? (courseEditorCustomer?.profileSubTariffId || '')
+          : ''
+      );
+
     setEditingSaleIncomeId(entry.saleIncomeId);
-    setCourseEditCourseId('');
-    setCourseEditTariffId('');
-    setCourseEditSubTariffId('');
+    setCourseEditCourseId(initialCourseId);
+    setCourseEditTariffId(initialTariffId);
+    setCourseEditSubTariffId(initialSubTariffId);
   };
 
   const handleSaveCourseChange = async () => {
