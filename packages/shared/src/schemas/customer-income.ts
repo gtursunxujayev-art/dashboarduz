@@ -32,6 +32,7 @@ export const createIncomeSchema = z.object({
   customerNumber: customerNumberSchema,
   customerName: z.string().min(1).max(160).optional(),
   telegramUsername: telegramUsernameSchema.optional(),
+  skipTelegramNotification: z.boolean().optional(),
   type: incomeTypeSchema,
   debtSourceIncomeId: z.string().uuid().optional(),
   courseId: z.string().uuid().optional(),
