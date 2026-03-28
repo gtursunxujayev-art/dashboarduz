@@ -199,20 +199,72 @@ export default function CourseSalesPage() {
     XLSX.writeFile(workbook, `kurslar-sotuvi-${Date.now()}.xlsx`);
   };
 
-  const handleDeleteCustomerCourse = async (saleIncomeId: string, label: string) => {
-    const confirmed = window.confirm(`"${label}" kursini mijozdan o'chirmoqchimisiz?`);
+  const resolveCourseDeleteAction = (
+    currentEntry: { saleIncomeId: string; label: string },
+    allEntries: Array<{ saleIncomeId: string; label: string }>,
+  ): { action: 'delete' | 'refund' | 'relink'; targetSaleIncomeId?: string } | null => {
+    const choice = window.prompt(
+      "Kursni o'chirish varianti:\n1) Daromadni boshqa kursga o'tkazish\n2) Refund so'rovi yaratish\n3) Daromadni izsiz o'chirish\n\n1, 2 yoki 3 kiriting:",
+      '3',
+    );
+    if (!choice) return null;
+    if (choice === '3') return { action: 'delete' };
+    if (choice === '2') return { action: 'refund' };
+    if (choice !== '1') {
+      window.alert("Noto'g'ri tanlov. 1, 2 yoki 3 ni kiriting.");
+      return null;
+    }
+
+    const targetEntries = allEntries.filter((entry) => entry.saleIncomeId !== currentEntry.saleIncomeId);
+    if (!targetEntries.length) {
+      window.alert("Daromadni o'tkazish uchun mijozda boshqa aktiv kurs yo'q.");
+      return null;
+    }
+
+    const targetPrompt = targetEntries
+      .map((entry, index) => `${index + 1}) ${entry.label}`)
+      .join('\n');
+    const selectedTargetRaw = window.prompt(`Daromad qaysi kursga o'tkazilsin?\n${targetPrompt}\n\nRaqamini kiriting:`, '1');
+    if (!selectedTargetRaw) return null;
+    const selectedTargetIndex = Number(selectedTargetRaw) - 1;
+    const selectedTarget = targetEntries[selectedTargetIndex];
+    if (!selectedTarget) {
+      window.alert("Noto'g'ri kurs tanlandi.");
+      return null;
+    }
+    return { action: 'relink', targetSaleIncomeId: selectedTarget.saleIncomeId };
+  };
+
+  const handleDeleteCustomerCourse = async (
+    currentEntry: { saleIncomeId: string; label: string },
+    allEntries: Array<{ saleIncomeId: string; label: string }>,
+  ) => {
+    const confirmed = window.confirm(`"${currentEntry.label}" kursi uchun amalni davom ettirasizmi?`);
     if (!confirmed) {
       return;
     }
+
+    const actionPayload = resolveCourseDeleteAction(currentEntry, allEntries);
+    if (!actionPayload) return;
 
     setActionError(null);
     setActionSuccess(null);
 
     try {
-      setDeletingCourseSaleId(saleIncomeId);
-      const result = await deleteCustomerCourseMutation.mutateAsync({ saleIncomeId });
+      setDeletingCourseSaleId(currentEntry.saleIncomeId);
+      const result = await deleteCustomerCourseMutation.mutateAsync({
+        saleIncomeId: currentEntry.saleIncomeId,
+        action: actionPayload.action,
+        targetSaleIncomeId: actionPayload.targetSaleIncomeId,
+      });
       await Promise.all([summaryQuery.refetch(), customersQuery.refetch()]);
-      setActionSuccess(`Kurs o'chirildi. O'chirilgan yozuvlar: ${result.deletedCount}.`);
+      if (result.mode === 'refund') {
+        setActionSuccess("Refund so'rovi yaratildi va moliya tasdig'iga yuborildi.");
+      } else if (result.mode === 'relink') {
+        setActionSuccess(`Daromad boshqa kursga o'tkazildi. O'chirilgan yozuvlar: ${result.deletedCount}.`);
+      } else {
+        setActionSuccess(`Kurs o'chirildi. O'chirilgan yozuvlar: ${result.deletedCount}.`);
+      }
     } catch (error: any) {
       setActionError(error?.message || "Mijoz kursini o'chirib bo'lmadi.");
     } finally {
@@ -517,7 +569,7 @@ export default function CourseSalesPage() {
                                 {isAdmin && (
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteCustomerCourse(entry.saleIncomeId, entry.label || "Kurs")}
+                                    onClick={() => handleDeleteCustomerCourse(entry, row.customerCourses || [])}
                                     disabled={deletingCourseSaleId === entry.saleIncomeId}
                                     className="rounded border border-red-300 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
