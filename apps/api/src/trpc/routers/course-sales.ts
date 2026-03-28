@@ -88,8 +88,12 @@ function buildCategoryLabel(category: string): string {
 
 type CustomerCourseEntry = {
   saleIncomeId: string;
+  courseId: string | null;
+  tariffId: string | null;
+  subTariffId: string | null;
   courseName: string | null;
   tariffName: string | null;
+  subTariffName: string | null;
   label: string;
   entryDate: string;
   remainingDebtAmount: number;
@@ -101,19 +105,38 @@ function buildCustomerCoursesByCustomer(
     customerId: string;
     entryDate: Date;
     remainingDebtAmount: number;
-    course: { name: string } | null;
-    tariff: { name: string } | null;
+    course: { id: string; name: string } | null;
+    tariff: { id: string; name: string } | null;
+    customer: {
+      profileCourseId: string | null;
+      profileTariffId: string | null;
+      profileSubTariffId: string | null;
+    };
   }>,
+  subTariffNameById: Map<string, string>,
 ): Map<string, CustomerCourseEntry[]> {
   const map = new Map<string, CustomerCourseEntry[]>();
   for (const sale of activeSales) {
-    const labelParts = [sale.course?.name || null, sale.tariff?.name || null].filter(Boolean);
+    const isCurrentProfileSale = Boolean(
+      sale.customer.profileCourseId
+      && sale.customer.profileTariffId
+      && sale.customer.profileCourseId === sale.course?.id
+      && sale.customer.profileTariffId === sale.tariff?.id,
+    );
+    const subTariffName = isCurrentProfileSale && sale.customer.profileSubTariffId
+      ? subTariffNameById.get(sale.customer.profileSubTariffId) || null
+      : null;
+    const labelParts = [sale.course?.name || null, sale.tariff?.name || null, subTariffName].filter(Boolean);
     const label = labelParts.length ? labelParts.join(' / ') : "Noma'lum kurs";
     const rows = map.get(sale.customerId) || [];
     rows.push({
       saleIncomeId: sale.id,
+      courseId: sale.course?.id || null,
+      tariffId: sale.tariff?.id || null,
+      subTariffId: isCurrentProfileSale ? sale.customer.profileSubTariffId || null : null,
       courseName: sale.course?.name || null,
       tariffName: sale.tariff?.name || null,
+      subTariffName,
       label,
       entryDate: sale.entryDate.toISOString(),
       remainingDebtAmount: sale.remainingDebtAmount || 0,
@@ -585,10 +608,17 @@ export const courseSalesRouter = router({
                 entryDate: true,
                 remainingDebtAmount: true,
                 course: {
-                  select: { name: true },
+                  select: { id: true, name: true },
                 },
                 tariff: {
-                  select: { name: true },
+                  select: { id: true, name: true },
+                },
+                customer: {
+                  select: {
+                    profileCourseId: true,
+                    profileTariffId: true,
+                    profileSubTariffId: true,
+                  },
                 },
               },
             })
@@ -604,9 +634,15 @@ export const courseSalesRouter = router({
           customerId: string;
           entryDate: Date;
           remainingDebtAmount: number;
-          course: { name: string } | null;
-          tariff: { name: string } | null;
+          course: { id: string; name: string } | null;
+          tariff: { id: string; name: string } | null;
+          customer: {
+            profileCourseId: string | null;
+            profileTariffId: string | null;
+            profileSubTariffId: string | null;
+          };
         }>,
+        subTariffNameById,
       );
       const paidBySaleId = new Map<string, number>();
       const lastActivityBySaleId = new Map<string, Date>();
@@ -649,6 +685,9 @@ export const courseSalesRouter = router({
             telegramUsername: sale.customer.telegramUsername || null,
             managerUserId: sale.manager.id,
             managerLabel,
+            profileCourseId: sale.customer.profileCourseId || null,
+            profileTariffId: sale.customer.profileTariffId || null,
+            profileSubTariffId: sale.customer.profileSubTariffId || null,
             courseName: sale.course?.name || profileCourseName || null,
             tariffName: sale.tariff?.name || profileTariffName || null,
             subTariffName: profileSubTariffName,
@@ -1088,10 +1127,17 @@ export const courseSalesRouter = router({
                 entryDate: true,
                 remainingDebtAmount: true,
                 course: {
-                  select: { name: true },
+                  select: { id: true, name: true },
                 },
                 tariff: {
-                  select: { name: true },
+                  select: { id: true, name: true },
+                },
+                customer: {
+                  select: {
+                    profileCourseId: true,
+                    profileTariffId: true,
+                    profileSubTariffId: true,
+                  },
                 },
               },
             })
@@ -1107,9 +1153,15 @@ export const courseSalesRouter = router({
           customerId: string;
           entryDate: Date;
           remainingDebtAmount: number;
-          course: { name: string } | null;
-          tariff: { name: string } | null;
+          course: { id: string; name: string } | null;
+          tariff: { id: string; name: string } | null;
+          customer: {
+            profileCourseId: string | null;
+            profileTariffId: string | null;
+            profileSubTariffId: string | null;
+          };
         }>,
+        subTariffNameById,
       );
       const paidBySaleId = new Map<string, number>();
       const lastActivityBySaleId = new Map<string, Date>();
@@ -1152,6 +1204,9 @@ export const courseSalesRouter = router({
             telegramUsername: sale.customer.telegramUsername || null,
             managerUserId: sale.manager.id,
             managerLabel,
+            profileCourseId: sale.customer.profileCourseId || null,
+            profileTariffId: sale.customer.profileTariffId || null,
+            profileSubTariffId: sale.customer.profileSubTariffId || null,
             courseName: sale.course?.name || profileCourseName || null,
             tariffName: sale.tariff?.name || profileTariffName || null,
             subTariffName: profileSubTariffName,
