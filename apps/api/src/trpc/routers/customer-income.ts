@@ -5415,16 +5415,70 @@ export const customerIncomeRouter = router({
         }
       }
 
-      const updateResult = await prisma.customer.updateMany({
-        where: {
-          tenantId: ctx.tenantId,
-          id: { in: customerIds },
-        },
-        data: {
-          profileCourseId: courseId,
-          profileTariffId: tariffId,
-          profileSubTariffId: subTariffId,
-        },
+      const updateResult = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const customerUpdate = await tx.customer.updateMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: customerIds },
+          },
+          data: {
+            profileCourseId: courseId,
+            profileTariffId: tariffId,
+            profileSubTariffId: subTariffId,
+          },
+        });
+
+        let updatedSalesCount = 0;
+        let updatedRepaymentsCount = 0;
+
+        // Kurs/tarif tanlanganda mos aktiv income zanjiri metadata ham yangilanadi.
+        // Bu yerda payment/course price/debt summalari o'zgarmaydi.
+        if (courseId) {
+          const activeSales = await tx.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              customerId: { in: customerIds },
+              type: 'new_sale',
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            },
+            select: { id: true },
+          });
+
+          const saleIds = activeSales.map((sale) => sale.id);
+          if (saleIds.length > 0) {
+            const salesUpdate = await tx.income.updateMany({
+              where: {
+                tenantId: ctx.tenantId,
+                id: { in: saleIds },
+              },
+              data: {
+                courseId,
+                tariffId,
+              },
+            });
+            updatedSalesCount = salesUpdate.count;
+
+            const repaymentsUpdate = await tx.income.updateMany({
+              where: {
+                tenantId: ctx.tenantId,
+                type: 'repayment',
+                relatedDebtIncomeId: { in: saleIds },
+                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              },
+              data: {
+                courseId,
+                tariffId,
+              },
+            });
+            updatedRepaymentsCount = repaymentsUpdate.count;
+          }
+        }
+
+        return {
+          customerUpdatedCount: customerUpdate.count,
+          updatedSalesCount,
+          updatedRepaymentsCount,
+        };
       });
 
       await prisma.auditLog.create({
@@ -5435,16 +5489,20 @@ export const customerIncomeRouter = router({
           resource: 'customer',
           metadata: {
             customerCount: customerIds.length,
-            updatedCount: updateResult.count,
+            updatedCount: updateResult.customerUpdatedCount,
             courseId,
             tariffId,
             subTariffId,
+            updatedSalesCount: updateResult.updatedSalesCount,
+            updatedRepaymentsCount: updateResult.updatedRepaymentsCount,
           },
         },
       });
 
       return {
-        updatedCount: updateResult.count,
+        updatedCount: updateResult.customerUpdatedCount,
+        updatedSalesCount: updateResult.updatedSalesCount,
+        updatedRepaymentsCount: updateResult.updatedRepaymentsCount,
       };
     }),
 
@@ -5799,6 +5857,196 @@ export const customerIncomeRouter = router({
         mode: resultPayload.mode,
         targetSaleIncomeId,
         refundRequestId: createdRefundRequestId,
+      };
+    }),
+
+  updateCustomerCourseSale: adminProcedure
+    .input(
+      z.object({
+        saleIncomeId: z.string().uuid(),
+        newCourseId: z.string().uuid(),
+        newTariffId: z.string().uuid().optional(),
+        newSubTariffId: z.string().uuid().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!input.newTariffId && input.newSubTariffId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Tarif tanlanmasdan subtarif tanlab bo\'lmaydi.',
+        });
+      }
+
+      const saleIncome = await prisma.income.findFirst({
+        where: {
+          id: input.saleIncomeId,
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+        },
+        select: {
+          id: true,
+          customerId: true,
+        },
+      });
+
+      if (!saleIncome) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: "Tahrirlanadigan aktiv kurs topilmadi.",
+        });
+      }
+
+      const [course, tariff, subTariff] = await Promise.all([
+        prisma.course.findFirst({
+          where: {
+            id: input.newCourseId,
+            tenantId: ctx.tenantId,
+            isActive: true,
+          },
+          select: { id: true },
+        }),
+        input.newTariffId
+          ? prisma.tariff.findFirst({
+              where: {
+                id: input.newTariffId,
+                tenantId: ctx.tenantId,
+                courseId: input.newCourseId,
+                isActive: true,
+              },
+              select: { id: true },
+            })
+          : Promise.resolve(null),
+        input.newTariffId && input.newSubTariffId
+          ? prisma.subTariff.findFirst({
+              where: {
+                id: input.newSubTariffId,
+                tenantId: ctx.tenantId,
+                tariffId: input.newTariffId,
+                isActive: true,
+              },
+              select: { id: true },
+            })
+          : Promise.resolve(null),
+      ]);
+
+      if (!course) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "Yangi kurs topilmadi yoki faol emas.",
+        });
+      }
+      if (input.newTariffId && !tariff) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "Yangi tarif tanlangan kursga tegishli emas yoki faol emas.",
+        });
+      }
+      if (input.newSubTariffId && !subTariff) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "Yangi subtarif tanlangan tarifga tegishli emas yoki faol emas.",
+        });
+      }
+
+      const saleChain = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          OR: [{ id: saleIncome.id }, { relatedDebtIncomeId: saleIncome.id }],
+        },
+        select: { id: true },
+      });
+      const saleChainIds = saleChain.map((row) => row.id);
+
+      const pendingAdjustmentCount = await prisma.incomeAdjustmentRequest.count({
+        where: {
+          tenantId: ctx.tenantId,
+          incomeId: { in: saleChainIds },
+          status: ADJUSTMENT_STATUS_PENDING,
+        },
+      });
+      if (pendingAdjustmentCount > 0) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: "Bu kurs bo'yicha kutilayotgan so'rovlar bor. Avval so'rovlarni yakunlang.",
+        });
+      }
+
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.income.update({
+          where: { id: saleIncome.id },
+          data: {
+            courseId: input.newCourseId,
+            tariffId: input.newTariffId || null,
+          },
+        });
+
+        await tx.income.updateMany({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'repayment',
+            relatedDebtIncomeId: saleIncome.id,
+          },
+          data: {
+            courseId: input.newCourseId,
+            tariffId: input.newTariffId || null,
+          },
+        });
+
+        await refreshCustomerProfileFromLatestActiveSale(tx, {
+          tenantId: ctx.tenantId,
+          customerId: saleIncome.customerId,
+        });
+
+        if (input.newSubTariffId) {
+          const latestActiveSale = await tx.income.findFirst({
+            where: {
+              tenantId: ctx.tenantId,
+              customerId: saleIncome.customerId,
+              type: 'new_sale',
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            },
+            orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+            select: {
+              id: true,
+              tariffId: true,
+            },
+          });
+
+          if (
+            latestActiveSale
+            && latestActiveSale.id === saleIncome.id
+            && latestActiveSale.tariffId
+            && input.newTariffId
+            && latestActiveSale.tariffId === input.newTariffId
+          ) {
+            await tx.customer.update({
+              where: { id: saleIncome.customerId },
+              data: {
+                profileSubTariffId: input.newSubTariffId,
+              },
+            });
+          }
+        }
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'customer_course_sale_update',
+          resource: 'income',
+          resourceId: saleIncome.id,
+          metadata: {
+            newCourseId: input.newCourseId,
+            newTariffId: input.newTariffId || null,
+            newSubTariffId: input.newSubTariffId || null,
+          },
+        },
+      });
+
+      return {
+        success: true,
       };
     }),
 
