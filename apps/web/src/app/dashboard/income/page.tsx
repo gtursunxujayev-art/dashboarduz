@@ -235,6 +235,19 @@ export default function IncomePage() {
   const selectedCustomer = useMemo(() => {
     return customerByNumber.get(customerNumber.trim().toLowerCase()) ?? null;
   }, [customerByNumber, customerNumber]);
+  const customerOutstandingDebtsQuery = trpc.customerIncome.customerOutstandingDebts.useQuery(
+    {
+      customerNumber: selectedCustomer?.customerNumber || '',
+    },
+    {
+      enabled: Boolean(selectedCustomer?.customerNumber),
+      retry: false,
+      keepPreviousData: true,
+      staleTime: 15 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    },
+  );
 
   const customerSuggestions = useMemo(() => {
     const query = customerNumber.trim().toLowerCase();
@@ -259,8 +272,17 @@ export default function IncomePage() {
     if (!selectedCustomer) {
       return [];
     }
-    return debtOptions.filter((debt: any) => debt.customerNumber === selectedCustomer.customerNumber);
-  }, [debtOptions, selectedCustomer]);
+    const fromLookup = Array.isArray(customerOutstandingDebtsQuery.data)
+      ? customerOutstandingDebtsQuery.data
+      : [];
+    const fallback = debtOptions.filter((debt: any) => debt.customerNumber === selectedCustomer.customerNumber);
+    const byId = new Map<string, any>();
+    for (const debt of [...fromLookup, ...fallback]) {
+      byId.set(debt.id, debt);
+    }
+    return Array.from(byId.values());
+  }, [customerOutstandingDebtsQuery.data, debtOptions, selectedCustomer]);
+  const isDebtLookupPending = Boolean(selectedCustomer) && customerOutstandingDebtsQuery.isLoading;
   const canUseRepayment = isExistingCustomer && debtOptionsForCustomer.length > 0;
 
   const selectedDebt = useMemo(() => {
@@ -382,6 +404,9 @@ export default function IncomePage() {
     if (type !== 'repayment') {
       return;
     }
+    if (isDebtLookupPending) {
+      return;
+    }
     if (canUseRepayment) {
       return;
     }
@@ -390,7 +415,7 @@ export default function IncomePage() {
     clearFieldError('debtSourceIncomeId');
     clearFieldError('type');
     setError("Yangi yoki topilmagan mijoz uchun faqat \"Yangi sotuv\" tanlanadi.");
-  }, [canUseRepayment, type]);
+  }, [canUseRepayment, isDebtLookupPending, type]);
 
   useEffect(() => {
     if (!courseId) {
@@ -806,6 +831,11 @@ export default function IncomePage() {
                     Qarzdorlik
                   </option>
                 </select>
+                {isDebtLookupPending && (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                    Mijozning qarzlari yuklanmoqda...
+                  </p>
+                )}
                 {!canUseRepayment && (
                   <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
                     Qarzdorlik to&apos;lovi faqat mavjud qarzdor mijoz uchun ochiladi.
