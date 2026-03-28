@@ -86,6 +86,49 @@ function buildCategoryLabel(category: string): string {
   return "Noma'lum";
 }
 
+type CustomerCourseEntry = {
+  saleIncomeId: string;
+  courseName: string | null;
+  tariffName: string | null;
+  label: string;
+  entryDate: string;
+  remainingDebtAmount: number;
+};
+
+function buildCustomerCoursesByCustomer(
+  activeSales: Array<{
+    id: string;
+    customerId: string;
+    entryDate: Date;
+    remainingDebtAmount: number;
+    course: { name: string } | null;
+    tariff: { name: string } | null;
+  }>,
+): Map<string, CustomerCourseEntry[]> {
+  const map = new Map<string, CustomerCourseEntry[]>();
+  for (const sale of activeSales) {
+    const labelParts = [sale.course?.name || null, sale.tariff?.name || null].filter(Boolean);
+    const label = labelParts.length ? labelParts.join(' / ') : "Noma'lum kurs";
+    const rows = map.get(sale.customerId) || [];
+    rows.push({
+      saleIncomeId: sale.id,
+      courseName: sale.course?.name || null,
+      tariffName: sale.tariff?.name || null,
+      label,
+      entryDate: sale.entryDate.toISOString(),
+      remainingDebtAmount: sale.remainingDebtAmount || 0,
+    });
+    map.set(sale.customerId, rows);
+  }
+
+  for (const [customerId, rows] of map.entries()) {
+    rows.sort((a, b) => b.entryDate.localeCompare(a.entryDate));
+    map.set(customerId, rows);
+  }
+
+  return map;
+}
+
 export const courseSalesRouter = router({
   options: protectedProcedure.query(async ({ ctx }) => {
     const courses = await prisma.course.findMany({
@@ -479,6 +522,7 @@ export const courseSalesRouter = router({
       ]);
 
       const saleIds = sales.map((sale) => sale.id);
+      const customerIds = Array.from(new Set(sales.map((sale) => sale.customerId)));
       const profileSubTariffIds = Array.from(
         new Set(
           sales
@@ -501,7 +545,7 @@ export const courseSalesRouter = router({
         ),
       );
 
-      const [incomes, subTariffs, profileCourses, profileTariffs] = await Promise.all([
+      const [incomes, subTariffs, profileCourses, profileTariffs, allActiveSalesByCustomer] = await Promise.all([
         saleIds.length > 0
           ? prisma.income.findMany({
               where: {
@@ -556,11 +600,44 @@ export const courseSalesRouter = router({
               },
             })
           : Promise.resolve([]),
+        customerIds.length > 0
+          ? prisma.income.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                customerId: { in: customerIds },
+                type: 'new_sale',
+                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
+              },
+              select: {
+                id: true,
+                customerId: true,
+                entryDate: true,
+                remainingDebtAmount: true,
+                course: {
+                  select: { name: true },
+                },
+                tariff: {
+                  select: { name: true },
+                },
+              },
+            })
+          : Promise.resolve([]),
       ]);
 
       const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
       const profileCourseNameById = new Map(profileCourses.map((course) => [course.id, course.name]));
       const profileTariffNameById = new Map(profileTariffs.map((tariff) => [tariff.id, tariff.name]));
+      const customerCoursesByCustomer = buildCustomerCoursesByCustomer(
+        allActiveSalesByCustomer as Array<{
+          id: string;
+          customerId: string;
+          entryDate: Date;
+          remainingDebtAmount: number;
+          course: { name: string } | null;
+          tariff: { name: string } | null;
+        }>,
+      );
       const paidBySaleId = new Map<string, number>();
       const lastActivityBySaleId = new Map<string, Date>();
       const saleIdSet = new Set(saleIds);
@@ -610,6 +687,7 @@ export const courseSalesRouter = router({
             debtAmount: sale.remainingDebtAmount ?? 0,
             entryDate: sale.entryDate.toISOString(),
             lastActivityAt: (lastActivityBySaleId.get(sale.id) || sale.entryDate).toISOString(),
+            customerCourses: customerCoursesByCustomer.get(sale.customerId) || [],
           };
         }),
       };
@@ -967,6 +1045,7 @@ export const courseSalesRouter = router({
       ]);
 
       const saleIds = sales.map((sale) => sale.id);
+      const customerIds = Array.from(new Set(sales.map((sale) => sale.customerId)));
       const profileSubTariffIds = Array.from(
         new Set(
           sales
@@ -989,7 +1068,7 @@ export const courseSalesRouter = router({
         ),
       );
 
-      const [incomes, subTariffs, profileCourses, profileTariffs] = await Promise.all([
+      const [incomes, subTariffs, profileCourses, profileTariffs, allActiveSalesByCustomer] = await Promise.all([
         saleIds.length > 0
           ? prisma.income.findMany({
               where: {
@@ -1044,11 +1123,44 @@ export const courseSalesRouter = router({
               },
             })
           : Promise.resolve([]),
+        customerIds.length > 0
+          ? prisma.income.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                customerId: { in: customerIds },
+                type: 'new_sale',
+                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
+              },
+              select: {
+                id: true,
+                customerId: true,
+                entryDate: true,
+                remainingDebtAmount: true,
+                course: {
+                  select: { name: true },
+                },
+                tariff: {
+                  select: { name: true },
+                },
+              },
+            })
+          : Promise.resolve([]),
       ]);
 
       const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
       const profileCourseNameById = new Map(profileCourses.map((course) => [course.id, course.name]));
       const profileTariffNameById = new Map(profileTariffs.map((tariff) => [tariff.id, tariff.name]));
+      const customerCoursesByCustomer = buildCustomerCoursesByCustomer(
+        allActiveSalesByCustomer as Array<{
+          id: string;
+          customerId: string;
+          entryDate: Date;
+          remainingDebtAmount: number;
+          course: { name: string } | null;
+          tariff: { name: string } | null;
+        }>,
+      );
       const paidBySaleId = new Map<string, number>();
       const lastActivityBySaleId = new Map<string, Date>();
       const saleIdSet = new Set(saleIds);
@@ -1098,6 +1210,7 @@ export const courseSalesRouter = router({
             debtAmount: sale.remainingDebtAmount ?? 0,
             entryDate: sale.entryDate.toISOString(),
             lastActivityAt: (lastActivityBySaleId.get(sale.id) || sale.entryDate).toISOString(),
+            customerCourses: customerCoursesByCustomer.get(sale.customerId) || [],
           };
         }),
       };
