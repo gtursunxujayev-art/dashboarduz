@@ -6259,6 +6259,16 @@ export const customerIncomeRouter = router({
       const profileCourseNameById = new Map(profileCourses.map((course) => [course.id, course.name]));
       const profileTariffNameById = new Map(profileTariffs.map((tariff) => [tariff.id, tariff.name]));
       const profileSubTariffNameById = new Map(profileSubTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
+      const customerProfileById = new Map(
+        customers.map((customer) => [
+          customer.id,
+          {
+            profileCourseId: customer.profileCourseId || null,
+            profileTariffId: customer.profileTariffId || null,
+            profileSubTariffId: customer.profileSubTariffId || null,
+          },
+        ]),
+      );
       const [relatedIncomes, activeSales] = await Promise.all([
         prisma.income.findMany({
           where: {
@@ -6345,8 +6355,10 @@ export const customerIncomeRouter = router({
           saleIncomeId: string;
           courseId: string | null;
           tariffId: string | null;
+          subTariffId: string | null;
           courseName: string | null;
           tariffName: string | null;
+          subTariffName: string | null;
           label: string;
           entryDate: string;
           remainingDebtAmount: number;
@@ -6361,15 +6373,29 @@ export const customerIncomeRouter = router({
         course: { id: string; name: string } | null;
         tariff: { id: string; name: string } | null;
       }>) {
-        const labelParts = [sale.course?.name || null, sale.tariff?.name || null].filter(Boolean);
+        const profile = customerProfileById.get(sale.customerId);
+        const subTariffName = profile
+          && profile.profileCourseId === sale.course?.id
+          && profile.profileTariffId === sale.tariff?.id
+          && profile.profileSubTariffId
+          ? profileSubTariffNameById.get(profile.profileSubTariffId) || null
+          : null;
+        const subTariffId = profile
+          && profile.profileCourseId === sale.course?.id
+          && profile.profileTariffId === sale.tariff?.id
+          ? profile.profileSubTariffId || null
+          : null;
+        const labelParts = [sale.course?.name || null, sale.tariff?.name || null, subTariffName].filter(Boolean);
         const label = labelParts.length ? labelParts.join(' / ') : "Noma'lum kurs";
         const list = courseEntriesByCustomer.get(sale.customerId) || [];
         list.push({
           saleIncomeId: sale.id,
           courseId: sale.course?.id || null,
           tariffId: sale.tariff?.id || null,
+          subTariffId,
           courseName: sale.course?.name || null,
           tariffName: sale.tariff?.name || null,
+          subTariffName,
           label,
           entryDate: sale.entryDate.toISOString(),
           remainingDebtAmount: sale.remainingDebtAmount || 0,
