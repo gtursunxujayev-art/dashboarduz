@@ -2554,7 +2554,7 @@ async function createIncomeEntry(params: {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course price cannot be negative.' });
     }
 
-    const [course, tariff] = await Promise.all([
+    const [course, tariff, activeSubTariffCount] = await Promise.all([
       prisma.course.findFirst({
         where: {
           id: input.courseId,
@@ -2576,10 +2576,24 @@ async function createIncomeEntry(params: {
         where: { id: input.tariffId, tenantId, courseId: input.courseId, isActive: true },
         select: { id: true },
       }),
+      prisma.subTariff.count({
+        where: {
+          tenantId,
+          tariffId: input.tariffId,
+          isActive: true,
+        },
+      }),
     ]);
 
     if (!course || !tariff) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course or tariff not found.' });
+    }
+
+    if (activeSubTariffCount > 0 && !input.subTariffId) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Sub-tariff is required for the selected tariff.',
+      });
     }
 
     if (input.subTariffId) {
