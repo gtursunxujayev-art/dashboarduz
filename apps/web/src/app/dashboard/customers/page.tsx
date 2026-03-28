@@ -71,6 +71,7 @@ export default function CustomersPage() {
   const [identityCustomerId, setIdentityCustomerId] = useState('');
   const [identityCustomerNumber, setIdentityCustomerNumber] = useState('');
   const [identityCustomerName, setIdentityCustomerName] = useState('');
+  const [deletingCourseSaleId, setDeletingCourseSaleId] = useState('');
 
   const customersQuery = trpc.customerIncome.listCustomers.useQuery(
     {
@@ -100,6 +101,7 @@ export default function CustomersPage() {
   const updateCustomerIdentityMutation = trpc.customerIncome.updateCustomerIdentity.useMutation();
   const updateCustomersCourseAssignmentMutation = trpc.customerIncome.updateCustomersCourseAssignment.useMutation();
   const deleteCustomersMutation = trpc.customerIncome.deleteCustomers.useMutation();
+  const deleteCustomerCourseMutation = trpc.customerIncome.deleteCustomerCourse.useMutation();
 
   const customers = useMemo(() => customersQuery.data?.customers || [], [customersQuery.data]);
   const courseOptions = useMemo(() => customersQuery.data?.courseOptions || [], [customersQuery.data]);
@@ -372,6 +374,27 @@ export default function CustomersPage() {
       setSelectedCustomerIds([]);
     } catch (error: any) {
       setPageError(error?.message || "Mijozlarni o'chirib bo'lmadi.");
+    }
+  };
+
+  const handleDeleteCustomerCourse = async (saleIncomeId: string, label: string) => {
+    setPageError(null);
+    setPageSuccess(null);
+
+    const confirmed = window.confirm(`"${label}" kursini mijozdan o'chirmoqchimisiz?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingCourseSaleId(saleIncomeId);
+      const result = await deleteCustomerCourseMutation.mutateAsync({ saleIncomeId });
+      setPageSuccess(`Kurs o'chirildi. O'chirilgan yozuvlar: ${result.deletedCount}.`);
+      await handleRefresh();
+    } catch (error: any) {
+      setPageError(error?.message || "Mijoz kursini o'chirib bo'lmadi.");
+    } finally {
+      setDeletingCourseSaleId('');
     }
   };
 
@@ -759,7 +782,29 @@ export default function CustomersPage() {
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{customer.telegramUsername || '-'}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{customer.responsibleManagerLabel || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
-                        {Array.isArray(customer.courses) && customer.courses.length ? customer.courses.join(', ') : '-'}
+                        {Array.isArray(customer.courseEntries) && customer.courseEntries.length ? (
+                          <div className="space-y-1">
+                            {customer.courseEntries.map((entry: any) => (
+                              <div key={entry.saleIncomeId} className="flex items-center justify-between gap-2">
+                                <span className="truncate">{entry.label}</span>
+                                {isAdmin && editMode && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteCustomerCourse(entry.saleIncomeId, entry.label)}
+                                    disabled={deletingCourseSaleId === entry.saleIncomeId}
+                                    className="rounded border border-red-300 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
+                                  >
+                                    {deletingCourseSaleId === entry.saleIncomeId ? "O'chirilmoqda..." : "Kursni o'chirish"}
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : Array.isArray(customer.courses) && customer.courses.length ? (
+                          customer.courses.join(', ')
+                        ) : (
+                          '-'
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm">
                         <span className={customer.hasDebt ? 'font-medium text-amber-700 dark:text-amber-300' : 'text-green-700 dark:text-green-300'}>
