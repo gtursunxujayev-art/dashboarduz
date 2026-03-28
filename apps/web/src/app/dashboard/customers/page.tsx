@@ -581,9 +581,12 @@ export default function CustomersPage() {
     if (!courseEditorCustomer) {
       return;
     }
-    const initialSubTariffId = courseEditorCustomer.profileTariffId === entry.tariffId
-      ? (courseEditorCustomer.profileSubTariffId || '')
-      : '';
+    const initialSubTariffId = entry.subTariffId
+      || (
+        courseEditorCustomer.profileTariffId === entry.tariffId
+          ? (courseEditorCustomer.profileSubTariffId || '')
+          : ''
+      );
 
     setEditingSaleIncomeId(entry.saleIncomeId);
     setCourseEditCourseId(entry.courseId || '');
