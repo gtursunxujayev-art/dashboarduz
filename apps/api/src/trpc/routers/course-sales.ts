@@ -280,28 +280,13 @@ export const courseSalesRouter = router({
         if (!categoryCourseIds.includes(input.courseId)) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: "Kurs tanlangan turga tegishli emas." });
         }
-        scopedFilters.push({
-          OR: [
-            { courseId: input.courseId },
-            { customer: { profileCourseId: input.courseId } },
-          ],
-        });
+        scopedFilters.push({ courseId: input.courseId });
       } else {
-        scopedFilters.push({
-          OR: [
-            { courseId: { in: categoryCourseIds } },
-            { customer: { profileCourseId: { in: categoryCourseIds } } },
-          ],
-        });
+        scopedFilters.push({ courseId: { in: categoryCourseIds } });
       }
 
       if (input.tariffId) {
-        scopedFilters.push({
-          OR: [
-            { tariffId: input.tariffId },
-            { customer: { profileTariffId: input.tariffId } },
-          ],
-        });
+        scopedFilters.push({ tariffId: input.tariffId });
       }
       if (input.subTariffId) {
         scopedFilters.push({
@@ -430,27 +415,12 @@ export const courseSalesRouter = router({
         if (!categoryCourseIds.includes(input.courseId)) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: "Kurs tanlangan turga tegishli emas." });
         }
-        scopedFilters.push({
-          OR: [
-            { courseId: input.courseId },
-            { customer: { profileCourseId: input.courseId } },
-          ],
-        });
+        scopedFilters.push({ courseId: input.courseId });
       } else {
-        scopedFilters.push({
-          OR: [
-            { courseId: { in: categoryCourseIds } },
-            { customer: { profileCourseId: { in: categoryCourseIds } } },
-          ],
-        });
+        scopedFilters.push({ courseId: { in: categoryCourseIds } });
       }
       if (input.tariffId) {
-        scopedFilters.push({
-          OR: [
-            { tariffId: input.tariffId },
-            { customer: { profileTariffId: input.tariffId } },
-          ],
-        });
+        scopedFilters.push({ tariffId: input.tariffId });
       }
       if (input.subTariffId) {
         scopedFilters.push({
@@ -679,8 +649,8 @@ export const courseSalesRouter = router({
             telegramUsername: sale.customer.telegramUsername || null,
             managerUserId: sale.manager.id,
             managerLabel,
-            courseName: profileCourseName || sale.course?.name || null,
-            tariffName: profileTariffName || sale.tariff?.name || null,
+            courseName: sale.course?.name || profileCourseName || null,
+            tariffName: sale.tariff?.name || profileTariffName || null,
             subTariffName: profileSubTariffName,
             agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
             paidAmount,
@@ -710,20 +680,10 @@ export const courseSalesRouter = router({
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
       const scopedFilters: Record<string, unknown>[] = [];
       if (input.courseId) {
-        scopedFilters.push({
-          OR: [
-            { courseId: input.courseId },
-            { customer: { profileCourseId: input.courseId } },
-          ],
-        });
+        scopedFilters.push({ courseId: input.courseId });
       }
       if (input.tariffId) {
-        scopedFilters.push({
-          OR: [
-            { tariffId: input.tariffId },
-            { customer: { profileTariffId: input.tariffId } },
-          ],
-        });
+        scopedFilters.push({ tariffId: input.tariffId });
       }
       if (input.subTariffId) {
         scopedFilters.push({
@@ -886,7 +846,7 @@ export const courseSalesRouter = router({
         }
       }
       for (const sale of matchedSales) {
-        const effectiveTariffId = sale.customer.profileTariffId || sale.tariffId;
+        const effectiveTariffId = sale.tariffId;
         if (!effectiveTariffId) {
           continue;
         }
@@ -960,20 +920,10 @@ export const courseSalesRouter = router({
       const skip = (input.page - 1) * input.limit;
       const scopedFilters: Record<string, unknown>[] = [];
       if (input.courseId) {
-        scopedFilters.push({
-          OR: [
-            { courseId: input.courseId },
-            { customer: { profileCourseId: input.courseId } },
-          ],
-        });
+        scopedFilters.push({ courseId: input.courseId });
       }
       if (input.tariffId) {
-        scopedFilters.push({
-          OR: [
-            { tariffId: input.tariffId },
-            { customer: { profileTariffId: input.tariffId } },
-          ],
-        });
+        scopedFilters.push({ tariffId: input.tariffId });
       }
       if (input.subTariffId) {
         scopedFilters.push({
@@ -1202,8 +1152,8 @@ export const courseSalesRouter = router({
             telegramUsername: sale.customer.telegramUsername || null,
             managerUserId: sale.manager.id,
             managerLabel,
-            courseName: profileCourseName || sale.course?.name || null,
-            tariffName: profileTariffName || sale.tariff?.name || null,
+            courseName: sale.course?.name || profileCourseName || null,
+            tariffName: sale.tariff?.name || profileTariffName || null,
             subTariffName: profileSubTariffName,
             agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
             paidAmount,
@@ -1233,20 +1183,10 @@ export const courseSalesRouter = router({
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
       const scopedFilters: Record<string, unknown>[] = [];
       if (input.courseId) {
-        scopedFilters.push({
-          OR: [
-            { courseId: input.courseId },
-            { customer: { profileCourseId: input.courseId } },
-          ],
-        });
+        scopedFilters.push({ courseId: input.courseId });
       }
       if (input.tariffId) {
-        scopedFilters.push({
-          OR: [
-            { tariffId: input.tariffId },
-            { customer: { profileTariffId: input.tariffId } },
-          ],
-        });
+        scopedFilters.push({ tariffId: input.tariffId });
       }
       if (input.subTariffId) {
         scopedFilters.push({
@@ -1461,7 +1401,7 @@ export const courseSalesRouter = router({
       >();
 
       for (const sale of sales) {
-        const effectiveTariffId = sale.customer.profileTariffId || sale.tariffId;
+        const effectiveTariffId = sale.tariffId;
         if (effectiveTariffId) {
           const row = tariffRowMap.get(effectiveTariffId);
           if (row) {
