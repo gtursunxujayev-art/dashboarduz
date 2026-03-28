@@ -3244,6 +3244,67 @@ export const customerIncomeRouter = router({
       });
     }),
 
+  customerOutstandingDebts: protectedProcedure
+    .input(
+      z.object({
+        customerNumber: z.string().min(1).max(64),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const normalizedCustomerNumber = input.customerNumber.replace(/\D/g, '').trim();
+
+      if (!normalizedCustomerNumber) {
+        return [];
+      }
+
+      const debts = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          remainingDebtAmount: { gt: 0 },
+          customer: {
+            customerNumber: normalizedCustomerNumber,
+          },
+          ...(scopedManagerUserId
+            ? {
+                managerUserId: scopedManagerUserId,
+              }
+            : {}),
+        },
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        take: 200,
+        select: {
+          id: true,
+          remainingDebtAmount: true,
+          debtAmount: true,
+          customer: {
+            select: {
+              customerNumber: true,
+              name: true,
+            },
+          },
+          course: {
+            select: { name: true },
+          },
+          tariff: {
+            select: { name: true },
+          },
+        },
+      });
+
+      return debts.map((debt) => ({
+        id: debt.id,
+        remainingDebtAmount: debt.remainingDebtAmount,
+        debtAmount: debt.debtAmount,
+        customerNumber: debt.customer.customerNumber,
+        customerName: debt.customer.name,
+        courseName: debt.course?.name || null,
+        tariffName: debt.tariff?.name || null,
+      }));
+    }),
+
   createCourse: managerProcedure
     .input(createCourseSchema)
     .mutation(async ({ ctx, input }) => {
