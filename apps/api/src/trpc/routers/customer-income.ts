@@ -4288,10 +4288,11 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Customer not found.' });
       }
 
-      const incomes = await prisma.income.findMany({
+      const sales = await prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           customerId: customer.id,
+          type: 'new_sale',
           paymentAmount: { gt: 0 },
           ...(scopedManagerUserId
             ? {
@@ -4316,14 +4317,46 @@ export const customerIncomeRouter = router({
         },
       });
 
+      const saleIds = sales.map((sale) => sale.id);
+      const saleChainPayments = saleIds.length
+        ? await prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              customerId: customer.id,
+              paymentAmount: { gt: 0 },
+              OR: [
+                { id: { in: saleIds } },
+                { relatedDebtIncomeId: { in: saleIds } },
+              ],
+              ...(scopedManagerUserId
+                ? {
+                    managerUserId: scopedManagerUserId,
+                  }
+                : {}),
+            },
+            select: {
+              id: true,
+              relatedDebtIncomeId: true,
+              paymentAmount: true,
+            },
+          })
+        : [];
+
+      const paidBySaleId = new Map<string, number>();
+      for (const payment of saleChainPayments) {
+        const saleId = payment.relatedDebtIncomeId || payment.id;
+        paidBySaleId.set(saleId, (paidBySaleId.get(saleId) ?? 0) + Number(payment.paymentAmount || 0));
+      }
+
       return {
         customer,
-        incomes: incomes.map((income) => ({
-          ...income,
-          lifecycleStatus: getIncomeLifecycleLabel(income.lifecycleStatus),
-          managerLabel: income.manager.name || income.manager.username || income.manager.id,
-          canCreateRequest: income.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE,
-          canChangeTariff: income.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE && income.type === 'new_sale',
+        incomes: sales.map((sale) => ({
+          ...sale,
+          paymentAmount: paidBySaleId.get(sale.id) ?? Number(sale.paymentAmount || 0),
+          lifecycleStatus: getIncomeLifecycleLabel(sale.lifecycleStatus),
+          managerLabel: sale.manager.name || sale.manager.username || sale.manager.id,
+          canCreateRequest: sale.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE,
+          canChangeTariff: sale.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE,
         })),
       };
     }),
@@ -4512,7 +4545,7 @@ export const customerIncomeRouter = router({
               remainingDebtAmount: true,
               course: { select: { name: true } },
               tariff: { select: { name: true } },
-              customer: { select: { customerNumber: true, name: true } },
+              customer: { select: { customerNumber: true, name: true, profileSubTariffId: true } },
               manager: { select: { name: true, username: true } },
             },
           },
@@ -4535,13 +4568,77 @@ export const customerIncomeRouter = router({
         },
       });
 
+      const profileSubTariffIds = Array.from(
+        new Set(
+          requests
+            .map((request) => request.income.customer.profileSubTariffId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+
+      const newTariffIds = Array.from(
+        new Set(
+          requests
+            .map((request) => request.newTariff?.id)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+
+      const [profileSubTariffs, newTariffSubTariffs] = await Promise.all([
+        profileSubTariffIds.length
+          ? prisma.subTariff.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                id: { in: profileSubTariffIds },
+              },
+              select: { id: true, name: true },
+            })
+          : Promise.resolve([]),
+        newTariffIds.length
+          ? prisma.subTariff.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                tariffId: { in: newTariffIds },
+                isActive: true,
+              },
+              select: { tariffId: true, name: true },
+            })
+          : Promise.resolve([]),
+      ]);
+
+      const profileSubTariffNameById = new Map(profileSubTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
+      const newTariffSubTariffNamesByTariffId = new Map<string, Set<string>>();
+      for (const subTariff of newTariffSubTariffs) {
+        const tariffId = subTariff.tariffId;
+        const bucket = newTariffSubTariffNamesByTariffId.get(tariffId) || new Set<string>();
+        bucket.add(subTariff.name.trim().toLowerCase());
+        newTariffSubTariffNamesByTariffId.set(tariffId, bucket);
+      }
+
       return requests.map((request) => ({
         ...request,
         income: {
           ...request.income,
           lifecycleStatus: getIncomeLifecycleLabel(request.income.lifecycleStatus),
           managerLabel: request.income.manager.name || request.income.manager.username || '-',
+          profileSubTariffName: request.income.customer.profileSubTariffId
+            ? profileSubTariffNameById.get(request.income.customer.profileSubTariffId) || null
+            : null,
         },
+        inferredNewSubTariffName: (() => {
+          const oldSubTariffName = request.income.customer.profileSubTariffId
+            ? profileSubTariffNameById.get(request.income.customer.profileSubTariffId) || null
+            : null;
+          if (!oldSubTariffName || !request.newTariff?.id) {
+            return null;
+          }
+          const normalizedOldName = oldSubTariffName.trim().toLowerCase();
+          const targetTariffNames = newTariffSubTariffNamesByTariffId.get(request.newTariff.id);
+          if (!targetTariffNames || !targetTariffNames.has(normalizedOldName)) {
+            return null;
+          }
+          return oldSubTariffName;
+        })(),
         requestedByLabel: request.requestedBy.name || request.requestedBy.username || request.requestedBy.id,
         reviewedByLabel: request.reviewedBy
           ? (request.reviewedBy.name || request.reviewedBy.username || request.reviewedBy.id)
@@ -4604,7 +4701,7 @@ export const customerIncomeRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
-      const sourceIncome = await prisma.income.findFirst({
+      const sourceIncomeRaw = await prisma.income.findFirst({
         where: {
           id: input.incomeId,
           tenantId: ctx.tenantId,
@@ -4618,6 +4715,7 @@ export const customerIncomeRouter = router({
         select: {
           id: true,
           type: true,
+          relatedDebtIncomeId: true,
           tenantId: true,
           customerId: true,
           courseId: true,
@@ -4628,8 +4726,53 @@ export const customerIncomeRouter = router({
         },
       });
 
-      if (!sourceIncome) {
+      if (!sourceIncomeRaw) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Selected income was not found.' });
+      }
+
+      let sourceIncome = sourceIncomeRaw;
+      if (input.type === ADJUSTMENT_TYPE_REFUND && sourceIncomeRaw.type === 'repayment') {
+        if (!sourceIncomeRaw.relatedDebtIncomeId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: "Qarzdorlik to'lovi uchun asosiy sotuv topilmadi.",
+          });
+        }
+
+        const rootSaleIncome = await prisma.income.findFirst({
+          where: {
+            id: sourceIncomeRaw.relatedDebtIncomeId,
+            tenantId: ctx.tenantId,
+            customerId: sourceIncomeRaw.customerId,
+            type: 'new_sale',
+            ...(scopedManagerUserId
+              ? {
+                  managerUserId: scopedManagerUserId,
+                }
+              : {}),
+          },
+          select: {
+            id: true,
+            type: true,
+            relatedDebtIncomeId: true,
+            tenantId: true,
+            customerId: true,
+            courseId: true,
+            tariffId: true,
+            coursePriceAmount: true,
+            paymentAmount: true,
+            lifecycleStatus: true,
+          },
+        });
+
+        if (!rootSaleIncome) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: "Refund uchun asosiy sotuv topilmadi.",
+          });
+        }
+
+        sourceIncome = rootSaleIncome;
       }
 
       if (sourceIncome.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
