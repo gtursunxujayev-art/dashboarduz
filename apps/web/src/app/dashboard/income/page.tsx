@@ -152,6 +152,7 @@ export default function IncomePage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [recentLimit, setRecentLimit] = useState(10);
+  const [recentSearchQuery, setRecentSearchQuery] = useState('');
   const customerInputWrapperRef = useRef<HTMLDivElement | null>(null);
   const [isCustomerSuggestionsOpen, setIsCustomerSuggestionsOpen] = useState(false);
 
@@ -161,12 +162,18 @@ export default function IncomePage() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
-  const incomesQuery = trpc.customerIncome.listIncomes.useQuery({ limit: recentLimit }, {
-    retry: false,
-    staleTime: 30 * 1000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+  const incomesQuery = trpc.customerIncome.listIncomes.useQuery(
+    {
+      limit: recentLimit,
+      query: recentSearchQuery.trim() || undefined,
+    },
+    {
+      retry: false,
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    },
+  );
   const searchCustomersQuery = trpc.customerIncome.searchCustomers.useQuery(
     { query: customerNumber.trim(), limit: 30 },
     {
@@ -250,17 +257,18 @@ export default function IncomePage() {
 
   const debtOptionsForCustomer = useMemo(() => {
     if (!selectedCustomer) {
-      return debtOptions;
+      return [];
     }
     return debtOptions.filter((debt: any) => debt.customerNumber === selectedCustomer.customerNumber);
   }, [debtOptions, selectedCustomer]);
+  const canUseRepayment = isExistingCustomer && debtOptionsForCustomer.length > 0;
 
   const selectedDebt = useMemo(() => {
     if (!debtSourceIncomeId) {
       return null;
     }
-    return debtOptions.find((debt: any) => debt.id === debtSourceIncomeId) || null;
-  }, [debtOptions, debtSourceIncomeId]);
+    return debtOptionsForCustomer.find((debt: any) => debt.id === debtSourceIncomeId) || null;
+  }, [debtOptionsForCustomer, debtSourceIncomeId]);
 
   const clearFieldError = (field: string) => {
     setFieldErrors((prev) => {
@@ -362,13 +370,27 @@ export default function IncomePage() {
     if (!debtSourceIncomeId) {
       return;
     }
-    const debt = debtOptions.find((item: any) => item.id === debtSourceIncomeId);
+    const debt = debtOptionsForCustomer.find((item: any) => item.id === debtSourceIncomeId);
     if (!debt) {
       return;
     }
     setCustomerNumber(sanitizeCustomerNumber(debt.customerNumber || ''));
     setCustomerName(debt.customerName || '');
-  }, [debtOptions, debtSourceIncomeId]);
+  }, [debtOptionsForCustomer, debtSourceIncomeId]);
+
+  useEffect(() => {
+    if (type !== 'repayment') {
+      return;
+    }
+    if (canUseRepayment) {
+      return;
+    }
+    setType('new_sale');
+    setDebtSourceIncomeId('');
+    clearFieldError('debtSourceIncomeId');
+    clearFieldError('type');
+    setError("Yangi yoki topilmagan mijoz uchun faqat \"Yangi sotuv\" tanlanadi.");
+  }, [canUseRepayment, type]);
 
   useEffect(() => {
     if (!courseId) {
@@ -541,6 +563,9 @@ export default function IncomePage() {
     }
 
     if (type === 'repayment') {
+      if (!canUseRepayment) {
+        nextErrors.type = "Yangi mijoz uchun faqat \"Yangi sotuv\" tanlanadi.";
+      }
       if (!debtSourceIncomeId) nextErrors.debtSourceIncomeId = 'Joriy qarzni tanlang.';
       if (paymentAmount <= 0) nextErrors.paymentInput = "To'lov 0 dan katta bo'lishi kerak.";
       if (paymentAmount > sourceDebtAmount) nextErrors.paymentInput = "To'lov joriy qarzdan katta bo'lmasin.";
@@ -777,8 +802,15 @@ export default function IncomePage() {
                 >
                   <option value="">To'lov turini tanlang</option>
                   <option value="new_sale">Yangi sotuv</option>
-                  <option value="repayment">Qarzdorlik</option>
+                  <option value="repayment" disabled={!canUseRepayment}>
+                    Qarzdorlik
+                  </option>
                 </select>
+                {!canUseRepayment && (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                    Qarzdorlik to&apos;lovi faqat mavjud qarzdor mijoz uchun ochiladi.
+                  </p>
+                )}
                 {fieldErrors.type && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.type}</p>}
               </div>
 
@@ -982,6 +1014,29 @@ export default function IncomePage() {
         </div>
 
         <div className="p-6">
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <input
+              value={recentSearchQuery}
+              onChange={(event) => {
+                setRecentSearchQuery(event.target.value);
+                setRecentLimit(10);
+              }}
+              placeholder="Mijoz raqami yoki ismi bo'yicha qidirish"
+              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setRecentSearchQuery('');
+                setRecentLimit(10);
+              }}
+              disabled={!recentSearchQuery}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              Tozalash
+            </button>
+          </div>
+
           {incomesQuery.isLoading ? (
             <p className="text-sm text-gray-600 dark:text-slate-300">Tushumlar yuklanmoqda...</p>
           ) : incomesQuery.data?.length ? (
