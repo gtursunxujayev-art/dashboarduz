@@ -105,11 +105,15 @@ function getTelegramDispatchWarning(dispatch: any): string | null {
     return null;
   }
 
+  const reason = String(dispatch.reason || '');
+  if (reason === 'skipped_by_admin') {
+    return null;
+  }
+
   if (dispatch.delivered) {
     return null;
   }
 
-  const reason = String(dispatch.reason || '');
   if (reason === 'course_not_eligible') {
     return "Telegram guruhiga yuborilmadi: kurs kategoriyasi bo'yicha mos guruh topilmadi (kurs/kategoriya sozlamasini tekshiring).";
   }
@@ -153,6 +157,7 @@ export default function IncomePage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [recentLimit, setRecentLimit] = useState(10);
   const [recentSearchQuery, setRecentSearchQuery] = useState('');
+  const [skipTelegramNotification, setSkipTelegramNotification] = useState(false);
   const customerInputWrapperRef = useRef<HTMLDivElement | null>(null);
   const [isCustomerSuggestionsOpen, setIsCustomerSuggestionsOpen] = useState(false);
 
@@ -610,6 +615,7 @@ export default function IncomePage() {
         customerNumber: customerNumberValue,
         customerName: isExistingCustomer ? undefined : customerName.trim(),
         telegramUsername: isExistingCustomer ? undefined : (telegramUsernameValue || undefined),
+        skipTelegramNotification: isAdmin ? skipTelegramNotification : undefined,
         type: type as IncomeType,
         debtSourceIncomeId: type === 'repayment' ? debtSourceIncomeId : undefined,
         courseId: type === 'new_sale' ? courseId : undefined,
@@ -638,6 +644,7 @@ export default function IncomePage() {
       setSubTariffId('');
       setCoursePriceInput('');
       setPaymentInput('');
+      setSkipTelegramNotification(false);
       setDeadline('');
       setFieldErrors({});
       await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
@@ -1027,13 +1034,26 @@ export default function IncomePage() {
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={createIncomeMutation.isLoading || formOptionsQuery.isLoading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {createIncomeMutation.isLoading ? 'Saqlanmoqda...' : 'Tushumni saqlash'}
-            </button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <button
+                type="submit"
+                disabled={createIncomeMutation.isLoading || formOptionsQuery.isLoading}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {createIncomeMutation.isLoading ? 'Saqlanmoqda...' : 'Tushumni saqlash'}
+              </button>
+              {isAdmin && (
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={skipTelegramNotification}
+                    onChange={(event) => setSkipTelegramNotification(event.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800"
+                  />
+                  Income qo&apos;shilganda Telegramga yubormaslik
+                </label>
+              )}
+            </div>
           </form>
         </div>
       </div>
