@@ -5378,6 +5378,9 @@ export const customerIncomeRouter = router({
     .input(
       z.object({
         saleIncomeId: z.string().uuid(),
+        action: z.enum(['delete', 'refund', 'relink']).default('delete'),
+        targetSaleIncomeId: z.string().uuid().optional(),
+        note: z.string().max(500).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -5392,6 +5395,8 @@ export const customerIncomeRouter = router({
           id: true,
           customerId: true,
           managerUserId: true,
+          courseId: true,
+          tariffId: true,
         },
       });
 
@@ -5412,6 +5417,7 @@ export const customerIncomeRouter = router({
         },
         select: {
           id: true,
+          paymentAmount: true,
         },
       });
       const saleChainIds = saleChain.map((item) => item.id);
@@ -5419,6 +5425,7 @@ export const customerIncomeRouter = router({
         return {
           success: true,
           deletedCount: 0,
+          mode: input.action,
         };
       }
 
@@ -5437,7 +5444,160 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const deleteResult = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const transferAmount = saleChain.reduce((sum, item) => sum + (item.paymentAmount || 0), 0);
+      let targetSaleIncomeId: string | null = null;
+      let createdRefundRequestId: string | null = null;
+
+      if (input.action === 'relink') {
+        if (!input.targetSaleIncomeId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: "Daromadni o'tkazish uchun maqsad kurs tanlanishi shart.",
+          });
+        }
+        if (input.targetSaleIncomeId === saleIncome.id) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: "Daromadni aynan shu kursga o'tkazib bo'lmaydi.",
+          });
+        }
+      }
+
+      const resultPayload = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        if (input.action === 'refund') {
+          const existingPending = await tx.incomeAdjustmentRequest.findFirst({
+            where: {
+              tenantId: ctx.tenantId,
+              incomeId: saleIncome.id,
+              status: ADJUSTMENT_STATUS_PENDING,
+            },
+            select: { id: true },
+          });
+          if (existingPending) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: "Bu kurs uchun allaqachon refund so'rovi mavjud.",
+            });
+          }
+
+          await tx.income.updateMany({
+            where: {
+              tenantId: ctx.tenantId,
+              id: { in: saleChainIds },
+            },
+            data: {
+              lifecycleStatus: INCOME_LIFECYCLE_PENDING_REFUND,
+            },
+          });
+
+          const request = await tx.incomeAdjustmentRequest.create({
+            data: {
+              tenantId: ctx.tenantId,
+              type: ADJUSTMENT_TYPE_REFUND,
+              status: ADJUSTMENT_STATUS_PENDING,
+              incomeId: saleIncome.id,
+              customerId: saleIncome.customerId,
+              requestedByUserId: ctx.user.userId,
+              reason: input.note?.trim() || "Mijoz kursini o'chirish oynasidan refund yaratildi.",
+              requestedAmount: transferAmount,
+            },
+            select: { id: true },
+          });
+          createdRefundRequestId = request.id;
+
+          await refreshCustomerProfileFromLatestActiveSale(tx, {
+            tenantId: ctx.tenantId,
+            customerId: saleIncome.customerId,
+          });
+
+          return {
+            deletedCount: 0,
+            mode: 'refund' as const,
+          };
+        }
+
+        if (input.action === 'relink') {
+          const targetSale = await tx.income.findFirst({
+            where: {
+              id: input.targetSaleIncomeId!,
+              tenantId: ctx.tenantId,
+              customerId: saleIncome.customerId,
+              type: 'new_sale',
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            },
+            select: {
+              id: true,
+              managerUserId: true,
+              courseId: true,
+              tariffId: true,
+              deadline: true,
+              remainingDebtAmount: true,
+            },
+          });
+
+          if (!targetSale) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: "Daromadni ulash uchun tanlangan kurs topilmadi.",
+            });
+          }
+
+          if (transferAmount > (targetSale.remainingDebtAmount || 0)) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: "O'tkaziladigan to'lov summasi tanlangan kurs qarzidan katta. Boshqa kurs tanlang yoki refund variantidan foydalaning.",
+            });
+          }
+
+          if (transferAmount > 0) {
+            const nextRemainingDebt = Math.max((targetSale.remainingDebtAmount || 0) - transferAmount, 0);
+            const transferDate = new Date();
+
+            await tx.income.create({
+              data: {
+                tenantId: ctx.tenantId,
+                customerId: saleIncome.customerId,
+                managerUserId: saleIncome.managerUserId || targetSale.managerUserId,
+                type: 'repayment',
+                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                relatedDebtIncomeId: targetSale.id,
+                courseId: targetSale.courseId,
+                tariffId: targetSale.tariffId,
+                entryDate: transferDate,
+                deadline: targetSale.deadline,
+                debtAmount: targetSale.remainingDebtAmount || 0,
+                paymentAmount: transferAmount,
+                remainingDebtAmount: nextRemainingDebt,
+              },
+            });
+
+            await tx.income.update({
+              where: { id: targetSale.id },
+              data: {
+                remainingDebtAmount: nextRemainingDebt,
+              },
+            });
+          }
+
+          const deleted = await tx.income.deleteMany({
+            where: {
+              tenantId: ctx.tenantId,
+              id: { in: saleChainIds },
+            },
+          });
+          targetSaleIncomeId = targetSale.id;
+
+          await refreshCustomerProfileFromLatestActiveSale(tx, {
+            tenantId: ctx.tenantId,
+            customerId: saleIncome.customerId,
+          });
+
+          return {
+            deletedCount: deleted.count,
+            mode: 'relink' as const,
+          };
+        }
+
         const deleted = await tx.income.deleteMany({
           where: {
             tenantId: ctx.tenantId,
@@ -5450,28 +5610,72 @@ export const customerIncomeRouter = router({
           customerId: saleIncome.customerId,
         });
 
-        return deleted;
+        return {
+          deletedCount: deleted.count,
+          mode: 'delete' as const,
+        };
       });
 
       await prisma.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
-          action: 'customer_course_delete',
+          action: input.action === 'refund'
+            ? 'customer_course_refund_request_create'
+            : (input.action === 'relink' ? 'customer_course_relink' : 'customer_course_delete'),
           resource: 'income',
           resourceId: saleIncome.id,
           metadata: {
             customerId: saleIncome.customerId,
             saleIncomeId: saleIncome.id,
+            sourceCourseId: saleIncome.courseId,
+            sourceTariffId: saleIncome.tariffId,
+            transferAmount,
+            targetSaleIncomeId,
+            refundRequestId: createdRefundRequestId,
+            action: input.action,
             managerUserId: saleIncome.managerUserId,
-            deletedCount: deleteResult.count,
+            deletedCount: resultPayload.deletedCount,
           },
         },
       });
 
+      if (createdRefundRequestId) {
+        try {
+          await sendRefundRequestedTelegram({
+            tenantId: ctx.tenantId,
+            requestId: createdRefundRequestId,
+            requestedByUserId: ctx.user.userId,
+          });
+        } catch (error) {
+          console.error('[Income][Telegram] Refund request notification failed (non-blocking)', {
+            tenantId: ctx.tenantId,
+            requestId: createdRefundRequestId,
+            error: String((error as any)?.message || error),
+          });
+        }
+
+        try {
+          await notifyFinanceUsersRefundRequested({
+            tenantId: ctx.tenantId,
+            requestId: createdRefundRequestId,
+            requestedByUserId: ctx.user.userId,
+          });
+        } catch (error) {
+          console.error('[Income][Telegram] Finance direct notification for refund request failed (non-blocking)', {
+            tenantId: ctx.tenantId,
+            requestId: createdRefundRequestId,
+            error: String((error as any)?.message || error),
+          });
+        }
+      }
+
       return {
         success: true,
-        deletedCount: deleteResult.count,
+        deletedCount: resultPayload.deletedCount,
+        mode: resultPayload.mode,
+        targetSaleIncomeId,
+        refundRequestId: createdRefundRequestId,
       };
     }),
 
