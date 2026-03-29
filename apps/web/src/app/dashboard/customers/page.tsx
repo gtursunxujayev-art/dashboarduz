@@ -301,6 +301,15 @@ export default function CustomersPage() {
     }
   }, [courseEditTariffId, courseEditSubTariffId, editSubTariffOptions]);
 
+  useEffect(() => {
+    if (!editingSaleIncomeId || !courseEditTariffId) {
+      return;
+    }
+    if (editSubTariffOptions.length > 0 && !courseEditSubTariffId) {
+      setCourseEditSubTariffId(editSubTariffOptions[0].id);
+    }
+  }, [editingSaleIncomeId, courseEditTariffId, courseEditSubTariffId, editSubTariffOptions]);
+
   const selectedCount = selectedCustomerIds.length;
   const allVisibleIds = useMemo(() => customers.map((customer: any) => customer.id), [customers]);
   const isAllSelected = allVisibleIds.length > 0 && allVisibleIds.every((id: string) => selectedCustomerIds.includes(id));
