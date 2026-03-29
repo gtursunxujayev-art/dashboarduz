@@ -8,6 +8,7 @@ const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive'])
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 const INCOME_LIFECYCLE_ACTIVE = 'active';
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
 
 type CourseSalesRange = z.infer<typeof courseSalesRangeSchema>;
 
@@ -77,6 +78,18 @@ function normalizeSubTariffName(value: unknown): string {
   return String(value || '').trim().toLowerCase();
 }
 
+function extractSaleSubTariffId(meta: unknown): string | null {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return null;
+  }
+  const candidate = (meta as Record<string, unknown>)[SALE_SUB_TARIFF_META_KEY];
+  if (typeof candidate !== 'string') {
+    return null;
+  }
+  const normalized = candidate.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function buildCategoryLabel(category: string): string {
   const key = String(category || '').trim().toLowerCase();
   if (key === 'online') return 'Online';
@@ -105,6 +118,7 @@ function buildCustomerCoursesByCustomer(
     customerId: string;
     entryDate: Date;
     remainingDebtAmount: number;
+    legacyImportMeta: unknown;
     course: { id: string; name: string } | null;
     tariff: { id: string; name: string } | null;
     customer: {
@@ -117,14 +131,17 @@ function buildCustomerCoursesByCustomer(
 ): Map<string, CustomerCourseEntry[]> {
   const map = new Map<string, CustomerCourseEntry[]>();
   for (const sale of activeSales) {
+    const saleSubTariffId = extractSaleSubTariffId(sale.legacyImportMeta);
     const isCurrentProfileSale = Boolean(
       sale.customer.profileCourseId
       && sale.customer.profileTariffId
       && sale.customer.profileCourseId === sale.course?.id
       && sale.customer.profileTariffId === sale.tariff?.id,
     );
-    const subTariffName = isCurrentProfileSale && sale.customer.profileSubTariffId
-      ? subTariffNameById.get(sale.customer.profileSubTariffId) || null
+    const profileSubTariffId = isCurrentProfileSale ? (sale.customer.profileSubTariffId || null) : null;
+    const effectiveSubTariffId = saleSubTariffId || profileSubTariffId;
+    const subTariffName = effectiveSubTariffId
+      ? subTariffNameById.get(effectiveSubTariffId) || null
       : null;
     const labelParts = [sale.course?.name || null, sale.tariff?.name || null, subTariffName].filter(Boolean);
     const label = labelParts.length ? labelParts.join(' / ') : "Noma'lum kurs";
@@ -133,7 +150,7 @@ function buildCustomerCoursesByCustomer(
       saleIncomeId: sale.id,
       courseId: sale.course?.id || null,
       tariffId: sale.tariff?.id || null,
-      subTariffId: isCurrentProfileSale ? sale.customer.profileSubTariffId || null : null,
+      subTariffId: effectiveSubTariffId || null,
       courseName: sale.course?.name || null,
       tariffName: sale.tariff?.name || null,
       subTariffName,
@@ -311,11 +328,6 @@ export const courseSalesRouter = router({
       if (input.tariffId) {
         scopedFilters.push({ tariffId: input.tariffId });
       }
-      if (input.subTariffId) {
-        scopedFilters.push({
-          customer: { profileSubTariffId: input.subTariffId },
-        });
-      }
 
       const matchedSales = await prisma.income.findMany({
         where: {
@@ -491,6 +503,7 @@ export const courseSalesRouter = router({
                 profileSubTariffId: true,
               },
             },
+            legacyImportMeta: true,
             manager: {
               select: {
                 id: true,
@@ -523,6 +536,14 @@ export const courseSalesRouter = router({
             .filter((value): value is string => Boolean(value)),
         ),
       );
+      const saleSubTariffIds = Array.from(
+        new Set(
+          sales
+            .map((sale) => extractSaleSubTariffId(sale.legacyImportMeta))
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+      const combinedSubTariffIds = Array.from(new Set([...profileSubTariffIds, ...saleSubTariffIds]));
       const profileCourseIds = Array.from(
         new Set(
           sales
@@ -557,11 +578,11 @@ export const courseSalesRouter = router({
               },
             })
           : Promise.resolve([]),
-        profileSubTariffIds.length > 0
+        combinedSubTariffIds.length > 0
           ? prisma.subTariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
-                id: { in: profileSubTariffIds },
+                id: { in: combinedSubTariffIds },
               },
               select: {
                 id: true,
@@ -613,6 +634,7 @@ export const courseSalesRouter = router({
                 tariff: {
                   select: { id: true, name: true },
                 },
+                legacyImportMeta: true,
                 customer: {
                   select: {
                     profileCourseId: true,
@@ -634,6 +656,7 @@ export const courseSalesRouter = router({
           customerId: string;
           entryDate: Date;
           remainingDebtAmount: number;
+          legacyImportMeta: unknown;
           course: { id: string; name: string } | null;
           tariff: { id: string; name: string } | null;
           customer: {
@@ -677,6 +700,10 @@ export const courseSalesRouter = router({
           const profileSubTariffName = sale.customer.profileSubTariffId
             ? subTariffNameById.get(sale.customer.profileSubTariffId) || null
             : null;
+          const saleSubTariffId = extractSaleSubTariffId(sale.legacyImportMeta);
+          const resolvedSubTariffName = saleSubTariffId
+            ? subTariffNameById.get(saleSubTariffId) || null
+            : profileSubTariffName;
           return {
             saleId: sale.id,
             customerId: sale.customerId,
@@ -690,7 +717,7 @@ export const courseSalesRouter = router({
             profileSubTariffId: sale.customer.profileSubTariffId || null,
             courseName: sale.course?.name || profileCourseName || null,
             tariffName: sale.tariff?.name || profileTariffName || null,
-            subTariffName: profileSubTariffName,
+            subTariffName: resolvedSubTariffName,
             agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
             paidAmount,
             debtAmount: sale.remainingDebtAmount ?? 0,
@@ -777,10 +804,12 @@ export const courseSalesRouter = router({
             entryDate: true,
             customer: {
               select: {
+                profileCourseId: true,
                 profileTariffId: true,
                 profileSubTariffId: true,
               },
             },
+            legacyImportMeta: true,
           },
         }),
         input.subTariffId
@@ -798,7 +827,26 @@ export const courseSalesRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Kurs topilmadi.' });
       }
 
-      const saleIds = matchedSales.map((sale) => sale.id);
+      const salesWithResolvedSubTariff = matchedSales.map((sale) => {
+        const saleSubTariffId = extractSaleSubTariffId(sale.legacyImportMeta);
+        const profileMatchedSubTariffId = (
+          sale.customer.profileCourseId === input.courseId
+          && sale.customer.profileTariffId
+          && sale.customer.profileTariffId === sale.tariffId
+        )
+          ? sale.customer.profileSubTariffId || null
+          : null;
+        return {
+          ...sale,
+          resolvedSubTariffId: saleSubTariffId || profileMatchedSubTariffId || null,
+        };
+      });
+
+      const filteredSales = input.subTariffId
+        ? salesWithResolvedSubTariff.filter((sale) => sale.resolvedSubTariffId === input.subTariffId)
+        : salesWithResolvedSubTariff;
+
+      const saleIds = filteredSales.map((sale) => sale.id);
       const saleIdSet = new Set(saleIds);
       const rangeIncomeBySaleId = new Map<string, number>();
       const currentIncomeBySaleId = new Map<string, number>();
@@ -860,7 +908,7 @@ export const courseSalesRouter = router({
       let rangeAgreementAmount = 0;
       let currentAgreementAmount = 0;
       let currentDebtAmount = 0;
-      for (const sale of matchedSales) {
+      for (const sale of filteredSales) {
         currentAgreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
           rangeAgreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
@@ -869,7 +917,7 @@ export const courseSalesRouter = router({
       }
       const rangeIncomeAmount = Array.from(rangeIncomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
       const currentIncomeAmount = Array.from(currentIncomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
-      const currentCustomerCount = new Set(matchedSales.map((sale) => sale.customerId)).size;
+      const currentCustomerCount = new Set(filteredSales.map((sale) => sale.customerId)).size;
 
       const tariffCustomerSets = new Map<string, Set<string>>();
       for (const tariff of course.tariffs) {
@@ -884,7 +932,7 @@ export const courseSalesRouter = router({
           subTariffCustomerSets.set(subTariff.id, new Set());
         }
       }
-      for (const sale of matchedSales) {
+      for (const sale of filteredSales) {
         const effectiveTariffId = sale.tariffId;
         if (!effectiveTariffId) {
           continue;
@@ -893,8 +941,8 @@ export const courseSalesRouter = router({
         if (set) {
           set.add(sale.customerId);
         }
-        if (selectedTariff && effectiveTariffId === selectedTariff.id && sale.customer.profileSubTariffId) {
-          const subTariffSet = subTariffCustomerSets.get(sale.customer.profileSubTariffId);
+        if (selectedTariff && effectiveTariffId === selectedTariff.id && sale.resolvedSubTariffId) {
+          const subTariffSet = subTariffCustomerSets.get(sale.resolvedSubTariffId);
           if (subTariffSet) {
             subTariffSet.add(sale.customerId);
           }
@@ -1010,6 +1058,7 @@ export const courseSalesRouter = router({
                 profileSubTariffId: true,
               },
             },
+            legacyImportMeta: true,
             manager: {
               select: {
                 id: true,
@@ -1042,6 +1091,14 @@ export const courseSalesRouter = router({
             .filter((value): value is string => Boolean(value)),
         ),
       );
+      const saleSubTariffIds = Array.from(
+        new Set(
+          sales
+            .map((sale) => extractSaleSubTariffId(sale.legacyImportMeta))
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+      const combinedSubTariffIds = Array.from(new Set([...profileSubTariffIds, ...saleSubTariffIds]));
       const profileCourseIds = Array.from(
         new Set(
           sales
@@ -1076,11 +1133,11 @@ export const courseSalesRouter = router({
               },
             })
           : Promise.resolve([]),
-        profileSubTariffIds.length > 0
+        combinedSubTariffIds.length > 0
           ? prisma.subTariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
-                id: { in: profileSubTariffIds },
+                id: { in: combinedSubTariffIds },
               },
               select: {
                 id: true,
@@ -1132,6 +1189,7 @@ export const courseSalesRouter = router({
                 tariff: {
                   select: { id: true, name: true },
                 },
+                legacyImportMeta: true,
                 customer: {
                   select: {
                     profileCourseId: true,
@@ -1153,6 +1211,7 @@ export const courseSalesRouter = router({
           customerId: string;
           entryDate: Date;
           remainingDebtAmount: number;
+          legacyImportMeta: unknown;
           course: { id: string; name: string } | null;
           tariff: { id: string; name: string } | null;
           customer: {
@@ -1196,6 +1255,10 @@ export const courseSalesRouter = router({
           const profileSubTariffName = sale.customer.profileSubTariffId
             ? subTariffNameById.get(sale.customer.profileSubTariffId) || null
             : null;
+          const saleSubTariffId = extractSaleSubTariffId(sale.legacyImportMeta);
+          const resolvedSubTariffName = saleSubTariffId
+            ? subTariffNameById.get(saleSubTariffId) || null
+            : profileSubTariffName;
           return {
             saleId: sale.id,
             customerId: sale.customerId,
@@ -1209,7 +1272,7 @@ export const courseSalesRouter = router({
             profileSubTariffId: sale.customer.profileSubTariffId || null,
             courseName: sale.course?.name || profileCourseName || null,
             tariffName: sale.tariff?.name || profileTariffName || null,
-            subTariffName: profileSubTariffName,
+            subTariffName: resolvedSubTariffName,
             agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
             paidAmount,
             debtAmount: sale.remainingDebtAmount ?? 0,
