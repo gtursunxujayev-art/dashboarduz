@@ -1,6 +1,6 @@
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import {
   bulkIncomeImportFromGoogleSheetSchema,
   bulkIncomeImportSchema,
@@ -3296,6 +3296,9 @@ export const customerIncomeRouter = router({
           customerNumber: true,
           name: true,
           telegramUsername: true,
+          profileCourseId: true,
+          profileTariffId: true,
+          profileSubTariffId: true,
         },
       });
 
@@ -3764,6 +3767,8 @@ export const customerIncomeRouter = router({
           legacyImportMeta: true,
           customer: {
             select: {
+              profileCourseId: true,
+              profileTariffId: true,
               profileSubTariffId: true,
             },
           },
@@ -3821,8 +3826,18 @@ export const customerIncomeRouter = router({
 
         const nextCourseId = input.courseId ?? income.courseId;
         const nextTariffId = input.tariffId ?? income.tariffId;
-        const requestedSubTariffId = input.subTariffId === undefined
+        const existingSaleSubTariffId = extractSaleSubTariffId(income.legacyImportMeta);
+        const isProfileMatchingNextSelection = Boolean(
+          income.customer?.profileCourseId
+          && income.customer?.profileTariffId
+          && income.customer.profileCourseId === nextCourseId
+          && income.customer.profileTariffId === nextTariffId,
+        );
+        const profileFallbackSubTariffId = isProfileMatchingNextSelection
           ? (income.customer?.profileSubTariffId ?? null)
+          : null;
+        const requestedSubTariffId = input.subTariffId === undefined
+          ? (existingSaleSubTariffId || profileFallbackSubTariffId)
           : input.subTariffId;
         const nextCoursePriceAmount = input.coursePriceAmount ?? income.coursePriceAmount ?? 0;
         const nextPaymentAmount = input.paymentAmount ?? income.paymentAmount;
@@ -4349,6 +4364,9 @@ export const customerIncomeRouter = router({
           customerNumber: true,
           name: true,
           telegramUsername: true,
+          profileCourseId: true,
+          profileTariffId: true,
+          profileSubTariffId: true,
         },
       });
 
@@ -4453,6 +4471,9 @@ export const customerIncomeRouter = router({
           customerNumber: true,
           name: true,
           telegramUsername: true,
+          profileCourseId: true,
+          profileTariffId: true,
+          profileSubTariffId: true,
         },
       });
 
@@ -4481,6 +4502,7 @@ export const customerIncomeRouter = router({
             coursePriceAmount: true,
             paymentAmount: true,
             remainingDebtAmount: true,
+            legacyImportMeta: true,
             course: { select: { id: true, name: true } },
             tariff: { select: { id: true, name: true } },
             manager: { select: { id: true, name: true, username: true } },
@@ -4506,11 +4528,13 @@ export const customerIncomeRouter = router({
             paymentAmount: true,
             remainingDebtAmount: true,
             relatedDebtIncomeId: true,
+            legacyImportMeta: true,
             course: { select: { id: true, name: true } },
             tariff: { select: { id: true, name: true } },
             relatedDebtIncome: {
               select: {
                 id: true,
+                legacyImportMeta: true,
                 course: { select: { id: true, name: true } },
                 tariff: { select: { id: true, name: true } },
               },
@@ -4520,9 +4544,54 @@ export const customerIncomeRouter = router({
         }),
       ]);
 
+      const collectedSubTariffIds = new Set<string>();
+      const maybeAddSubTariffId = (value: string | null) => {
+        if (value) {
+          collectedSubTariffIds.add(value);
+        }
+      };
+
+      for (const sale of courseSales as Array<{ legacyImportMeta: Prisma.JsonValue | null }>) {
+        maybeAddSubTariffId(extractSaleSubTariffId(sale.legacyImportMeta));
+      }
+      for (const payment of paymentHistory as Array<{
+        legacyImportMeta: Prisma.JsonValue | null;
+        relatedDebtIncome: { legacyImportMeta: Prisma.JsonValue | null } | null;
+      }>) {
+        maybeAddSubTariffId(extractSaleSubTariffId(payment.legacyImportMeta));
+        maybeAddSubTariffId(extractSaleSubTariffId(payment.relatedDebtIncome?.legacyImportMeta));
+      }
+      maybeAddSubTariffId(customer.profileSubTariffId || null);
+
+      const subTariffNameById = new Map<string, string>();
+      if (collectedSubTariffIds.size > 0) {
+        const subTariffs = await prisma.subTariff.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: Array.from(collectedSubTariffIds) },
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        });
+        for (const subTariff of subTariffs) {
+          subTariffNameById.set(subTariff.id, subTariff.name);
+        }
+      }
+
       return {
         customer,
         courses: courseSales.map((sale) => ({
+          subTariffName: (() => {
+            const saleSubTariffId = extractSaleSubTariffId(sale.legacyImportMeta);
+            const profileMatchedSubTariffId = customer.profileCourseId === sale.course?.id
+              && customer.profileTariffId === sale.tariff?.id
+              ? (customer.profileSubTariffId || null)
+              : null;
+            const effectiveSubTariffId = saleSubTariffId || profileMatchedSubTariffId;
+            return effectiveSubTariffId ? subTariffNameById.get(effectiveSubTariffId) || null : null;
+          })(),
           saleIncomeId: sale.id,
           lifecycleStatus: getIncomeLifecycleLabel(sale.lifecycleStatus),
           entryDate: sale.entryDate,
@@ -4545,6 +4614,16 @@ export const customerIncomeRouter = router({
             remainingDebtAmount: income.remainingDebtAmount ?? 0,
             courseName: income.course?.name || fallbackCourse,
             tariffName: income.tariff?.name || fallbackTariff,
+            subTariffName: (() => {
+              const saleSubTariffId = extractSaleSubTariffId(income.legacyImportMeta)
+                || extractSaleSubTariffId(income.relatedDebtIncome?.legacyImportMeta);
+              const profileMatchedSubTariffId = customer.profileCourseId === (income.course?.id || income.relatedDebtIncome?.course?.id || null)
+                && customer.profileTariffId === (income.tariff?.id || income.relatedDebtIncome?.tariff?.id || null)
+                ? (customer.profileSubTariffId || null)
+                : null;
+              const effectiveSubTariffId = saleSubTariffId || profileMatchedSubTariffId;
+              return effectiveSubTariffId ? subTariffNameById.get(effectiveSubTariffId) || null : null;
+            })(),
             managerLabel: income.manager.name || income.manager.username || income.manager.id,
             debtSourceIncomeId: income.relatedDebtIncomeId || income.id,
           };
@@ -6163,8 +6242,9 @@ export const customerIncomeRouter = router({
             message: "Yangi subtarif tanlangan tarifga tegishli emas yoki faol emas.",
           });
         }
-        if (!nextSubTariffId && activeSubTariffs.length > 0) {
-          nextSubTariffId = activeSubTariffs[0].id;
+        const firstActiveSubTariff = activeSubTariffs[0];
+        if (!nextSubTariffId && firstActiveSubTariff) {
+          nextSubTariffId = firstActiveSubTariff.id;
         }
       }
 
@@ -6330,12 +6410,6 @@ export const customerIncomeRouter = router({
               profileTariffId: input.tariffId,
             },
           ],
-        });
-      }
-
-      if (input?.subTariffId) {
-        andConditions.push({
-          profileSubTariffId: input.subTariffId,
         });
       }
 
@@ -6666,8 +6740,18 @@ export const customerIncomeRouter = router({
         aggregatesByCustomer.set(income.customerId, current);
       }
 
+      const customersAfterSubTariffFilter = input?.subTariffId
+        ? customers.filter((customer) => {
+            const entries = courseEntriesByCustomer.get(customer.id) || [];
+            if (entries.some((entry) => entry.subTariffId === input.subTariffId)) {
+              return true;
+            }
+            return customer.profileSubTariffId === input.subTariffId;
+          })
+        : customers;
+
       return {
-        customers: customers.map((customer) => {
+        customers: customersAfterSubTariffFilter.map((customer) => {
           const aggregate = aggregatesByCustomer.get(customer.id);
           const courseEntries = courseEntriesByCustomer.get(customer.id) || [];
           const profileCourseName = customer.profileCourseId ? profileCourseNameById.get(customer.profileCourseId) || null : null;
