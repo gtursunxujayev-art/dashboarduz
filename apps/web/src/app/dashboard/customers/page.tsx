@@ -1417,7 +1417,7 @@ export default function CustomersPage() {
                           <thead className="bg-gray-50 dark:bg-slate-800">
                             <tr>
                               <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Sana</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Kurs / tarif</th>
+                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Kurs / tarif / subtarif</th>
                               <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Mas&apos;ul agent</th>
                               <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Kelishuv</th>
                               <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Boshlang&apos;ich to&apos;lov</th>
@@ -1430,7 +1430,7 @@ export default function CustomersPage() {
                               <tr key={item.saleIncomeId}>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDate(item.entryDate)}</td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
-                                  {[item.courseName, item.tariffName].filter(Boolean).join(' / ')}
+                                  {[item.courseName, item.tariffName, item.subTariffName].filter(Boolean).join(' / ')}
                                 </td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{item.managerLabel}</td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatAmount(item.agreementAmount || 0)}</td>
@@ -1457,7 +1457,7 @@ export default function CustomersPage() {
                               <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Sana</th>
                               <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Tur</th>
                               <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Mas&apos;ul agent</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Kurs / tarif</th>
+                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Kurs / tarif / subtarif</th>
                               <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">To&apos;lov summasi</th>
                               <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">To&apos;lovdan keyingi qarz</th>
                               <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Holat</th>
@@ -1472,7 +1472,7 @@ export default function CustomersPage() {
                                 </td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{payment.managerLabel}</td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
-                                  {[payment.courseName, payment.tariffName].filter(Boolean).join(' / ')}
+                                  {[payment.courseName, payment.tariffName, payment.subTariffName].filter(Boolean).join(' / ')}
                                 </td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatAmount(payment.paymentAmount || 0)}</td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatAmount(payment.remainingDebtAmount || 0)}</td>
