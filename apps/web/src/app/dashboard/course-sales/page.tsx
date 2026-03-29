@@ -227,6 +227,15 @@ export default function CourseSalesPage() {
     }
   }, [courseEditTariffId, courseEditSubTariffId, editSubTariffOptions]);
 
+  useEffect(() => {
+    if (!editingSaleIncomeId || !courseEditTariffId) {
+      return;
+    }
+    if (editSubTariffOptions.length > 0 && !courseEditSubTariffId) {
+      setCourseEditSubTariffId(editSubTariffOptions[0].id);
+    }
+  }, [editingSaleIncomeId, courseEditTariffId, courseEditSubTariffId, editSubTariffOptions]);
+
   const applySearch = () => setSearchQuery(searchInput.trim());
   const clearSearch = () => {
     setSearchInput('');
