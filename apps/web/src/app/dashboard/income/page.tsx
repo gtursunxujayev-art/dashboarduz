@@ -26,6 +26,7 @@ type EditIncomeForm = {
   deadline: string;
   courseId: string;
   tariffId: string;
+  subTariffId: string;
   coursePriceInput: string;
 };
 
@@ -69,6 +70,20 @@ function formatAmount(value: number | null | undefined): string {
     return '0';
   }
   return formatDigits(String(Math.max(value, 0)));
+}
+
+function getDisplayedRemainingDebtForIncomeRow(income: any): number {
+  if (!income || typeof income !== 'object') {
+    return 0;
+  }
+
+  if (income.type === 'new_sale') {
+    const agreementAmount = Number(income.debtAmount ?? income.coursePriceAmount ?? 0);
+    const firstPaymentAmount = Number(income.paymentAmount ?? 0);
+    return Math.max(agreementAmount - firstPaymentAmount, 0);
+  }
+
+  return Math.max(Number(income.remainingDebtAmount ?? 0), 0);
 }
 
 function formatDateForInput(value: string | Date | null | undefined): string {
@@ -331,6 +346,21 @@ export default function IncomePage() {
     const course = courseOptions.find((item: any) => item.id === editForm.courseId);
     return Array.isArray(course?.tariffs) ? course.tariffs : [];
   }, [courseOptions, editForm?.courseId]);
+  const editSubTariffOptions = useMemo(() => {
+    if (!editForm?.tariffId) {
+      return [];
+    }
+    const tariff = editTariffOptions.find((item: any) => item.id === editForm.tariffId);
+    return Array.isArray(tariff?.subTariffs) ? tariff.subTariffs : [];
+  }, [editForm?.tariffId, editTariffOptions]);
+  const editDebtAfterFirstPayment = useMemo(() => {
+    if (!editForm || editForm.type !== 'new_sale') {
+      return 0;
+    }
+    const agreementAmount = parseAmount(editForm.coursePriceInput);
+    const firstPaymentAmount = parseAmount(editForm.paymentInput);
+    return Math.max(agreementAmount - firstPaymentAmount, 0);
+  }, [editForm]);
 
   const coursePriceAmount = parseAmount(coursePriceInput);
   const paymentAmount = parseAmount(paymentInput);
@@ -462,6 +492,28 @@ export default function IncomePage() {
     }
   }, [editForm, editTariffOptions]);
 
+  useEffect(() => {
+    if (!editForm || editForm.type !== 'new_sale') {
+      return;
+    }
+    if (!editForm.tariffId) {
+      if (editForm.subTariffId) {
+        setEditForm((prev) => (prev ? { ...prev, subTariffId: '' } : prev));
+      }
+      return;
+    }
+    if (!editSubTariffOptions.length) {
+      if (editForm.subTariffId) {
+        setEditForm((prev) => (prev ? { ...prev, subTariffId: '' } : prev));
+      }
+      return;
+    }
+    const exists = editSubTariffOptions.some((subTariff: any) => subTariff.id === editForm.subTariffId);
+    if (!exists) {
+      setEditForm((prev) => (prev ? { ...prev, subTariffId: '' } : prev));
+    }
+  }, [editForm, editSubTariffOptions]);
+
   const handleDeleteIncome = async (incomeId: string) => {
     if (!isAdmin) {
       return;
@@ -499,6 +551,11 @@ export default function IncomePage() {
       deadline: formatDateForInput(income.deadline),
       courseId: income.courseId || '',
       tariffId: income.tariffId || '',
+      subTariffId:
+        income.customer?.profileCourseId === income.courseId
+        && income.customer?.profileTariffId === income.tariffId
+        ? (income.customer?.profileSubTariffId || '')
+        : '',
       coursePriceInput: formatAmount(income.coursePriceAmount || 0),
     });
   };
@@ -549,8 +606,13 @@ export default function IncomePage() {
         setEditError('Tarif tanlang.');
         return;
       }
+      if (editSubTariffOptions.length > 0 && !editForm.subTariffId) {
+        setEditError('Subtarif tanlang.');
+        return;
+      }
       payload.courseId = editForm.courseId;
       payload.tariffId = editForm.tariffId;
+      payload.subTariffId = editSubTariffOptions.length > 0 ? editForm.subTariffId : null;
       payload.coursePriceAmount = coursePriceAmountValue;
     }
 
@@ -1137,7 +1199,9 @@ export default function IncomePage() {
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(income.paymentAmount)}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(income.remainingDebtAmount)}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
+                          {formatAmount(getDisplayedRemainingDebtForIncomeRow(income))}
+                        </td>
                         {isAdmin && (
                           <td className="whitespace-nowrap px-4 py-3 text-sm">
                             <div className="flex items-center gap-2">
@@ -1290,6 +1354,35 @@ export default function IncomePage() {
                     </div>
                   </div>
 
+                  {editSubTariffOptions.length > 0 && (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Subtarif</label>
+                        <select
+                          value={editForm.subTariffId}
+                          onChange={(event) =>
+                            setEditForm((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    subTariffId: event.target.value,
+                                  }
+                                : prev,
+                            )
+                          }
+                          className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                        >
+                          <option value="">Subtarifni tanlang</option>
+                          {editSubTariffOptions.map((subTariff: any) => (
+                            <option key={subTariff.id} value={subTariff.id}>
+                              {subTariff.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Kurs narxi</label>
@@ -1352,6 +1445,19 @@ export default function IncomePage() {
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                 />
               </div>
+
+              {editForm.type === 'new_sale' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">
+                    Birinchi to'lovdan keyingi qarz
+                  </label>
+                  <input
+                    value={formatAmount(editDebtAfterFirstPayment)}
+                    readOnly
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-5 py-4 dark:border-slate-700">
