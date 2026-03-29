@@ -3757,20 +3757,19 @@ export const customerIncomeRouter = router({
         : (input.deadline === null ? null : parseDateInput(input.deadline));
 
       if (income.type === 'new_sale') {
-        const linkedRepayments = await prisma.income.count({
+        const linkedRepayments = await prisma.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             type: 'repayment',
             relatedDebtIncomeId: income.id,
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          },
+          orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            id: true,
+            paymentAmount: true,
           },
         });
-
-        if (linkedRepayments > 0) {
-          throw new TRPCError({
-            code: 'PRECONDITION_FAILED',
-            message: 'This sale has repayments. Edit repayments first.',
-          });
-        }
 
         const nextManagerUserId = input.managerUserId ?? income.managerUserId;
         await assertManagerBelongsToTenant(ctx.tenantId, nextManagerUserId);
@@ -3779,11 +3778,20 @@ export const customerIncomeRouter = router({
         const nextTariffId = input.tariffId ?? income.tariffId;
         const nextCoursePriceAmount = input.coursePriceAmount ?? income.coursePriceAmount ?? 0;
         const nextPaymentAmount = input.paymentAmount ?? income.paymentAmount;
+        const totalRepaymentPaid = linkedRepayments.reduce((sum, repayment) => sum + Number(repayment.paymentAmount || 0), 0);
+        const totalPaidForSale = nextPaymentAmount + totalRepaymentPaid;
 
         if (!nextCourseId || !nextTariffId) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message: 'Course and tariff are required for a new sale.',
+          });
+        }
+
+        if (nextCoursePriceAmount < totalPaidForSale) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: "Agreement amount cannot be less than total paid amount for this sale.",
           });
         }
 
@@ -3811,23 +3819,53 @@ export const customerIncomeRouter = router({
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course or tariff not found.' });
         }
 
-        const remainingDebtAmount = Math.max(nextCoursePriceAmount - nextPaymentAmount, 0);
-
-        const updated = await prisma.income.update({
-          where: { id: income.id },
-          data: {
-            managerUserId: nextManagerUserId,
-            entryDate: parsedEntryDate ?? income.entryDate,
-            deadline: remainingDebtAmount > 0
-              ? (parsedDeadline !== undefined ? parsedDeadline : income.deadline)
-              : null,
-            courseId: nextCourseId,
-            tariffId: nextTariffId,
-            coursePriceAmount: nextCoursePriceAmount,
-            debtAmount: nextCoursePriceAmount,
-            paymentAmount: nextPaymentAmount,
+        let rollingDebt = Math.max(nextCoursePriceAmount - nextPaymentAmount, 0);
+        const repaymentDebtStates = linkedRepayments.map((repayment) => {
+          const debtAmount = rollingDebt;
+          const remainingDebtAmount = Math.max(debtAmount - Number(repayment.paymentAmount || 0), 0);
+          rollingDebt = remainingDebtAmount;
+          return {
+            id: repayment.id,
+            debtAmount,
             remainingDebtAmount,
-          },
+          };
+        });
+
+        const sourceRemainingDebtAmount = rollingDebt;
+
+        const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+          const updatedSale = await tx.income.update({
+            where: { id: income.id },
+            data: {
+              managerUserId: nextManagerUserId,
+              entryDate: parsedEntryDate ?? income.entryDate,
+              deadline: sourceRemainingDebtAmount > 0
+                ? (parsedDeadline !== undefined ? parsedDeadline : income.deadline)
+                : null,
+              courseId: nextCourseId,
+              tariffId: nextTariffId,
+              coursePriceAmount: nextCoursePriceAmount,
+              debtAmount: nextCoursePriceAmount,
+              paymentAmount: nextPaymentAmount,
+              remainingDebtAmount: sourceRemainingDebtAmount,
+            },
+          });
+
+          if (repaymentDebtStates.length > 0) {
+            for (const repaymentState of repaymentDebtStates) {
+              await tx.income.update({
+                where: { id: repaymentState.id },
+                data: {
+                  courseId: nextCourseId,
+                  tariffId: nextTariffId,
+                  debtAmount: repaymentState.debtAmount,
+                  remainingDebtAmount: repaymentState.remainingDebtAmount,
+                },
+              });
+            }
+          }
+
+          return updatedSale;
         });
 
         await prisma.auditLog.create({
