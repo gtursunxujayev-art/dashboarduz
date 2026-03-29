@@ -39,6 +39,7 @@ const ADJUSTMENT_STATUS_REJECTED = 'rejected';
 const CUSTOMER_NUMBER_REGEX = /^\d+$/;
 const TELEGRAM_USERNAME_REGEX = /^@?[A-Za-z0-9_]+$/;
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
+const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
 const OFFLINE_PAYMENT_GROUP_ENV_KEY = 'OFLINE_GROUP_ID';
 const OFFLINE_PAYMENT_GROUP_ENV_KEY_LEGACY = 'OFFLINE_GROUP_ID';
 const OFFLINE_PAYMENT_GROUP_ENV_KEYS = [
@@ -112,6 +113,39 @@ function throwIncomeImportDisabledByPolicy(): never {
     code: 'PRECONDITION_FAILED',
     message: "Import moduli vaqtincha o'chirilgan. Qo'lda tushum kiritish rejimidan foydalaning.",
   });
+}
+
+function extractSaleSubTariffId(meta: Prisma.JsonValue | null | undefined): string | null {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return null;
+  }
+  const candidate = (meta as Record<string, unknown>)[SALE_SUB_TARIFF_META_KEY];
+  if (typeof candidate !== 'string') {
+    return null;
+  }
+  const normalized = candidate.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function withSaleSubTariffMeta(
+  existingMeta: Prisma.JsonValue | null | undefined,
+  subTariffId: string | null,
+): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
+  const nextMeta: Record<string, unknown> = (
+    existingMeta
+    && typeof existingMeta === 'object'
+    && !Array.isArray(existingMeta)
+  )
+    ? { ...(existingMeta as Record<string, unknown>) }
+    : {};
+
+  if (subTariffId) {
+    nextMeta[SALE_SUB_TARIFF_META_KEY] = subTariffId;
+  } else {
+    delete nextMeta[SALE_SUB_TARIFF_META_KEY];
+  }
+
+  return Object.keys(nextMeta).length > 0 ? (nextMeta as Prisma.InputJsonValue) : Prisma.JsonNull;
 }
 
 function isCourseCategoryConstraintOutdatedError(error: unknown): boolean {
@@ -2599,22 +2633,41 @@ async function createIncomeEntry(params: {
     }
 
     const remainingDebtAmount = Math.max(input.coursePriceAmount - input.paymentAmount, 0);
-    createdIncome = await prisma.income.create({
-      data: {
+    createdIncome = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const createdSale = await tx.income.create({
+        data: {
+          tenantId,
+          customerId: customer.id,
+          managerUserId: input.managerUserId,
+          type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          courseId: input.courseId,
+          tariffId: input.tariffId,
+          entryDate,
+          deadline: remainingDebtAmount > 0 ? deadline : null,
+          coursePriceAmount: input.coursePriceAmount,
+          debtAmount: input.coursePriceAmount,
+          paymentAmount: input.paymentAmount,
+          remainingDebtAmount,
+          legacyImportMeta: selectedSubTariffId
+            ? ({ [SALE_SUB_TARIFF_META_KEY]: selectedSubTariffId } as Prisma.InputJsonValue)
+            : undefined,
+        },
+      });
+
+      await tx.customer.update({
+        where: { id: customer.id },
+        data: {
+          profileSubTariffId: selectedSubTariffId || null,
+        },
+      });
+
+      await refreshCustomerProfileFromLatestActiveSale(tx, {
         tenantId,
         customerId: customer.id,
-        managerUserId: input.managerUserId,
-        type: 'new_sale',
-        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-        courseId: input.courseId,
-        tariffId: input.tariffId,
-        entryDate,
-        deadline: remainingDebtAmount > 0 ? deadline : null,
-        coursePriceAmount: input.coursePriceAmount,
-        debtAmount: input.coursePriceAmount,
-        paymentAmount: input.paymentAmount,
-        remainingDebtAmount,
-      },
+      });
+
+      return createdSale;
     });
   } else {
     let debtSourceId = input.debtSourceIncomeId;
@@ -3708,6 +3761,7 @@ export const customerIncomeRouter = router({
           remainingDebtAmount: true,
           relatedDebtIncomeId: true,
           lifecycleStatus: true,
+          legacyImportMeta: true,
           customer: {
             select: {
               profileSubTariffId: true,
@@ -3877,6 +3931,7 @@ export const customerIncomeRouter = router({
               debtAmount: nextCoursePriceAmount,
               paymentAmount: nextPaymentAmount,
               remainingDebtAmount: sourceRemainingDebtAmount,
+              legacyImportMeta: withSaleSubTariffMeta(income.legacyImportMeta, nextSubTariffId),
             },
           });
 
@@ -6043,6 +6098,7 @@ export const customerIncomeRouter = router({
         select: {
           id: true,
           customerId: true,
+          legacyImportMeta: true,
         },
       });
 
@@ -6053,7 +6109,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const [course, tariff, subTariff] = await Promise.all([
+      const [course, tariff, activeSubTariffs] = await Promise.all([
         prisma.course.findFirst({
           where: {
             id: input.newCourseId,
@@ -6073,17 +6129,17 @@ export const customerIncomeRouter = router({
               select: { id: true },
             })
           : Promise.resolve(null),
-        input.newTariffId && input.newSubTariffId
-          ? prisma.subTariff.findFirst({
+        input.newTariffId
+          ? prisma.subTariff.findMany({
               where: {
-                id: input.newSubTariffId,
                 tenantId: ctx.tenantId,
                 tariffId: input.newTariffId,
                 isActive: true,
               },
+              orderBy: [{ name: 'asc' }],
               select: { id: true },
             })
-          : Promise.resolve(null),
+          : Promise.resolve([]),
       ]);
 
       if (!course) {
@@ -6098,11 +6154,18 @@ export const customerIncomeRouter = router({
           message: "Yangi tarif tanlangan kursga tegishli emas yoki faol emas.",
         });
       }
-      if (input.newSubTariffId && !subTariff) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: "Yangi subtarif tanlangan tarifga tegishli emas yoki faol emas.",
-        });
+      let nextSubTariffId: string | null = input.newSubTariffId || null;
+      if (input.newTariffId) {
+        const subTariffIdSet = new Set(activeSubTariffs.map((item) => item.id));
+        if (nextSubTariffId && !subTariffIdSet.has(nextSubTariffId)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: "Yangi subtarif tanlangan tarifga tegishli emas yoki faol emas.",
+          });
+        }
+        if (!nextSubTariffId && activeSubTariffs.length > 0) {
+          nextSubTariffId = activeSubTariffs[0].id;
+        }
       }
 
       const saleChain = await prisma.income.findMany({
@@ -6134,6 +6197,10 @@ export const customerIncomeRouter = router({
           data: {
             courseId: input.newCourseId,
             tariffId: input.newTariffId || null,
+            legacyImportMeta: withSaleSubTariffMeta(
+              saleIncome.legacyImportMeta,
+              nextSubTariffId,
+            ),
           },
         });
 
@@ -6152,7 +6219,7 @@ export const customerIncomeRouter = router({
         await tx.customer.update({
           where: { id: saleIncome.customerId },
           data: {
-            profileSubTariffId: input.newSubTariffId || null,
+            profileSubTariffId: nextSubTariffId,
           },
         });
 
@@ -6172,7 +6239,7 @@ export const customerIncomeRouter = router({
           metadata: {
             newCourseId: input.newCourseId,
             newTariffId: input.newTariffId || null,
-            newSubTariffId: input.newSubTariffId || null,
+            newSubTariffId: nextSubTariffId,
           },
         },
       });
@@ -6453,6 +6520,7 @@ export const customerIncomeRouter = router({
             customerId: true,
             entryDate: true,
             remainingDebtAmount: true,
+            legacyImportMeta: true,
             course: {
               select: {
                 id: true,
@@ -6468,6 +6536,27 @@ export const customerIncomeRouter = router({
           },
         }),
       ]);
+
+      const saleSubTariffIds = Array.from(
+        new Set(
+          (activeSales as Array<{ legacyImportMeta: Prisma.JsonValue | null }>)
+            .map((sale) => extractSaleSubTariffId(sale.legacyImportMeta))
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+      const missingSaleSubTariffIds = saleSubTariffIds.filter((id) => !profileSubTariffNameById.has(id));
+      if (missingSaleSubTariffIds.length > 0) {
+        const additionalSubTariffs = await prisma.subTariff.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: missingSaleSubTariffIds },
+          },
+          select: { id: true, name: true },
+        });
+        for (const subTariff of additionalSubTariffs) {
+          profileSubTariffNameById.set(subTariff.id, subTariff.name);
+        }
+      }
 
       const aggregatesByCustomer = new Map<
         string,
@@ -6502,20 +6591,20 @@ export const customerIncomeRouter = router({
         customerId: string;
         entryDate: Date;
         remainingDebtAmount: number;
+        legacyImportMeta: Prisma.JsonValue | null;
         course: { id: string; name: string } | null;
         tariff: { id: string; name: string } | null;
       }>) {
         const profile = customerProfileById.get(sale.customerId);
-        const subTariffName = profile
-          && profile.profileCourseId === sale.course?.id
-          && profile.profileTariffId === sale.tariff?.id
-          && profile.profileSubTariffId
-          ? profileSubTariffNameById.get(profile.profileSubTariffId) || null
-          : null;
-        const subTariffId = profile
+        const saleSubTariffId = extractSaleSubTariffId(sale.legacyImportMeta);
+        const profileMatchedSubTariffId = profile
           && profile.profileCourseId === sale.course?.id
           && profile.profileTariffId === sale.tariff?.id
           ? profile.profileSubTariffId || null
+          : null;
+        const effectiveSubTariffId = saleSubTariffId || profileMatchedSubTariffId || null;
+        const subTariffName = effectiveSubTariffId
+          ? profileSubTariffNameById.get(effectiveSubTariffId) || null
           : null;
         const labelParts = [sale.course?.name || null, sale.tariff?.name || null, subTariffName].filter(Boolean);
         const label = labelParts.length ? labelParts.join(' / ') : "Noma'lum kurs";
@@ -6524,7 +6613,7 @@ export const customerIncomeRouter = router({
           saleIncomeId: sale.id,
           courseId: sale.course?.id || null,
           tariffId: sale.tariff?.id || null,
-          subTariffId,
+          subTariffId: effectiveSubTariffId,
           courseName: sale.course?.name || null,
           tariffName: sale.tariff?.name || null,
           subTariffName,
