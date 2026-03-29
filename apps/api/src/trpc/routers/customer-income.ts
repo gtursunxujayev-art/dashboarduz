@@ -521,21 +521,6 @@ function parseDateInput(input: string): Date {
   return date;
 }
 
-function parseGmt5DateBoundary(input: string, endOfDay: boolean): Date {
-  const value = input.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date: ${input}` });
-  }
-
-  const timestamp = `${value}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
-  const parsed = new Date(timestamp);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date: ${input}` });
-  }
-
-  return parsed;
-}
-
 function parseTelegramGroupIds(rawValue: string | undefined): string[] {
   if (!rawValue) {
     return [];
@@ -2815,6 +2800,7 @@ const updateIncomeSchema = z.object({
   deadline: z.string().min(1).nullable().optional(),
   courseId: z.string().uuid().optional(),
   tariffId: z.string().uuid().optional(),
+  subTariffId: z.string().uuid().nullable().optional(),
   coursePriceAmount: z.number().int().min(0).optional(),
 });
 
@@ -3722,6 +3708,11 @@ export const customerIncomeRouter = router({
           remainingDebtAmount: true,
           relatedDebtIncomeId: true,
           lifecycleStatus: true,
+          customer: {
+            select: {
+              profileSubTariffId: true,
+            },
+          },
         },
       });
 
@@ -3776,6 +3767,9 @@ export const customerIncomeRouter = router({
 
         const nextCourseId = input.courseId ?? income.courseId;
         const nextTariffId = input.tariffId ?? income.tariffId;
+        const requestedSubTariffId = input.subTariffId === undefined
+          ? (income.customer?.profileSubTariffId ?? null)
+          : input.subTariffId;
         const nextCoursePriceAmount = input.coursePriceAmount ?? income.coursePriceAmount ?? 0;
         const nextPaymentAmount = input.paymentAmount ?? income.paymentAmount;
         const totalRepaymentPaid = linkedRepayments.reduce((sum, repayment) => sum + Number(repayment.paymentAmount || 0), 0);
@@ -3795,7 +3789,7 @@ export const customerIncomeRouter = router({
           });
         }
 
-        const [course, tariff] = await Promise.all([
+        const [course, tariff, activeSubTariffCount] = await Promise.all([
           prisma.course.findFirst({
             where: {
               id: nextCourseId,
@@ -3813,10 +3807,45 @@ export const customerIncomeRouter = router({
             },
             select: { id: true },
           }),
+          prisma.subTariff.count({
+            where: {
+              tenantId: ctx.tenantId,
+              tariffId: nextTariffId,
+              isActive: true,
+            },
+          }),
         ]);
 
         if (!course || !tariff) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course or tariff not found.' });
+        }
+
+        if (activeSubTariffCount > 0 && !requestedSubTariffId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Sub-tariff is required for the selected tariff.',
+          });
+        }
+
+        let nextSubTariffId: string | null = null;
+        if (requestedSubTariffId) {
+          const subTariff = await prisma.subTariff.findFirst({
+            where: {
+              id: requestedSubTariffId,
+              tenantId: ctx.tenantId,
+              tariffId: nextTariffId,
+              isActive: true,
+            },
+            select: { id: true },
+          });
+
+          if (!subTariff) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Sub-tariff not found for selected tariff.',
+            });
+          }
+          nextSubTariffId = subTariff.id;
         }
 
         let rollingDebt = Math.max(nextCoursePriceAmount - nextPaymentAmount, 0);
@@ -3865,6 +3894,18 @@ export const customerIncomeRouter = router({
             }
           }
 
+          await tx.customer.update({
+            where: { id: income.customerId },
+            data: {
+              profileSubTariffId: nextSubTariffId,
+            },
+          });
+
+          await refreshCustomerProfileFromLatestActiveSale(tx, {
+            tenantId: ctx.tenantId,
+            customerId: income.customerId,
+          });
+
           return updatedSale;
         });
 
@@ -3888,7 +3929,12 @@ export const customerIncomeRouter = router({
         };
       }
 
-      if (input.courseId !== undefined || input.tariffId !== undefined || input.coursePriceAmount !== undefined) {
+      if (
+        input.courseId !== undefined
+        || input.tariffId !== undefined
+        || input.subTariffId !== undefined
+        || input.coursePriceAmount !== undefined
+      ) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'Repayment rows do not support course or tariff edits.',
@@ -4111,205 +4157,6 @@ export const customerIncomeRouter = router({
       return { success: true };
     }),
 
-  deleteIncomesByPeriod: adminProcedure
-    .input(
-      z.object({
-        dateFrom: z.string().min(1),
-        dateTo: z.string().min(1),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const rangeStart = parseGmt5DateBoundary(input.dateFrom, false);
-      const rangeEnd = parseGmt5DateBoundary(input.dateTo, true);
-
-      if (rangeEnd < rangeStart) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: "Sana oralig'i noto'g'ri: tugash sanasi boshlanish sanasidan oldin bo'lmasligi kerak.",
-        });
-      }
-
-      const matchedIncomes = await prisma.income.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          entryDate: {
-            gte: rangeStart,
-            lte: rangeEnd,
-          },
-        },
-        select: {
-          id: true,
-          type: true,
-          paymentAmount: true,
-          relatedDebtIncomeId: true,
-        },
-      });
-
-      if (!matchedIncomes.length) {
-        return {
-          success: true,
-          matchedCount: 0,
-          deletedCount: 0,
-          blockedCount: 0,
-          blocked: [] as Array<{ incomeId: string; reason: 'pending_adjustment' | 'has_linked_repayments' }>,
-        };
-      }
-
-      const incomeIds = matchedIncomes.map((income) => income.id);
-      const pendingAdjustments = await prisma.incomeAdjustmentRequest.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          incomeId: { in: incomeIds },
-          status: ADJUSTMENT_STATUS_PENDING,
-        },
-        select: {
-          incomeId: true,
-        },
-      });
-      const pendingAdjustmentSet = new Set(pendingAdjustments.map((item) => item.incomeId));
-
-      const newSaleIncomeIds = matchedIncomes
-        .filter((income) => income.type === 'new_sale')
-        .map((income) => income.id);
-
-      const linkedRepayments = newSaleIncomeIds.length > 0
-        ? await prisma.income.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              type: 'repayment',
-              relatedDebtIncomeId: { in: newSaleIncomeIds },
-            },
-            select: {
-              id: true,
-              relatedDebtIncomeId: true,
-            },
-          })
-        : [];
-      const matchedIncomeIdSet = new Set(incomeIds);
-      const saleIdsBlockedByRepayments = new Set<string>();
-      for (const linkedRepayment of linkedRepayments) {
-        if (!linkedRepayment.relatedDebtIncomeId) {
-          continue;
-        }
-        const repaymentOutsideSelectedRange = !matchedIncomeIdSet.has(linkedRepayment.id);
-        const repaymentBlockedByAdjustment = pendingAdjustmentSet.has(linkedRepayment.id);
-        if (repaymentOutsideSelectedRange || repaymentBlockedByAdjustment) {
-          saleIdsBlockedByRepayments.add(linkedRepayment.relatedDebtIncomeId);
-        }
-      }
-
-      const blocked = matchedIncomes
-        .map((income) => {
-          if (pendingAdjustmentSet.has(income.id)) {
-            return { incomeId: income.id, reason: 'pending_adjustment' as const };
-          }
-          if (income.type === 'new_sale' && saleIdsBlockedByRepayments.has(income.id)) {
-            return { incomeId: income.id, reason: 'has_linked_repayments' as const };
-          }
-          return null;
-        })
-        .filter((item): item is { incomeId: string; reason: 'pending_adjustment' | 'has_linked_repayments' } => Boolean(item));
-
-      const blockedSet = new Set(blocked.map((item) => item.incomeId));
-      const deletableIncomes = matchedIncomes.filter((income) => !blockedSet.has(income.id));
-
-      if (!deletableIncomes.length) {
-        return {
-          success: true,
-          matchedCount: matchedIncomes.length,
-          deletedCount: 0,
-          blockedCount: blocked.length,
-          blocked: blocked.slice(0, 50),
-        };
-      }
-
-      const debtRestoreMap = new Map<string, number>();
-      for (const income of deletableIncomes) {
-        if (income.type !== 'repayment' || !income.relatedDebtIncomeId) {
-          continue;
-        }
-        const current = debtRestoreMap.get(income.relatedDebtIncomeId) || 0;
-        debtRestoreMap.set(income.relatedDebtIncomeId, current + Number(income.paymentAmount || 0));
-      }
-
-      const transactionSteps: Prisma.PrismaPromise<unknown>[] = [];
-      if (debtRestoreMap.size > 0) {
-        const sourceIncomeIds = Array.from(debtRestoreMap.keys());
-        const sourceIncomes = await prisma.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            id: { in: sourceIncomeIds },
-          },
-          select: {
-            id: true,
-            debtAmount: true,
-            remainingDebtAmount: true,
-          },
-        });
-
-        for (const sourceIncome of sourceIncomes) {
-          const restoreAmount = debtRestoreMap.get(sourceIncome.id) || 0;
-          if (restoreAmount <= 0) {
-            continue;
-          }
-
-          const restoredDebtRaw = (sourceIncome.remainingDebtAmount || 0) + restoreAmount;
-          const restoredDebt = sourceIncome.debtAmount !== null
-            ? Math.min(restoredDebtRaw, sourceIncome.debtAmount)
-            : restoredDebtRaw;
-
-          transactionSteps.push(
-            prisma.income.updateMany({
-              where: {
-                id: sourceIncome.id,
-                tenantId: ctx.tenantId,
-              },
-              data: {
-                remainingDebtAmount: Math.max(restoredDebt, 0),
-              },
-            }),
-          );
-        }
-      }
-
-      transactionSteps.push(
-        prisma.income.deleteMany({
-          where: {
-            tenantId: ctx.tenantId,
-            id: { in: deletableIncomes.map((income) => income.id) },
-          },
-        }),
-      );
-
-      const transactionResult = await prisma.$transaction(transactionSteps);
-      const deletionResult = transactionResult[transactionResult.length - 1] as { count: number };
-      const deletedCount = deletionResult.count;
-
-      await prisma.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'income_bulk_delete_by_period',
-          resource: 'income',
-          metadata: {
-            dateFrom: input.dateFrom,
-            dateTo: input.dateTo,
-            matchedCount: matchedIncomes.length,
-            deletedCount,
-            blockedCount: blocked.length,
-          },
-        },
-      });
-
-      return {
-        success: true,
-        matchedCount: matchedIncomes.length,
-        deletedCount,
-        blockedCount: blocked.length,
-        blocked: blocked.slice(0, 50),
-      };
-    }),
-
   bulkImportRows: protectedProcedure
     .input(bulkIncomeImportSchema)
     .mutation(async () => {
@@ -4394,6 +4241,9 @@ export const customerIncomeRouter = router({
             select: {
               customerNumber: true,
               name: true,
+              profileCourseId: true,
+              profileTariffId: true,
+              profileSubTariffId: true,
             },
           },
           manager: {
@@ -6299,41 +6149,17 @@ export const customerIncomeRouter = router({
           },
         });
 
+        await tx.customer.update({
+          where: { id: saleIncome.customerId },
+          data: {
+            profileSubTariffId: input.newSubTariffId || null,
+          },
+        });
+
         await refreshCustomerProfileFromLatestActiveSale(tx, {
           tenantId: ctx.tenantId,
           customerId: saleIncome.customerId,
         });
-
-        if (input.newSubTariffId) {
-          const latestActiveSale = await tx.income.findFirst({
-            where: {
-              tenantId: ctx.tenantId,
-              customerId: saleIncome.customerId,
-              type: 'new_sale',
-              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            },
-            orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
-            select: {
-              id: true,
-              tariffId: true,
-            },
-          });
-
-          if (
-            latestActiveSale
-            && latestActiveSale.id === saleIncome.id
-            && latestActiveSale.tariffId
-            && input.newTariffId
-            && latestActiveSale.tariffId === input.newTariffId
-          ) {
-            await tx.customer.update({
-              where: { id: saleIncome.customerId },
-              data: {
-                profileSubTariffId: input.newSubTariffId,
-              },
-            });
-          }
-        }
       });
 
       await prisma.auditLog.create({
