@@ -154,7 +154,9 @@ function getTelegramDispatchWarning(dispatch: any): string | null {
 
 export default function IncomePage() {
   const { user } = useAuth();
-  const isAdmin = Boolean(user?.roles?.includes('Admin'));
+  const isAdmin = Boolean(
+    (user?.roles || []).some((role) => String(role).trim().toLowerCase() === 'admin'),
+  );
   const [entryDate, setEntryDate] = useState(getTashkentToday());
   const [managerUserId, setManagerUserId] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
@@ -833,6 +835,44 @@ export default function IncomePage() {
         <div className="p-6">
           {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
           {success && <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-300">{success}</p>}
+          {isAdmin && (
+            <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60">
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 dark:text-slate-300">Boshlanish</label>
+                  <input
+                    type="date"
+                    value={exportDateFrom}
+                    onChange={(event) => setExportDateFrom(event.target.value)}
+                    className="mt-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 dark:text-slate-300">Tugash</label>
+                  <input
+                    type="date"
+                    value={exportDateTo}
+                    onChange={(event) => setExportDateTo(event.target.value)}
+                    className="mt-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadIncomesByCustomRange}
+                  disabled={exportIncomesMutation.isLoading}
+                  className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-60 dark:border-blue-700 dark:bg-slate-900 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                >
+                  {exportIncomesMutation.isLoading ? 'Yuklanmoqda...' : "Davr bo'yicha yuklab olish"}
+                </button>
+              </div>
+              {exportError && (
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">{exportError}</p>
+              )}
+              {exportSuccess && (
+                <p className="mt-1 text-xs text-green-600 dark:text-green-400">{exportSuccess}</p>
+              )}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1208,45 +1248,6 @@ export default function IncomePage() {
         </div>
 
         <div className="p-6">
-          {isAdmin && (
-            <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60">
-              <div className="flex flex-wrap items-end gap-2">
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 dark:text-slate-300">Boshlanish</label>
-                  <input
-                    type="date"
-                    value={exportDateFrom}
-                    onChange={(event) => setExportDateFrom(event.target.value)}
-                    className="mt-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-600 dark:text-slate-300">Tugash</label>
-                  <input
-                    type="date"
-                    value={exportDateTo}
-                    onChange={(event) => setExportDateTo(event.target.value)}
-                    className="mt-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleDownloadIncomesByCustomRange}
-                  disabled={exportIncomesMutation.isLoading}
-                  className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-60 dark:border-blue-700 dark:bg-slate-900 dark:text-blue-300 dark:hover:bg-blue-950/40"
-                >
-                  {exportIncomesMutation.isLoading ? 'Yuklanmoqda...' : "Davr bo'yicha yuklab olish"}
-                </button>
-              </div>
-              {exportError && (
-                <p className="mt-1 text-xs text-red-600 dark:text-red-400">{exportError}</p>
-              )}
-              {exportSuccess && (
-                <p className="mt-1 text-xs text-green-600 dark:text-green-400">{exportSuccess}</p>
-              )}
-            </div>
-          )}
-
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
             <input
               value={recentSearchQuery}
