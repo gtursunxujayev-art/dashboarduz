@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -173,6 +174,10 @@ export default function IncomePage() {
   const [recentLimit, setRecentLimit] = useState(10);
   const [recentSearchQuery, setRecentSearchQuery] = useState('');
   const [skipTelegramNotification, setSkipTelegramNotification] = useState(false);
+  const [exportDateFrom, setExportDateFrom] = useState(getTashkentToday());
+  const [exportDateTo, setExportDateTo] = useState(getTashkentToday());
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportSuccess, setExportSuccess] = useState<string | null>(null);
   const customerInputWrapperRef = useRef<HTMLDivElement | null>(null);
   const [isCustomerSuggestionsOpen, setIsCustomerSuggestionsOpen] = useState(false);
 
@@ -204,6 +209,7 @@ export default function IncomePage() {
   const createIncomeMutation = trpc.customerIncome.createIncome.useMutation();
   const updateIncomeMutation = trpc.customerIncome.updateIncome.useMutation();
   const deleteIncomeMutation = trpc.customerIncome.deleteIncome.useMutation();
+  const exportIncomesMutation = trpc.customerIncome.exportIncomesByDateRange.useMutation();
   const [deletingIncomeId, setDeletingIncomeId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EditIncomeForm | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
@@ -534,6 +540,77 @@ export default function IncomePage() {
       setError(deleteError?.message || "Tushum yozuvini o'chirib bo'lmadi.");
     } finally {
       setDeletingIncomeId(null);
+    }
+  };
+
+  const handleDownloadIncomesByCustomRange = async () => {
+    setExportError(null);
+    setExportSuccess(null);
+
+    if (!exportDateFrom || !exportDateTo) {
+      setExportError("Boshlanish va tugash sanasini tanlang.");
+      return;
+    }
+    if (exportDateTo < exportDateFrom) {
+      setExportError("Tugash sanasi boshlanish sanasidan oldin bo'lishi mumkin emas.");
+      return;
+    }
+
+    try {
+      const result = await exportIncomesMutation.mutateAsync({
+        dateFrom: exportDateFrom,
+        dateTo: exportDateTo,
+      });
+
+      if (!result.rows?.length) {
+        setExportError("Tanlangan davrda yuklab olish uchun tushum topilmadi.");
+        return;
+      }
+
+      const headers = [
+        "To'lov sanasi",
+        'agent',
+        'Mijoz Ism Familiya',
+        'Telefon raqami',
+        'Telegram username',
+        'Kurs turi',
+        "To'lov turi",
+        'Kelishilgan narx',
+        "To'lov summasi",
+        'Qarzi',
+        'Deadline',
+      ];
+
+      const rows = result.rows.map((row: any) => ([
+        formatDateForInput(row.entryDate),
+        row.managerLabel || '-',
+        row.customerName || '',
+        row.customerNumber || '',
+        row.telegramUsername || '',
+        [row.courseName, row.tariffName, row.subTariffName].filter(Boolean).join(' / ') || '-',
+        formatIncomeType(row.type),
+        formatAmount(row.agreementAmount),
+        formatAmount(row.paymentAmount),
+        formatAmount(row.remainingDebtAmount),
+        formatDateForInput(row.deadline),
+      ]));
+
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Tushumlar');
+      const workbookBuffer = XLSX.write(workbook, { bookType: 'xls', type: 'array' });
+      const blob = new Blob([workbookBuffer], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `tushumlar-${exportDateFrom}-${exportDateTo}.xls`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      setExportSuccess(`${result.totalCount} ta yozuv yuklab olindi.`);
+    } catch (exportErr: any) {
+      setExportError(exportErr?.message || "Tushumlarni yuklab olishda xatolik yuz berdi.");
     }
   };
 
@@ -1131,6 +1208,45 @@ export default function IncomePage() {
         </div>
 
         <div className="p-6">
+          {isAdmin && (
+            <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60">
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 dark:text-slate-300">Boshlanish</label>
+                  <input
+                    type="date"
+                    value={exportDateFrom}
+                    onChange={(event) => setExportDateFrom(event.target.value)}
+                    className="mt-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 dark:text-slate-300">Tugash</label>
+                  <input
+                    type="date"
+                    value={exportDateTo}
+                    onChange={(event) => setExportDateTo(event.target.value)}
+                    className="mt-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadIncomesByCustomRange}
+                  disabled={exportIncomesMutation.isLoading}
+                  className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-60 dark:border-blue-700 dark:bg-slate-900 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                >
+                  {exportIncomesMutation.isLoading ? 'Yuklanmoqda...' : "Davr bo'yicha yuklab olish"}
+                </button>
+              </div>
+              {exportError && (
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">{exportError}</p>
+              )}
+              {exportSuccess && (
+                <p className="mt-1 text-xs text-green-600 dark:text-green-400">{exportSuccess}</p>
+              )}
+            </div>
+          )}
+
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
             <input
               value={recentSearchQuery}
