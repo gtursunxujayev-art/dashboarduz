@@ -555,6 +555,19 @@ function parseDateInput(input: string): Date {
   return date;
 }
 
+function parseCustomDateInReportTimezone(input: string, endOfDay: boolean): Date {
+  const value = String(input || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date format: ${input}` });
+  }
+  const timestamp = `${value}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date: ${input}` });
+  }
+  return date;
+}
+
 function parseTelegramGroupIds(rawValue: string | undefined): string[] {
   if (!rawValue) {
     return [];
@@ -4338,6 +4351,130 @@ export const customerIncomeRouter = router({
         ...income,
         lifecycleStatus: getIncomeLifecycleLabel(income.lifecycleStatus),
       }));
+    }),
+
+  exportIncomesByDateRange: adminProcedure
+    .input(
+      z.object({
+        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const rangeStart = parseCustomDateInReportTimezone(input.dateFrom, false);
+      const rangeEnd = parseCustomDateInReportTimezone(input.dateTo, true);
+
+      if (rangeEnd < rangeStart) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "Boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas.",
+        });
+      }
+
+      const totalCount = await prisma.income.count({
+        where: {
+          tenantId: ctx.tenantId,
+          entryDate: {
+            gte: rangeStart,
+            lte: rangeEnd,
+          },
+        },
+      });
+
+      if (totalCount > 20000) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: "Tanlangan davrda yozuvlar juda ko'p. Iltimos, kichikroq davr tanlang.",
+        });
+      }
+
+      const incomes = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          entryDate: {
+            gte: rangeStart,
+            lte: rangeEnd,
+          },
+        },
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          customer: {
+            select: {
+              customerNumber: true,
+              name: true,
+              telegramUsername: true,
+              profileSubTariffId: true,
+            },
+          },
+          manager: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+            },
+          },
+          course: {
+            select: { name: true },
+          },
+          tariff: {
+            select: { name: true },
+          },
+        },
+      });
+
+      const subTariffIds = Array.from(
+        new Set(
+          incomes
+            .map((income) => extractSaleSubTariffId(income.legacyImportMeta))
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+
+      const subTariffNameById = new Map<string, string>();
+      if (subTariffIds.length > 0) {
+        const subTariffs = await prisma.subTariff.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: subTariffIds },
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        });
+        for (const subTariff of subTariffs) {
+          subTariffNameById.set(subTariff.id, subTariff.name);
+        }
+      }
+
+      return {
+        dateFrom: input.dateFrom,
+        dateTo: input.dateTo,
+        totalCount,
+        rows: incomes.map((income) => {
+          const saleSubTariffId = extractSaleSubTariffId(income.legacyImportMeta);
+          const profileSubTariffId = income.customer?.profileSubTariffId || null;
+          const subTariffId = saleSubTariffId || profileSubTariffId || null;
+          const subTariffName = subTariffId ? subTariffNameById.get(subTariffId) || null : null;
+          return {
+            id: income.id,
+            entryDate: income.entryDate,
+            deadline: income.deadline,
+            type: income.type,
+            lifecycleStatus: getIncomeLifecycleLabel(income.lifecycleStatus),
+            customerNumber: income.customer?.customerNumber || '',
+            customerName: income.customer?.name || '',
+            telegramUsername: income.customer?.telegramUsername || '',
+            managerLabel: income.manager?.name || income.manager?.username || income.managerUserId || '',
+            courseName: income.course?.name || '',
+            tariffName: income.tariff?.name || '',
+            subTariffName,
+            agreementAmount: Number(income.coursePriceAmount ?? income.debtAmount ?? 0),
+            paymentAmount: Number(income.paymentAmount ?? 0),
+            remainingDebtAmount: Number(income.remainingDebtAmount ?? 0),
+          };
+        }),
+      };
     }),
 
   listAdjustableIncomes: protectedProcedure
