@@ -434,22 +434,22 @@ export default function DashboardPage() {
           id: 'online-sales',
           title: 'Sotuv - Onlayn',
           value: String(stats?.onlineSalesCount ?? 0),
-          subtitle: formatAmount(stats?.onlineSalesAgreementAmount),
-          extra: null,
+          subtitle: `Kelishuv - ${formatAmount(stats?.onlineSalesAgreementAmount)}`,
+          extra: `Tushum - ${formatAmount(stats?.onlineSalesIncomeAmount)}`,
         },
         {
           id: 'offline-sales',
           title: 'Sotuv - Oflayn',
           value: String(stats?.offlineSalesCount ?? 0),
-          subtitle: formatAmount(stats?.offlineSalesAgreementAmount),
-          extra: null,
+          subtitle: `Kelishuv - ${formatAmount(stats?.offlineSalesAgreementAmount)}`,
+          extra: `Tushum - ${formatAmount(stats?.offlineSalesIncomeAmount)}`,
         },
         {
           id: 'intensive-sales',
           title: 'Sotuv - Intensiv',
           value: String(stats?.intensiveSalesCount ?? 0),
-          subtitle: formatAmount(stats?.intensiveSalesAgreementAmount),
-          extra: null,
+          subtitle: `Kelishuv - ${formatAmount(stats?.intensiveSalesAgreementAmount)}`,
+          extra: `Tushum - ${formatAmount(stats?.intensiveSalesIncomeAmount)}`,
         },
         {
           id: 'total-income',
@@ -1023,5 +1023,4 @@ export default function DashboardPage() {
     </div>
   );
 }
-
 
