@@ -26,6 +26,9 @@
                             "paths":  {
                                           "@/*":  [
                                                       "./src/*"
+                                                  ],
+                                          "@dashboarduz/api-types":  [
+                                                      "../../apps/api/dist/trpc/routers/index"
                                                   ]
                                       }
                         },
