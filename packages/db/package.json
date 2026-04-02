@@ -19,8 +19,8 @@
                     "restore:list":  "tsx scripts/restore.ts list",
                     "studio":  "prisma studio",
                     "db:push":  "prisma db push",
-                    "type-check":  "tsc --noEmit",
-                    "build":  "tsc --project tsconfig.json"
+                    "type-check":  "npm run generate && tsc --noEmit",
+                    "build":  "npm run generate && tsc --project tsconfig.json"
                 },
     "dependencies":  {
                          "@prisma/client":  "^5.9.1",
