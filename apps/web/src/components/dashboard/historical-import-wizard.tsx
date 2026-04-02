@@ -1,7 +1,6 @@
 'use client';
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { trpc } from '@/lib/trpc';
 
 type RawImportCell = string | number | boolean | null;
@@ -23,7 +22,7 @@ function fieldClass(): string {
   return 'mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400';
 }
 
-function readWorkbookRows(workbook: XLSX.WorkBook, sheetName: string): RawImportRow[] {
+function readWorkbookRows(workbook: import('xlsx').WorkBook, sheetName: string, XLSX: typeof import('xlsx')): RawImportRow[] {
   const sheet = workbook.Sheets[sheetName];
   if (!sheet) {
     return [];
@@ -159,12 +158,13 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
       return;
     }
     try {
+      const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const firstSheetName = workbook.SheetNames[0];
       if (!firstSheetName) {
         throw new Error("Income faylida sheet topilmadi.");
       }
-      const rows = readWorkbookRows(workbook, firstSheetName);
+      const rows = readWorkbookRows(workbook, firstSheetName, XLSX);
       setIncomeRows(rows);
       setIncomeFileName(file.name);
       setIncomeSheetName(firstSheetName);
@@ -186,12 +186,13 @@ export function HistoricalImportWizard({ managers, onImported }: Props) {
       return;
     }
     try {
+      const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const targetSheetName = workbook.SheetNames.find((name) => name.trim().toLowerCase() === 'baza');
       if (!targetSheetName) {
         throw new Error("Customer faylida 'Baza' sheet topilmadi.");
       }
-      const rows = readWorkbookRows(workbook, targetSheetName);
+      const rows = readWorkbookRows(workbook, targetSheetName, XLSX);
       setCustomerRows(rows);
       setCustomerFileName(file.name);
       setCustomerSheetName(targetSheetName);
