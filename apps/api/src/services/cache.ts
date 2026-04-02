@@ -3,13 +3,26 @@
  *
  * Uses a dedicated Redis client (separate from BullMQ) with finite retry
  * limits so that cache failures never block request processing.
+ *
+ * If Redis is unreachable, the cache disables itself for 60 seconds
+ * to avoid adding latency to every request.
  */
 
 import Redis from 'ioredis';
 
 let cacheClient: Redis | null = null;
+let cacheDisabledUntil = 0;
+
+function isCacheDisabled(): boolean {
+  return Date.now() < cacheDisabledUntil;
+}
+
+function disableCache(): void {
+  cacheDisabledUntil = Date.now() + 60_000; // back off for 60 seconds
+}
 
 function getCacheClient(): Redis | null {
+  if (isCacheDisabled()) return null;
   if (cacheClient) return cacheClient;
 
   const redisUrl = process.env.REDIS_URL;
@@ -17,22 +30,26 @@ function getCacheClient(): Redis | null {
 
   try {
     cacheClient = new Redis(redisUrl, {
-      maxRetriesPerRequest: 3,
-      commandTimeout: 2000,
-      connectTimeout: 3000,
+      maxRetriesPerRequest: 1,
+      commandTimeout: 500,
+      connectTimeout: 1000,
       retryStrategy: (times) => {
-        if (times > 3) return null; // stop retrying
-        return Math.min(times * 100, 1000);
+        if (times > 1) {
+          disableCache();
+          return null;
+        }
+        return 200;
       },
       lazyConnect: true,
     });
 
     cacheClient.on('error', () => {
-      // swallow — cache errors must not crash the process
+      disableCache();
     });
 
     return cacheClient;
   } catch {
+    disableCache();
     return null;
   }
 }
@@ -56,17 +73,17 @@ export async function getOrSet<T>(
         return JSON.parse(cached) as T;
       }
     } catch {
-      // cache read failed — fall through to fetch
+      disableCache();
     }
   }
 
   const result = await fetchFn();
 
-  if (client) {
+  if (client && !isCacheDisabled()) {
     try {
       await client.set(key, JSON.stringify(result), 'EX', ttlSeconds);
     } catch {
-      // cache write failed — ignore
+      disableCache();
     }
   }
 
