@@ -1283,6 +1283,7 @@ export default function IncomePage() {
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Turi</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Mijoz</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Menedjer</th>
+                    <th className="w-16 min-w-[64px] px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Kiritgan</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Kurs/Tarif</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Holat</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">To'lov</th>
@@ -1306,6 +1307,9 @@ export default function IncomePage() {
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
                           {income.manager?.name || income.manager?.username || '-'}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-3 text-[10px] leading-tight text-gray-500 dark:text-slate-400">
+                          {income.createdByLabel || '-'}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
                           {[income.course?.name, income.tariff?.name].filter(Boolean).join(' / ') || '-'}
@@ -1600,5 +1604,4 @@ export default function IncomePage() {
     </div>
   );
 }
-
 
