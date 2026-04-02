@@ -1,7 +1,6 @@
 ﻿'use client';
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -597,6 +596,7 @@ export default function IncomePage() {
         formatDateForInput(row.deadline),
       ]));
 
+      const XLSX = await import('xlsx');
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Tushumlar');
