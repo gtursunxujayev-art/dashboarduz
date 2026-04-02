@@ -2504,6 +2504,9 @@ async function createIncomeEntry(params: {
 
   await assertManagerBelongsToTenant(tenantId, input.managerUserId);
   const entryDate = parseDateInput(input.entryDate);
+  if (entryDate > new Date()) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: "Kelajakdagi sana kiritish mumkin emas. Bugungi yoki o'tgan sanani tanlang." });
+  }
   const deadline = input.deadline ? parseDateInput(input.deadline) : null;
   const customerNumber = sanitizeCustomerNumber(input.customerNumber.trim());
   if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
@@ -3815,6 +3818,9 @@ export const customerIncomeRouter = router({
       }
 
       const parsedEntryDate = input.entryDate ? parseDateInput(input.entryDate) : null;
+      if (parsedEntryDate && parsedEntryDate > new Date()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: "Kelajakdagi sana kiritish mumkin emas. Bugungi yoki o'tgan sanani tanlang." });
+      }
       const parsedDeadline = input.deadline === undefined
         ? undefined
         : (input.deadline === null ? null : parseDateInput(input.deadline));
