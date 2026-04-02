@@ -49,6 +49,36 @@ function monthStartDateValue(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
+async function exportMismatchRowsToExcel(rows: any[], summary: any, statusLabels: Record<string, string>, dateFrom: string, dateTo: string) {
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.utils.book_new();
+  const summaryRows = [
+    { "Ko'rsatkich": 'DB jami', Qiymat: summary.dbTotal },
+    { "Ko'rsatkich": 'Moliya jami', Qiymat: summary.financeTotal },
+    { "Ko'rsatkich": 'Farq', Qiymat: summary.differenceAmount },
+    { "Ko'rsatkich": 'Mos mijozlar', Qiymat: summary.matchedCustomers },
+    { "Ko'rsatkich": 'Faqat bazada', Qiymat: summary.onlyInDbCustomers },
+    { "Ko'rsatkich": 'Faqat moliya faylida', Qiymat: summary.onlyInFinanceCustomers },
+    { "Ko'rsatkich": 'Summa farqi', Qiymat: summary.amountMismatchCount },
+    { "Ko'rsatkich": 'Noaniq moslik', Qiymat: summary.ambiguousMatchCount },
+  ];
+  const mismatchRows = rows.map((row) => ({
+    Telefon: row.phone || '',
+    Mijoz: row.name || '',
+    'DB jami': row.dbTotalPaid,
+    'Moliya jami': row.financeTotalPaid,
+    Farq: row.differenceAmount,
+    "DB to'lovlar soni": row.dbPaymentCount,
+    "Moliya to'lovlar soni": row.financePaymentCount,
+    Status: statusLabels[row.status] || row.status,
+    "Moslik usuli": row.matchedBy === 'name' ? "Ism bo'yicha" : "Telefon bo'yicha",
+  }));
+
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Hisobot');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(mismatchRows), 'Muammolar');
+  XLSX.writeFile(workbook, `tushum-muammolari-${dateFrom}-${dateTo}.xlsx`);
+}
+
 export default function IncomeProblemsPage() {
   const activeSnapshotQuery = trpc.incomeProblems.getActiveSnapshot.useQuery(undefined, {
     retry: false,
@@ -184,6 +214,11 @@ export default function IncomeProblemsPage() {
     });
   };
 
+  const handleExport = async () => {
+    if (!compareQuery.data) return;
+    await exportMismatchRowsToExcel(compareQuery.data.rows, compareQuery.data.summary, statusLabels, dateFrom, dateTo);
+  };
+
   return (
     <div className="space-y-6">
       <div className="rounded-lg bg-white shadow dark:bg-slate-900">
@@ -296,6 +331,17 @@ export default function IncomeProblemsPage() {
                 Solishtirish
               </button>
             </div>
+            {compareQuery.data ? (
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  className="rounded-md border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/20"
+                >
+                  Muammolarni Excelga yuklab olish
+                </button>
+              </div>
+            ) : null}
           </div>
 
           {compareQuery.data && (
@@ -379,5 +425,6 @@ export default function IncomeProblemsPage() {
     </div>
   );
 }
+
 
 
