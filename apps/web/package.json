@@ -17,7 +17,7 @@
         "cypress:open": "cypress open",
         "cypress:run": "cypress run",
         "e2e": "cypress run",
-        "vercel-build": "npm run build --workspace @dashboarduz/shared && npm run build --workspace @dashboarduz/db && npm run build --workspace @dashboarduz/api && next build"
+        "vercel-build": "npm install --include=dev -w @dashboarduz/web -w @dashboarduz/api -w @dashboarduz/db -w @dashboarduz/shared --include-workspace-root=false && npm run build --workspace @dashboarduz/shared && npm run build --workspace @dashboarduz/db && npm run build --workspace @dashboarduz/api && next build"
     },
     "dependencies": {
         "@tanstack/react-query": "^4.42.2",
