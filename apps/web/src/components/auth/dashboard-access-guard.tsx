@@ -36,6 +36,7 @@ const MANAGER_BLOCKED_PATHS = [
   '/dashboard/integrations',
   '/dashboard/notifications',
   '/dashboard/income-problems',
+  '/dashboard/income-debug',
 ];
 
 function isAgentOnly(roles: string[]): boolean {
