@@ -149,6 +149,7 @@ export const salaryProcedures = {
           course: {
             select: {
               name: true,
+              category: true,
             },
           },
         },
@@ -206,7 +207,9 @@ export const salaryProcedures = {
       if (closeDate < monthStart || closeDate > monthEnd) {
         continue;
       }
-      const category = classifyCourseCategoryFromField(sale.course?.name);
+      const category = sale.course?.category
+        ? classifyCourseCategoryFromField(sale.course.category)
+        : classifyCourseCategoryFromField(sale.course?.name);
       if (category === 'other') {
         continue;
       }
@@ -232,6 +235,7 @@ export const salaryProcedures = {
           course: {
             select: {
               name: true,
+              category: true,
             },
           },
           relatedDebtIncome: {
@@ -239,6 +243,7 @@ export const salaryProcedures = {
               course: {
                 select: {
                   name: true,
+                  category: true,
                 },
               },
             },
@@ -247,9 +252,9 @@ export const salaryProcedures = {
       });
 
       for (const income of incomes) {
-        const category = classifyCourseCategoryFromField(
-          income.course?.name ?? income.relatedDebtIncome?.course?.name,
-        );
+        const courseCategory = income.course?.category ?? income.relatedDebtIncome?.course?.category;
+        const courseName = income.course?.name ?? income.relatedDebtIncome?.course?.name;
+        const category = classifyCourseCategoryFromField(courseCategory || courseName);
         if (category === 'other') {
           continue;
         }
@@ -270,7 +275,7 @@ export const salaryProcedures = {
         managerUserId: string;
         coursePriceAmount: number | null;
         paymentAmount: number;
-        course: { name: string } | null;
+        course: { name: string; category: string } | null;
         entryDate: Date;
       }) => {
         if (processedSaleIds.has(sale.id)) {
@@ -282,7 +287,9 @@ export const salaryProcedures = {
           return;
         }
 
-        const category = classifyCourseCategoryFromField(sale.course?.name);
+        const category = sale.course?.category
+          ? classifyCourseCategoryFromField(sale.course.category)
+          : classifyCourseCategoryFromField(sale.course?.name);
         if (category === 'other') {
           return;
         }
