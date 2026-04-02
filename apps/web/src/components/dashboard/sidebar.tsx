@@ -46,6 +46,7 @@ const ADMIN_ONLY_HREFS = new Set([
   '/dashboard/integrations',
   '/dashboard/notifications',
   '/dashboard/income-problems',
+  '/dashboard/income-debug',
 ]);
 const DESKTOP_SIDEBAR_STORAGE_KEY = 'dashboarduz-desktop-sidebar-open';
 
@@ -76,6 +77,7 @@ const navigation: NavigationItem[] = [
   { name: 'Tahlil', href: '/dashboard/analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
   { name: 'Moliya', href: '/dashboard/finance', icon: 'M3 10h18M7 15h1m4 0h5M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z' },
   { name: 'Tushum muammolari', href: '/dashboard/income-problems', icon: 'M12 9v2m0 4h.01M10.29 3.86l-7.2 12.47A1 1 0 003.96 18h16.08a1 1 0 00.87-1.67l-7.2-12.47a1 1 0 00-1.74 0z' },
+  { name: 'Tushum debug', href: '/dashboard/income-debug', icon: 'M9 3h6m-9 4h12M5 11h14M7 19h10M4 7h.01M4 11h.01M4 15h.01M4 19h.01' },
   { name: 'Bonus', href: '/dashboard/bonus', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 1v8m0 0v1m0-1h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
   { name: 'Kurslar', href: '/dashboard/courses', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5 4.462 5 2 6.567 2 8.5v9.75A1.75 1.75 0 003.75 20H9m3-13.747C13.168 5.477 14.754 5 16.5 5 19.538 5 22 6.567 22 8.5v9.75A1.75 1.75 0 0120.25 20H15m-3-13.747v13' },
   { name: 'Sozlamalar', href: '/dashboard/settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
