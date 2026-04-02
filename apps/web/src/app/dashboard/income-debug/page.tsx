@@ -9,6 +9,7 @@ const MODE_OPTIONS = [
   { value: 'unresolved', label: 'Audit topilmagan' },
   { value: 'relink', label: 'Relink ehtimoli' },
   { value: 'imported', label: 'Import qatorlari' },
+  { value: 'hidden', label: 'Yashirilgan qatorlar' },
   { value: 'all', label: 'Barcha qatorlar' },
 ] as const;
 
@@ -39,6 +40,7 @@ function statusLabel(status: string): string {
 export default function IncomeDebugPage() {
   const [mode, setMode] = useState<(typeof MODE_OPTIONS)[number]['value']>('suspicious');
   const [query, setQuery] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [applied, setApplied] = useState({
     mode: 'suspicious' as (typeof MODE_OPTIONS)[number]['value'],
     query: '',
@@ -49,9 +51,58 @@ export default function IncomeDebugPage() {
     retry: false,
     refetchOnWindowFocus: false,
   });
+  const hideMutation = trpc.incomeDebug.hideSelected.useMutation();
+  const deleteIncomeMutation = trpc.customerIncome.deleteIncome.useMutation();
 
   const rows = useMemo(() => (debugQuery.data?.rows ?? []) as Array<any>, [debugQuery.data]);
   const summary = debugQuery.data?.summary;
+  const allSelected = rows.length > 0 && rows.every((row) => selectedIds.includes(row.id));
+
+  const toggleRow = (incomeId: string) => {
+    setSelectedIds((prev) => (prev.includes(incomeId)
+      ? prev.filter((id) => id !== incomeId)
+      : [...prev, incomeId]));
+  };
+
+  const toggleAll = () => {
+    setSelectedIds((prev) => (allSelected ? [] : rows.map((row) => row.id)));
+  };
+
+  const refreshList = async () => {
+    setSelectedIds([]);
+    await debugQuery.refetch();
+  };
+
+  const handleHide = async (hidden: boolean) => {
+    if (!selectedIds.length) return;
+    await hideMutation.mutateAsync({ incomeIds: selectedIds, hidden });
+    await refreshList();
+  };
+
+  const handleDelete = async () => {
+    if (!selectedIds.length) return;
+
+    if (selectedIds.length > 1) {
+      if (!window.confirm(`Siz ${selectedIds.length} ta tushumni o'chirmoqchisiz. Rostdan ham davom etasizmi?`)) return;
+      if (!window.confirm('Bu amal qaytarilmaydi. Yana bir marta tasdiqlang.')) return;
+      if (!window.confirm("Oxirgi tasdiq: tanlangan tushumlar butunlay o'chiriladi. Davom etilsinmi?")) return;
+    } else {
+      if (!window.confirm("Tanlangan tushumni o'chirishni tasdiqlaysizmi?")) return;
+    }
+
+    const deleteOrder = [...selectedIds].sort((leftId, rightId) => {
+      const left = rows.find((row) => row.id === leftId);
+      const right = rows.find((row) => row.id === rightId);
+      const leftPriority = left?.type === 'repayment' ? 0 : 1;
+      const rightPriority = right?.type === 'repayment' ? 0 : 1;
+      return leftPriority - rightPriority;
+    });
+
+    for (const incomeId of deleteOrder) {
+      await deleteIncomeMutation.mutateAsync({ incomeId });
+    }
+    await refreshList();
+  };
 
   return (
     <div className="space-y-6">
@@ -83,7 +134,10 @@ export default function IncomeDebugPage() {
               />
               <button
                 type="button"
-                onClick={() => setApplied({ mode, query: query.trim(), limit: 200 })}
+                onClick={() => {
+                  setApplied({ mode, query: query.trim(), limit: 200 });
+                  setSelectedIds([]);
+                }}
                 className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
               >
                 Ko'rsatish
@@ -113,14 +167,59 @@ export default function IncomeDebugPage() {
                 <p className="text-xs text-gray-500">Relink ehtimoli</p>
                 <p className="mt-1 text-lg font-semibold">{summary.possibleRelinkCount}</p>
               </div>
+              <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700">
+                <p className="text-xs text-gray-500">Yashirilgan</p>
+                <p className="mt-1 text-lg font-semibold">{summary.hiddenCount}</p>
+              </div>
             </div>
           ) : null}
+
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 p-4 dark:border-slate-700">
+            <div className="text-sm text-gray-500 dark:text-slate-400">
+              Tanlangan: <span className="font-semibold text-gray-900 dark:text-slate-100">{selectedIds.length}</span>
+            </div>
+            {applied.mode !== 'hidden' ? (
+              <button
+                type="button"
+                disabled={!selectedIds.length || hideMutation.isLoading}
+                onClick={() => handleHide(true)}
+                className="rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-950/20"
+              >
+                Tanlanganlarni yashirish
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!selectedIds.length || hideMutation.isLoading}
+                onClick={() => handleHide(false)}
+                className="rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-700 dark:text-sky-300 dark:hover:bg-sky-950/20"
+              >
+                Tanlanganlarni qayta ko'rsatish
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={!selectedIds.length || deleteIncomeMutation.isLoading}
+              onClick={handleDelete}
+              className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950/20"
+            >
+              Tanlanganlarni o'chirish
+            </button>
+            {(hideMutation.error || deleteIncomeMutation.error) ? (
+              <div className="text-sm text-red-600 dark:text-red-400">
+                {hideMutation.error?.message || deleteIncomeMutation.error?.message}
+              </div>
+            ) : null}
+          </div>
 
           <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-slate-700">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-slate-700">
                 <thead className="bg-gray-50 dark:bg-slate-800/80">
                   <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">
+                    <th className="px-4 py-3">
+                      <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                    </th>
                     <th className="px-4 py-3">Sana</th>
                     <th className="px-4 py-3">Yaratilgan</th>
                     <th className="px-4 py-3">Mijoz</th>
@@ -137,19 +236,26 @@ export default function IncomeDebugPage() {
                 <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-800 dark:bg-slate-900">
                   {debugQuery.isLoading ? (
                     <tr>
-                      <td colSpan={11} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-slate-400">
+                      <td colSpan={12} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-slate-400">
                         Yuklanmoqda...
                       </td>
                     </tr>
                   ) : rows.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-slate-400">
+                      <td colSpan={12} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-slate-400">
                         Hech qanday qator topilmadi.
                       </td>
                     </tr>
                   ) : (
                     rows.map((row) => (
                       <tr key={row.id} className="align-top">
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(row.id)}
+                            onChange={() => toggleRow(row.id)}
+                          />
+                        </td>
                         <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(row.entryDate).slice(0, 10)}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500 dark:text-slate-400">{formatDateTime(row.createdAt)}</td>
                         <td className="px-4 py-3">
