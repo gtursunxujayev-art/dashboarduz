@@ -4558,9 +4558,9 @@ export const customerIncomeRouter = router({
     .query(async ({ ctx, input }) => {
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
       const searchQuery = (input?.query || '').trim();
-      const incomes = await prisma.income.findMany({
-        where: {
-          tenantId: ctx.tenantId,
+        const incomes = await prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
           ...(scopedManagerUserId
             ? {
                 managerUserId: scopedManagerUserId,
@@ -4589,8 +4589,8 @@ export const customerIncomeRouter = router({
         },
         orderBy: { createdAt: 'desc' },
         take: input?.limit ?? 30,
-        include: {
-          customer: {
+          include: {
+            customer: {
             select: {
               customerNumber: true,
               name: true,
@@ -4598,30 +4598,75 @@ export const customerIncomeRouter = router({
               profileTariffId: true,
               profileSubTariffId: true,
             },
-          },
-          manager: {
-            select: {
-              name: true,
-              username: true,
+            },
+            manager: {
+              select: {
+                name: true,
+                username: true,
+              },
+            },
+            course: {
+              select: { name: true },
+            },
+            tariff: {
+              select: { name: true },
+            },
+            relatedDebtIncome: {
+              select: { id: true },
             },
           },
-          course: {
-            select: { name: true },
-          },
-          tariff: {
-            select: { name: true },
-          },
-          relatedDebtIncome: {
-            select: { id: true },
-          },
-        },
-      });
+        });
 
-      return incomes.map((income) => ({
-        ...income,
-        lifecycleStatus: getIncomeLifecycleLabel(income.lifecycleStatus),
-      }));
-    }),
+        const manualIncomeIds = incomes
+          .filter((income) => !income.legacyImportSource)
+          .map((income) => income.id);
+
+        const auditLogs = manualIncomeIds.length
+          ? await prisma.auditLog.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                action: 'income_create',
+                resource: 'income',
+                resourceId: {
+                  in: manualIncomeIds,
+                },
+              },
+              orderBy: { createdAt: 'asc' },
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    username: true,
+                    phone: true,
+                    email: true,
+                  },
+                },
+              },
+            })
+          : [];
+
+        const createdByLabelByIncomeId = new Map<string, string>();
+        for (const log of auditLogs) {
+          if (!log.resourceId || createdByLabelByIncomeId.has(log.resourceId)) {
+            continue;
+          }
+          const label = log.user?.name
+            || log.user?.username
+            || log.user?.phone
+            || log.user?.email
+            || 'qo‘lda';
+          createdByLabelByIncomeId.set(log.resourceId, label);
+        }
+  
+        return incomes.map((income) => ({
+          ...income,
+          lifecycleStatus: getIncomeLifecycleLabel(income.lifecycleStatus),
+          createdByLabel: income.legacyImportSource
+            ? 'import'
+            : (createdByLabelByIncomeId.get(income.id) || 'qo‘lda'),
+        }));
+      }),
 
   exportIncomesByDateRange: adminProcedure
     .input(
