@@ -201,6 +201,12 @@ export const summaryProcedures = {
             type: true,
             paymentAmount: true,
             coursePriceAmount: true,
+            course: {
+              select: {
+                name: true,
+                category: true,
+              },
+            },
           },
         }),
         prisma.call.findMany({
@@ -343,10 +349,13 @@ export const summaryProcedures = {
 
       let onlineSalesCount = 0;
       let onlineSalesAgreementAmount = 0;
+      let onlineSalesIncomeAmount = 0;
       let offlineSalesCount = 0;
       let offlineSalesAgreementAmount = 0;
+      let offlineSalesIncomeAmount = 0;
       let intensiveSalesCount = 0;
       let intensiveSalesAgreementAmount = 0;
+      let intensiveSalesIncomeAmount = 0;
       let newSalesAgreementAmount = 0;
 
       for (const income of newSalesIncomes) {
@@ -407,13 +416,25 @@ export const summaryProcedures = {
 
       const salesByManager = new Map<string, { sales: number; agreementsAmount: number; incomeAmount: number }>();
       for (const income of incomesForSellers) {
+        const category = income.course?.category
+          ? classifyCourseCategoryFromField(income.course.category)
+          : classifyCourseCategoryFromField(income.course?.name);
+        const paymentAmount = income.paymentAmount ?? 0;
+        if (category === 'online') {
+          onlineSalesIncomeAmount += paymentAmount;
+        } else if (category === 'offline') {
+          offlineSalesIncomeAmount += paymentAmount;
+        } else if (category === 'intensive') {
+          intensiveSalesIncomeAmount += paymentAmount;
+        }
+
         const current = salesByManager.get(income.managerUserId) || {
           sales: 0,
           agreementsAmount: 0,
           incomeAmount: 0,
         };
 
-        current.incomeAmount += income.paymentAmount ?? 0;
+        current.incomeAmount += paymentAmount;
         if (income.type === 'new_sale') {
           current.sales += 1;
           current.agreementsAmount += income.coursePriceAmount ?? income.paymentAmount ?? 0;
@@ -556,10 +577,13 @@ export const summaryProcedures = {
           newSalesAgreementAmount: tashkiliyOnly ? 0 : newSalesAgreementAmount,
           onlineSalesCount,
           onlineSalesAgreementAmount: tashkiliyOnly ? 0 : onlineSalesAgreementAmount,
+          onlineSalesIncomeAmount: tashkiliyOnly ? 0 : onlineSalesIncomeAmount,
           offlineSalesCount,
           offlineSalesAgreementAmount: tashkiliyOnly ? 0 : offlineSalesAgreementAmount,
+          offlineSalesIncomeAmount: tashkiliyOnly ? 0 : offlineSalesIncomeAmount,
           intensiveSalesCount,
           intensiveSalesAgreementAmount: tashkiliyOnly ? 0 : intensiveSalesAgreementAmount,
+          intensiveSalesIncomeAmount: tashkiliyOnly ? 0 : intensiveSalesIncomeAmount,
           qualifiedLeadSharePercent: Number(qualifiedLeadSharePercent.toFixed(2)),
           nonQualifiedLeadSharePercent: Number(nonQualifiedLeadSharePercent.toFixed(2)),
           conversionPercent: Number(conversionPercent.toFixed(2)),
