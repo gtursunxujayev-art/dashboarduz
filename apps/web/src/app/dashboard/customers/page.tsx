@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
-import * as XLSX from 'xlsx';
 
 type DebtFilter = 'all' | 'with_debt' | 'without_debt';
 
@@ -344,12 +343,13 @@ export default function CustomersPage() {
     }
   };
 
-  const handleDownloadFilteredCustomers = () => {
+  const handleDownloadFilteredCustomers = async () => {
     if (!customers.length) {
       setPageError("Yuklab olish uchun mijozlar ro'yxati bo'sh.");
       return;
     }
 
+    const XLSX = await import('xlsx');
     const headers = [
       'Mijoz raqami',
       'Mijoz ismi',
