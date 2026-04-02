@@ -4254,25 +4254,49 @@ export const customerIncomeRouter = router({
 
   prepareHistoricalImport: adminProcedure
     .input(historicalImportPrepareSchema)
-    .mutation(async () => {
+    .mutation(async (): Promise<{ sessionId: string; preview: any }> => {
       throwIncomeImportDisabledByPolicy();
     }),
 
   getHistoricalImportProgress: adminProcedure
     .input(historicalImportSessionSchema)
-    .query(async () => {
+    .query(async (): Promise<{
+      status: string;
+      preview: any;
+      progress: {
+        stage: string;
+        message: string;
+        processedRows: number;
+        totalRows: number;
+        processedIncomeRows: number;
+        totalIncomeRows: number;
+        processedCustomerRows: number;
+        totalCustomerRows: number;
+        importedRows: number;
+        failedRows: number;
+        importedNewSaleRows: number;
+        importedRepaymentRows: number;
+        createdCustomers: number;
+        updatedCustomers: number;
+        profileOnlyCustomers: number;
+        skippedIncomeRows: number;
+        skippedCustomerRows: number;
+      } | null;
+      failureReport: any[];
+      errorMessage: string | null;
+    }> => {
       throwIncomeImportDisabledByPolicy();
     }),
 
   cancelHistoricalImport: adminProcedure
     .input(historicalImportSessionSchema)
-    .mutation(async () => {
+    .mutation(async (): Promise<{ ok: boolean }> => {
       throwIncomeImportDisabledByPolicy();
     }),
 
   executeHistoricalImport: adminProcedure
     .input(historicalImportSessionSchema)
-    .mutation(async () => {
+    .mutation(async (): Promise<{ ok: boolean }> => {
       throwIncomeImportDisabledByPolicy();
     }),
 
