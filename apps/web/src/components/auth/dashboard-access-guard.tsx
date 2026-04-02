@@ -35,6 +35,7 @@ const TASHKILIY_ALLOWED_PATHS = [
 const MANAGER_BLOCKED_PATHS = [
   '/dashboard/integrations',
   '/dashboard/notifications',
+  '/dashboard/income-problems',
 ];
 
 function isAgentOnly(roles: string[]): boolean {
@@ -104,3 +105,4 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
 
   return <>{children}</>;
 }
+
