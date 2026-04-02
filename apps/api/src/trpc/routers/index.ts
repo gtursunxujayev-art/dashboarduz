@@ -13,6 +13,7 @@ import { bonusRouter } from './bonus';
 import { courseSalesRouter } from './course-sales';
 import { telegramBotRouter } from './telegram-bot';
 import { incomeProblemsRouter } from './income-problems';
+import { incomeDebugRouter } from './income-debug';
 
 export const appRouter = router({
   auth: authRouter,
@@ -29,6 +30,7 @@ export const appRouter = router({
   courseSales: courseSalesRouter,
   telegramBot: telegramBotRouter,
   incomeProblems: incomeProblemsRouter,
+  incomeDebug: incomeDebugRouter,
 });
 
 export type AppRouter = typeof appRouter;
