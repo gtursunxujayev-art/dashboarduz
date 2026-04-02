@@ -101,7 +101,7 @@ function getPeriodFollowUpLabel(range: DashboardRange): string {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const roles = user?.roles || [];
+  const roles = useMemo(() => user?.roles ?? [], [user?.roles]);
   const [range, setRange] = useState<DashboardRange>('today');
   const [dateFrom, setDateFrom] = useState(getTashkentToday());
   const [dateTo, setDateTo] = useState(getTashkentToday());
@@ -605,7 +605,10 @@ export default function DashboardPage() {
     [allDashboardCards, effectiveVisibleWidgetSet],
   );
 
-  const widgetCourses = widgetCatalogQuery.data?.courses || [];
+  const widgetCourses = useMemo(
+    () => widgetCatalogQuery.data?.courses ?? [],
+    [widgetCatalogQuery.data?.courses],
+  );
   const selectedWidgetCourse = useMemo(
     () => widgetCourses.find((course: any) => course.id === newWidgetCourseId) || null,
     [newWidgetCourseId, widgetCourses],
@@ -1023,4 +1026,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
