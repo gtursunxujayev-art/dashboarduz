@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
 
@@ -208,7 +207,8 @@ export default function CourseSalesDetailPage() {
     setSearchQuery('');
   };
 
-  const exportCustomers = () => {
+  const exportCustomers = async () => {
+    const XLSX = await import('xlsx');
     const data = customers.map((row: any) => ({
       'Mijoz raqami': row.customerNumber,
       Ism: row.customerName,
