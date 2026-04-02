@@ -144,7 +144,10 @@ export default function CourseSalesDetailPage() {
   const summary = detailQuery.data?.summary;
   const tariffRows = detailQuery.data?.tariffRows || [];
   const managerRows = detailQuery.data?.managerRows || [];
-  const customers = customersQuery.data?.rows || [];
+  const customers = useMemo(
+    () => customersQuery.data?.rows ?? [],
+    [customersQuery.data?.rows],
+  );
   const editorCourses = useMemo(() => editorOptionsQuery.data || [], [editorOptionsQuery.data]);
   const courseEditorCustomer = useMemo(
     () => customers.find((row: any) => row.customerId === courseEditorCustomerId) || null,
