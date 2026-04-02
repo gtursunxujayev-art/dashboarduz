@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
 import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
+import DashboardMetricCards from '@/components/dashboard/DashboardMetricCards';
+import DashboardSalarySection from '@/components/dashboard/DashboardSalarySection';
+import DashboardSellerTable from '@/components/dashboard/DashboardSellerTable';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 const RANGE_OPTIONS: DashboardRange[] = ['today', 'week', 'month', 'custom'];
@@ -103,28 +106,31 @@ export default function DashboardPage() {
   const [dateFrom, setDateFrom] = useState(getTashkentToday());
   const [dateTo, setDateTo] = useState(getTashkentToday());
   const [pipelineIds, setPipelineIds] = useState<string[]>([]);
-  const isAdmin = Boolean(roles.includes('Admin'));
-  const isAgentOnly = Boolean(
-    roles.includes('Agent')
-      && !roles.includes('Admin')
-      && !roles.includes('Manager')
-      && !roles.includes('Finance'),
-  );
-  const hasFinanceRole = Boolean(roles.includes('Finance'));
-  const showSalarySection = isAgentOnly || hasFinanceRole;
-  const isFinanceOnly = Boolean(
-    hasFinanceRole
-      && !roles.includes('Admin')
-      && !roles.includes('Manager')
-      && !roles.includes('Agent'),
-  );
-  const isTashkiliyOnly = Boolean(
-    roles.includes('Tashkiliy')
-      && !roles.includes('Admin')
-      && !roles.includes('Manager')
-      && !roles.includes('Agent')
-      && !roles.includes('Finance'),
-  );
+  const { isAdmin, isAgentOnly, hasFinanceRole, showSalarySection, isFinanceOnly, isTashkiliyOnly } = useMemo(() => {
+    const isAdmin = Boolean(roles.includes('Admin'));
+    const isAgentOnly = Boolean(
+      roles.includes('Agent')
+        && !roles.includes('Admin')
+        && !roles.includes('Manager')
+        && !roles.includes('Finance'),
+    );
+    const hasFinanceRole = Boolean(roles.includes('Finance'));
+    const showSalarySection = isAgentOnly || hasFinanceRole;
+    const isFinanceOnly = Boolean(
+      hasFinanceRole
+        && !roles.includes('Admin')
+        && !roles.includes('Manager')
+        && !roles.includes('Agent'),
+    );
+    const isTashkiliyOnly = Boolean(
+      roles.includes('Tashkiliy')
+        && !roles.includes('Admin')
+        && !roles.includes('Manager')
+        && !roles.includes('Agent')
+        && !roles.includes('Finance'),
+    );
+    return { isAdmin, isAgentOnly, hasFinanceRole, showSalarySection, isFinanceOnly, isTashkiliyOnly };
+  }, [roles]);
   const [isEditMode, setIsEditMode] = useState(false);
   const [layoutInitialized, setLayoutInitialized] = useState(false);
   const [visibleWidgetIds, setVisibleWidgetIds] = useState<string[]>([]);
@@ -357,7 +363,7 @@ export default function DashboardPage() {
       return sum + Math.max(0, seconds);
     }, 0);
   }, [isAgentOnly, sellerPerformance]);
-  const metricCards: DashboardCard[] = isTashkiliyOnly
+  const metricCards: DashboardCard[] = useMemo(() => isTashkiliyOnly
     ? [
         {
           id: 'new-sales',
@@ -484,9 +490,9 @@ export default function DashboardPage() {
               },
             ]
           : []),
-      ];
+      ], [isTashkiliyOnly, stats, isAgentOnly, agentTalkDurationSeconds]);
 
-  const financeCards: DashboardCard[] = [
+  const financeCards: DashboardCard[] = useMemo(() => [
     {
       id: 'finance-total-income',
       title: 'Jami tushum',
@@ -522,9 +528,9 @@ export default function DashboardPage() {
       subtitle: "Qolgan qarz summasi",
       extra: null,
     },
-  ];
+  ], [financeTotals]);
 
-  const baseDashboardCards = isFinanceOnly ? financeCards : metricCards;
+  const baseDashboardCards = useMemo(() => isFinanceOnly ? financeCards : metricCards, [isFinanceOnly, financeCards, metricCards]);
   const widgetMetricById = useMemo(() => {
     const entries = (customSalesWidgetsQuery.data?.widgets || []) as Array<{
       id: string;
@@ -686,139 +692,19 @@ export default function DashboardPage() {
     await dashboardLayoutQuery.refetch();
     setIsEditMode(false);
   };
-  const salarySection = showSalarySection ? (
-    <div className="rounded-lg bg-white shadow">
-      <div className="px-4 py-5 sm:p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-medium leading-6 text-gray-900">Maosh (joriy oy)</h3>
-            <p className="mt-1 text-sm text-gray-500">{salaryModeLabel}</p>
-          </div>
-        </div>
-
-        {salarySummaryQuery.error && (
-          <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {salarySummaryQuery.error.message || 'Maosh ma\'lumotini yuklashda xatolik.'}
-          </div>
-        )}
-
-        {salarySummaryQuery.isLoading ? (
-          <p className="text-sm text-gray-600">Maosh ma'lumotlari yuklanmoqda...</p>
-        ) : isAgentOnly ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Fiks maosh</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.fixedSalary)}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">KPI</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.kpiAmount)}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Bonus</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.bonusAmount)}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Plan Bonus</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.planBonusAmount)}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Jami maosh</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryCurrentUser?.totalSalary)}</p>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <h4 className="text-sm font-semibold text-gray-900">Plan bonuslar</h4>
-              {Array.isArray(salaryCurrentUser?.planProgress) && salaryCurrentUser.planProgress.length ? (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Plan</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fakt</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bajarilish</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Ishlangan</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 bg-white">
-                      {salaryCurrentUser.planProgress.map((plan: any) => (
-                        <tr key={plan.planId}>
-                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{plan.name}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{plan.fact}/{plan.target}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{(plan.completionPercent ?? 0).toFixed(1)}%</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(plan.earnedAmount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-gray-600">Faol plan bonus topilmadi.</p>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Jami fiks maosh</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.fixedSalary)}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Jami KPI</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.kpi)}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Jami bonus</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.bonus)}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Jami plan bonus</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.planBonus)}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">Jami maosh to'lovi</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.salary)}</p>
-              </div>
-            </div>
-
-            {salaryByAgent.length ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fiks</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">KPI</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bonus</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Plan bonus</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Jami</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 bg-white">
-                    {salaryByAgent.map((row: any) => (
-                      <tr key={row.userId}>
-                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.name}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.fixedSalary)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.kpiAmount)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusAmount)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.planBonusAmount)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(row.totalSalary)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-600">Joriy oy bo'yicha agent maoshi topilmadi.</p>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  ) : null;
+  const salarySection = (
+    <DashboardSalarySection
+      showSalarySection={showSalarySection}
+      isLoading={salarySummaryQuery.isLoading}
+      error={salarySummaryQuery.error}
+      isAgentOnly={isAgentOnly}
+      salaryCurrentUser={salaryCurrentUser}
+      salaryByAgent={salaryByAgent}
+      salaryTotals={salaryTotals}
+      salaryModeLabel={salaryModeLabel}
+      formatAmount={formatAmount}
+    />
+  );
 
   return (
     <div className="space-y-6">
@@ -1080,21 +966,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {visibleDashboardCards.map((card) => (
-              <div
-                key={card.id}
-                className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
-              >
-                <p className="text-sm text-gray-500">{card.title}</p>
-                <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{card.value}</p>
-                <p className="mt-2 text-sm text-gray-600">{card.subtitle}</p>
-                {card.extra ? (
-                  <p className="mt-1 text-sm font-medium text-gray-700">{card.extra}</p>
-                ) : null}
-              </div>
-            ))}
-          </div>
+          <DashboardMetricCards cards={visibleDashboardCards} columns={5} />
 
           {salarySection}
 
@@ -1132,101 +1004,20 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {visibleDashboardCards.map((card) => (
-              <div
-                key={card.id}
-                className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
-              >
-                <p className="text-sm text-gray-500">{card.title}</p>
-                <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{card.value}</p>
-                <p className="mt-2 text-sm text-gray-600">{card.subtitle}</p>
-                {card.extra ? (
-                  <p className="mt-1 text-sm font-medium text-gray-700">{card.extra}</p>
-                ) : null}
-              </div>
-            ))}
-          </div>
+          <DashboardMetricCards cards={visibleDashboardCards} columns={3} />
 
           {salarySection}
 
-          <div className="grid grid-cols-1 gap-6">
-            <div className="rounded-lg bg-white shadow">
-              <div className="px-4 py-5 sm:p-6">
-                <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Sotuvchilar</h3>
-                {summaryQuery.isLoading ? (
-                  <p className="text-sm text-gray-600">Sotuvchilar ma'lumoti yuklanmoqda...</p>
-                ) : sellerPerformance.length ? (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Ism</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sotuv</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Follow-up</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Yozuvlar</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bosqich o'zgarishi</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Muddati o'tgan F/U</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{getPeriodFollowUpLabel(range)}</th>
-                          {!isTashkiliyOnly && (
-                            <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Shartnoma summasi</th>
-                          )}
-                          {!isTashkiliyOnly && (
-                            <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum summasi</th>
-                          )}
-                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Suhbat vaqti</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 bg-white">
-                        {sellerPerformance.map((seller: any) => (
-                          <tr key={seller.userId}>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{seller.name}</td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {renderMetricValue(seller.sales)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {renderMetricValue(seller.followUpCount)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {renderMetricValue(seller.noteCount)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {renderMetricValue(seller.stageChangeCount)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {renderMetricValue(seller.overdueFollowUpCount)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {renderMetricValue(seller.todayFollowUpCount)}
-                            </td>
-                            {!isTashkiliyOnly && (
-                              <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                                {seller.agreementsAmount === null || seller.agreementsAmount === undefined
-                                  ? '-'
-                                  : formatAmount(seller.agreementsAmount)}
-                              </td>
-                            )}
-                            {!isTashkiliyOnly && (
-                              <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                                {seller.incomeAmount === null || seller.incomeAmount === undefined
-                                  ? '-'
-                                  : formatAmount(seller.incomeAmount)}
-                              </td>
-                            )}
-                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                              {formatDuration(seller.talkedSeconds)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-600">Tanlangan filtrlar bo'yicha sotuvchi ma'lumoti topilmadi.</p>
-                )}
-              </div>
-            </div>
-          </div>
+          <DashboardSellerTable
+            isLoading={summaryQuery.isLoading}
+            sellerPerformance={sellerPerformance}
+            isTashkiliyOnly={isTashkiliyOnly}
+            range={range}
+            formatAmount={formatAmount}
+            formatDuration={formatDuration}
+            renderMetricValue={renderMetricValue}
+            getPeriodFollowUpLabel={getPeriodFollowUpLabel}
+          />
         </>
       )}
     </div>
