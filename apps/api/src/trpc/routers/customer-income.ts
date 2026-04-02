@@ -282,6 +282,153 @@ async function refreshCustomerProfileFromLatestActiveSale(
   });
 }
 
+async function normalizeSaleChainChronology(tx: Prisma.TransactionClient, params: {
+  tenantId: string;
+  saleId: string;
+}): Promise<{ didReorder: boolean; canonicalSaleId: string; reorderedIncomeIds: string[] }> {
+  const sourceSale = await tx.income.findFirst({
+    where: {
+      id: params.saleId,
+      tenantId: params.tenantId,
+      type: 'new_sale',
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+    },
+    select: {
+      id: true,
+      customerId: true,
+      managerUserId: true,
+      courseId: true,
+      tariffId: true,
+      entryDate: true,
+      createdAt: true,
+      deadline: true,
+      coursePriceAmount: true,
+      debtAmount: true,
+      legacyImportMeta: true,
+      paymentAmount: true,
+    },
+  });
+
+  if (!sourceSale) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'Source sale not found for chronology normalization.',
+    });
+  }
+
+  const activeRepayments = await tx.income.findMany({
+    where: {
+      tenantId: params.tenantId,
+      type: 'repayment',
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      relatedDebtIncomeId: sourceSale.id,
+    },
+    select: {
+      id: true,
+      managerUserId: true,
+      entryDate: true,
+      createdAt: true,
+      deadline: true,
+      paymentAmount: true,
+    },
+  });
+
+  if (activeRepayments.length === 0) {
+    return {
+      didReorder: false,
+      canonicalSaleId: sourceSale.id,
+      reorderedIncomeIds: [],
+    };
+  }
+
+  const chain = [
+    {
+      ...sourceSale,
+      type: 'new_sale' as const,
+    },
+    ...activeRepayments.map((repayment) => ({
+      ...repayment,
+      type: 'repayment' as const,
+    })),
+  ].sort((a, b) => {
+    const byDate = a.entryDate.getTime() - b.entryDate.getTime();
+    if (byDate !== 0) {
+      return byDate;
+    }
+    return a.createdAt.getTime() - b.createdAt.getTime();
+  });
+
+  const earliestRow = chain[0]!;
+  const shouldReorder = (
+    earliestRow.id !== sourceSale.id
+    && earliestRow.type === 'repayment'
+    && earliestRow.entryDate.getTime() < sourceSale.entryDate.getTime()
+  );
+
+  if (!shouldReorder) {
+    return {
+      didReorder: false,
+      canonicalSaleId: sourceSale.id,
+      reorderedIncomeIds: [],
+    };
+  }
+
+  const sourceSaleSubTariffId = extractSaleSubTariffId(sourceSale.legacyImportMeta);
+  const preservedSaleMeta = withSaleSubTariffMeta(sourceSale.legacyImportMeta, sourceSaleSubTariffId);
+  const sourceAgreementAmount = Number(sourceSale.coursePriceAmount ?? sourceSale.debtAmount ?? 0);
+  const totalPaid = chain.reduce((sum, row) => sum + Math.max(Number(row.paymentAmount || 0), 0), 0);
+  const agreementAmount = sourceAgreementAmount > 0 ? sourceAgreementAmount : totalPaid;
+  const canonicalSaleId = earliestRow.id;
+
+  let rollingDebt = Math.max(agreementAmount - Math.max(Number(earliestRow.paymentAmount || 0), 0), 0);
+
+  await tx.income.update({
+    where: { id: canonicalSaleId },
+    data: {
+      type: 'new_sale',
+      relatedDebtIncomeId: null,
+      managerUserId: sourceSale.managerUserId,
+      courseId: sourceSale.courseId,
+      tariffId: sourceSale.tariffId,
+      coursePriceAmount: agreementAmount,
+      debtAmount: agreementAmount,
+      remainingDebtAmount: rollingDebt,
+      deadline: rollingDebt > 0 ? sourceSale.deadline : null,
+      legacyImportMeta: preservedSaleMeta,
+    },
+  });
+
+  for (const repayment of chain.slice(1)) {
+    const debtAmount = rollingDebt;
+    rollingDebt = Math.max(debtAmount - Math.max(Number(repayment.paymentAmount || 0), 0), 0);
+
+    await tx.income.update({
+      where: { id: repayment.id },
+      data: {
+        type: 'repayment',
+        relatedDebtIncomeId: canonicalSaleId,
+        courseId: sourceSale.courseId,
+        tariffId: sourceSale.tariffId,
+        coursePriceAmount: null,
+        debtAmount,
+        remainingDebtAmount: rollingDebt,
+        legacyImportMeta: Prisma.JsonNull,
+      },
+    });
+  }
+
+  await refreshCustomerProfileFromLatestActiveSale(tx, {
+    tenantId: params.tenantId,
+    customerId: sourceSale.customerId,
+  });
+
+  return {
+    didReorder: true,
+    canonicalSaleId,
+    reorderedIncomeIds: chain.map((row) => row.id),
+  };
+}
+
 function normalizeHistoricalImportErrorMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error || '');
   const normalized = raw.toLowerCase();
@@ -2565,6 +2712,8 @@ async function createIncomeEntry(params: {
   }
 
   let createdIncome;
+  let chronologyReordered = false;
+  let chronologyCanonicalSaleId: string | null = null;
   let selectedSubTariffId: string | undefined;
   let telegramDispatch:
     | {
@@ -2723,6 +2872,7 @@ async function createIncomeEntry(params: {
         customerId: true,
         courseId: true,
         tariffId: true,
+        entryDate: true,
         remainingDebtAmount: true,
       },
     });
@@ -2779,7 +2929,21 @@ async function createIncomeEntry(params: {
         },
       });
 
-      return repayment;
+      if (entryDate.getTime() < debtSource.entryDate.getTime()) {
+        const normalized = await normalizeSaleChainChronology(tx, {
+          tenantId,
+          saleId: debtSource.id,
+        });
+        if (normalized.didReorder) {
+          chronologyReordered = true;
+          chronologyCanonicalSaleId = normalized.canonicalSaleId;
+        }
+      }
+
+      const refreshedRepayment = await tx.income.findUnique({
+        where: { id: repayment.id },
+      });
+      return refreshedRepayment ?? repayment;
     });
   }
 
@@ -2794,6 +2958,12 @@ async function createIncomeEntry(params: {
         metadata: {
           type: input.type,
           customerNumber: customer.customerNumber,
+          ...(chronologyReordered
+            ? {
+                mode: 'income_chain_reordered_by_date',
+                canonicalSaleIncomeId: chronologyCanonicalSaleId,
+              }
+            : {}),
         },
       },
     });
@@ -2835,6 +3005,10 @@ async function createIncomeEntry(params: {
     income: createdIncome,
     customerNumber: customer.customerNumber,
     telegramDispatch,
+    chronologyDebug: {
+      incomeChainReorderedByDate: chronologyReordered,
+      canonicalSaleIncomeId: chronologyCanonicalSaleId,
+    },
   };
 }
 
@@ -3754,6 +3928,7 @@ export const customerIncomeRouter = router({
       return {
         income: result.income,
         telegramDispatch: result.telegramDispatch,
+        debug: result.chronologyDebug,
       };
     }),
 
@@ -3836,6 +4011,7 @@ export const customerIncomeRouter = router({
           orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }],
           select: {
             id: true,
+            entryDate: true,
             paymentAmount: true,
           },
         });
@@ -3950,6 +4126,9 @@ export const customerIncomeRouter = router({
 
         const sourceRemainingDebtAmount = rollingDebt;
 
+        let chronologyReordered = false;
+        let chronologyCanonicalSaleId: string | null = null;
+
         const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
           const updatedSale = await tx.income.update({
             where: { id: income.id },
@@ -3995,6 +4174,26 @@ export const customerIncomeRouter = router({
             customerId: income.customerId,
           });
 
+          const candidateSaleDate = parsedEntryDate ?? income.entryDate;
+          const needsChronologyNormalization = linkedRepayments.some(
+            (repayment) => repayment.entryDate.getTime() < candidateSaleDate.getTime(),
+          );
+
+          if (needsChronologyNormalization) {
+            const normalized = await normalizeSaleChainChronology(tx, {
+              tenantId: ctx.tenantId,
+              saleId: income.id,
+            });
+            if (normalized.didReorder) {
+              chronologyReordered = true;
+              chronologyCanonicalSaleId = normalized.canonicalSaleId;
+              const refreshedIncome = await tx.income.findUnique({
+                where: { id: income.id },
+              });
+              return refreshedIncome ?? updatedSale;
+            }
+          }
+
           return updatedSale;
         });
 
@@ -4007,7 +4206,12 @@ export const customerIncomeRouter = router({
             resourceId: income.id,
             metadata: {
               type: income.type,
-              mode: 'new_sale',
+              mode: chronologyReordered
+                ? 'income_chain_reordered_by_date'
+                : 'new_sale',
+              ...(chronologyReordered
+                ? { canonicalSaleIncomeId: chronologyCanonicalSaleId }
+                : {}),
             },
           },
         });
@@ -4015,6 +4219,10 @@ export const customerIncomeRouter = router({
         return {
           success: true,
           income: updated,
+          debug: {
+            incomeChainReorderedByDate: chronologyReordered,
+            canonicalSaleIncomeId: chronologyCanonicalSaleId,
+          },
         };
       }
 
@@ -4056,6 +4264,7 @@ export const customerIncomeRouter = router({
         },
         select: {
           id: true,
+          entryDate: true,
           debtAmount: true,
           remainingDebtAmount: true,
         },
@@ -4091,14 +4300,18 @@ export const customerIncomeRouter = router({
 
       const nextRepaymentRemainingDebt = Math.max(sourceDebtAtRepaymentTime - nextPaymentAmount, 0);
 
-      const [, updatedRepayment] = await prisma.$transaction([
-        prisma.income.update({
+      let chronologyReordered = false;
+      let chronologyCanonicalSaleId: string | null = null;
+
+      const updatedRepayment = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.income.update({
           where: { id: sourceIncome.id },
           data: {
             remainingDebtAmount: nextSourceRemainingDebt,
           },
-        }),
-        prisma.income.update({
+        });
+
+        const updatedRow = await tx.income.update({
           where: { id: income.id },
           data: {
             managerUserId: nextManagerUserId,
@@ -4108,8 +4321,26 @@ export const customerIncomeRouter = router({
             paymentAmount: nextPaymentAmount,
             remainingDebtAmount: nextRepaymentRemainingDebt,
           },
-        }),
-      ]);
+        });
+
+        const candidateRepaymentDate = parsedEntryDate ?? income.entryDate;
+        if (candidateRepaymentDate.getTime() < sourceIncome.entryDate.getTime()) {
+          const normalized = await normalizeSaleChainChronology(tx, {
+            tenantId: ctx.tenantId,
+            saleId: sourceIncome.id,
+          });
+          if (normalized.didReorder) {
+            chronologyReordered = true;
+            chronologyCanonicalSaleId = normalized.canonicalSaleId;
+            const refreshedIncome = await tx.income.findUnique({
+              where: { id: income.id },
+            });
+            return refreshedIncome ?? updatedRow;
+          }
+        }
+
+        return updatedRow;
+      });
 
       await prisma.auditLog.create({
         data: {
@@ -4120,7 +4351,12 @@ export const customerIncomeRouter = router({
           resourceId: income.id,
           metadata: {
             type: income.type,
-            mode: 'repayment',
+            mode: chronologyReordered
+              ? 'income_chain_reordered_by_date'
+              : 'repayment',
+            ...(chronologyReordered
+              ? { canonicalSaleIncomeId: chronologyCanonicalSaleId }
+              : {}),
           },
         },
       });
@@ -4128,6 +4364,10 @@ export const customerIncomeRouter = router({
       return {
         success: true,
         income: updatedRepayment,
+        debug: {
+          incomeChainReorderedByDate: chronologyReordered,
+          canonicalSaleIncomeId: chronologyCanonicalSaleId,
+        },
       };
     }),
 
@@ -6973,4 +7213,3 @@ export const customerIncomeRouter = router({
       };
     }),
 });
-
