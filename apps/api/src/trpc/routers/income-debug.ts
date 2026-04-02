@@ -4,7 +4,7 @@ import { prisma } from '@dashboarduz/db';
 import { adminProcedure, router } from '../trpc';
 
 const incomeDebugInput = z.object({
-  mode: z.enum(['suspicious', 'future', 'unresolved', 'relink', 'imported', 'all']).default('suspicious'),
+  mode: z.enum(['suspicious', 'future', 'unresolved', 'relink', 'imported', 'hidden', 'all']).default('suspicious'),
   query: z.string().trim().optional(),
   limit: z.number().int().positive().max(500).default(200),
 }).optional();
@@ -89,6 +89,7 @@ export const incomeDebugRouter = router({
           relatedDebtIncomeId: true,
           legacyImportSource: true,
           historicalImportSessionId: true,
+          legacyImportMeta: true,
           customer: {
             select: {
               customerNumber: true,
@@ -180,6 +181,8 @@ export const incomeDebugRouter = router({
       }
 
       const rows = incomes.map((income) => {
+        const legacyMeta = asObject(income.legacyImportMeta);
+        const isDebugHidden = Boolean(legacyMeta?.debugHidden);
         const createLog = createLogByIncomeId.get(income.id);
         const isImported = Boolean(income.legacyImportSource);
         const isFutureDated = income.entryDate.getTime() > now.getTime();
@@ -242,6 +245,7 @@ export const incomeDebugRouter = router({
           reason,
           sourceType,
           isFutureDated,
+          isDebugHidden,
           legacyImportSource: income.legacyImportSource,
           historicalImportSessionId: income.historicalImportSessionId,
           type: income.type,
@@ -261,6 +265,9 @@ export const incomeDebugRouter = router({
       });
 
       const filteredRows = rows.filter((row) => {
+        if (mode !== 'hidden' && row.isDebugHidden) {
+          return false;
+        }
         switch (mode) {
           case 'future':
             return row.status === 'future';
@@ -270,6 +277,8 @@ export const incomeDebugRouter = router({
             return row.status === 'possible_relink';
           case 'imported':
             return row.status === 'imported';
+          case 'hidden':
+            return row.isDebugHidden;
           case 'suspicious':
             return row.status !== 'normal';
           case 'all':
@@ -287,7 +296,62 @@ export const incomeDebugRouter = router({
           importedCount: rows.filter((row) => row.status === 'imported').length,
           unresolvedCount: rows.filter((row) => row.status === 'unresolved').length,
           possibleRelinkCount: rows.filter((row) => row.status === 'possible_relink').length,
+          hiddenCount: rows.filter((row) => row.isDebugHidden).length,
         },
+      };
+    }),
+
+  hideSelected: adminProcedure
+    .input(z.object({
+      incomeIds: z.array(z.string().uuid()).min(1).max(200),
+      hidden: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const incomes = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          id: { in: input.incomeIds },
+        },
+        select: {
+          id: true,
+          legacyImportMeta: true,
+        },
+      });
+
+      const updates = incomes.map((income) => {
+        const nextMeta = {
+          ...(asObject(income.legacyImportMeta) || {}),
+          debugHidden: input.hidden,
+        } as Prisma.InputJsonValue;
+
+        return prisma.income.update({
+          where: { id: income.id },
+          data: {
+            legacyImportMeta: nextMeta,
+          },
+        });
+      });
+
+      if (updates.length) {
+        await prisma.$transaction(updates);
+      }
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: input.hidden ? 'income_debug_hide' : 'income_debug_unhide',
+          resource: 'income',
+          metadata: {
+            incomeIds: input.incomeIds,
+            count: input.incomeIds.length,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        updatedCount: updates.length,
       };
     }),
 });
