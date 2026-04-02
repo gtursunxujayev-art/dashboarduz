@@ -177,6 +177,7 @@ export const summaryProcedures = {
             course: {
               select: {
                 name: true,
+                category: true,
               },
             },
           },
@@ -352,7 +353,9 @@ export const summaryProcedures = {
         const agreementAmount = income.coursePriceAmount ?? income.paymentAmount ?? 0;
         newSalesAgreementAmount += agreementAmount;
 
-        const category = classifyCourseCategoryFromField(income.course?.name);
+        const category = income.course?.category
+          ? classifyCourseCategoryFromField(income.course.category)
+          : classifyCourseCategoryFromField(income.course?.name);
         if (category === 'online') {
           onlineSalesCount += 1;
           onlineSalesAgreementAmount += agreementAmount;
@@ -769,6 +772,7 @@ export const summaryProcedures = {
           select: {
             id: true,
             name: true,
+            category: true,
           },
         }),
         prisma.user.findMany({
@@ -1033,9 +1037,9 @@ export const summaryProcedures = {
             amount: value.amount,
           }))
           .sort((a, b) => b.amount - a.amount),
-        courseOptions: (courses as Array<{ id: string; name: string }>).map((course) => ({
+        courseOptions: (courses as Array<{ id: string; name: string; category: string }>).map((course) => ({
           ...course,
-          category: classifyCourseCategoryFromField(course.name),
+          category: classifyCourseCategoryFromField(course.category || course.name),
         })),
         managerOptions: visibleManagerOptions,
         recentIncomes: (incomes as Array<{
