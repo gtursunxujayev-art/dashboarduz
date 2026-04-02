@@ -8,7 +8,9 @@
                             "noUnusedLocals": false,
                             "noUnusedParameters": false,
                             "exactOptionalPropertyTypes": false,
-                            "noImplicitReturns": false
+                            "noImplicitReturns": false,
+                            "declaration": true,
+                            "declarationMap": true
                         },
     "include":  [
                     "src/**/*"
