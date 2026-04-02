@@ -45,6 +45,7 @@ const TASHKILIY_ALLOWED_HREFS = new Set([
 const ADMIN_ONLY_HREFS = new Set([
   '/dashboard/integrations',
   '/dashboard/notifications',
+  '/dashboard/income-problems',
 ]);
 
 const navigation = [
@@ -277,3 +278,4 @@ export default function Sidebar() {
     </>
   );
 }
+
