@@ -38,7 +38,7 @@ function formatDate(value?: string | null): string {
 
 export default function CourseSalesPage() {
   const { user } = useAuth();
-  const roles = user?.roles || [];
+  const roles = useMemo(() => user?.roles ?? [], [user?.roles]);
   const isAdmin = Boolean(roles.includes('Admin'));
   const isTashkiliyOnly = Boolean(
     roles.includes('Tashkiliy')
@@ -178,7 +178,10 @@ export default function CourseSalesPage() {
   );
 
   const summary = summaryQuery.data?.totals;
-  const customers = customersQuery.data?.rows || [];
+  const customers = useMemo(
+    () => customersQuery.data?.rows ?? [],
+    [customersQuery.data?.rows],
+  );
   const editorCourses = useMemo(() => editorOptionsQuery.data || [], [editorOptionsQuery.data]);
   const courseEditorCustomer = useMemo(
     () => customers.find((row: any) => row.customerId === courseEditorCustomerId) || null,
