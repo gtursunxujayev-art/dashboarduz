@@ -41,6 +41,7 @@ export default function IncomeDebugPage() {
   const [mode, setMode] = useState<(typeof MODE_OPTIONS)[number]['value']>('suspicious');
   const [query, setQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [repairResults, setRepairResults] = useState<Array<any>>([]);
   const [applied, setApplied] = useState({
     mode: 'suspicious' as (typeof MODE_OPTIONS)[number]['value'],
     query: '',
@@ -109,6 +110,7 @@ export default function IncomeDebugPage() {
     if (!selectedIds.length) return;
     if (!window.confirm(`Tanlangan ${selectedIds.length} ta qatorning sanasini faol snapshot orqali tiklaysizmi?`)) return;
     const result = await repairMutation.mutateAsync({ incomeIds: selectedIds });
+    setRepairResults(result.results ?? []);
     await refreshList();
     window.alert(`Sana tiklash yakunlandi. Yangilandi: ${result.updatedCount}. O'tkazib yuborildi: ${result.skippedCount}.`);
   };
@@ -231,6 +233,68 @@ export default function IncomeDebugPage() {
               </div>
             ) : null}
           </div>
+
+          {repairResults.length > 0 ? (
+            <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-slate-700">
+              <div className="border-b border-gray-200 px-4 py-3 dark:border-slate-700">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                  Oxirgi sana tiklash natijalari
+                </h2>
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                  O'tkazib yuborilgan qatorlar va sabablarini shu yerda ko'rasiz.
+                </p>
+              </div>
+              <div className="max-h-80 overflow-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-slate-700">
+                  <thead className="bg-gray-50 dark:bg-slate-800/80">
+                    <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">
+                      <th className="px-4 py-3">Mijoz</th>
+                      <th className="px-4 py-3">Eski sana</th>
+                      <th className="px-4 py-3">Yangi sana</th>
+                      <th className="px-4 py-3">Holat</th>
+                      <th className="px-4 py-3">Sabab</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-800 dark:bg-slate-900">
+                    {repairResults.map((row) => (
+                      <tr key={`${row.incomeId}-${row.oldDate}-${row.newDate ?? 'none'}`}>
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-gray-900 dark:text-slate-100">{row.customerNumber}</div>
+                          <div className="text-xs text-gray-500 dark:text-slate-400">{row.customerName}</div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">{row.oldDate || '-'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{row.newDate || '-'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+                            row.status === 'updated'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                              : row.status === 'unchanged'
+                                ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                          }`}>
+                            {row.status === 'updated'
+                              ? 'Yangilandi'
+                              : row.status === 'unchanged'
+                                ? "To'g'ri edi"
+                                : row.status === 'ambiguous'
+                                  ? 'Noaniq moslik'
+                                  : row.status === 'no_match'
+                                    ? 'Mos qator topilmadi'
+                                    : row.status === 'invalid_snapshot_date'
+                                      ? 'Snapshot xato'
+                                      : row.status === 'failed'
+                                        ? 'Xatolik'
+                                        : row.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-slate-400">{row.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
 
           <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-slate-700">
             <div className="overflow-x-auto">
