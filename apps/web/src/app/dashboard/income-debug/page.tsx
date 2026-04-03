@@ -159,6 +159,9 @@ export default function IncomeDebugPage() {
               <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700">
                 <p className="text-xs text-gray-500">Tekshirilgan qator</p>
                 <p className="mt-1 text-lg font-semibold">{summary.inspectedCount}</p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                  Skan qilingan namuna: {summary.sampledCount}
+                </p>
               </div>
               <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700">
                 <p className="text-xs text-gray-500">Kelajak sanali</p>
