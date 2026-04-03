@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   prisma,
   TRPCError,
@@ -5,6 +6,10 @@ import {
   INCOME_LIFECYCLE_ACTIVE,
   isAgentOnly,
   getCurrentMonthRange,
+  dashboardRangeSchema,
+  resolveDateRange,
+  shiftToReportTimezone,
+  getDaysInReportLocalMonth,
   classifyCourseCategoryFromField,
   extractSalarySettings,
   createZeroBreakdown,
@@ -16,11 +21,66 @@ import {
   type PlanBonusPeriodMode,
 } from './helpers';
 
+function calculateProratedFixedSalary(
+  monthlyFixedSalary: number,
+  rangeStart: Date,
+  rangeEnd: Date,
+): number {
+  if (!monthlyFixedSalary || rangeEnd < rangeStart) {
+    return 0;
+  }
+
+  const localStart = shiftToReportTimezone(rangeStart);
+  const localEnd = shiftToReportTimezone(rangeEnd);
+
+  let year = localStart.getUTCFullYear();
+  let month = localStart.getUTCMonth();
+  const endYear = localEnd.getUTCFullYear();
+  const endMonth = localEnd.getUTCMonth();
+  let total = 0;
+
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    const daysInMonth = getDaysInReportLocalMonth(year, month);
+    const startDay = year === localStart.getUTCFullYear() && month === localStart.getUTCMonth()
+      ? localStart.getUTCDate()
+      : 1;
+    const endDay = year === localEnd.getUTCFullYear() && month === localEnd.getUTCMonth()
+      ? localEnd.getUTCDate()
+      : daysInMonth;
+
+    total += (monthlyFixedSalary * Math.max(0, endDay - startDay + 1)) / daysInMonth;
+
+    month += 1;
+    if (month > 11) {
+      month = 0;
+      year += 1;
+    }
+  }
+
+  return Math.round(total);
+}
+
 export const salaryProcedures = {
-  salarySummary: protectedProcedure.query(async ({ ctx }) => {
+  salarySummary: protectedProcedure
+    .input(
+      z.object({
+        range: dashboardRangeSchema.default('month').optional(),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        managerUserId: z.string().uuid().optional(),
+        prorateFixedSalary: z.boolean().optional(),
+      }).optional(),
+    )
+    .query(async ({ ctx, input }) => {
     const now = new Date();
-    const { monthStart, monthEnd } = getCurrentMonthRange(now);
+    const hasExplicitRange = Boolean(input);
+    const resolvedRange = hasExplicitRange
+      ? resolveDateRange(input?.range || 'month', now, input?.dateFrom, input?.dateTo)
+      : getCurrentMonthRange(now);
+    const rangeStart = 'rangeStart' in resolvedRange ? resolvedRange.rangeStart : resolvedRange.monthStart;
+    const rangeEnd = 'rangeEnd' in resolvedRange ? resolvedRange.rangeEnd : resolvedRange.monthEnd;
     const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
+    const selectedManagerUserId = scopedManagerUserId || input?.managerUserId;
 
     const [tenant, allAgents] = await Promise.all([
       prisma.tenant.findUnique({
@@ -49,15 +109,15 @@ export const salaryProcedures = {
     }
 
     const salarySettings = extractSalarySettings(tenant.settings);
-    const agents = scopedManagerUserId
-      ? allAgents.filter((agent) => agent.id === scopedManagerUserId)
+    const agents = selectedManagerUserId
+      ? allAgents.filter((agent) => agent.id === selectedManagerUserId)
       : allAgents;
     const agentIds = agents.map((agent) => agent.id);
 
     if (!agentIds.length) {
       return {
-        monthStart: monthStart.toISOString(),
-        monthEnd: monthEnd.toISOString(),
+        monthStart: rangeStart.toISOString(),
+        monthEnd: rangeEnd.toISOString(),
         scopedToCurrentAgent: Boolean(scopedManagerUserId),
         bonusMode: salarySettings.bonusMode,
         bonusPercentages: salarySettings.bonusPercentages,
@@ -119,7 +179,9 @@ export const salaryProcedures = {
       salaryByAgent.set(agent.id, {
         userId: agent.id,
         name: agent.name || agent.username || agent.id,
-        fixedSalary: salarySettings.fixedSalaries.get(agent.id) ?? 0,
+        fixedSalary: input?.prorateFixedSalary
+          ? calculateProratedFixedSalary(salarySettings.fixedSalaries.get(agent.id) ?? 0, rangeStart, rangeEnd)
+          : (salarySettings.fixedSalaries.get(agent.id) ?? 0),
         kpiAmount: 0,
         bonusAmount: 0,
         planBonusAmount: 0,
@@ -137,7 +199,7 @@ export const salaryProcedures = {
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           remainingDebtAmount: 0,
           entryDate: {
-            lte: monthEnd,
+            lte: rangeEnd,
           },
         },
         select: {
@@ -167,7 +229,7 @@ export const salaryProcedures = {
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           },
           entryDate: {
-            lte: monthEnd,
+            lte: rangeEnd,
           },
         },
         orderBy: {
@@ -204,7 +266,7 @@ export const salaryProcedures = {
 
     for (const sale of fullyPaidNewSalesForBonus) {
       const closeDate = closeDateBySaleIdForBonus.get(sale.id) ?? sale.entryDate;
-      if (closeDate < monthStart || closeDate > monthEnd) {
+      if (closeDate < rangeStart || closeDate > rangeEnd) {
         continue;
       }
       const category = sale.course?.category
@@ -225,8 +287,8 @@ export const salaryProcedures = {
           managerUserId: { in: agentIds },
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           entryDate: {
-            gte: monthStart,
-            lte: monthEnd,
+            gte: rangeStart,
+            lte: rangeEnd,
           },
         },
         select: {
@@ -283,7 +345,7 @@ export const salaryProcedures = {
         }
         processedSaleIds.add(sale.id);
         const closeDate = closeDateBySaleIdForBonus.get(sale.id) ?? sale.entryDate;
-        if (closeDate < monthStart || closeDate > monthEnd) {
+        if (closeDate < rangeStart || closeDate > rangeEnd) {
           return;
         }
 
@@ -398,8 +460,8 @@ export const salaryProcedures = {
         }
       }
 
-      const monthStartMs = monthStart.getTime();
-      const monthEndMs = monthEnd.getTime();
+      const monthStartMs = rangeStart.getTime();
+      const monthEndMs = rangeEnd.getTime();
       const closedSalesFactsByAgentAndPlan = new Map<string, number>();
 
       const incrementPlanFact = (agentId: string, planId: string) => {
@@ -433,7 +495,11 @@ export const salaryProcedures = {
               continue;
             }
           }
-          if (plan.periodMode === 'monthly' && (closeTimestamp < monthStartMs || closeTimestamp > monthEndMs)) {
+          if (hasExplicitRange) {
+            if (closeTimestamp < monthStartMs || closeTimestamp > monthEndMs) {
+              continue;
+            }
+          } else if (plan.periodMode === 'monthly' && (closeTimestamp < monthStartMs || closeTimestamp > monthEndMs)) {
             continue;
           }
 
@@ -492,8 +558,8 @@ export const salaryProcedures = {
     );
 
     return {
-      monthStart: monthStart.toISOString(),
-      monthEnd: monthEnd.toISOString(),
+      monthStart: rangeStart.toISOString(),
+      monthEnd: rangeEnd.toISOString(),
       scopedToCurrentAgent: Boolean(scopedManagerUserId),
       bonusMode: salarySettings.bonusMode,
       bonusPercentages: salarySettings.bonusPercentages,
@@ -501,5 +567,5 @@ export const salaryProcedures = {
       byAgent,
       currentUser: byAgent.find((row) => row.userId === ctx.user.userId) || null,
     };
-  }),
+    }),
 };
