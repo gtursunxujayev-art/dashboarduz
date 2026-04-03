@@ -6320,6 +6320,7 @@ export const customerIncomeRouter = router({
           managerUserId: true,
           courseId: true,
           tariffId: true,
+          entryDate: true,
         },
       });
 
@@ -6338,9 +6339,12 @@ export const customerIncomeRouter = router({
             { relatedDebtIncomeId: saleIncome.id },
           ],
         },
+        orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }],
         select: {
           id: true,
           paymentAmount: true,
+          entryDate: true,
+          createdAt: true,
         },
       });
       const saleChainIds = saleChain.map((item) => item.id);
@@ -6370,6 +6374,8 @@ export const customerIncomeRouter = router({
       const transferAmount = saleChain.reduce((sum, item) => sum + (item.paymentAmount || 0), 0);
       let targetSaleIncomeId: string | null = null;
       let createdRefundRequestId: string | null = null;
+      let relinkedPaymentDates: string[] = [];
+      let relinkedRepaymentIds: string[] = [];
 
       if (input.action === 'relink') {
         if (!input.targetSaleIncomeId) {
@@ -6473,31 +6479,49 @@ export const customerIncomeRouter = router({
           }
 
           if (transferAmount > 0) {
-            const nextRemainingDebt = Math.max((targetSale.remainingDebtAmount || 0) - transferAmount, 0);
-            const transferDate = new Date();
+            let runningRemainingDebt = targetSale.remainingDebtAmount || 0;
+            const sourcePayments = saleChain
+              .filter((item) => (item.paymentAmount || 0) > 0)
+              .sort((left, right) => {
+                if (left.entryDate.getTime() !== right.entryDate.getTime()) {
+                  return left.entryDate.getTime() - right.entryDate.getTime();
+                }
+                return left.createdAt.getTime() - right.createdAt.getTime();
+              });
 
-            await tx.income.create({
-              data: {
-                tenantId: ctx.tenantId,
-                customerId: saleIncome.customerId,
-                managerUserId: saleIncome.managerUserId || targetSale.managerUserId,
-                type: 'repayment',
-                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-                relatedDebtIncomeId: targetSale.id,
-                courseId: targetSale.courseId,
-                tariffId: targetSale.tariffId,
-                entryDate: transferDate,
-                deadline: targetSale.deadline,
-                debtAmount: targetSale.remainingDebtAmount || 0,
-                paymentAmount: transferAmount,
-                remainingDebtAmount: nextRemainingDebt,
-              },
-            });
+            for (const sourcePayment of sourcePayments) {
+              const debtBeforePayment = runningRemainingDebt;
+              runningRemainingDebt = Math.max(runningRemainingDebt - (sourcePayment.paymentAmount || 0), 0);
+              const createdRepayment = await tx.income.create({
+                data: {
+                  tenantId: ctx.tenantId,
+                  customerId: saleIncome.customerId,
+                  managerUserId: saleIncome.managerUserId || targetSale.managerUserId,
+                  type: 'repayment',
+                  lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                  relatedDebtIncomeId: targetSale.id,
+                  courseId: targetSale.courseId,
+                  tariffId: targetSale.tariffId,
+                  entryDate: sourcePayment.entryDate,
+                  deadline: targetSale.deadline,
+                  debtAmount: debtBeforePayment,
+                  paymentAmount: sourcePayment.paymentAmount || 0,
+                  remainingDebtAmount: runningRemainingDebt,
+                },
+                select: {
+                  id: true,
+                  entryDate: true,
+                },
+              });
+
+              relinkedRepaymentIds.push(createdRepayment.id);
+              relinkedPaymentDates.push(createdRepayment.entryDate.toISOString());
+            }
 
             await tx.income.update({
               where: { id: targetSale.id },
               data: {
-                remainingDebtAmount: nextRemainingDebt,
+                remainingDebtAmount: runningRemainingDebt,
               },
             });
           }
@@ -6553,12 +6577,15 @@ export const customerIncomeRouter = router({
             saleIncomeId: saleIncome.id,
             sourceCourseId: saleIncome.courseId,
             sourceTariffId: saleIncome.tariffId,
+            sourceEntryDate: saleIncome.entryDate,
             transferAmount,
             targetSaleIncomeId,
             refundRequestId: createdRefundRequestId,
             action: input.action,
             managerUserId: saleIncome.managerUserId,
             deletedCount: resultPayload.deletedCount,
+            relinkedRepaymentIds,
+            relinkedPaymentDates,
           },
         },
       });
