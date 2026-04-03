@@ -10,11 +10,13 @@ import {
 } from '../../services/integrations/amocrm-activity';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { log, LogLevel } from '../../services/observability';
+import { decryptIntegrationTokens } from '../../services/security/encryption';
+import { telegramService } from '../../services/integrations/telegram';
 
 const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
-const sellerRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
+const sellerRangeSchema = z.enum(['today', 'week', 'month', 'last30days', 'custom']);
 type SellerRange = z.infer<typeof sellerRangeSchema>;
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 const SELLERS_LIST_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -26,6 +28,50 @@ type SellersListCacheEntry = {
 };
 
 const sellersListCache = new Map<string, SellersListCacheEntry>();
+
+type SellerIncomeMetricSource = {
+  type: string | null;
+  paymentAmount: number | null;
+  coursePriceAmount: number | null;
+  course: {
+    category: string | null;
+    name?: string | null;
+  } | null;
+};
+
+type SellerSalesMetrics = {
+  newSalesCount: number;
+  newSalesAgreementAmount: number;
+  incomeAmount: number;
+  averageSalesCount: number;
+  averageAgreementAmount: number;
+  onlineSalesCount: number;
+  onlineSalesAgreementAmount: number;
+  onlineSalesIncomeAmount: number;
+  offlineSalesCount: number;
+  offlineSalesAgreementAmount: number;
+  offlineSalesIncomeAmount: number;
+  intensiveSalesCount: number;
+  intensiveSalesAgreementAmount: number;
+  intensiveSalesIncomeAmount: number;
+};
+
+type SellerReportSeller = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  roles: string[];
+  lastLoginAt: Date | null;
+  createdAt: Date;
+};
+
+type SellerReportPayload = {
+  seller: SellerReportSeller;
+  metrics: ReturnType<typeof buildMetrics> & SellerSalesMetrics;
+  rangeStart: Date;
+  rangeEnd: Date;
+};
 
 function asString(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -71,6 +117,10 @@ function getRangeStart(range: SellerRange, now: Date): Date {
     const day = shiftedNow.getUTCDay();
     const daysSinceMonday = (day + 6) % 7;
     return new Date(Date.UTC(year, month, date - daysSinceMonday) - offsetMs);
+  }
+
+  if (range === 'last30days') {
+    return new Date(Date.UTC(year, month, date - 29) - offsetMs);
   }
 
   return new Date(Date.UTC(year, month, 1) - offsetMs);
@@ -134,6 +184,202 @@ function getLeadResponsibleId(lead: AmoCRMLead): string | null {
 
 function normalizeDigits(value: unknown): string {
   return String(value || '').replace(/[^\d]/g, '');
+}
+
+function normalizeTelegramSecret(rawValue: string | undefined): string | null {
+  if (!rawValue) {
+    return null;
+  }
+  const normalized = rawValue.replace(/^['"`]+|['"`]+$/g, '').trim();
+  return normalized || null;
+}
+
+function resolveSellerIncomeCategory(source: SellerIncomeMetricSource): 'online' | 'offline' | 'intensive' | null {
+  const rawCategory = asString(source.course?.category)?.toLowerCase();
+  if (rawCategory === 'online' || rawCategory === 'offline' || rawCategory === 'intensive') {
+    return rawCategory;
+  }
+
+  const courseName = asString(source.course?.name)?.toLowerCase() || '';
+  if (courseName.includes('onlayn') || courseName.includes('online')) {
+    return 'online';
+  }
+  if (courseName.includes('oflayn') || courseName.includes('offline')) {
+    return 'offline';
+  }
+  if (courseName.includes('intensiv') || courseName.includes('intensive')) {
+    return 'intensive';
+  }
+
+  return null;
+}
+
+function getInclusiveRangeDayCount(rangeStart: Date, rangeEnd: Date): number {
+  const millis = rangeEnd.getTime() - rangeStart.getTime();
+  if (millis <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.ceil(millis / (24 * 60 * 60 * 1000)));
+}
+
+function summarizeSellerIncomeMetrics(
+  incomes: SellerIncomeMetricSource[],
+  rangeStart: Date,
+  rangeEnd: Date,
+): SellerSalesMetrics {
+  let newSalesCount = 0;
+  let newSalesAgreementAmount = 0;
+  let incomeAmount = 0;
+
+  let onlineSalesCount = 0;
+  let onlineSalesAgreementAmount = 0;
+  let onlineSalesIncomeAmount = 0;
+  let offlineSalesCount = 0;
+  let offlineSalesAgreementAmount = 0;
+  let offlineSalesIncomeAmount = 0;
+  let intensiveSalesCount = 0;
+  let intensiveSalesAgreementAmount = 0;
+  let intensiveSalesIncomeAmount = 0;
+
+  for (const income of incomes) {
+    const paymentAmount = Number(income.paymentAmount || 0);
+    const agreementAmount = Number(income.coursePriceAmount || 0);
+    const category = resolveSellerIncomeCategory(income);
+
+    incomeAmount += paymentAmount;
+
+    if (income.type === 'new_sale') {
+      newSalesCount += 1;
+      newSalesAgreementAmount += agreementAmount;
+      if (category === 'online') {
+        onlineSalesCount += 1;
+        onlineSalesAgreementAmount += agreementAmount;
+      } else if (category === 'offline') {
+        offlineSalesCount += 1;
+        offlineSalesAgreementAmount += agreementAmount;
+      } else if (category === 'intensive') {
+        intensiveSalesCount += 1;
+        intensiveSalesAgreementAmount += agreementAmount;
+      }
+    }
+
+    if (category === 'online') {
+      onlineSalesIncomeAmount += paymentAmount;
+    } else if (category === 'offline') {
+      offlineSalesIncomeAmount += paymentAmount;
+    } else if (category === 'intensive') {
+      intensiveSalesIncomeAmount += paymentAmount;
+    }
+  }
+
+  const rangeDayCount = getInclusiveRangeDayCount(rangeStart, rangeEnd);
+  const averageSalesCount = newSalesCount > 0 ? newSalesCount / rangeDayCount : 0;
+  const averageAgreementAmount = newSalesCount > 0 ? newSalesAgreementAmount / newSalesCount : 0;
+
+  return {
+    newSalesCount,
+    newSalesAgreementAmount: Number(newSalesAgreementAmount.toFixed(2)),
+    incomeAmount: Number(incomeAmount.toFixed(2)),
+    averageSalesCount: Number(averageSalesCount.toFixed(2)),
+    averageAgreementAmount: Number(averageAgreementAmount.toFixed(2)),
+    onlineSalesCount,
+    onlineSalesAgreementAmount: Number(onlineSalesAgreementAmount.toFixed(2)),
+    onlineSalesIncomeAmount: Number(onlineSalesIncomeAmount.toFixed(2)),
+    offlineSalesCount,
+    offlineSalesAgreementAmount: Number(offlineSalesAgreementAmount.toFixed(2)),
+    offlineSalesIncomeAmount: Number(offlineSalesIncomeAmount.toFixed(2)),
+    intensiveSalesCount,
+    intensiveSalesAgreementAmount: Number(intensiveSalesAgreementAmount.toFixed(2)),
+    intensiveSalesIncomeAmount: Number(intensiveSalesIncomeAmount.toFixed(2)),
+  };
+}
+
+function buildSellerReportPdf(params: SellerReportPayload): Buffer {
+  const lines = [
+    `${params.seller.name} — agent report`,
+    `Period: ${params.rangeStart.toISOString()} — ${params.rangeEnd.toISOString()}`,
+    '',
+    `Sales count: ${params.metrics.newSalesCount}`,
+    `Agreement amount: ${Math.round(params.metrics.newSalesAgreementAmount).toLocaleString('en-US')} UZS`,
+    `Income amount: ${Math.round(params.metrics.incomeAmount).toLocaleString('en-US')} UZS`,
+    `Average sales: ${params.metrics.averageSalesCount.toFixed(2)}`,
+    '',
+    `Online: ${params.metrics.onlineSalesCount} | Agreement ${Math.round(params.metrics.onlineSalesAgreementAmount).toLocaleString('en-US')} UZS | Income ${Math.round(params.metrics.onlineSalesIncomeAmount).toLocaleString('en-US')} UZS`,
+    `Offline: ${params.metrics.offlineSalesCount} | Agreement ${Math.round(params.metrics.offlineSalesAgreementAmount).toLocaleString('en-US')} UZS | Income ${Math.round(params.metrics.offlineSalesIncomeAmount).toLocaleString('en-US')} UZS`,
+    `Intensive: ${params.metrics.intensiveSalesCount} | Agreement ${Math.round(params.metrics.intensiveSalesAgreementAmount).toLocaleString('en-US')} UZS | Income ${Math.round(params.metrics.intensiveSalesIncomeAmount).toLocaleString('en-US')} UZS`,
+    '',
+    `Calls: ${params.metrics.totalCalls}`,
+    `Call duration: ${params.metrics.totalCallDuration} seconds`,
+    `Follow-ups done: ${params.metrics.followUpCount}`,
+    `Notes: ${params.metrics.noteCount}`,
+    `CRM changes: ${params.metrics.stageChangeCount}`,
+    `Today's follow-ups: ${params.metrics.todayFollowUpCount}`,
+    `Overdue follow-ups: ${params.metrics.overdueFollowUpCount}`,
+  ];
+
+  const content = lines
+    .map((line, index) => {
+      const escaped = line
+        .replace(/\\/g, '\\\\')
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)')
+        .replace(/[^\x20-\x7E]/g, '?');
+      return `BT /F1 12 Tf 50 ${780 - index * 20} Td (${escaped}) Tj ET`;
+    })
+    .join('\n');
+
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n',
+    `4 0 obj\n<< /Length ${Buffer.byteLength(content, 'utf8')} >>\nstream\n${content}\nendstream\nendobj\n`,
+    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+  ];
+
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(pdf, 'utf8'));
+    pdf += object;
+  }
+
+  const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (let index = 1; index < offsets.length; index += 1) {
+    pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return Buffer.from(pdf, 'utf8');
+}
+
+async function resolveTelegramBotTokenForTenant(tenantId: string): Promise<string | null> {
+  const integration = await prisma.integration.findUnique({
+    where: {
+      tenantId_type: {
+        tenantId,
+        type: 'telegram',
+      },
+    },
+    select: {
+      tokensEncrypted: true,
+    },
+  });
+
+  let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
+  if (integration?.tokensEncrypted) {
+    try {
+      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
+      botToken = normalizeTelegramSecret(tokens.botToken || tokens.token || undefined) || botToken;
+    } catch (error) {
+      log(LogLevel.WARN, 'Failed to decrypt Telegram integration token for sellers report', {
+        tenantId,
+        error: String((error as Error)?.message || error),
+      });
+    }
+  }
+
+  return botToken;
 }
 
 function isAllowedUtelManagerExtension(value: unknown): boolean {
@@ -439,18 +685,35 @@ function buildSellersListCacheKey(
   tenantId: string,
   scopedResponsibleUserId: string | null,
   pipelineIds: string[],
+  range: SellerRange,
+  dateFrom?: string,
+  dateTo?: string,
 ): string {
   return [
     tenantId,
     scopedResponsibleUserId || 'all',
     pipelineIds.slice().sort().join(','),
+    range,
+    dateFrom || '',
+    dateTo || '',
   ].join('|');
 }
 
 export const sellersRouter = router({
-  list: protectedProcedure.query(async ({ ctx }) => {
+  list: protectedProcedure
+    .input(
+      z.object({
+        range: sellerRangeSchema.default('last30days').optional(),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+      }).optional(),
+    )
+    .query(async ({ ctx, input }) => {
     const startedAtMs = Date.now();
     const timings: Record<string, number> = {};
+    const now = new Date();
+    const range = input?.range || 'last30days';
+    const { rangeStart, rangeEnd } = resolveDateRange(range, now, input?.dateFrom, input?.dateTo);
     const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
     timings.scopeMs = Date.now() - startedAtMs;
 
@@ -505,6 +768,9 @@ export const sellersRouter = router({
       ctx.tenantId,
       scope.isScoped ? (scope.responsibleUserId || '__unmapped__') : null,
       selectedPipelineIds,
+      range,
+      input?.dateFrom,
+      input?.dateTo,
     );
     const cached = sellersListCache.get(listCacheKey);
     if (cached && cached.expiresAt > Date.now()) {
@@ -553,11 +819,32 @@ export const sellersRouter = router({
 
     const extensionMappingStartedMs = Date.now();
     const extensionsByManagerPromise = getManagerExtensionsMap(ctx.tenantId, managerIdList);
+    const userMappingsPromise = (async () => {
+      try {
+        return await prisma.user.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            isActive: true,
+            amocrmResponsibleUserId: { in: managerIdList },
+          },
+          select: {
+            id: true,
+            amocrmResponsibleUserId: true,
+          },
+        });
+      } catch (error) {
+        if (!isMissingUserMappingColumnError(error)) {
+          throw error;
+        }
+        return [];
+      }
+    })();
 
-    const [activeLeads, activityByManager, extensionsByManager] = await Promise.all([
+    const [activeLeads, activityByManager, extensionsByManager, userMappings] = await Promise.all([
       activeLeadsPromise,
       activityPromise,
       extensionsByManagerPromise,
+      userMappingsPromise,
     ]);
     timings.amocrmLeadsMs = Date.now() - leadsFetchStartedMs;
     timings.activityFetchMs = Date.now() - activityFetchStartedMs;
@@ -583,6 +870,17 @@ export const sellersRouter = router({
       }
     }
 
+    const managerUserIdsByAmoId = new Map<string, string[]>();
+    for (const mapping of userMappings as Array<{ id: string; amocrmResponsibleUserId: string | null }>) {
+      const managerId = asString(mapping.amocrmResponsibleUserId);
+      if (!managerId) {
+        continue;
+      }
+      const current = managerUserIdsByAmoId.get(managerId) || [];
+      current.push(mapping.id);
+      managerUserIdsByAmoId.set(managerId, current);
+    }
+
     const callsFetchStartedMs = Date.now();
     const extensionValues = Array.from(new Set(Array.from(extensionsByManager.values()).flat()));
     const calls = extensionValues.length > 0
@@ -590,6 +888,10 @@ export const sellersRouter = router({
           where: {
             tenantId: ctx.tenantId,
             provider: 'utel',
+            startedAt: {
+              gte: rangeStart,
+              lte: rangeEnd,
+            },
             OR: [
               { from: { in: extensionValues } },
               { to: { in: extensionValues } },
@@ -606,6 +908,35 @@ export const sellersRouter = router({
         })
       : [];
     timings.callsFetchMs = Date.now() - callsFetchStartedMs;
+
+    const incomeFetchStartedMs = Date.now();
+    const allManagerUserIds = Array.from(new Set(Array.from(managerUserIdsByAmoId.values()).flat()));
+    const incomes = allManagerUserIds.length > 0
+      ? await prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            lifecycleStatus: 'active',
+            managerUserId: { in: allManagerUserIds },
+            entryDate: {
+              gte: rangeStart,
+              lte: rangeEnd,
+            },
+          },
+          select: {
+            managerUserId: true,
+            type: true,
+            paymentAmount: true,
+            coursePriceAmount: true,
+            course: {
+              select: {
+                category: true,
+                name: true,
+              },
+            },
+          },
+        })
+      : [];
+    timings.incomeFetchMs = Date.now() - incomeFetchStartedMs;
 
     const callsGroupingStartedMs = Date.now();
     const callsByManager = new Map<string, Array<{ duration: number | null; direction: string; status: string; startedAt: Date | null }>>();
@@ -634,6 +965,31 @@ export const sellersRouter = router({
     }
     timings.callsGroupingMs = Date.now() - callsGroupingStartedMs;
 
+    const incomeGroupingStartedMs = Date.now();
+    const incomesByManager = new Map<string, SellerIncomeMetricSource[]>();
+    const managerIdByUserId = new Map<string, string>();
+    for (const [managerId, userIds] of managerUserIdsByAmoId.entries()) {
+      for (const userId of userIds) {
+        managerIdByUserId.set(userId, managerId);
+      }
+    }
+
+    for (const income of incomes) {
+      const managerId = managerIdByUserId.get(income.managerUserId || '');
+      if (!managerId) {
+        continue;
+      }
+      const current = incomesByManager.get(managerId) || [];
+      current.push({
+        type: income.type,
+        paymentAmount: income.paymentAmount,
+        coursePriceAmount: income.coursePriceAmount,
+        course: income.course,
+      });
+      incomesByManager.set(managerId, current);
+    }
+    timings.incomeGroupingMs = Date.now() - incomeGroupingStartedMs;
+
     const buildResponseStartedMs = Date.now();
     const result = managers
       .map((manager) => {
@@ -641,6 +997,8 @@ export const sellersRouter = router({
         const managerActiveLeads = activeLeadsByManager.get(managerId) || [];
         const managerCalls = callsByManager.get(managerId) || [];
         const managerActivity = activityByManager.get(managerId) || null;
+        const managerIncomes = incomesByManager.get(managerId) || [];
+        const salesMetrics = summarizeSellerIncomeMetrics(managerIncomes, rangeStart, rangeEnd);
 
         return {
           id: managerId,
@@ -650,13 +1008,25 @@ export const sellersRouter = router({
           roles: toManagerRole(manager),
           lastLoginAt: null,
           createdAt: new Date(0),
-          metrics: buildMetrics(managerActiveLeads, [], [], managerCalls, {
+          metrics: {
+            ...buildMetrics(managerActiveLeads, [], [], managerCalls, {
             neutralizeLeadOutcomes: true,
             activityMetrics: managerActivity,
-          }),
+            incomeAmountOverride: salesMetrics.incomeAmount,
+            }),
+            salesCount: salesMetrics.newSalesCount,
+            totalDealAmount: salesMetrics.newSalesAgreementAmount,
+            averageDealAmount: salesMetrics.averageAgreementAmount,
+            ...salesMetrics,
+          },
         };
       })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => (
+        (b.metrics.salesCount - a.metrics.salesCount)
+        || (b.metrics.incomeAmount - a.metrics.incomeAmount)
+        || (b.metrics.totalCallDuration - a.metrics.totalCallDuration)
+        || a.name.localeCompare(b.name)
+      ));
     timings.buildResponseMs = Date.now() - buildResponseStartedMs;
     timings.totalMs = Date.now() - startedAtMs;
 
@@ -834,8 +1204,8 @@ export const sellersRouter = router({
         }
       }
 
-      const incomeAggregate = mappedManagerUserIds.length > 0
-        ? await prisma.income.aggregate({
+      const sellerIncomes = mappedManagerUserIds.length > 0
+        ? await prisma.income.findMany({
             where: {
               tenantId: ctx.tenantId,
               lifecycleStatus: 'active',
@@ -845,12 +1215,20 @@ export const sellersRouter = router({
                 lte: rangeEnd,
               },
             },
-            _sum: {
+            select: {
+              type: true,
               paymentAmount: true,
+              coursePriceAmount: true,
+              course: {
+                select: {
+                  category: true,
+                  name: true,
+                },
+              },
             },
           })
-        : null;
-      const incomeAmount = incomeAggregate?._sum?.paymentAmount ?? null;
+        : [];
+      const salesMetrics = summarizeSellerIncomeMetrics(sellerIncomes, rangeStart, rangeEnd);
       const activityMetrics = (
         await getAmoCRMActivityMetrics({
           tenantId: ctx.tenantId,
@@ -859,7 +1237,7 @@ export const sellersRouter = router({
           managerIds: [input.id],
           rangeStart,
           rangeEnd,
-          rangeKind: input.range,
+          rangeKind: input.range === 'last30days' ? 'custom' : input.range,
         })
       ).get(input.id) || null;
 
@@ -874,7 +1252,7 @@ export const sellersRouter = router({
           startedAt: call.startedAt,
         })),
         {
-          incomeAmountOverride: incomeAmount,
+          incomeAmountOverride: salesMetrics.incomeAmount,
           activityMetrics,
         },
       );
@@ -914,7 +1292,13 @@ export const sellersRouter = router({
           lastLoginAt: null,
           createdAt: new Date(0),
         },
-        metrics,
+        metrics: {
+          ...metrics,
+          salesCount: salesMetrics.newSalesCount,
+          totalDealAmount: salesMetrics.newSalesAgreementAmount,
+          averageDealAmount: salesMetrics.averageAgreementAmount,
+          ...salesMetrics,
+        },
         recentLeads,
         recentCalls,
         period: {
@@ -924,6 +1308,218 @@ export const sellersRouter = router({
           rangeStart,
           rangeEnd,
         },
+      };
+    }),
+
+  sendPdfToAdmins: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().min(1),
+        range: sellerRangeSchema.default('last30days'),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      if (scope.isScoped && input.id !== scope.responsibleUserId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
+      }
+
+      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId);
+      if (!botToken) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram bot token topilmadi.' });
+      }
+
+      const [amoContext, adminUsers] = await Promise.all([
+        getTenantAmoCRMContext(ctx.tenantId),
+        prisma.user.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            isActive: true,
+            roles: { has: 'Admin' },
+            telegramId: { not: null },
+          },
+          select: {
+            telegramId: true,
+            name: true,
+          },
+        }),
+      ]);
+
+      if (!amoContext) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'AmoCRM integration is not connected.',
+        });
+      }
+
+      const adminChatIds = adminUsers
+        .map((user) => String(user.telegramId || '').trim())
+        .filter(Boolean);
+      if (!adminChatIds.length) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram chat id bilan admin topilmadi.' });
+      }
+
+      const now = new Date();
+      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
+
+      const [amocrmUsers, pipelinesResponse] = await Promise.all([
+        amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl),
+        amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl),
+      ]);
+      const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
+      const selectedPipelineIds = getSelectedPipelines(amoContext.selectedPipelineIds, pipelines);
+
+      const activeStatusFilters = buildStatusFilters(
+        selectedPipelineIds,
+        pipelines,
+        pipelines
+          .flatMap((pipeline) => (Array.isArray(pipeline._embedded?.statuses) ? pipeline._embedded.statuses : []))
+          .map((status) => asString(status.id))
+          .filter((statusId): statusId is string => Boolean(statusId) && statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID),
+      );
+
+      const sellerUser = amocrmUsers.find((user) => asString(user.id) === input.id);
+      if (!sellerUser) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
+      }
+
+      const [activeLeads, extensionsByManager, mappedUsers] = await Promise.all([
+        fetchLeadsByStatusFilters(
+          amoContext.accessToken,
+          amoContext.baseUrl,
+          selectedPipelineIds,
+          activeStatusFilters,
+          [input.id],
+          rangeStart,
+          rangeEnd,
+          false,
+        ),
+        getManagerExtensionsMap(ctx.tenantId, [input.id]),
+        prisma.user.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            isActive: true,
+            amocrmResponsibleUserId: input.id,
+          },
+          select: { id: true },
+        }).catch((error) => {
+          if (!isMissingUserMappingColumnError(error)) {
+            throw error;
+          }
+          return [];
+        }),
+      ]);
+
+      const extensions = extensionsByManager.get(input.id) || [];
+      const [callsForMetrics, sellerIncomes, activityMetricsMap] = await Promise.all([
+        extensions.length > 0
+          ? prisma.call.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                provider: 'utel',
+                startedAt: {
+                  gte: rangeStart,
+                  lte: rangeEnd,
+                },
+                OR: [{ from: { in: extensions } }, { to: { in: extensions } }],
+              },
+              select: {
+                duration: true,
+                status: true,
+                direction: true,
+                startedAt: true,
+              },
+            })
+          : Promise.resolve([]),
+        mappedUsers.length > 0
+          ? prisma.income.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                lifecycleStatus: 'active',
+                managerUserId: { in: mappedUsers.map((row) => row.id) },
+                entryDate: {
+                  gte: rangeStart,
+                  lte: rangeEnd,
+                },
+              },
+              select: {
+                type: true,
+                paymentAmount: true,
+                coursePriceAmount: true,
+                course: {
+                  select: {
+                    category: true,
+                    name: true,
+                  },
+                },
+              },
+            })
+          : Promise.resolve([]),
+        getAmoCRMActivityMetrics({
+          tenantId: ctx.tenantId,
+          accessToken: amoContext.accessToken,
+          baseUrl: amoContext.baseUrl,
+          managerIds: [input.id],
+          rangeStart,
+          rangeEnd,
+          rangeKind: input.range === 'last30days' ? 'custom' : input.range,
+        }),
+      ]);
+
+      const salesMetrics = summarizeSellerIncomeMetrics(sellerIncomes, rangeStart, rangeEnd);
+      const activityMetrics = activityMetricsMap.get(input.id) || null;
+      const baseMetrics = buildMetrics(
+        activeLeads,
+        [],
+        [],
+        (callsForMetrics as Array<{ duration: number | null; direction: string; status: string; startedAt: Date | null }>).map((call) => ({
+          duration: call.duration,
+          direction: call.direction,
+          status: call.status,
+          startedAt: call.startedAt,
+        })),
+        {
+          neutralizeLeadOutcomes: true,
+          incomeAmountOverride: salesMetrics.incomeAmount,
+          activityMetrics,
+        },
+      );
+
+      const payload: SellerReportPayload = {
+        seller: {
+          id: input.id,
+          name: sellerUser.name || sellerUser.login || `Manager ${input.id}`,
+          email: sellerUser.email || null,
+          phone: null,
+          roles: toManagerRole(sellerUser),
+          lastLoginAt: null,
+          createdAt: new Date(0),
+        },
+        metrics: {
+          ...baseMetrics,
+          salesCount: salesMetrics.newSalesCount,
+          totalDealAmount: salesMetrics.newSalesAgreementAmount,
+          averageDealAmount: salesMetrics.averageAgreementAmount,
+          ...salesMetrics,
+        },
+        rangeStart,
+        rangeEnd,
+      };
+
+      const pdfBuffer = buildSellerReportPdf(payload);
+      const safeName = payload.seller.name.replace(/[^a-zA-Z0-9-_]+/g, '-');
+      const fileName = `seller-report-${safeName || input.id}.pdf`;
+      const caption = `${payload.seller.name} hisobot PDF`;
+
+      for (const chatId of adminChatIds) {
+        await telegramService.sendDocument(botToken, chatId, pdfBuffer, fileName, caption);
+      }
+
+      return {
+        success: true,
+        recipientCount: adminChatIds.length,
       };
     }),
 });
