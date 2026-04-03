@@ -52,6 +52,7 @@ export default function IncomeDebugPage() {
     refetchOnWindowFocus: false,
   });
   const hideMutation = trpc.incomeDebug.hideSelected.useMutation();
+  const repairMutation = trpc.incomeDebug.repairDatesFromSnapshot.useMutation();
   const deleteIncomeMutation = trpc.customerIncome.deleteIncome.useMutation();
 
   const rows = useMemo(() => (debugQuery.data?.rows ?? []) as Array<any>, [debugQuery.data]);
@@ -102,6 +103,14 @@ export default function IncomeDebugPage() {
       await deleteIncomeMutation.mutateAsync({ incomeId });
     }
     await refreshList();
+  };
+
+  const handleRepairDates = async () => {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Tanlangan ${selectedIds.length} ta qatorning sanasini faol snapshot orqali tiklaysizmi?`)) return;
+    const result = await repairMutation.mutateAsync({ incomeIds: selectedIds });
+    await refreshList();
+    window.alert(`Sana tiklash yakunlandi. Yangilandi: ${result.updatedCount}. O'tkazib yuborildi: ${result.skippedCount}.`);
   };
 
   return (
@@ -199,15 +208,23 @@ export default function IncomeDebugPage() {
             )}
             <button
               type="button"
+              disabled={!selectedIds.length || repairMutation.isLoading}
+              onClick={handleRepairDates}
+              className="rounded-md border border-emerald-300 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/20"
+            >
+              Snapshotdan sanani tiklash
+            </button>
+            <button
+              type="button"
               disabled={!selectedIds.length || deleteIncomeMutation.isLoading}
               onClick={handleDelete}
               className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950/20"
             >
               Tanlanganlarni o'chirish
             </button>
-            {(hideMutation.error || deleteIncomeMutation.error) ? (
+            {(hideMutation.error || repairMutation.error || deleteIncomeMutation.error) ? (
               <div className="text-sm text-red-600 dark:text-red-400">
-                {hideMutation.error?.message || deleteIncomeMutation.error?.message}
+                {hideMutation.error?.message || repairMutation.error?.message || deleteIncomeMutation.error?.message}
               </div>
             ) : null}
           </div>
