@@ -25,6 +25,8 @@ type ReportWindow = {
   periodKey: string;
 };
 
+type ManualReportKind = 'today' | 'weekly' | 'monthly';
+
 type ReportMetrics = {
   newLeads: number;
   qualifiedLeads: number;
@@ -492,6 +494,51 @@ function buildTodayWindow(nowUtc: Date): ReportWindow {
     periodStart,
     periodEnd: nowUtc,
     periodKey: formatLocalDate(periodStart),
+  };
+}
+
+function buildPreviousWeekWindow(nowUtc: Date): ReportWindow {
+  const nowLocal = toLocalDate(nowUtc);
+  const year = nowLocal.getUTCFullYear();
+  const month = nowLocal.getUTCMonth();
+  const day = nowLocal.getUTCDate();
+  const daysSinceMonday = (nowLocal.getUTCDay() + 6) % 7;
+  const currentWeekStart = fromLocalParts(year, month, day - daysSinceMonday, 0, 0, 0, 0);
+  const periodStart = new Date(currentWeekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const periodEnd = new Date(currentWeekStart.getTime() - 1);
+
+  return {
+    kind: 'weekly',
+    title: 'Haftalik hisobot (O`tgan hafta)',
+    periodStart,
+    periodEnd,
+    periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(periodEnd)}`,
+  };
+}
+
+function buildPreviousMonthWindow(nowUtc: Date): ReportWindow {
+  const nowLocal = toLocalDate(nowUtc);
+  const year = nowLocal.getUTCFullYear();
+  const month = nowLocal.getUTCMonth();
+  const currentMonthStart = fromLocalParts(year, month, 1, 0, 0, 0, 0);
+  const periodEnd = new Date(currentMonthStart.getTime() - 1);
+  const previousMonthLocal = toLocalDate(new Date(currentMonthStart.getTime() - 24 * 60 * 60 * 1000));
+  const periodStart = fromLocalParts(
+    previousMonthLocal.getUTCFullYear(),
+    previousMonthLocal.getUTCMonth(),
+    1,
+    0,
+    0,
+    0,
+    0,
+  );
+
+  return {
+    kind: 'monthly',
+    title: 'Oylik hisobot (O`tgan oy)',
+    periodStart,
+    periodEnd,
+    periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(periodEnd)}`,
   };
 }
 
@@ -1122,6 +1169,23 @@ export async function sendImmediateTodayReportForTenant(tenantId: string): Promi
   periodEnd: string;
   schedule: 'manual_today';
 }> {
+  const result = await sendManualTelegramReportForTenant(tenantId, 'today');
+  return {
+    ...result,
+    schedule: 'manual_today',
+  };
+}
+
+export async function sendManualTelegramReportForTenant(
+  tenantId: string,
+  kind: ManualReportKind,
+): Promise<{
+  sent: boolean;
+  recipientCount: number;
+  periodStart: string;
+  periodEnd: string;
+  schedule: 'manual_today' | 'manual_weekly' | 'manual_monthly';
+}> {
   const integration = await prisma.integration.findFirst({
     where: {
       tenantId,
@@ -1155,10 +1219,19 @@ export async function sendImmediateTodayReportForTenant(tenantId: string): Promi
   }
 
   const nowUtc = new Date();
-  const window = buildTodayWindow(nowUtc);
+  const window = kind === 'weekly'
+    ? buildPreviousWeekWindow(nowUtc)
+    : kind === 'monthly'
+      ? buildPreviousMonthWindow(nowUtc)
+      : buildTodayWindow(nowUtc);
   const redis = getRedisClient();
   const minuteKey = Math.floor(nowUtc.getTime() / 60_000);
-  const lockKey = `telegram-report:manual:${tenantId}:${window.periodKey}:${minuteKey}`;
+  const schedule = kind === 'weekly'
+    ? 'manual_weekly'
+    : kind === 'monthly'
+      ? 'manual_monthly'
+      : 'manual_today';
+  const lockKey = `telegram-report:${schedule}:${tenantId}:${window.periodKey}:${minuteKey}`;
   const lockResult = await redis.set(lockKey, nowUtc.toISOString(), 'EX', 120, 'NX');
   if (lockResult !== 'OK') {
     throw new Error('A report was already sent in the last minute. Please wait and try again.');
@@ -1174,7 +1247,7 @@ export async function sendImmediateTodayReportForTenant(tenantId: string): Promi
         resource: 'integration',
         resourceId: integration.id,
         metadata: {
-          schedule: 'manual_today',
+          schedule,
           periodStart: window.periodStart.toISOString(),
           periodEnd: window.periodEnd.toISOString(),
           recipientCount: sent.recipientCount,
@@ -1188,7 +1261,7 @@ export async function sendImmediateTodayReportForTenant(tenantId: string): Promi
       recipientCount: sent.recipientCount,
       periodStart: window.periodStart.toISOString(),
       periodEnd: window.periodEnd.toISOString(),
-      schedule: 'manual_today',
+      schedule,
     };
   } catch (error) {
     await redis.del(lockKey);
