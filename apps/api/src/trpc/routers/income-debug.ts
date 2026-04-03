@@ -336,6 +336,17 @@ function findSnapshotMatch(params: {
   };
 }
 
+function extractRelinkedRepaymentIds(metadata: unknown): string[] {
+  const obj = asObject(metadata);
+  const raw = obj?.relinkedRepaymentIds;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .map((value) => String(value || '').trim())
+    .filter((value) => /^[0-9a-f-]{36}$/i.test(value));
+}
+
 export const incomeDebugRouter = router({
   list: adminProcedure
     .input(incomeDebugInput)
@@ -380,52 +391,55 @@ export const incomeDebugRouter = router({
       };
 
       const fetchTake = mode === 'future' || mode === 'imported'
-        ? limit
-        : Math.min(limit * 3, 500);
+        ? Math.max(limit, 1000)
+        : Math.min(Math.max(limit * 10, 2000), 5000);
 
-      const incomes = await prisma.income.findMany({
-        where,
-        take: fetchTake,
-        orderBy: [{ createdAt: 'desc' }, { entryDate: 'desc' }],
-        select: {
-          id: true,
-          type: true,
-          entryDate: true,
-          createdAt: true,
-          paymentAmount: true,
-          remainingDebtAmount: true,
-          coursePriceAmount: true,
-          debtAmount: true,
-          lifecycleStatus: true,
-          relatedDebtIncomeId: true,
-          legacyImportSource: true,
-          historicalImportSessionId: true,
-          legacyImportMeta: true,
-          customer: {
-            select: {
-              customerNumber: true,
-              name: true,
+      const [totalMatchingCount, incomes] = await Promise.all([
+        prisma.income.count({ where }),
+        prisma.income.findMany({
+          where,
+          take: fetchTake,
+          orderBy: [{ createdAt: 'desc' }, { entryDate: 'desc' }],
+          select: {
+            id: true,
+            type: true,
+            entryDate: true,
+            createdAt: true,
+            paymentAmount: true,
+            remainingDebtAmount: true,
+            coursePriceAmount: true,
+            debtAmount: true,
+            lifecycleStatus: true,
+            relatedDebtIncomeId: true,
+            legacyImportSource: true,
+            historicalImportSessionId: true,
+            legacyImportMeta: true,
+            customer: {
+              select: {
+                customerNumber: true,
+                name: true,
+              },
+            },
+            manager: {
+              select: {
+                name: true,
+                username: true,
+                id: true,
+              },
+            },
+            course: {
+              select: {
+                name: true,
+              },
+            },
+            tariff: {
+              select: {
+                name: true,
+              },
             },
           },
-          manager: {
-            select: {
-              name: true,
-              username: true,
-              id: true,
-            },
-          },
-          course: {
-            select: {
-              name: true,
-            },
-          },
-          tariff: {
-            select: {
-              name: true,
-            },
-          },
-        },
-      });
+        }),
+      ]);
 
       const incomeIds = incomes.map((income) => income.id);
       const createdAtValues = incomes.map((income) => income.createdAt.getTime());
@@ -436,7 +450,7 @@ export const incomeDebugRouter = router({
         ? new Date(Math.max(...createdAtValues) + 30 * 60 * 1000)
         : now;
 
-      const [incomeCreateLogs, relinkLogs] = await Promise.all([
+      const [incomeCreateLogs, relinkLogs, exactRelinkLogs] = await Promise.all([
         incomeIds.length
           ? prisma.auditLog.findMany({
               where: {
@@ -464,6 +478,25 @@ export const incomeDebugRouter = router({
             tenantId: ctx.tenantId,
             action: 'customer_course_relink',
             resource: 'income',
+          },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            createdAt: true,
+            metadata: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+              },
+            },
+          },
+        }),
+        prisma.auditLog.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            action: 'customer_course_relink',
+            resource: 'income',
             createdAt: {
               gte: minCreatedAt,
               lte: maxCreatedAt,
@@ -484,6 +517,25 @@ export const incomeDebugRouter = router({
         }),
       ]);
 
+      const exactRelinkLogByIncomeId = new Map<string, (typeof exactRelinkLogs)[number]>();
+      for (const log of exactRelinkLogs) {
+        for (const repaymentId of extractRelinkedRepaymentIds(log.metadata)) {
+          if (!exactRelinkLogByIncomeId.has(repaymentId)) {
+            exactRelinkLogByIncomeId.set(repaymentId, log);
+          }
+        }
+      }
+
+      const exactRelinkIncomeIds = Array.from(exactRelinkLogByIncomeId.keys());
+      const exactPossibleRelinkCount = exactRelinkIncomeIds.length > 0
+        ? await prisma.income.count({
+            where: {
+              ...where,
+              id: { in: exactRelinkIncomeIds },
+            },
+          })
+        : 0;
+
       const createLogByIncomeId = new Map<string, (typeof incomeCreateLogs)[number]>();
       for (const log of incomeCreateLogs) {
         if (log.resourceId && !createLogByIncomeId.has(log.resourceId)) {
@@ -498,8 +550,8 @@ export const incomeDebugRouter = router({
         const isImported = Boolean(income.legacyImportSource);
         const isFutureDated = income.entryDate.getTime() > now.getTime();
 
-        let matchedRelinkLog: (typeof relinkLogs)[number] | null = null;
-        if (!isImported && !createLog && income.type === 'repayment' && income.relatedDebtIncomeId) {
+        let matchedRelinkLog: (typeof relinkLogs)[number] | (typeof exactRelinkLogs)[number] | null = exactRelinkLogByIncomeId.get(income.id) || null;
+        if (!matchedRelinkLog && !isImported && !createLog && income.type === 'repayment' && income.relatedDebtIncomeId) {
           matchedRelinkLog = relinkLogs.find((log) => {
             const metadata = asObject(log.metadata);
             const targetSaleIncomeId = String(metadata?.targetSaleIncomeId || '').trim();
@@ -601,12 +653,13 @@ export const incomeDebugRouter = router({
       return {
         rows: filteredRows,
         summary: {
-          inspectedCount: rows.length,
+          inspectedCount: totalMatchingCount,
+          sampledCount: rows.length,
           shownCount: filteredRows.length,
           futureCount: rows.filter((row) => row.status === 'future').length,
           importedCount: rows.filter((row) => row.status === 'imported').length,
           unresolvedCount: rows.filter((row) => row.status === 'unresolved').length,
-          possibleRelinkCount: rows.filter((row) => row.status === 'possible_relink').length,
+          possibleRelinkCount: exactPossibleRelinkCount,
           hiddenCount: rows.filter((row) => row.isDebugHidden).length,
         },
       };
