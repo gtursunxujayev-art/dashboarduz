@@ -722,87 +722,94 @@ export const incomeDebugRouter = router({
       const usedRowKeys = new Set<string>();
       const results: Array<Record<string, unknown>> = [];
 
-      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        for (const income of orderedIncomes) {
-          const match = findSnapshotMatch({
-            income: {
-              id: income.id,
-              type: income.type,
-              paymentAmount: Number(income.paymentAmount || 0),
-              remainingDebtAmount: Number(income.remainingDebtAmount || 0),
-              customerNumber: income.customer?.customerNumber || '',
-              customerName: income.customer?.name || '',
-              managerName: income.manager?.name || income.manager?.username || income.manager?.id || '',
-              courseName: income.course?.name || '',
-              tariffName: income.tariff?.name || '',
-            },
-            snapshotRows,
-            usedRowKeys,
+      for (const income of orderedIncomes) {
+        const match = findSnapshotMatch({
+          income: {
+            id: income.id,
+            type: income.type,
+            paymentAmount: Number(income.paymentAmount || 0),
+            remainingDebtAmount: Number(income.remainingDebtAmount || 0),
+            customerNumber: income.customer?.customerNumber || '',
+            customerName: income.customer?.name || '',
+            managerName: income.manager?.name || income.manager?.username || income.manager?.id || '',
+            courseName: income.course?.name || '',
+            tariffName: income.tariff?.name || '',
+          },
+          snapshotRows,
+          usedRowKeys,
+        });
+
+        if (match.status !== 'matched') {
+          results.push({
+            incomeId: income.id,
+            customerNumber: income.customer?.customerNumber || '',
+            customerName: income.customer?.name || '-',
+            oldDate: income.entryDate.toISOString().slice(0, 10),
+            status: match.status,
+            reason: match.status === 'ambiguous'
+              ? `Bir nechta mos qator topildi (${match.candidateCount}).`
+              : 'Snapshotda mos qator topilmadi.',
           });
+          continue;
+        }
 
-          if (match.status !== 'matched') {
-            results.push({
-              incomeId: income.id,
-              customerNumber: income.customer?.customerNumber || '',
-              customerName: income.customer?.name || '-',
-              oldDate: income.entryDate.toISOString().slice(0, 10),
-              status: match.status,
-              reason: match.status === 'ambiguous'
-                ? `Bir nechta mos qator topildi (${match.candidateCount}).`
-                : 'Snapshotda mos qator topilmadi.',
-            });
-            continue;
-          }
-
-          const snapshotDate = parseSnapshotDate(match.row.paymentDate);
-          if (!snapshotDate) {
-            results.push({
-              incomeId: income.id,
-              customerNumber: income.customer?.customerNumber || '',
-              customerName: income.customer?.name || '-',
-              oldDate: income.entryDate.toISOString().slice(0, 10),
-              status: 'invalid_snapshot_date',
-              reason: 'Snapshot sanasi yaroqsiz.',
-            });
-            continue;
-          }
-
-          const snapshotRowKey = `${match.row.normalizedPhone || match.row.normalizedName}:${match.row.rowIndex}`;
-          usedRowKeys.add(snapshotRowKey);
-
-          const oldDate = income.entryDate.toISOString().slice(0, 10);
-          const nextDate = snapshotDate.toISOString().slice(0, 10);
-
-          if (oldDate === nextDate) {
-            results.push({
-              incomeId: income.id,
-              customerNumber: income.customer?.customerNumber || '',
-              customerName: income.customer?.name || '-',
-              oldDate,
-              newDate: nextDate,
-              status: 'unchanged',
-              reason: 'Sana allaqachon to‘g‘ri.',
-            });
-            continue;
-          }
-
-          await tx.income.update({
-            where: { id: income.id },
-            data: { entryDate: snapshotDate },
+        const snapshotDate = parseSnapshotDate(match.row.paymentDate);
+        if (!snapshotDate) {
+          results.push({
+            incomeId: income.id,
+            customerNumber: income.customer?.customerNumber || '',
+            customerName: income.customer?.name || '-',
+            oldDate: income.entryDate.toISOString().slice(0, 10),
+            status: 'invalid_snapshot_date',
+            reason: 'Snapshot sanasi yaroqsiz.',
           });
+          continue;
+        }
 
-          const saleId = income.type === 'new_sale' ? income.id : income.relatedDebtIncomeId;
-          let canonicalSaleIncomeId: string | null = null;
-          let didReorder = false;
+        const snapshotRowKey = `${match.row.normalizedPhone || match.row.normalizedName}:${match.row.rowIndex}`;
+        usedRowKeys.add(snapshotRowKey);
 
-          if (saleId) {
-            const recomputed = await recomputeSaleChainState(tx, {
-              tenantId: ctx.tenantId,
-              saleId,
+        const oldDate = income.entryDate.toISOString().slice(0, 10);
+        const nextDate = snapshotDate.toISOString().slice(0, 10);
+
+        if (oldDate === nextDate) {
+          results.push({
+            incomeId: income.id,
+            customerNumber: income.customer?.customerNumber || '',
+            customerName: income.customer?.name || '-',
+            oldDate,
+            newDate: nextDate,
+            status: 'unchanged',
+            reason: "Sana allaqachon to'g'ri.",
+          });
+          continue;
+        }
+
+        try {
+          const transactionResult = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+            await tx.income.update({
+              where: { id: income.id },
+              data: { entryDate: snapshotDate },
             });
-            canonicalSaleIncomeId = recomputed.canonicalSaleId;
-            didReorder = recomputed.didReorder;
-          }
+
+            const saleId = income.type === 'new_sale' ? income.id : income.relatedDebtIncomeId;
+            let canonicalSaleIncomeId: string | null = null;
+            let didReorder = false;
+
+            if (saleId) {
+              const recomputed = await recomputeSaleChainState(tx, {
+                tenantId: ctx.tenantId,
+                saleId,
+              });
+              canonicalSaleIncomeId = recomputed.canonicalSaleId;
+              didReorder = recomputed.didReorder;
+            }
+
+            return {
+              canonicalSaleIncomeId,
+              didReorder,
+            };
+          });
 
           results.push({
             incomeId: income.id,
@@ -811,13 +818,23 @@ export const incomeDebugRouter = router({
             oldDate,
             newDate: nextDate,
             status: 'updated',
-            reason: didReorder
+            reason: transactionResult.didReorder
               ? 'Snapshot sanasi tiklandi va chain qayta hisoblandi.'
               : 'Snapshot sanasi tiklandi.',
-            canonicalSaleIncomeId,
+            canonicalSaleIncomeId: transactionResult.canonicalSaleIncomeId,
+          });
+        } catch (error) {
+          results.push({
+            incomeId: income.id,
+            customerNumber: income.customer?.customerNumber || '',
+            customerName: income.customer?.name || '-',
+            oldDate,
+            newDate: nextDate,
+            status: 'failed',
+            reason: error instanceof Error ? error.message : 'Sana tiklashda xatolik yuz berdi.',
           });
         }
-      });
+      }
 
       const updatedCount = results.filter((row) => row.status === 'updated').length;
       const skippedCount = results.length - updatedCount;
