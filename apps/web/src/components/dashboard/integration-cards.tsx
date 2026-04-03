@@ -100,6 +100,8 @@ export default function IntegrationCards() {
   const updateAmoCRMPipelines = trpc.integrations.updateAmoCRMPipelines.useMutation();
   const updateTelegramReportRecipients = trpc.integrations.updateTelegramReportRecipients.useMutation();
   const sendTelegramTodayReportNow = trpc.integrations.sendTelegramTodayReportNow.useMutation();
+  const sendTelegramWeeklyReportNow = trpc.integrations.sendTelegramWeeklyReportNow.useMutation();
+  const sendTelegramMonthlyReportNow = trpc.integrations.sendTelegramMonthlyReportNow.useMutation();
   const disconnectIntegration = trpc.integrations.disconnect.useMutation();
 
   const integrations = useMemo(() => {
@@ -251,6 +253,38 @@ export default function IntegrationCards() {
       setTelegramReportSentMessage(`Bugungi hisobot ${result.recipientCount} ta foydalanuvchiga ${sentAt} da yuborildi.`);
     } catch (err: any) {
       setError(err?.message || 'Bugungi hisobotni yuborishda xatolik');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSendTelegramWeeklyReportNow = async () => {
+    setError(null);
+    setActionLoading('telegram');
+    setTelegramReportSentMessage(null);
+
+    try {
+      const result = await sendTelegramWeeklyReportNow.mutateAsync();
+      const sentAt = new Date().toLocaleTimeString();
+      setTelegramReportSentMessage(`Haftalik hisobot ${result.recipientCount} ta foydalanuvchiga ${sentAt} da yuborildi.`);
+    } catch (err: any) {
+      setError(err?.message || 'Haftalik hisobotni yuborishda xatolik');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSendTelegramMonthlyReportNow = async () => {
+    setError(null);
+    setActionLoading('telegram');
+    setTelegramReportSentMessage(null);
+
+    try {
+      const result = await sendTelegramMonthlyReportNow.mutateAsync();
+      const sentAt = new Date().toLocaleTimeString();
+      setTelegramReportSentMessage(`Oylik hisobot ${result.recipientCount} ta foydalanuvchiga ${sentAt} da yuborildi.`);
+    } catch (err: any) {
+      setError(err?.message || 'Oylik hisobotni yuborishda xatolik');
     } finally {
       setActionLoading(null);
     }
@@ -440,6 +474,22 @@ export default function IntegrationCards() {
                       className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {loading ? 'Yuborilmoqda...' : 'Bugungi hisobotni hozir yuborish'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSendTelegramWeeklyReportNow}
+                      disabled={loading || telegramRecipients.length === 0 || selectedTelegramRecipientIds.length === 0}
+                      className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading ? 'Yuborilmoqda...' : 'Haftalik hisobotni yuborish'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSendTelegramMonthlyReportNow}
+                      disabled={loading || telegramRecipients.length === 0 || selectedTelegramRecipientIds.length === 0}
+                      className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-800 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading ? 'Yuborilmoqda...' : 'Oylik hisobotni yuborish'}
                     </button>
                     {telegramReportSentMessage && (
                       <span className="text-xs text-green-700">{telegramReportSentMessage}</span>
