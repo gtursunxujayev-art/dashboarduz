@@ -13,7 +13,7 @@ import {
   YAxis,
 } from 'recharts';
 
-type DashboardRange = 'today' | 'week' | 'month' | 'custom';
+type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
 
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -27,6 +27,63 @@ function getTashkentToday(): string {
   const month = parts.find((part) => part.type === 'month')?.value ?? '01';
   const day = parts.find((part) => part.type === 'day')?.value ?? '01';
   return `${year}-${month}-${day}`;
+}
+
+function getTashkentDateShift(days: number): string {
+  const now = new Date();
+  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
+  local.setDate(local.getDate() + days);
+  const year = local.getFullYear();
+  const month = String(local.getMonth() + 1).padStart(2, '0');
+  const day = String(local.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getPreviousWeekRange() {
+  const now = new Date();
+  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
+  local.setHours(0, 0, 0, 0);
+  const day = local.getDay();
+  const daysSinceMonday = (day + 6) % 7;
+  const currentWeekMonday = new Date(local);
+  currentWeekMonday.setDate(local.getDate() - daysSinceMonday);
+  const previousWeekMonday = new Date(currentWeekMonday);
+  previousWeekMonday.setDate(currentWeekMonday.getDate() - 7);
+  const previousWeekSunday = new Date(currentWeekMonday);
+  previousWeekSunday.setDate(currentWeekMonday.getDate() - 1);
+
+  const toIso = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const dayValue = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${dayValue}`;
+  };
+
+  return {
+    dateFrom: toIso(previousWeekMonday),
+    dateTo: toIso(previousWeekSunday),
+  };
+}
+
+function getPreviousMonthRange() {
+  const now = new Date();
+  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
+  const year = local.getFullYear();
+  const month = local.getMonth();
+  const previousMonthStart = new Date(year, month - 1, 1);
+  const previousMonthEnd = new Date(year, month, 0);
+
+  const toIso = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  return {
+    dateFrom: toIso(previousMonthStart),
+    dateTo: toIso(previousMonthEnd),
+  };
 }
 
 function formatAmount(value: number | null | undefined): string {
@@ -103,13 +160,49 @@ export default function FinancePage() {
   const [courseId, setCourseId] = useState('');
   const [managerUserId, setManagerUserId] = useState('');
 
+  const effectiveDateRange = useMemo(() => {
+    if (range === 'last_week') {
+      return getPreviousWeekRange();
+    }
+    if (range === 'last_month') {
+      return getPreviousMonthRange();
+    }
+    if (range === 'custom') {
+      return { dateFrom, dateTo };
+    }
+    if (range === 'today') {
+      const today = getTashkentToday();
+      return { dateFrom: today, dateTo: today };
+    }
+    if (range === 'week') {
+      return { dateFrom: getTashkentDateShift(-6), dateTo: getTashkentToday() };
+    }
+    return { dateFrom: getTashkentDateShift(-29), dateTo: getTashkentToday() };
+  }, [range, dateFrom, dateTo]);
+
+  const financeQueryInput = useMemo(() => ({
+    range: (range === 'last_week' || range === 'last_month') ? 'custom' : range,
+    dateFrom: range === 'custom' || range === 'last_week' || range === 'last_month' ? effectiveDateRange.dateFrom : undefined,
+    dateTo: range === 'custom' || range === 'last_week' || range === 'last_month' ? effectiveDateRange.dateTo : undefined,
+    courseId: courseId || undefined,
+    managerUserId: isAgentOnly ? undefined : (managerUserId || undefined),
+  }), [range, effectiveDateRange, courseId, isAgentOnly, managerUserId]);
+
   const financeQuery = trpc.dashboard.financeSummary.useQuery(
+    financeQueryInput,
     {
-      range,
-      dateFrom: range === 'custom' ? dateFrom : undefined,
-      dateTo: range === 'custom' ? dateTo : undefined,
-      courseId: courseId || undefined,
+      retry: 1,
+      refetchInterval: 5 * 60 * 1000,
+    },
+  );
+
+  const salaryQuery = trpc.dashboard.salarySummary.useQuery(
+    {
+      range: (range === 'last_week' || range === 'last_month') ? 'custom' : range,
+      dateFrom: effectiveDateRange.dateFrom,
+      dateTo: effectiveDateRange.dateTo,
       managerUserId: isAgentOnly ? undefined : (managerUserId || undefined),
+      prorateFixedSalary: true,
     },
     {
       retry: 1,
@@ -127,6 +220,8 @@ export default function FinancePage() {
   const forecast = financeQuery.data?.forecast;
   const monthSeries = useMemo(() => forecast?.monthSeries || [], [forecast]);
   const yearSeries = useMemo(() => forecast?.yearSeries || [], [forecast]);
+  const salaryTotals = salaryQuery.data?.totals;
+  const salaryByAgent = useMemo(() => salaryQuery.data?.byAgent || [], [salaryQuery.data]);
 
   return (
     <div className="space-y-6">
@@ -152,19 +247,21 @@ export default function FinancePage() {
             <option value="today">Bugun</option>
             <option value="week">Hafta</option>
             <option value="month">Oy</option>
+            <option value="last_week">O'tgan hafta</option>
+            <option value="last_month">O'tgan oy</option>
             <option value="custom">Ixtiyoriy</option>
           </select>
 
           <input
             type="date"
-            value={dateFrom}
+            value={range === 'custom' ? dateFrom : effectiveDateRange.dateFrom}
             disabled={range !== 'custom'}
             onChange={(event) => setDateFrom(event.target.value)}
             className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
           />
           <input
             type="date"
-            value={dateTo}
+            value={range === 'custom' ? dateTo : effectiveDateRange.dateTo}
             disabled={range !== 'custom'}
             onChange={(event) => setDateTo(event.target.value)}
             className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
@@ -233,6 +330,72 @@ export default function FinancePage() {
             <p className="mt-2 text-2xl font-semibold text-red-700">{formatAmount(totals?.refundAmount)}</p>
             <p className="mt-1 text-xs text-gray-500">{totals?.refundCount ?? 0} ta qaytarish</p>
           </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
+          <p className="text-sm text-blue-700">Hisoblangan maosh</p>
+          <p className="mt-2 text-2xl font-semibold text-blue-900">{formatAmount(salaryTotals?.salary)}</p>
+          <p className="mt-1 text-xs text-blue-700">
+            {effectiveDateRange.dateFrom} - {effectiveDateRange.dateTo}
+          </p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-gray-500">Fiks maosh</p>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.fixedSalary)}</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-gray-500">Asosiy bonus</p>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.bonus)}</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-gray-500">Qo'shimcha bonuslar</p>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.planBonus)}</p>
+          <p className="mt-1 text-xs text-gray-500">KPI: {formatAmount(salaryTotals?.kpi)}</p>
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-white p-6 shadow">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Agentlar maoshi</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Tanlangan davr bo'yicha umumiy maosh, fiks, KPI, qo'shimcha bonus va asosiy bonus.
+            </p>
+          </div>
+        </div>
+        {salaryQuery.isLoading ? (
+          <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
+        ) : salaryByAgent.length ? (
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Umumiy maosh</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fiks</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">KPI</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qo'shimcha bonus</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Asosiy bonus</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {salaryByAgent.map((row: any) => (
+                  <tr key={row.userId}>
+                    <td className="px-3 py-2 text-sm text-gray-900">{row.name}</td>
+                    <td className="px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(row.totalSalary)}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.fixedSalary)}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.kpiAmount)}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.planBonusAmount)}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusAmount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha maosh ma'lumoti topilmadi.</p>
         )}
       </div>
 
