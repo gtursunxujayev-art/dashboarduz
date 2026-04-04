@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { prisma } from '@dashboarduz/db';
 import { adminProcedure, router } from '../trpc';
+import { buildSaleChainMetricsBySaleId } from '../../services/income-chain';
 
 const incomeDebugInput = z.object({
   mode: z.enum(['suspicious', 'future', 'unresolved', 'relink', 'imported', 'hidden', 'all']).default('suspicious'),
@@ -263,6 +264,182 @@ async function recomputeSaleChainState(tx: Prisma.TransactionClient, params: {
     reorderedIncomeIds: chain.map((row) => row.id),
     didReorder: canonicalSaleId !== sourceSale.id,
   };
+}
+
+async function recomputeSaleChainStateFully(tx: Prisma.TransactionClient, params: {
+  tenantId: string;
+  saleId: string;
+}): Promise<{ canonicalSaleId: string; reorderedIncomeIds: string[]; didReorder: boolean }> {
+  const sourceSale = await tx.income.findFirst({
+    where: {
+      id: params.saleId,
+      tenantId: params.tenantId,
+      type: 'new_sale',
+      lifecycleStatus: 'active',
+    },
+    select: {
+      id: true,
+      customerId: true,
+      managerUserId: true,
+      courseId: true,
+      tariffId: true,
+      entryDate: true,
+      createdAt: true,
+      deadline: true,
+      coursePriceAmount: true,
+      debtAmount: true,
+      paymentAmount: true,
+      legacyImportMeta: true,
+    },
+  });
+
+  if (!sourceSale) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'Aktiv yangi sotuv topilmadi.',
+    });
+  }
+
+  const repayments = await tx.income.findMany({
+    where: {
+      tenantId: params.tenantId,
+      type: 'repayment',
+      lifecycleStatus: 'active',
+      relatedDebtIncomeId: sourceSale.id,
+    },
+    select: {
+      id: true,
+      entryDate: true,
+      createdAt: true,
+      deadline: true,
+      paymentAmount: true,
+    },
+    orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }],
+  });
+
+  const chain = [
+    {
+      id: sourceSale.id,
+      type: 'new_sale' as const,
+      entryDate: sourceSale.entryDate,
+      createdAt: sourceSale.createdAt,
+      deadline: sourceSale.deadline,
+      paymentAmount: Number(sourceSale.paymentAmount || 0),
+    },
+    ...repayments.map((repayment) => ({
+      id: repayment.id,
+      type: 'repayment' as const,
+      entryDate: repayment.entryDate,
+      createdAt: repayment.createdAt,
+      deadline: repayment.deadline,
+      paymentAmount: Number(repayment.paymentAmount || 0),
+    })),
+  ].sort((left, right) => {
+    const byDate = left.entryDate.getTime() - right.entryDate.getTime();
+    if (byDate !== 0) {
+      return byDate;
+    }
+    return left.createdAt.getTime() - right.createdAt.getTime();
+  });
+
+  const earliestRow = chain[0]!;
+  const shouldReorder = (
+    earliestRow.id !== sourceSale.id
+    && earliestRow.type === 'repayment'
+    && earliestRow.entryDate.getTime() < sourceSale.entryDate.getTime()
+  );
+  const canonicalSaleId = shouldReorder ? earliestRow.id : sourceSale.id;
+  const agreementAmount = Number(sourceSale.coursePriceAmount ?? sourceSale.debtAmount ?? 0);
+  let rollingDebt = Math.max(agreementAmount - Math.max(Number(earliestRow.paymentAmount || 0), 0), 0);
+
+  await tx.income.update({
+    where: { id: canonicalSaleId },
+    data: {
+      type: 'new_sale',
+      relatedDebtIncomeId: null,
+      managerUserId: sourceSale.managerUserId,
+      courseId: sourceSale.courseId,
+      tariffId: sourceSale.tariffId,
+      coursePriceAmount: agreementAmount,
+      debtAmount: agreementAmount,
+      remainingDebtAmount: rollingDebt,
+      deadline: rollingDebt > 0 ? sourceSale.deadline : null,
+      legacyImportMeta: sourceSale.legacyImportMeta ?? Prisma.JsonNull,
+    },
+  });
+
+  for (const repayment of chain.slice(1)) {
+    const debtAmount = rollingDebt;
+    rollingDebt = Math.max(debtAmount - repayment.paymentAmount, 0);
+
+    await tx.income.update({
+      where: { id: repayment.id },
+      data: {
+        type: 'repayment',
+        relatedDebtIncomeId: canonicalSaleId,
+        courseId: sourceSale.courseId,
+        tariffId: sourceSale.tariffId,
+        coursePriceAmount: null,
+        debtAmount,
+        remainingDebtAmount: rollingDebt,
+        legacyImportMeta: Prisma.JsonNull,
+      },
+    });
+  }
+
+  const latestActiveSale = await tx.income.findFirst({
+    where: {
+      tenantId: params.tenantId,
+      customerId: sourceSale.customerId,
+      type: 'new_sale',
+      lifecycleStatus: 'active',
+    },
+    orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      courseId: true,
+      tariffId: true,
+    },
+  });
+
+  await tx.customer.update({
+    where: { id: sourceSale.customerId },
+    data: {
+      profileCourseId: latestActiveSale?.courseId ?? null,
+      profileTariffId: latestActiveSale?.tariffId ?? null,
+    },
+  });
+
+  return {
+    canonicalSaleId,
+    reorderedIncomeIds: chain.map((row) => row.id),
+    didReorder: canonicalSaleId !== sourceSale.id,
+  };
+}
+
+async function refreshCustomerProfileFromLatestActiveSaleForDebug(tx: Prisma.TransactionClient, params: {
+  tenantId: string;
+  customerId: string;
+}) {
+  const latestActiveSale = await tx.income.findFirst({
+    where: {
+      tenantId: params.tenantId,
+      customerId: params.customerId,
+      type: 'new_sale',
+      lifecycleStatus: 'active',
+    },
+    orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      courseId: true,
+      tariffId: true,
+    },
+  });
+  await tx.customer.update({
+    where: { id: params.customerId },
+    data: {
+      profileCourseId: latestActiveSale?.courseId ?? null,
+      profileTariffId: latestActiveSale?.tariffId ?? null,
+    },
+  });
 }
 
 function findSnapshotMatch(params: {
@@ -665,6 +842,97 @@ export const incomeDebugRouter = router({
       };
     }),
 
+  integrityReport: adminProcedure
+    .input(z.object({
+      limit: z.number().int().min(1).max(5000).default(2000),
+      onlyMismatches: z.boolean().default(true),
+    }))
+    .query(async ({ ctx, input }) => {
+      const sales = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: 'active',
+        },
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        take: input.limit,
+        select: {
+          id: true,
+          entryDate: true,
+          coursePriceAmount: true,
+          debtAmount: true,
+          paymentAmount: true,
+          remainingDebtAmount: true,
+          customer: {
+            select: {
+              customerNumber: true,
+              name: true,
+            },
+          },
+          course: {
+            select: {
+              name: true,
+            },
+          },
+          tariff: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      });
+      const saleIds = sales.map((sale) => sale.id);
+      const chainRows = saleIds.length > 0
+        ? await prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: 'active',
+              OR: [
+                { id: { in: saleIds } },
+                { relatedDebtIncomeId: { in: saleIds } },
+              ],
+            },
+            select: {
+              id: true,
+              relatedDebtIncomeId: true,
+              paymentAmount: true,
+              entryDate: true,
+            },
+          })
+        : [];
+      const metricsBySaleId = buildSaleChainMetricsBySaleId({
+        sales,
+        chainRows,
+      });
+      const rows = sales.map((sale) => {
+        const metric = metricsBySaleId.get(sale.id);
+        const expectedDebt = metric?.currentDebtAmount ?? 0;
+        const expectedPaid = metric?.paidAmount ?? Number(sale.paymentAmount || 0);
+        const storedDebt = Number(sale.remainingDebtAmount || 0);
+        const mismatch = Math.abs(expectedDebt - storedDebt) > 0.0001;
+        return {
+          saleIncomeId: sale.id,
+          customerNumber: sale.customer?.customerNumber || '',
+          customerName: sale.customer?.name || '-',
+          courseName: sale.course?.name || '-',
+          tariffName: sale.tariff?.name || '-',
+          entryDate: sale.entryDate,
+          storedDebt,
+          expectedDebt,
+          expectedPaid,
+          agreementAmount: metric?.agreementAmount ?? Number(sale.coursePriceAmount ?? sale.debtAmount ?? sale.paymentAmount ?? 0),
+          mismatch,
+        };
+      });
+      const mismatchRows = rows.filter((row) => row.mismatch);
+      return {
+        scannedCount: sales.length,
+        mismatchCount: mismatchRows.length,
+        okCount: rows.length - mismatchRows.length,
+        rows: input.onlyMismatches ? mismatchRows : rows,
+      };
+    }),
+
   repairDatesFromSnapshot: adminProcedure
     .input(z.object({
       incomeIds: z.array(z.string().uuid()).min(1).max(300),
@@ -861,6 +1129,295 @@ export const incomeDebugRouter = router({
         updatedCount,
         skippedCount,
         results,
+      };
+    }),
+
+  repairAllActiveChains: adminProcedure
+    .input(z.object({
+      limit: z.number().int().min(1).max(5000).default(2000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const activeSales = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: 'active',
+        },
+        orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }],
+        take: input.limit,
+        select: {
+          id: true,
+          customerId: true,
+          customer: {
+            select: {
+              customerNumber: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      const results: Array<{
+        saleIncomeId: string;
+        customerNumber: string;
+        customerName: string;
+        status: 'fixed' | 'skipped' | 'failed';
+        reason: string;
+        canonicalSaleId?: string;
+        didReorder?: boolean;
+      }> = [];
+
+      for (const sale of activeSales) {
+        try {
+          const normalized = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+            return recomputeSaleChainStateFully(tx, {
+              tenantId: ctx.tenantId,
+              saleId: sale.id,
+            });
+          });
+          results.push({
+            saleIncomeId: sale.id,
+            customerNumber: sale.customer?.customerNumber || '',
+            customerName: sale.customer?.name || '-',
+            status: 'fixed',
+            reason: normalized.didReorder
+              ? 'Chain qayta tartiblandi va qarz qayta hisoblandi.'
+              : 'Chain qarzi qayta hisoblandi.',
+            canonicalSaleId: normalized.canonicalSaleId,
+            didReorder: normalized.didReorder,
+          });
+        } catch (error) {
+          results.push({
+            saleIncomeId: sale.id,
+            customerNumber: sale.customer?.customerNumber || '',
+            customerName: sale.customer?.name || '-',
+            status: 'failed',
+            reason: error instanceof Error ? error.message : 'Qayta hisoblash xatosi.',
+          });
+        }
+      }
+
+      const fixedCount = results.filter((row) => row.status === 'fixed').length;
+      const failedCount = results.filter((row) => row.status === 'failed').length;
+      const skippedCount = results.filter((row) => row.status === 'skipped').length;
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'income_debug_repair_all_active_chains',
+          resource: 'income',
+          metadata: {
+            scannedCount: activeSales.length,
+            fixedCount,
+            failedCount,
+            skippedCount,
+            sample: JSON.parse(JSON.stringify(results.slice(0, 100))) as Prisma.InputJsonValue,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        scannedCount: activeSales.length,
+        fixedCount,
+        failedCount,
+        skippedCount,
+        results,
+      };
+    }),
+
+  destructiveRelinkCourseChain: adminProcedure
+    .input(z.object({
+      sourceSaleIncomeId: z.string().uuid(),
+      targetSaleIncomeId: z.string().uuid(),
+      note: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.sourceSaleIncomeId === input.targetSaleIncomeId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "Manba va maqsad sotuv bir xil bo'lishi mumkin emas.",
+        });
+      }
+
+      const sourceSale = await prisma.income.findFirst({
+        where: {
+          id: input.sourceSaleIncomeId,
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: 'active',
+        },
+        select: {
+          id: true,
+          customerId: true,
+          managerUserId: true,
+          courseId: true,
+          tariffId: true,
+        },
+      });
+      const targetSale = await prisma.income.findFirst({
+        where: {
+          id: input.targetSaleIncomeId,
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: 'active',
+        },
+        select: {
+          id: true,
+          customerId: true,
+          managerUserId: true,
+          courseId: true,
+          tariffId: true,
+          deadline: true,
+          remainingDebtAmount: true,
+        },
+      });
+      if (!sourceSale || !targetSale) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Manba yoki maqsad aktiv yangi sotuv topilmadi.',
+        });
+      }
+      if (sourceSale.customerId !== targetSale.customerId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Faqat bir xil mijoz kurslari orasida destructive relink mumkin.',
+        });
+      }
+
+      const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const sourceChain = await tx.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            OR: [
+              { id: sourceSale.id },
+              { relatedDebtIncomeId: sourceSale.id },
+            ],
+            lifecycleStatus: 'active',
+          },
+          orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            id: true,
+            entryDate: true,
+            createdAt: true,
+            paymentAmount: true,
+          },
+        });
+        if (!sourceChain.length) {
+          return {
+            deletedCount: 0,
+            createdRepaymentsCount: 0,
+            transferAmount: 0,
+            targetSaleIncomeId: targetSale.id,
+          };
+        }
+
+        await recomputeSaleChainStateFully(tx, {
+          tenantId: ctx.tenantId,
+          saleId: targetSale.id,
+        });
+        const refreshedTarget = await tx.income.findUnique({
+          where: { id: targetSale.id },
+          select: {
+            id: true,
+            managerUserId: true,
+            courseId: true,
+            tariffId: true,
+            deadline: true,
+            remainingDebtAmount: true,
+          },
+        });
+        if (!refreshedTarget) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Maqsad kurs topilmadi.' });
+        }
+
+        const transferAmount = sourceChain.reduce((sum, row) => sum + Math.max(Number(row.paymentAmount || 0), 0), 0);
+        if (transferAmount > Math.max(Number(refreshedTarget.remainingDebtAmount || 0), 0)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: "O'tkaziladigan summa maqsad kurs qarzidan katta.",
+          });
+        }
+
+        let runningRemainingDebt = Math.max(Number(refreshedTarget.remainingDebtAmount || 0), 0);
+        let createdRepaymentsCount = 0;
+        for (const row of sourceChain) {
+          const paymentAmount = Math.max(Number(row.paymentAmount || 0), 0);
+          if (paymentAmount <= 0) {
+            continue;
+          }
+          const debtBeforePayment = runningRemainingDebt;
+          runningRemainingDebt = Math.max(runningRemainingDebt - paymentAmount, 0);
+          await tx.income.create({
+            data: {
+              tenantId: ctx.tenantId,
+              customerId: sourceSale.customerId,
+              managerUserId: sourceSale.managerUserId || refreshedTarget.managerUserId,
+              type: 'repayment',
+              lifecycleStatus: 'active',
+              relatedDebtIncomeId: refreshedTarget.id,
+              courseId: refreshedTarget.courseId,
+              tariffId: refreshedTarget.tariffId,
+              entryDate: row.entryDate,
+              deadline: refreshedTarget.deadline,
+              debtAmount: debtBeforePayment,
+              paymentAmount,
+              remainingDebtAmount: runningRemainingDebt,
+            },
+          });
+          createdRepaymentsCount += 1;
+        }
+
+        await tx.income.update({
+          where: { id: refreshedTarget.id },
+          data: {
+            remainingDebtAmount: runningRemainingDebt,
+          },
+        });
+
+        const deleted = await tx.income.deleteMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: sourceChain.map((row) => row.id) },
+          },
+        });
+
+        await recomputeSaleChainStateFully(tx, {
+          tenantId: ctx.tenantId,
+          saleId: refreshedTarget.id,
+        });
+        await refreshCustomerProfileFromLatestActiveSaleForDebug(tx, {
+          tenantId: ctx.tenantId,
+          customerId: sourceSale.customerId,
+        });
+
+        return {
+          deletedCount: deleted.count,
+          createdRepaymentsCount,
+          transferAmount,
+          targetSaleIncomeId: refreshedTarget.id,
+        };
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'income_debug_destructive_relink',
+          resource: 'income',
+          resourceId: input.sourceSaleIncomeId,
+          metadata: {
+            sourceSaleIncomeId: input.sourceSaleIncomeId,
+            note: input.note || null,
+            ...result,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        ...result,
       };
     }),
 
