@@ -42,6 +42,7 @@ import {
   buildTrend,
 } from './helpers';
 import { getOrSet, buildCacheKey } from '../../../services/cache';
+import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 
 export const summaryProcedures = {
   summary: protectedProcedure
@@ -863,6 +864,43 @@ export const summaryProcedures = {
       const debtorCustomers = new Set<string>();
       const incomeByCourse = new Map<string, { count: number; amount: number; agreementAmount: number }>();
       const incomeByAgent = new Map<string, { count: number; amount: number }>();
+      const activeNewSales = (incomes as Array<{
+        id: string;
+        type: string;
+        lifecycleStatus: string;
+        entryDate: Date;
+        coursePriceAmount: number | null;
+        paymentAmount: number;
+      }>)
+        .filter((income) => income.type === 'new_sale' && income.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE)
+        .map((sale) => ({
+          id: sale.id,
+          entryDate: sale.entryDate,
+          coursePriceAmount: sale.coursePriceAmount,
+          paymentAmount: sale.paymentAmount,
+          debtAmount: sale.coursePriceAmount,
+        }));
+      const activeSaleChainMetricsBySaleId = activeNewSales.length > 0
+        ? buildSaleChainMetricsBySaleId({
+            sales: activeNewSales,
+            chainRows: await prisma.income.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                OR: [
+                  { id: { in: activeNewSales.map((sale) => sale.id) } },
+                  { relatedDebtIncomeId: { in: activeNewSales.map((sale) => sale.id) } },
+                ],
+              },
+              select: {
+                id: true,
+                relatedDebtIncomeId: true,
+                paymentAmount: true,
+                entryDate: true,
+              },
+            }),
+          })
+        : new Map<string, { currentDebtAmount: number }>();
 
       for (const income of incomes as Array<{
         id: string;
@@ -914,9 +952,10 @@ export const summaryProcedures = {
 
         if (income.type === 'new_sale') {
           totals.newSalesCount += 1;
-          if (income.remainingDebtAmount > 0) {
+          const chainDebt = activeSaleChainMetricsBySaleId.get(income.id)?.currentDebtAmount ?? income.remainingDebtAmount;
+          if (chainDebt > 0) {
             debtorCustomers.add(income.customerId);
-            totals.totalDebtAmount += income.remainingDebtAmount;
+            totals.totalDebtAmount += chainDebt;
           }
         } else if (income.type === 'repayment') {
           totals.repaymentCount += 1;
