@@ -54,6 +54,7 @@ export default function IncomeDebugPage() {
   });
   const hideMutation = trpc.incomeDebug.hideSelected.useMutation();
   const repairMutation = trpc.incomeDebug.repairDatesFromSnapshot.useMutation();
+  const repairAllChainsMutation = trpc.incomeDebug.repairAllActiveChains.useMutation();
   const deleteIncomeMutation = trpc.customerIncome.deleteIncome.useMutation();
 
   const rows = useMemo(() => (debugQuery.data?.rows ?? []) as Array<any>, [debugQuery.data]);
@@ -113,6 +114,14 @@ export default function IncomeDebugPage() {
     setRepairResults(result.results ?? []);
     await refreshList();
     window.alert(`Sana tiklash yakunlandi. Yangilandi: ${result.updatedCount}. O'tkazib yuborildi: ${result.skippedCount}.`);
+  };
+
+  const handleRepairAllChains = async () => {
+    if (!window.confirm("Barcha aktiv sotuv chainlarini qayta hisoblashni boshlaysizmi?")) return;
+    const result = await repairAllChainsMutation.mutateAsync({ limit: 5000 });
+    setRepairResults(result.results ?? []);
+    await refreshList();
+    window.alert(`Chain qayta hisoblash yakunlandi. Tekshirildi: ${result.scannedCount}. Tuzatildi: ${result.fixedCount}. Xatolik: ${result.failedCount}.`);
   };
 
   return (
@@ -227,9 +236,20 @@ export default function IncomeDebugPage() {
             >
               Tanlanganlarni o'chirish
             </button>
-            {(hideMutation.error || repairMutation.error || deleteIncomeMutation.error) ? (
+            <button
+              type="button"
+              disabled={repairAllChainsMutation.isLoading}
+              onClick={handleRepairAllChains}
+              className="rounded-md border border-violet-300 px-3 py-2 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-950/20"
+            >
+              Barcha aktiv chainni qayta hisoblash
+            </button>
+            {(hideMutation.error || repairMutation.error || deleteIncomeMutation.error || repairAllChainsMutation.error) ? (
               <div className="text-sm text-red-600 dark:text-red-400">
-                {hideMutation.error?.message || repairMutation.error?.message || deleteIncomeMutation.error?.message}
+                {hideMutation.error?.message
+                  || repairMutation.error?.message
+                  || deleteIncomeMutation.error?.message
+                  || repairAllChainsMutation.error?.message}
               </div>
             ) : null}
           </div>
@@ -257,9 +277,9 @@ export default function IncomeDebugPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-800 dark:bg-slate-900">
                     {repairResults.map((row) => (
-                      <tr key={`${row.incomeId}-${row.oldDate}-${row.newDate ?? 'none'}`}>
+                      <tr key={`${row.incomeId ?? row.saleIncomeId}-${row.oldDate ?? 'none'}-${row.newDate ?? 'none'}`}>
                         <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900 dark:text-slate-100">{row.customerNumber}</div>
+                          <div className="font-medium text-gray-900 dark:text-slate-100">{row.customerNumber || '-'}</div>
                           <div className="text-xs text-gray-500 dark:text-slate-400">{row.customerName}</div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">{row.oldDate || '-'}</td>
@@ -267,6 +287,7 @@ export default function IncomeDebugPage() {
                         <td className="px-4 py-3 whitespace-nowrap">
                           <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
                             row.status === 'updated'
+                              || row.status === 'fixed'
                               ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
                               : row.status === 'unchanged'
                                 ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
@@ -274,6 +295,8 @@ export default function IncomeDebugPage() {
                           }`}>
                             {row.status === 'updated'
                               ? 'Yangilandi'
+                              : row.status === 'fixed'
+                                ? 'Qayta hisoblandi'
                               : row.status === 'unchanged'
                                 ? "To'g'ri edi"
                                 : row.status === 'ambiguous'
