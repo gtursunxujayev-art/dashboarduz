@@ -22,6 +22,7 @@ import {
   type HistoricalPreparedIncomeRow,
   type HistoricalRawRow,
 } from '../../services/historical-import';
+import { buildSaleChainMetricsBySaleId, getSaleAgreementAmount, type SaleChainSaleRow } from '../../services/income-chain';
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'Agent'] as const;
 const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive', 'additional_service'] as const;
@@ -146,6 +147,43 @@ function withSaleSubTariffMeta(
   }
 
   return Object.keys(nextMeta).length > 0 ? (nextMeta as Prisma.InputJsonValue) : Prisma.JsonNull;
+}
+
+async function buildActiveSaleChainMetrics(params: {
+  tenantId: string;
+  sales: SaleChainSaleRow[];
+}) {
+  if (params.sales.length === 0) {
+    return new Map<string, {
+      agreementAmount: number;
+      paidAmount: number;
+      currentDebtAmount: number;
+      lastActivityAt: Date;
+    }>();
+  }
+
+  const saleIds = params.sales.map((sale) => sale.id);
+  const chainRows = await prisma.income.findMany({
+    where: {
+      tenantId: params.tenantId,
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      OR: [
+        { id: { in: saleIds } },
+        { relatedDebtIncomeId: { in: saleIds } },
+      ],
+    },
+    select: {
+      id: true,
+      relatedDebtIncomeId: true,
+      paymentAmount: true,
+      entryDate: true,
+    },
+  });
+
+  return buildSaleChainMetricsBySaleId({
+    sales: params.sales,
+    chainRows,
+  });
 }
 
 function isCourseCategoryConstraintOutdatedError(error: unknown): boolean {
@@ -427,6 +465,59 @@ async function normalizeSaleChainChronology(tx: Prisma.TransactionClient, params
     canonicalSaleId,
     reorderedIncomeIds: chain.map((row) => row.id),
   };
+}
+
+async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params: {
+  tenantId: string;
+  saleId: string;
+}): Promise<void> {
+  const sale = await tx.income.findFirst({
+    where: {
+      id: params.saleId,
+      tenantId: params.tenantId,
+      type: 'new_sale',
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+    },
+    select: {
+      id: true,
+      entryDate: true,
+      coursePriceAmount: true,
+      debtAmount: true,
+      paymentAmount: true,
+      remainingDebtAmount: true,
+    },
+  });
+  if (!sale) {
+    return;
+  }
+
+  const metrics = buildSaleChainMetricsBySaleId({
+    sales: [sale],
+    chainRows: await tx.income.findMany({
+      where: {
+        tenantId: params.tenantId,
+        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+        OR: [
+          { id: sale.id },
+          { relatedDebtIncomeId: sale.id },
+        ],
+      },
+      select: {
+        id: true,
+        relatedDebtIncomeId: true,
+        paymentAmount: true,
+        entryDate: true,
+      },
+    }),
+  });
+  const expectedDebt = metrics.get(sale.id)?.currentDebtAmount ?? 0;
+  const storedDebt = Number(sale.remainingDebtAmount || 0);
+  if (Math.abs(expectedDebt - storedDebt) > 0.0001) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'Debt invariant mismatch after mutation. Operation cancelled to protect data consistency.',
+    });
+  }
 }
 
 function normalizeHistoricalImportErrorMessage(error: unknown): string {
@@ -2831,24 +2922,38 @@ async function createIncomeEntry(params: {
         tenantId,
         customerId: customer.id,
       });
+      await assertSaleChainDebtInvariant(tx, {
+        tenantId,
+        saleId: createdSale.id,
+      });
 
       return createdSale;
     });
   } else {
     let debtSourceId = input.debtSourceIncomeId;
     if (!debtSourceId) {
-      const latestDebt = await prisma.income.findFirst({
+      const candidateDebts = await prisma.income.findMany({
         where: {
           tenantId,
           customerId: customer.id,
           type: 'new_sale',
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          remainingDebtAmount: { gt: 0 },
         },
         orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
-        select: { id: true },
+        take: 200,
+        select: {
+          id: true,
+          entryDate: true,
+          coursePriceAmount: true,
+          debtAmount: true,
+          paymentAmount: true,
+        },
       });
-
+      const candidateMetrics = await buildActiveSaleChainMetrics({
+        tenantId,
+        sales: candidateDebts,
+      });
+      const latestDebt = candidateDebts.find((sale) => (candidateMetrics.get(sale.id)?.currentDebtAmount ?? 0) > 0);
       debtSourceId = latestDebt?.id;
     }
 
@@ -2865,7 +2970,6 @@ async function createIncomeEntry(params: {
         tenantId,
         type: 'new_sale',
         lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-        remainingDebtAmount: { gt: 0 },
       },
       select: {
         id: true,
@@ -2873,6 +2977,9 @@ async function createIncomeEntry(params: {
         courseId: true,
         tariffId: true,
         entryDate: true,
+        coursePriceAmount: true,
+        debtAmount: true,
+        paymentAmount: true,
         remainingDebtAmount: true,
       },
     });
@@ -2895,14 +3002,27 @@ async function createIncomeEntry(params: {
       });
     }
 
-    if (input.paymentAmount > debtSource.remainingDebtAmount) {
+    const sourceMetrics = await buildActiveSaleChainMetrics({
+      tenantId,
+      sales: [debtSource],
+    });
+    const sourceCurrentDebt = sourceMetrics.get(debtSource.id)?.currentDebtAmount ?? debtSource.remainingDebtAmount;
+
+    if (sourceCurrentDebt <= 0) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Selected debt source has no remaining debt.',
+      });
+    }
+
+    if (input.paymentAmount > sourceCurrentDebt) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: 'Repayment amount cannot exceed the selected debt.',
       });
     }
 
-    const remainingDebtAmount = Math.max(debtSource.remainingDebtAmount - input.paymentAmount, 0);
+    const remainingDebtAmount = Math.max(sourceCurrentDebt - input.paymentAmount, 0);
     createdIncome = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const repayment = await tx.income.create({
         data: {
@@ -2916,7 +3036,7 @@ async function createIncomeEntry(params: {
           tariffId: debtSource.tariffId,
           entryDate,
           deadline,
-          debtAmount: debtSource.remainingDebtAmount,
+          debtAmount: sourceCurrentDebt,
           paymentAmount: input.paymentAmount,
           remainingDebtAmount,
         },
@@ -2939,6 +3059,10 @@ async function createIncomeEntry(params: {
           chronologyCanonicalSaleId = normalized.canonicalSaleId;
         }
       }
+      await assertSaleChainDebtInvariant(tx, {
+        tenantId,
+        saleId: chronologyCanonicalSaleId || debtSource.id,
+      });
 
       const refreshedRepayment = await tx.income.findUnique({
         where: { id: repayment.id },
@@ -3352,7 +3476,6 @@ export const customerIncomeRouter = router({
           tenantId: ctx.tenantId,
           type: 'new_sale',
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          remainingDebtAmount: { gt: 0 },
           ...(scopedManagerUserId
             ? {
                 managerUserId: scopedManagerUserId,
@@ -3363,8 +3486,11 @@ export const customerIncomeRouter = router({
         take: 300,
         select: {
           id: true,
-          remainingDebtAmount: true,
+          entryDate: true,
+          coursePriceAmount: true,
           debtAmount: true,
+          paymentAmount: true,
+          remainingDebtAmount: true,
           customer: {
             select: {
               customerNumber: true,
@@ -3380,6 +3506,10 @@ export const customerIncomeRouter = router({
         },
       }),
     ]);
+    const outstandingDebtMetricsBySaleId = await buildActiveSaleChainMetrics({
+      tenantId: ctx.tenantId,
+      sales: outstandingDebts as SaleChainSaleRow[],
+    });
 
     const responsibleManagerMap = await fetchLatestResponsibleManagerByCustomer({
       tenantId: ctx.tenantId,
@@ -3434,15 +3564,21 @@ export const customerIncomeRouter = router({
       })),
       outstandingDebts: (outstandingDebts as Array<{
         id: string;
+        entryDate: Date;
+        coursePriceAmount: number | null;
         remainingDebtAmount: number;
         debtAmount: number | null;
+        paymentAmount: number;
         customer: { customerNumber: string; name: string };
         course: { name: string } | null;
         tariff: { name: string } | null;
-      }>).map((debt) => ({
+      }>)
+        .filter((debt) => (outstandingDebtMetricsBySaleId.get(debt.id)?.currentDebtAmount ?? debt.remainingDebtAmount) > 0)
+        .map((debt) => ({
         id: debt.id,
-        remainingDebtAmount: debt.remainingDebtAmount,
-        debtAmount: debt.debtAmount,
+        remainingDebtAmount: outstandingDebtMetricsBySaleId.get(debt.id)?.currentDebtAmount ?? debt.remainingDebtAmount,
+        debtAmount: outstandingDebtMetricsBySaleId.get(debt.id)?.agreementAmount
+          ?? getSaleAgreementAmount(debt),
         customerNumber: debt.customer.customerNumber,
         customerName: debt.customer.name,
         courseName: debt.course?.name || null,
@@ -3527,7 +3663,6 @@ export const customerIncomeRouter = router({
           tenantId: ctx.tenantId,
           type: 'new_sale',
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          remainingDebtAmount: { gt: 0 },
           customer: {
             customerNumber: normalizedCustomerNumber,
           },
@@ -3541,6 +3676,9 @@ export const customerIncomeRouter = router({
         take: 200,
         select: {
           id: true,
+          entryDate: true,
+          coursePriceAmount: true,
+          paymentAmount: true,
           remainingDebtAmount: true,
           debtAmount: true,
           customer: {
@@ -3557,11 +3695,17 @@ export const customerIncomeRouter = router({
           },
         },
       });
+      const debtMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: debts as SaleChainSaleRow[],
+      });
 
-      return debts.map((debt) => ({
+      return debts
+        .filter((debt) => (debtMetricsBySaleId.get(debt.id)?.currentDebtAmount ?? debt.remainingDebtAmount) > 0)
+        .map((debt) => ({
         id: debt.id,
-        remainingDebtAmount: debt.remainingDebtAmount,
-        debtAmount: debt.debtAmount,
+        remainingDebtAmount: debtMetricsBySaleId.get(debt.id)?.currentDebtAmount ?? debt.remainingDebtAmount,
+        debtAmount: debtMetricsBySaleId.get(debt.id)?.agreementAmount ?? getSaleAgreementAmount(debt),
         customerNumber: debt.customer.customerNumber,
         customerName: debt.customer.name,
         courseName: debt.course?.name || null,
@@ -6456,11 +6600,16 @@ export const customerIncomeRouter = router({
             },
             select: {
               id: true,
-              managerUserId: true,
               courseId: true,
               tariffId: true,
-              deadline: true,
-              remainingDebtAmount: true,
+              legacyImportMeta: true,
+              customer: {
+                select: {
+                  profileCourseId: true,
+                  profileTariffId: true,
+                  profileSubTariffId: true,
+                },
+              },
             },
           });
 
@@ -6471,67 +6620,45 @@ export const customerIncomeRouter = router({
             });
           }
 
-          if (transferAmount > (targetSale.remainingDebtAmount || 0)) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: "O'tkaziladigan to'lov summasi tanlangan kurs qarzidan katta. Boshqa kurs tanlang yoki refund variantidan foydalaning.",
-            });
-          }
+          const targetSaleSubTariffId = extractSaleSubTariffId(targetSale.legacyImportMeta);
+          const profileMatchedTargetSubTariffId = (
+            targetSale.customer.profileCourseId === targetSale.courseId
+            && targetSale.customer.profileTariffId === targetSale.tariffId
+          )
+            ? targetSale.customer.profileSubTariffId || null
+            : null;
+          const effectiveTargetSubTariffId = targetSaleSubTariffId || profileMatchedTargetSubTariffId || null;
 
-          if (transferAmount > 0) {
-            let runningRemainingDebt = targetSale.remainingDebtAmount || 0;
-            const sourcePayments = saleChain
-              .filter((item) => (item.paymentAmount || 0) > 0)
-              .sort((left, right) => {
-                if (left.entryDate.getTime() !== right.entryDate.getTime()) {
-                  return left.entryDate.getTime() - right.entryDate.getTime();
-                }
-                return left.createdAt.getTime() - right.createdAt.getTime();
-              });
-
-            for (const sourcePayment of sourcePayments) {
-              const debtBeforePayment = runningRemainingDebt;
-              runningRemainingDebt = Math.max(runningRemainingDebt - (sourcePayment.paymentAmount || 0), 0);
-              const createdRepayment = await tx.income.create({
-                data: {
-                  tenantId: ctx.tenantId,
-                  customerId: saleIncome.customerId,
-                  managerUserId: saleIncome.managerUserId || targetSale.managerUserId,
-                  type: 'repayment',
-                  lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-                  relatedDebtIncomeId: targetSale.id,
-                  courseId: targetSale.courseId,
-                  tariffId: targetSale.tariffId,
-                  entryDate: sourcePayment.entryDate,
-                  deadline: targetSale.deadline,
-                  debtAmount: debtBeforePayment,
-                  paymentAmount: sourcePayment.paymentAmount || 0,
-                  remainingDebtAmount: runningRemainingDebt,
-                },
-                select: {
-                  id: true,
-                  entryDate: true,
-                },
-              });
-
-              relinkedRepaymentIds.push(createdRepayment.id);
-              relinkedPaymentDates.push(createdRepayment.entryDate.toISOString());
-            }
-
-            await tx.income.update({
-              where: { id: targetSale.id },
-              data: {
-                remainingDebtAmount: runningRemainingDebt,
-              },
-            });
-          }
-
-          const deleted = await tx.income.deleteMany({
+          await tx.income.updateMany({
             where: {
               tenantId: ctx.tenantId,
               id: { in: saleChainIds },
             },
+            data: {
+              courseId: targetSale.courseId,
+              tariffId: targetSale.tariffId,
+            },
           });
+
+          await tx.income.update({
+            where: { id: saleIncome.id },
+            data: {
+              legacyImportMeta: withSaleSubTariffMeta(null, effectiveTargetSubTariffId),
+            },
+          });
+
+          const normalized = await normalizeSaleChainChronology(tx, {
+            tenantId: ctx.tenantId,
+            saleId: saleIncome.id,
+          });
+          if (normalized.didReorder) {
+            relinkedRepaymentIds = normalized.reorderedIncomeIds.filter((id) => id !== normalized.canonicalSaleId);
+          }
+          await assertSaleChainDebtInvariant(tx, {
+            tenantId: ctx.tenantId,
+            saleId: normalized.canonicalSaleId,
+          });
+
           targetSaleIncomeId = targetSale.id;
 
           await refreshCustomerProfileFromLatestActiveSale(tx, {
@@ -6540,7 +6667,7 @@ export const customerIncomeRouter = router({
           });
 
           return {
-            deletedCount: deleted.count,
+            deletedCount: 0,
             mode: 'relink' as const,
           };
         }
@@ -6892,40 +7019,6 @@ export const customerIncomeRouter = router({
         });
       }
 
-      if (input?.debtFilter === 'with_debt') {
-        andConditions.push({
-          incomes: {
-            some: {
-              ...(scopedManagerUserId
-                ? {
-                    managerUserId: scopedManagerUserId,
-                  }
-                : {}),
-              type: 'new_sale',
-              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-              remainingDebtAmount: { gt: 0 },
-            },
-          },
-        });
-      } else if (input?.debtFilter === 'without_debt') {
-        andConditions.push({
-          NOT: {
-            incomes: {
-              some: {
-                ...(scopedManagerUserId
-                  ? {
-                      managerUserId: scopedManagerUserId,
-                    }
-                  : {}),
-                type: 'new_sale',
-                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-                remainingDebtAmount: { gt: 0 },
-              },
-            },
-          },
-        });
-      }
-
       const where: Prisma.CustomerWhereInput = {
         tenantId: ctx.tenantId,
         ...(andConditions.length ? { AND: andConditions } : {}),
@@ -7073,6 +7166,9 @@ export const customerIncomeRouter = router({
             customerId: true,
             entryDate: true,
             remainingDebtAmount: true,
+            coursePriceAmount: true,
+            debtAmount: true,
+            paymentAmount: true,
             legacyImportMeta: true,
             course: {
               select: {
@@ -7138,12 +7234,19 @@ export const customerIncomeRouter = router({
           remainingDebtAmount: number;
         }>
       >();
+      const activeSaleChainMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: activeSales as SaleChainSaleRow[],
+      });
 
       for (const sale of activeSales as Array<{
         id: string;
         customerId: string;
         entryDate: Date;
         remainingDebtAmount: number;
+        coursePriceAmount: number | null;
+        debtAmount: number | null;
+        paymentAmount: number;
         legacyImportMeta: Prisma.JsonValue | null;
         course: { id: string; name: string } | null;
         tariff: { id: string; name: string } | null;
@@ -7172,9 +7275,29 @@ export const customerIncomeRouter = router({
           subTariffName,
           label,
           entryDate: sale.entryDate.toISOString(),
-          remainingDebtAmount: sale.remainingDebtAmount || 0,
+          remainingDebtAmount: activeSaleChainMetricsBySaleId.get(sale.id)?.currentDebtAmount ?? (sale.remainingDebtAmount || 0),
         });
         courseEntriesByCustomer.set(sale.customerId, list);
+
+        const current = aggregatesByCustomer.get(sale.customerId) || {
+          totalDebtAmount: 0,
+          totalPaidAmount: 0,
+          hasDebt: false,
+          lastActivityAt: null as Date | null,
+          courses: new Set<string>(),
+          responsibleManagerUserId: null as string | null,
+          responsibleManagerLabel: null as string | null,
+        };
+        const saleMetric = activeSaleChainMetricsBySaleId.get(sale.id);
+        const saleDebt = saleMetric?.currentDebtAmount ?? (sale.remainingDebtAmount || 0);
+        const salePaid = saleMetric?.paidAmount ?? Number(sale.paymentAmount || 0);
+        current.totalDebtAmount += saleDebt;
+        current.totalPaidAmount += salePaid;
+        current.hasDebt = current.hasDebt || saleDebt > 0;
+        if (sale.course?.name) {
+          current.courses.add(sale.course.name);
+        }
+        aggregatesByCustomer.set(sale.customerId, current);
       }
 
       for (const income of relatedIncomes as Array<{
@@ -7196,12 +7319,6 @@ export const customerIncomeRouter = router({
           responsibleManagerUserId: null as string | null,
           responsibleManagerLabel: null as string | null,
         };
-
-        current.totalPaidAmount += income.paymentAmount || 0;
-        if (income.type === 'new_sale' && income.remainingDebtAmount > 0) {
-          current.totalDebtAmount += income.remainingDebtAmount;
-          current.hasDebt = true;
-        }
 
         if (!current.lastActivityAt || income.entryDate > current.lastActivityAt) {
           current.lastActivityAt = income.entryDate;
@@ -7228,9 +7345,23 @@ export const customerIncomeRouter = router({
             return customer.profileSubTariffId === input.subTariffId;
           })
         : customers;
+      const customersAfterDebtFilter = customersAfterSubTariffFilter.filter((customer) => {
+        if (!input?.debtFilter) {
+          return true;
+        }
+        const aggregate = aggregatesByCustomer.get(customer.id);
+        const hasDebt = Boolean(aggregate?.hasDebt);
+        if (input.debtFilter === 'with_debt') {
+          return hasDebt;
+        }
+        if (input.debtFilter === 'without_debt') {
+          return !hasDebt;
+        }
+        return true;
+      });
 
       return {
-        customers: customersAfterSubTariffFilter.map((customer) => {
+        customers: customersAfterDebtFilter.map((customer) => {
           const aggregate = aggregatesByCustomer.get(customer.id);
           const courseEntries = courseEntriesByCustomer.get(customer.id) || [];
           const profileCourseName = customer.profileCourseId ? profileCourseNameById.get(customer.profileCourseId) || null : null;
