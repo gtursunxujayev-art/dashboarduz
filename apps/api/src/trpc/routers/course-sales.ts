@@ -2,6 +2,7 @@ import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc';
+import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
 
 const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
@@ -128,6 +129,7 @@ function buildCustomerCoursesByCustomer(
     };
   }>,
   subTariffNameById: Map<string, string>,
+  chainMetricsBySaleId?: Map<string, { currentDebtAmount: number }>,
 ): Map<string, CustomerCourseEntry[]> {
   const map = new Map<string, CustomerCourseEntry[]>();
   for (const sale of activeSales) {
@@ -156,7 +158,7 @@ function buildCustomerCoursesByCustomer(
       subTariffName,
       label,
       entryDate: sale.entryDate.toISOString(),
-      remainingDebtAmount: sale.remainingDebtAmount || 0,
+      remainingDebtAmount: chainMetricsBySaleId?.get(sale.id)?.currentDebtAmount ?? (sale.remainingDebtAmount || 0),
     });
     map.set(sale.customerId, rows);
   }
@@ -167,6 +169,43 @@ function buildCustomerCoursesByCustomer(
   }
 
   return map;
+}
+
+async function buildActiveSaleChainMetrics(params: {
+  tenantId: string;
+  sales: SaleChainSaleRow[];
+}) {
+  if (params.sales.length === 0) {
+    return new Map<string, {
+      agreementAmount: number;
+      paidAmount: number;
+      currentDebtAmount: number;
+      lastActivityAt: Date;
+    }>();
+  }
+
+  const saleIds = params.sales.map((sale) => sale.id);
+  const chainRows = await prisma.income.findMany({
+    where: {
+      tenantId: params.tenantId,
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      OR: [
+        { id: { in: saleIds } },
+        { relatedDebtIncomeId: { in: saleIds } },
+      ],
+    },
+    select: {
+      id: true,
+      relatedDebtIncomeId: true,
+      paymentAmount: true,
+      entryDate: true,
+    },
+  });
+
+  return buildSaleChainMetricsBySaleId({
+    sales: params.sales,
+    chainRows,
+  });
 }
 
 export const courseSalesRouter = router({
@@ -339,56 +378,38 @@ export const courseSalesRouter = router({
         },
         select: {
           id: true,
+          entryDate: true,
           customerId: true,
           coursePriceAmount: true,
+          debtAmount: true,
           paymentAmount: true,
           remainingDebtAmount: true,
         },
       });
-
-      const saleIds = matchedSales.map((sale) => sale.id);
-      const saleIdSet = new Set(saleIds);
-      const paidBySaleId = new Map<string, number>();
-      if (saleIds.length > 0) {
-        const paidIncomes = await prisma.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            OR: [
-              { id: { in: saleIds } },
-              { relatedDebtIncomeId: { in: saleIds } },
-            ],
-          },
-          select: {
-            id: true,
-            relatedDebtIncomeId: true,
-            paymentAmount: true,
-          },
-        });
-        for (const income of paidIncomes) {
-          const saleId = income.relatedDebtIncomeId || income.id;
-          if (!saleIdSet.has(saleId)) {
-            continue;
-          }
-          paidBySaleId.set(saleId, (paidBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
-        }
-      }
+      const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: matchedSales,
+      });
 
       let agreementAmount = 0;
       let remainingDebtAmount = 0;
+      let paidAmount = 0;
       let fullyPaidCount = 0;
       let debtorsCount = 0;
       for (const sale of matchedSales) {
-        agreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
-        const debt = sale.remainingDebtAmount ?? 0;
+        const metric = chainMetricsBySaleId.get(sale.id);
+        const agreement = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.debtAmount ?? sale.paymentAmount ?? 0);
+        const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
+        const paid = metric?.paidAmount ?? (sale.paymentAmount ?? 0);
+        agreementAmount += agreement;
         remainingDebtAmount += debt;
+        paidAmount += paid;
         if (debt <= 0) {
           fullyPaidCount += 1;
         } else {
           debtorsCount += 1;
         }
       }
-      const paidAmount = Array.from(paidBySaleId.values()).reduce((sum, value) => sum + value, 0);
 
       return {
         category: input.category,
@@ -491,6 +512,7 @@ export const courseSalesRouter = router({
             customerId: true,
             entryDate: true,
             coursePriceAmount: true,
+            debtAmount: true,
             paymentAmount: true,
             remainingDebtAmount: true,
             customer: {
@@ -527,7 +549,6 @@ export const courseSalesRouter = router({
         }),
       ]);
 
-      const saleIds = sales.map((sale) => sale.id);
       const customerIds = Array.from(new Set(sales.map((sale) => sale.customerId)));
       const profileSubTariffIds = Array.from(
         new Set(
@@ -559,25 +580,7 @@ export const courseSalesRouter = router({
         ),
       );
 
-      const [incomes, subTariffs, profileCourses, profileTariffs, allActiveSalesByCustomer] = await Promise.all([
-        saleIds.length > 0
-          ? prisma.income.findMany({
-              where: {
-                tenantId: ctx.tenantId,
-                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-                OR: [
-                  { id: { in: saleIds } },
-                  { relatedDebtIncomeId: { in: saleIds } },
-                ],
-              },
-              select: {
-                id: true,
-                relatedDebtIncomeId: true,
-                paymentAmount: true,
-                entryDate: true,
-              },
-            })
-          : Promise.resolve([]),
+      const [subTariffs, profileCourses, profileTariffs, allActiveSalesByCustomer] = await Promise.all([
         combinedSubTariffIds.length > 0
           ? prisma.subTariff.findMany({
               where: {
@@ -628,6 +631,9 @@ export const courseSalesRouter = router({
                 customerId: true,
                 entryDate: true,
                 remainingDebtAmount: true,
+                coursePriceAmount: true,
+                debtAmount: true,
+                paymentAmount: true,
                 course: {
                   select: { id: true, name: true },
                 },
@@ -650,6 +656,14 @@ export const courseSalesRouter = router({
       const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
       const profileCourseNameById = new Map(profileCourses.map((course) => [course.id, course.name]));
       const profileTariffNameById = new Map(profileTariffs.map((tariff) => [tariff.id, tariff.name]));
+      const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: sales,
+      });
+      const allCustomerChainMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: allActiveSalesByCustomer as SaleChainSaleRow[],
+      });
       const customerCoursesByCustomer = buildCustomerCoursesByCustomer(
         allActiveSalesByCustomer as Array<{
           id: string;
@@ -666,22 +680,8 @@ export const courseSalesRouter = router({
           };
         }>,
         subTariffNameById,
+        allCustomerChainMetricsBySaleId,
       );
-      const paidBySaleId = new Map<string, number>();
-      const lastActivityBySaleId = new Map<string, Date>();
-      const saleIdSet = new Set(saleIds);
-
-      for (const income of incomes) {
-        const saleId = income.relatedDebtIncomeId || income.id;
-        if (!saleIdSet.has(saleId)) {
-          continue;
-        }
-        paidBySaleId.set(saleId, (paidBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
-        const currentLast = lastActivityBySaleId.get(saleId);
-        if (!currentLast || income.entryDate > currentLast) {
-          lastActivityBySaleId.set(saleId, income.entryDate);
-        }
-      }
 
       return {
         page: input.page,
@@ -689,7 +689,11 @@ export const courseSalesRouter = router({
         total,
         totalPages: Math.max(1, Math.ceil(total / input.limit)),
         rows: sales.map((sale) => {
-          const paidAmount = paidBySaleId.get(sale.id) ?? (sale.paymentAmount ?? 0);
+          const metric = chainMetricsBySaleId.get(sale.id);
+          const paidAmount = metric?.paidAmount ?? (sale.paymentAmount ?? 0);
+          const debtAmount = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
+          const agreementAmount = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.debtAmount ?? sale.paymentAmount ?? 0);
+          const lastActivityAt = metric?.lastActivityAt ?? sale.entryDate;
           const managerLabel = sale.manager.name || sale.manager.username || sale.manager.id;
           const profileCourseName = sale.customer.profileCourseId
             ? profileCourseNameById.get(sale.customer.profileCourseId) || null
@@ -718,11 +722,11 @@ export const courseSalesRouter = router({
             courseName: sale.course?.name || profileCourseName || null,
             tariffName: sale.tariff?.name || profileTariffName || null,
             subTariffName: resolvedSubTariffName,
-            agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
+            agreementAmount,
             paidAmount,
-            debtAmount: sale.remainingDebtAmount ?? 0,
+            debtAmount,
             entryDate: sale.entryDate.toISOString(),
-            lastActivityAt: (lastActivityBySaleId.get(sale.id) || sale.entryDate).toISOString(),
+            lastActivityAt: lastActivityAt.toISOString(),
             customerCourses: customerCoursesByCustomer.get(sale.customerId) || [],
           };
         }),
@@ -845,6 +849,10 @@ export const courseSalesRouter = router({
       const filteredSales = input.subTariffId
         ? salesWithResolvedSubTariff.filter((sale) => sale.resolvedSubTariffId === input.subTariffId)
         : salesWithResolvedSubTariff;
+      const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: filteredSales as SaleChainSaleRow[],
+      });
 
       const saleIds = filteredSales.map((sale) => sale.id);
       const saleIdSet = new Set(saleIds);
@@ -909,14 +917,20 @@ export const courseSalesRouter = router({
       let currentAgreementAmount = 0;
       let currentDebtAmount = 0;
       for (const sale of filteredSales) {
-        currentAgreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
+        const metric = chainMetricsBySaleId.get(sale.id);
+        const agreement = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.paymentAmount ?? 0);
+        const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
+        currentAgreementAmount += agreement;
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
-          rangeAgreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
+          rangeAgreementAmount += agreement;
         }
-        currentDebtAmount += sale.remainingDebtAmount ?? 0;
+        currentDebtAmount += debt;
       }
       const rangeIncomeAmount = Array.from(rangeIncomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
-      const currentIncomeAmount = Array.from(currentIncomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
+      const currentIncomeAmount = filteredSales.reduce((sum, sale) => {
+        const metric = chainMetricsBySaleId.get(sale.id);
+        return sum + (metric?.paidAmount ?? currentIncomeBySaleId.get(sale.id) ?? 0);
+      }, 0);
       const currentCustomerCount = new Set(filteredSales.map((sale) => sale.customerId)).size;
 
       const tariffCustomerSets = new Map<string, Set<string>>();
@@ -1046,6 +1060,7 @@ export const courseSalesRouter = router({
             customerId: true,
             entryDate: true,
             coursePriceAmount: true,
+            debtAmount: true,
             paymentAmount: true,
             remainingDebtAmount: true,
             customer: {
@@ -1082,7 +1097,6 @@ export const courseSalesRouter = router({
         }),
       ]);
 
-      const saleIds = sales.map((sale) => sale.id);
       const customerIds = Array.from(new Set(sales.map((sale) => sale.customerId)));
       const profileSubTariffIds = Array.from(
         new Set(
@@ -1114,25 +1128,7 @@ export const courseSalesRouter = router({
         ),
       );
 
-      const [incomes, subTariffs, profileCourses, profileTariffs, allActiveSalesByCustomer] = await Promise.all([
-        saleIds.length > 0
-          ? prisma.income.findMany({
-              where: {
-                tenantId: ctx.tenantId,
-                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-                OR: [
-                  { id: { in: saleIds } },
-                  { relatedDebtIncomeId: { in: saleIds } },
-                ],
-              },
-              select: {
-                id: true,
-                relatedDebtIncomeId: true,
-                paymentAmount: true,
-                entryDate: true,
-              },
-            })
-          : Promise.resolve([]),
+      const [subTariffs, profileCourses, profileTariffs, allActiveSalesByCustomer] = await Promise.all([
         combinedSubTariffIds.length > 0
           ? prisma.subTariff.findMany({
               where: {
@@ -1183,6 +1179,9 @@ export const courseSalesRouter = router({
                 customerId: true,
                 entryDate: true,
                 remainingDebtAmount: true,
+                coursePriceAmount: true,
+                debtAmount: true,
+                paymentAmount: true,
                 course: {
                   select: { id: true, name: true },
                 },
@@ -1205,6 +1204,14 @@ export const courseSalesRouter = router({
       const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
       const profileCourseNameById = new Map(profileCourses.map((course) => [course.id, course.name]));
       const profileTariffNameById = new Map(profileTariffs.map((tariff) => [tariff.id, tariff.name]));
+      const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: sales,
+      });
+      const allCustomerChainMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: allActiveSalesByCustomer as SaleChainSaleRow[],
+      });
       const customerCoursesByCustomer = buildCustomerCoursesByCustomer(
         allActiveSalesByCustomer as Array<{
           id: string;
@@ -1221,22 +1228,8 @@ export const courseSalesRouter = router({
           };
         }>,
         subTariffNameById,
+        allCustomerChainMetricsBySaleId,
       );
-      const paidBySaleId = new Map<string, number>();
-      const lastActivityBySaleId = new Map<string, Date>();
-      const saleIdSet = new Set(saleIds);
-
-      for (const income of incomes) {
-        const saleId = income.relatedDebtIncomeId || income.id;
-        if (!saleIdSet.has(saleId)) {
-          continue;
-        }
-        paidBySaleId.set(saleId, (paidBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
-        const currentLast = lastActivityBySaleId.get(saleId);
-        if (!currentLast || income.entryDate > currentLast) {
-          lastActivityBySaleId.set(saleId, income.entryDate);
-        }
-      }
 
       return {
         page: input.page,
@@ -1244,7 +1237,11 @@ export const courseSalesRouter = router({
         total,
         totalPages: Math.max(1, Math.ceil(total / input.limit)),
         rows: sales.map((sale) => {
-          const paidAmount = paidBySaleId.get(sale.id) ?? (sale.paymentAmount ?? 0);
+          const metric = chainMetricsBySaleId.get(sale.id);
+          const paidAmount = metric?.paidAmount ?? (sale.paymentAmount ?? 0);
+          const debtAmount = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
+          const agreementAmount = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.debtAmount ?? sale.paymentAmount ?? 0);
+          const lastActivityAt = metric?.lastActivityAt ?? sale.entryDate;
           const managerLabel = sale.manager.name || sale.manager.username || sale.manager.id;
           const profileCourseName = sale.customer.profileCourseId
             ? profileCourseNameById.get(sale.customer.profileCourseId) || null
@@ -1273,11 +1270,11 @@ export const courseSalesRouter = router({
             courseName: sale.course?.name || profileCourseName || null,
             tariffName: sale.tariff?.name || profileTariffName || null,
             subTariffName: resolvedSubTariffName,
-            agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
+            agreementAmount,
             paidAmount,
-            debtAmount: sale.remainingDebtAmount ?? 0,
+            debtAmount,
             entryDate: sale.entryDate.toISOString(),
-            lastActivityAt: (lastActivityBySaleId.get(sale.id) || sale.entryDate).toISOString(),
+            lastActivityAt: lastActivityAt.toISOString(),
             customerCourses: customerCoursesByCustomer.get(sale.customerId) || [],
           };
         }),
@@ -1434,6 +1431,10 @@ export const courseSalesRouter = router({
       ]);
 
       const saleIdSet = new Set(saleIds);
+      const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: sales,
+      });
       const incomeBySaleId = new Map<string, number>();
       const currentIncomeBySaleId = new Map<string, number>();
       for (const income of rangeIncomes) {
@@ -1459,11 +1460,14 @@ export const courseSalesRouter = router({
       let vipCount = 0;
       let standartCount = 0;
       for (const sale of sales) {
-        currentAgreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
+        const metric = chainMetricsBySaleId.get(sale.id);
+        const agreement = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.paymentAmount ?? 0);
+        const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
+        currentAgreementAmount += agreement;
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
-          rangeAgreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
+          rangeAgreementAmount += agreement;
         }
-        currentDebtAmount += sale.remainingDebtAmount ?? 0;
+        currentDebtAmount += debt;
         const subTariffName = sale.customer.profileSubTariffId
           ? subTariffNameById.get(sale.customer.profileSubTariffId) || ''
           : '';
@@ -1476,7 +1480,10 @@ export const courseSalesRouter = router({
       }
       const currentCustomerCount = new Set(sales.map((sale) => sale.customerId)).size;
       const rangeIncomeAmount = Array.from(incomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
-      const currentIncomeAmount = Array.from(currentIncomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
+      const currentIncomeAmount = sales.reduce((sum, sale) => {
+        const metric = chainMetricsBySaleId.get(sale.id);
+        return sum + (metric?.paidAmount ?? currentIncomeBySaleId.get(sale.id) ?? 0);
+      }, 0);
       const collectionPercent = rangeAgreementAmount > 0
         ? Number(((rangeIncomeAmount / rangeAgreementAmount) * 100).toFixed(1))
         : 0;
@@ -1526,9 +1533,10 @@ export const courseSalesRouter = router({
             row.saleIds.push(sale.id);
             row.customerIds.add(sale.customerId);
             if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
-              row.agreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
+              row.agreementAmount += chainMetricsBySaleId.get(sale.id)?.agreementAmount
+                ?? (sale.coursePriceAmount ?? sale.paymentAmount ?? 0);
             }
-            row.debtAmount += sale.remainingDebtAmount ?? 0;
+            row.debtAmount += chainMetricsBySaleId.get(sale.id)?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
           }
         }
 
@@ -1545,9 +1553,10 @@ export const courseSalesRouter = router({
         managerRow.saleCount += 1;
         managerRow.customerIds.add(sale.customerId);
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
-          managerRow.agreementAmount += sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
+          managerRow.agreementAmount += chainMetricsBySaleId.get(sale.id)?.agreementAmount
+            ?? (sale.coursePriceAmount ?? sale.paymentAmount ?? 0);
         }
-        managerRow.debtAmount += sale.remainingDebtAmount ?? 0;
+        managerRow.debtAmount += chainMetricsBySaleId.get(sale.id)?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
         managerMap.set(sale.managerUserId, managerRow);
       }
 
