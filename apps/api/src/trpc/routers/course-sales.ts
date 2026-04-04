@@ -483,7 +483,7 @@ export const courseSalesRouter = router({
         prisma.income.count({ where }),
         prisma.income.findMany({
           where,
-          orderBy: [{ updatedAt: 'desc' }],
+          orderBy: [{ entryDate: 'desc' }, { id: 'desc' }],
           skip,
           take: input.limit,
           select: {
@@ -1038,7 +1038,7 @@ export const courseSalesRouter = router({
         prisma.income.count({ where }),
         prisma.income.findMany({
           where,
-          orderBy: [{ updatedAt: 'desc' }],
+          orderBy: [{ entryDate: 'desc' }, { id: 'desc' }],
           skip,
           take: input.limit,
           select: {
