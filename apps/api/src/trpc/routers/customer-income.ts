@@ -3049,15 +3049,13 @@ async function createIncomeEntry(params: {
         },
       });
 
-      if (entryDate.getTime() < debtSource.entryDate.getTime()) {
-        const normalized = await normalizeSaleChainChronology(tx, {
-          tenantId,
-          saleId: debtSource.id,
-        });
-        if (normalized.didReorder) {
-          chronologyReordered = true;
-          chronologyCanonicalSaleId = normalized.canonicalSaleId;
-        }
+      const normalized = await normalizeSaleChainChronology(tx, {
+        tenantId,
+        saleId: debtSource.id,
+      });
+      if (normalized.didReorder) {
+        chronologyReordered = true;
+        chronologyCanonicalSaleId = normalized.canonicalSaleId;
       }
       await assertSaleChainDebtInvariant(tx, {
         tenantId,
@@ -4318,12 +4316,7 @@ export const customerIncomeRouter = router({
             customerId: income.customerId,
           });
 
-          const candidateSaleDate = parsedEntryDate ?? income.entryDate;
-          const needsChronologyNormalization = linkedRepayments.some(
-            (repayment) => repayment.entryDate.getTime() < candidateSaleDate.getTime(),
-          );
-
-          if (needsChronologyNormalization) {
+          if (linkedRepayments.length > 0) {
             const normalized = await normalizeSaleChainChronology(tx, {
               tenantId: ctx.tenantId,
               saleId: income.id,
@@ -4467,20 +4460,17 @@ export const customerIncomeRouter = router({
           },
         });
 
-        const candidateRepaymentDate = parsedEntryDate ?? income.entryDate;
-        if (candidateRepaymentDate.getTime() < sourceIncome.entryDate.getTime()) {
-          const normalized = await normalizeSaleChainChronology(tx, {
-            tenantId: ctx.tenantId,
-            saleId: sourceIncome.id,
+        const normalized = await normalizeSaleChainChronology(tx, {
+          tenantId: ctx.tenantId,
+          saleId: sourceIncome.id,
+        });
+        if (normalized.didReorder) {
+          chronologyReordered = true;
+          chronologyCanonicalSaleId = normalized.canonicalSaleId;
+          const refreshedIncome = await tx.income.findUnique({
+            where: { id: income.id },
           });
-          if (normalized.didReorder) {
-            chronologyReordered = true;
-            chronologyCanonicalSaleId = normalized.canonicalSaleId;
-            const refreshedIncome = await tx.income.findUnique({
-              where: { id: income.id },
-            });
-            return refreshedIncome ?? updatedRow;
-          }
+          return refreshedIncome ?? updatedRow;
         }
 
         return updatedRow;
