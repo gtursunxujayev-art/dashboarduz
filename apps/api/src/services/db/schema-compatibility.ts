@@ -47,6 +47,19 @@ const COMPATIBILITY_SQL: string[] = [
     ON "courses" ("isHiddenFromIncomeForm");
   `,
   `
+  ALTER TABLE "courses"
+    ADD COLUMN IF NOT EXISTS "startDate" TIMESTAMP(3),
+    ADD COLUMN IF NOT EXISTS "endDate" TIMESTAMP(3);
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS "courses_startDate_idx"
+    ON "courses" ("startDate");
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS "courses_endDate_idx"
+    ON "courses" ("endDate");
+  `,
+  `
   ALTER TABLE "customers"
     ADD COLUMN IF NOT EXISTS "profileCourseId" TEXT,
     ADD COLUMN IF NOT EXISTS "profileTariffId" TEXT,
