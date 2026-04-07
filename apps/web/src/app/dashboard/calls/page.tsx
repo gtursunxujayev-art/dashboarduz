@@ -51,6 +51,7 @@ export default function CallsPage() {
     user?.roles?.includes('Agent')
     && !user?.roles?.includes('Admin')
     && !user?.roles?.includes('Manager')
+    && !user?.roles?.includes('TeamLeader')
     && !user?.roles?.includes('Finance'),
   );
 
