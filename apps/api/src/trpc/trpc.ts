@@ -102,15 +102,15 @@ export const adminProcedure = protectedProcedure.use(async (opts) => {
   return opts.next();
 });
 
-// Admin or Manager procedure
+// Admin, Manager or TeamLeader procedure
 export const managerProcedure = protectedProcedure.use(async (opts) => {
   const { ctx } = opts;
 
   const roles = ctx.user?.roles || [];
-  if (!roles.includes('Admin') && !roles.includes('Manager')) {
+  if (!roles.includes('Admin') && !roles.includes('Manager') && !roles.includes('TeamLeader')) {
     throw new TRPCError({
       code: 'FORBIDDEN',
-      message: 'Manager or Admin access required',
+      message: 'Manager, TeamLeader or Admin access required',
     });
   }
 
