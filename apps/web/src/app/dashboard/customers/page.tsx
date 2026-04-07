@@ -37,6 +37,7 @@ export default function CustomersPage() {
     roles.includes('Tashkiliy')
       && !roles.includes('Admin')
       && !roles.includes('Manager')
+      && !roles.includes('TeamLeader')
       && !roles.includes('Agent')
       && !roles.includes('Finance'),
   );
