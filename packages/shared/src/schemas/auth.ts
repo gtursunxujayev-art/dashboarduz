@@ -59,7 +59,7 @@ export const linkAccountSchema = z.object({
 export const jwtPayloadSchema = z.object({
   userId: z.string().uuid(),
   tenantId: z.string().uuid(),
-  roles: z.array(z.enum(['Admin', 'Manager', 'Agent', 'Finance', 'Tashkiliy'])),
+  roles: z.array(z.enum(['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy'])),
   email: z.string().email().optional(),
   phone: z.string().optional(),
 });
