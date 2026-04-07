@@ -465,6 +465,10 @@ export default function CoursesPage() {
         <div className="p-6">
           {catalogQuery.isLoading ? (
             <p className="text-sm text-gray-600">Kurslar yuklanmoqda...</p>
+          ) : catalogQuery.error ? (
+            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+              Kurslarni yuklashda xatolik: {catalogQuery.error.message}
+            </p>
           ) : courses.length === 0 ? (
             <p className="text-sm text-gray-600">Hozircha kurslar yo'q.</p>
           ) : (
