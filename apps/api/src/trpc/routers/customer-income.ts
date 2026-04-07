@@ -3490,7 +3490,7 @@ export const customerIncomeRouter = router({
   formOptions: protectedProcedure.query(async ({ ctx }) => {
     const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
 
-    const [managers, customers, courses, outstandingDebts] = await Promise.all([
+    const [managersInitial, customers, outstandingDebts] = await Promise.all([
       prisma.user.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -3532,11 +3532,6 @@ export const customerIncomeRouter = router({
           telegramUsername: true,
         },
       }),
-      fetchCoursesWithTariffsSafe({
-        tenantId: ctx.tenantId,
-        onlyActive: true,
-        excludeHiddenFromIncomeForm: true,
-      }),
       prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -3572,6 +3567,49 @@ export const customerIncomeRouter = router({
         },
       }),
     ]);
+
+    let managers = managersInitial;
+    if ((managersInitial as Array<unknown>).length === 0) {
+      managers = await prisma.user.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          ...(scopedManagerUserId
+            ? {
+                id: scopedManagerUserId,
+              }
+            : {}),
+        },
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          roles: true,
+        },
+      });
+    }
+
+    let courses: Array<{
+      id: string;
+      name: string;
+      category: string;
+      tariffs: Array<{
+        id: string;
+        name: string;
+        subTariffs: Array<{ id: string; name: string }>;
+      }>;
+    }> = [];
+
+    try {
+      courses = await fetchCoursesWithTariffsSafe({
+        tenantId: ctx.tenantId,
+        onlyActive: true,
+        excludeHiddenFromIncomeForm: true,
+      });
+    } catch (courseError) {
+      console.error('[Income/FormOptions] Failed to load courses, returning empty course list:', courseError);
+      courses = [];
+    }
     const outstandingDebtMetricsBySaleId = await buildActiveSaleChainMetrics({
       tenantId: ctx.tenantId,
       sales: outstandingDebts as SaleChainSaleRow[],
@@ -3592,12 +3630,23 @@ export const customerIncomeRouter = router({
     const availableManagersFiltered = managerRows.filter((manager) => hasSalesManagerRole(manager.roles));
     const availableManagers = availableManagersFiltered.length > 0 ? availableManagersFiltered : managerRows;
 
+    const managerOptions = availableManagers.map((manager) => ({
+      id: manager.id,
+      label: manager.name || manager.username || manager.id,
+      roles: manager.roles,
+    }));
+    const managersForResponse = managerOptions.length > 0
+      ? managerOptions
+      : [
+          {
+            id: ctx.user.userId,
+            label: ctx.user.userId,
+            roles: Array.isArray(ctx.user.roles) ? ctx.user.roles : [],
+          },
+        ];
+
     return {
-      managers: availableManagers.map((manager) => ({
-        id: manager.id,
-        label: manager.name || manager.username || manager.id,
-        roles: manager.roles,
-      })),
+      managers: managersForResponse,
       customers: (customers as Array<{
         id: string;
         customerNumber: string;
@@ -4076,39 +4125,45 @@ export const customerIncomeRouter = router({
 
       await ensureAdditionalServiceCategoryReady(data.category);
 
-      const updateCourse = () => prisma.course.update({
+      const updateCourse = (updateData: typeof data) => prisma.course.update({
         where: { id: input.courseId },
-        data,
+        data: updateData,
       });
 
       try {
-        return await updateCourse();
+        return await updateCourse(data);
       } catch (error) {
         if (isCourseCategoryConstraintOutdatedError(error)) {
           try {
             await ensureCourseCategoryConstraintSupportsAdditionalService();
-            return await updateCourse();
+            return await updateCourse(data);
           } catch {
             throwCourseCategoryMigrationError();
           }
         }
-        if (
-          !isMissingCourseCategoryColumnError(error)
-          && !isMissingCourseHiddenFromIncomeFormColumnError(error)
-          && !isMissingCourseStartDateColumnError(error)
-          && !isMissingCourseEndDateColumnError(error)
-        ) {
+        const missingCategoryColumn = isMissingCourseCategoryColumnError(error);
+        const missingHiddenColumn = isMissingCourseHiddenFromIncomeFormColumnError(error);
+        const missingStartDateColumn = isMissingCourseStartDateColumnError(error);
+        const missingEndDateColumn = isMissingCourseEndDateColumnError(error);
+        if (!missingCategoryColumn && !missingHiddenColumn && !missingStartDateColumn && !missingEndDateColumn) {
           throw error;
         }
 
-        const fallbackData: { name?: string; isActive?: boolean } = {};
-        if (typeof input.name === 'string') {
-          fallbackData.name = input.name.trim();
+        const fallbackData: typeof data = {
+          ...data,
+        };
+
+        if (missingCategoryColumn) {
+          delete fallbackData.category;
         }
-        if (typeof input.isActive === 'boolean') {
-          fallbackData.isActive = input.isActive;
-        } else if (typeof input.isFaol === 'boolean') {
-          fallbackData.isActive = input.isFaol;
+        if (missingHiddenColumn) {
+          delete fallbackData.isHiddenFromIncomeForm;
+        }
+        if (missingStartDateColumn) {
+          delete fallbackData.startDate;
+        }
+        if (missingEndDateColumn) {
+          delete fallbackData.endDate;
         }
 
         if (!Object.keys(fallbackData).length) {
@@ -4118,10 +4173,7 @@ export const customerIncomeRouter = router({
           });
         }
 
-        return prisma.course.update({
-          where: { id: input.courseId },
-          data: fallbackData,
-        });
+        return updateCourse(fallbackData);
       }
     }),
 
