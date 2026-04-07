@@ -8,7 +8,7 @@ const BONUS_PLAN_PERIODS = ['monthly', 'all_time'] as const;
 const BONUS_RULE_CATEGORIES = ['online', 'offline', 'intensive'] as const;
 const BONUS_RULE_MODES = ['simple', 'tiered'] as const;
 const BONUS_BASE_MODES = ['on_income', 'on_debt_closed'] as const;
-const BONUS_READ_ROLES = new Set(['Admin', 'Manager']);
+const BONUS_READ_ROLES = new Set(['Admin', 'Manager', 'TeamLeader']);
 
 type BonusPlanCategory = (typeof BONUS_PLAN_CATEGORIES)[number];
 type BonusPlanPeriodMode = (typeof BONUS_PLAN_PERIODS)[number];
@@ -474,7 +474,7 @@ const updateFixedSalariesInput = z.object({
 export const bonusRouter = router({
   getSalaryConfig: protectedProcedure.query(async ({ ctx }) => {
     if (!canReadBonusPlans(ctx.user.roles)) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus settings are available for Admin/Manager only.' });
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus settings are available for Admin/Manager/TeamLeader only.' });
     }
 
     const tenant = await prisma.tenant.findUnique({
@@ -630,7 +630,7 @@ export const bonusRouter = router({
 
   listPlans: protectedProcedure.query(async ({ ctx }) => {
     if (!canReadBonusPlans(ctx.user.roles)) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus plans are available for Admin/Manager only.' });
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus plans are available for Admin/Manager/TeamLeader only.' });
     }
 
     const tenant = await prisma.tenant.findUnique({
@@ -648,7 +648,7 @@ export const bonusRouter = router({
 
   catalogOptions: protectedProcedure.query(async ({ ctx }) => {
     if (!canReadBonusPlans(ctx.user.roles)) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus plan catalog is available for Admin/Manager only.' });
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus plan catalog is available for Admin/Manager/TeamLeader only.' });
     }
 
     const courses = await prisma.course.findMany({
