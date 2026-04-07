@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const AGENT_ALLOWED_PATHS = [
   '/dashboard',
   '/dashboard/leads',
@@ -44,17 +44,18 @@ function isAgentOnly(roles: string[]): boolean {
 }
 
 function isFinanceOnly(roles: string[]): boolean {
-  return roles.includes('Finance') && !roles.some((role) => role === 'Admin' || role === 'Manager' || role === 'Agent');
+  return roles.includes('Finance') && !roles.some((role) => role === 'Admin' || role === 'Manager' || role === 'TeamLeader' || role === 'Agent');
 }
 
 function isManagerOnly(roles: string[]): boolean {
-  return roles.includes('Manager') && !roles.includes('Admin');
+  return (roles.includes('Manager') || roles.includes('TeamLeader')) && !roles.includes('Admin');
 }
 
 function isTashkiliyOnly(roles: string[]): boolean {
   return roles.includes('Tashkiliy')
     && !roles.includes('Admin')
     && !roles.includes('Manager')
+    && !roles.includes('TeamLeader')
     && !roles.includes('Agent')
     && !roles.includes('Finance');
 }
@@ -74,7 +75,7 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
   const normalizedPath = pathname || '/dashboard';
   const isLeadPath = normalizedPath === '/dashboard/leads' || normalizedPath.startsWith('/dashboard/leads/');
   const canAccessLeads = Boolean(
-    user?.roles?.includes('Admin') || user?.roles?.includes('Manager') || user?.roles?.includes('Agent'),
+    user?.roles?.includes('Admin') || user?.roles?.includes('Manager') || user?.roles?.includes('TeamLeader') || user?.roles?.includes('Agent'),
   );
 
   const isAgentRestriction = Boolean(user && isAgentOnly(user.roles));
