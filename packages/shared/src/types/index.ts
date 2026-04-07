@@ -2,7 +2,7 @@
 
 export type TenantPlan = 'free' | 'pro' | 'enterprise';
 
-export type UserRole = 'Admin' | 'Manager' | 'Agent' | 'Finance' | 'Tashkiliy';
+export type UserRole = 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'Finance' | 'Tashkiliy';
 
 export type AuthProvider = 'phone' | 'telegram' | 'email';
 
