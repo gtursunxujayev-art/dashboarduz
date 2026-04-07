@@ -15,7 +15,7 @@ import { telegramService } from '../../services/integrations/telegram';
 
 const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const sellerRangeSchema = z.enum(['today', 'week', 'month', 'last30days', 'custom']);
 type SellerRange = z.infer<typeof sellerRangeSchema>;
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
