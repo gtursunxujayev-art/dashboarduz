@@ -40,7 +40,7 @@ export type DashboardRange = z.infer<typeof dashboardRangeSchema>;
 
 export const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 export const REPORT_TZ_OFFSET_MS = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
-export const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+export const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 export const UTEL_MIN_EXTENSION = 100;
 export const UTEL_MAX_EXTENSION = 150;
 export const SALARY_CATEGORIES = ['online', 'offline', 'intensive'] as const;
@@ -360,13 +360,14 @@ export function resolveDateRange(range: DashboardRange, now: Date, dateFrom?: st
 }
 
 export function isFinanceOnly(roles: string[]): boolean {
-  return roles.includes('Finance') && !roles.some((role) => role === 'Admin' || role === 'Manager' || role === 'Agent');
+  return roles.includes('Finance') && !roles.some((role) => role === 'Admin' || role === 'Manager' || role === 'TeamLeader' || role === 'Agent');
 }
 
 export function isTashkiliyOnly(roles: string[]): boolean {
   return roles.includes('Tashkiliy')
     && !roles.includes('Admin')
     && !roles.includes('Manager')
+    && !roles.includes('TeamLeader')
     && !roles.includes('Agent')
     && !roles.includes('Finance');
 }
