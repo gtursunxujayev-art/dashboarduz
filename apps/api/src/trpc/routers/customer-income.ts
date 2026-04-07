@@ -3912,10 +3912,68 @@ export const customerIncomeRouter = router({
     }),
 
   courseCatalog: protectedProcedure.query(async ({ ctx }) => {
-    return fetchCoursesWithTariffsSafe({
-      tenantId: ctx.tenantId,
-      onlyActive: false,
-    });
+    try {
+      return await fetchCoursesWithTariffsSafe({
+        tenantId: ctx.tenantId,
+        onlyActive: false,
+      });
+    } catch (error) {
+      const errorText = extractErrorText(error);
+      const hasMissingCourseColumn =
+        errorText.includes('does not exist')
+        && errorText.includes('courses.')
+        && (
+          errorText.includes('courses.category')
+          || errorText.includes('courses.startdate')
+          || errorText.includes('courses.enddate')
+          || errorText.includes('courses.ishiddenfromincomeform')
+        );
+      if (!hasMissingCourseColumn) {
+        throw error;
+      }
+
+      const fallbackCourses = await prisma.course.findMany({
+        where: { tenantId: ctx.tenantId },
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+          tariffs: {
+            orderBy: { name: 'asc' },
+            select: {
+              id: true,
+              name: true,
+              isActive: true,
+              courseId: true,
+              createdAt: true,
+              updatedAt: true,
+              subTariffs: {
+                orderBy: { name: 'asc' },
+                select: {
+                  id: true,
+                  name: true,
+                  isActive: true,
+                  tariffId: true,
+                  createdAt: true,
+                  updatedAt: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return fallbackCourses.map((course) => ({
+        ...course,
+        category: 'offline',
+        startDate: null,
+        endDate: null,
+        isHiddenFromIncomeForm: false,
+      }));
+    }
   }),
 
   updateCourse: managerProcedure
