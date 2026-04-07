@@ -23,6 +23,8 @@ type CourseItem = {
   id: string;
   name: string;
   category: 'online' | 'offline' | 'intensive' | 'additional_service';
+  startDate: Date | string | null;
+  endDate: Date | string | null;
   isActive: boolean;
   isHiddenFromIncomeForm: boolean;
   tariffs: TariffItem[];
@@ -39,6 +41,19 @@ function getCategoryLabel(category: CourseItem['category']): string {
   return COURSE_CATEGORY_OPTIONS.find((option) => option.value === category)?.label || category;
 }
 
+function toDateInputValue(value: Date | string | null | undefined): string {
+  if (!value) {
+    return '';
+  }
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      return '';
+    }
+    return value.toISOString().slice(0, 10);
+  }
+  return value.slice(0, 10);
+}
+
 export default function CoursesPage() {
   const { user } = useAuth();
   const canManageCourses = Boolean(user?.roles?.includes('Admin') || user?.roles?.includes('Manager'));
@@ -47,11 +62,15 @@ export default function CoursesPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [newCourseName, setNewCourseName] = useState('');
   const [newCourseCategory, setNewCourseCategory] = useState<CourseItem['category']>('offline');
+  const [newCourseStartDate, setNewCourseStartDate] = useState('');
+  const [newCourseEndDate, setNewCourseEndDate] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [newTariffName, setNewTariffName] = useState('');
   const [newSubTariffName, setNewSubTariffName] = useState<Record<string, string>>({});
   const [courseEditName, setCourseEditName] = useState<Record<string, string>>({});
   const [courseEditCategory, setCourseEditCategory] = useState<Record<string, CourseItem['category']>>({});
+  const [courseEditStartDate, setCourseEditStartDate] = useState<Record<string, string>>({});
+  const [courseEditEndDate, setCourseEditEndDate] = useState<Record<string, string>>({});
   const [tariffEditName, setTariffEditName] = useState<Record<string, string>>({});
   const [subTariffEditName, setSubTariffEditName] = useState<Record<string, string>>({});
   const [openCourseIds, setOchishCourseIds] = useState<Record<string, boolean>>({});
@@ -69,8 +88,10 @@ export default function CoursesPage() {
   const updateSubTariff = trpc.customerIncome.updateSubTariff.useMutation();
 
   const courses = useMemo<CourseItem[]>(() => {
-    return ((catalogQuery.data || []) as Array<CourseItem & { isHiddenFromIncomeForm?: boolean }>).map((course) => ({
+    return ((catalogQuery.data || []) as Array<CourseItem & { isHiddenFromIncomeForm?: boolean; startDate?: Date | string | null; endDate?: Date | string | null }>).map((course) => ({
       ...course,
+      startDate: course.startDate ?? null,
+      endDate: course.endDate ?? null,
       isHiddenFromIncomeForm: Boolean(course.isHiddenFromIncomeForm),
     }));
   }, [catalogQuery.data]);
@@ -116,9 +137,16 @@ export default function CoursesPage() {
     }
 
     try {
-      await createCourse.mutateAsync({ name, category: newCourseCategory });
+      await createCourse.mutateAsync({
+        name,
+        category: newCourseCategory,
+        startDate: newCourseStartDate || undefined,
+        endDate: newCourseEndDate || undefined,
+      });
       setNewCourseName('');
       setNewCourseCategory('offline');
+      setNewCourseStartDate('');
+      setNewCourseEndDate('');
       setSuccess('Kurs muvaffaqiyatli saqlandi.');
       await catalogQuery.refetch();
     } catch (mutationError: any) {
@@ -167,11 +195,17 @@ export default function CoursesPage() {
 
     const nextName = (courseEditName[course.id] ?? course.name).trim();
     const nextCategory = courseEditCategory[course.id] ?? course.category;
+    const hasStartEdit = Object.prototype.hasOwnProperty.call(courseEditStartDate, course.id);
+    const hasEndEdit = Object.prototype.hasOwnProperty.call(courseEditEndDate, course.id);
+    const nextStartDate = hasStartEdit ? courseEditStartDate[course.id] : toDateInputValue(course.startDate);
+    const nextEndDate = hasEndEdit ? courseEditEndDate[course.id] : toDateInputValue(course.endDate);
     try {
       await updateCourse.mutateAsync({
         courseId: course.id,
         name: nextName,
         category: nextCategory,
+        startDate: nextStartDate || null,
+        endDate: nextEndDate || null,
       });
       setSuccess('Kurs yangilandi.');
       await catalogQuery.refetch();
@@ -346,7 +380,7 @@ export default function CoursesPage() {
 
           {canManageCourses && (
             <>
-              <form onSubmit={handleCreateCourse} className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_auto]">
+              <form onSubmit={handleCreateCourse} className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_180px_180px_auto]">
                 <input
                   value={newCourseName}
                   onChange={(event) => setNewCourseName(event.target.value)}
@@ -364,6 +398,18 @@ export default function CoursesPage() {
                     </option>
                   ))}
                 </select>
+                <input
+                  type="date"
+                  value={newCourseStartDate}
+                  onChange={(event) => setNewCourseStartDate(event.target.value)}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <input
+                  type="date"
+                  value={newCourseEndDate}
+                  onChange={(event) => setNewCourseEndDate(event.target.value)}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
                 <button
                   type="submit"
                   disabled={createCourse.isLoading}
@@ -442,7 +488,7 @@ export default function CoursesPage() {
                             <div>
                               <p className="text-base font-medium text-gray-900">{course.name}</p>
                               <p className="text-xs text-gray-500">
-                                {course.tariffs.length} ta tarif - {course.isActive ? 'Faol' : 'Faolsiz'} - {getCategoryLabel(course.category)} - {course.isHiddenFromIncomeForm ? "To'lovdan yashirilgan" : "To'lovda ko'rinadi"}
+                                {course.tariffs.length} ta tarif - {course.isActive ? 'Faol' : 'Faolsiz'} - {getCategoryLabel(course.category)} - {course.isHiddenFromIncomeForm ? "To'lovdan yashirilgan" : "To'lovda ko'rinadi"} - {toDateInputValue(course.startDate) || '-'} / {toDateInputValue(course.endDate) || '-'}
                               </p>
                             </div>
                             <span className="text-sm text-blue-600">{openCourseIds[course.id] ? 'Yopish' : 'Ochish'}</span>
@@ -450,7 +496,7 @@ export default function CoursesPage() {
 
                           {openCourseIds[course.id] && (
                             <div className="space-y-3 border-t border-gray-200 p-4">
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_auto_auto_auto] md:items-center">
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_170px_170px_auto_auto_auto] md:items-center">
                                 <input
                                   value={courseEditName[course.id] ?? course.name}
                                   onChange={(event) =>
@@ -474,6 +520,22 @@ export default function CoursesPage() {
                                     </option>
                                   ))}
                                 </select>
+                                <input
+                                  type="date"
+                                  value={courseEditStartDate[course.id] ?? toDateInputValue(course.startDate)}
+                                  onChange={(event) =>
+                                    setCourseEditStartDate((prev) => ({ ...prev, [course.id]: event.target.value }))
+                                  }
+                                  className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                                <input
+                                  type="date"
+                                  value={courseEditEndDate[course.id] ?? toDateInputValue(course.endDate)}
+                                  onChange={(event) =>
+                                    setCourseEditEndDate((prev) => ({ ...prev, [course.id]: event.target.value }))
+                                  }
+                                  className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateCourse(course)}
