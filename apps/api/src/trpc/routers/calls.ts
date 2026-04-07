@@ -19,7 +19,7 @@ const clickToCallSchema = z.object({
 const callsRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 type CallsRange = z.infer<typeof callsRangeSchema>;
 
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const UTEL_MIN_EXTENSION = 100;
 const UTEL_MAX_EXTENSION = 150;
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
