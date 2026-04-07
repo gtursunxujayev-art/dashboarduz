@@ -24,10 +24,10 @@ import {
 } from '../../services/historical-import';
 import { buildSaleChainMetricsBySaleId, getSaleAgreementAmount, type SaleChainSaleRow } from '../../services/income-chain';
 
-const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'Agent'] as const;
+const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent'] as const;
 const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive', 'additional_service'] as const;
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
-const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'Manager', 'Organizator', 'Organizer', 'Tashkiliy']);
+const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
+const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'Manager', 'TeamLeader', 'Organizator', 'Organizer', 'Tashkiliy']);
 const APPROVER_ROLES_REFUND = new Set(['Admin', 'Finance']);
 const INCOME_LIFECYCLE_ACTIVE = 'active';
 const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
@@ -787,6 +787,7 @@ function getAdjustmentRoleScope(rolesInput: string[]) {
   const isAdmin = roles.includes('Admin');
   const hasFinance = roles.includes('Finance');
   const hasManagerLike = roles.includes('Manager')
+    || roles.includes('TeamLeader')
     || roles.includes('Organizator')
     || roles.includes('Organizer')
     || roles.includes('Tashkiliy');
