@@ -11,6 +11,7 @@ const THEME_STORAGE_KEY = 'dashboarduz-theme';
 const ROLE_LABELS: Record<string, string> = {
   Admin: 'Admin',
   Manager: 'Menejer',
+  TeamLeader: 'Team lider',
   Agent: 'Agent',
   Finance: 'Moliya',
   Tashkiliy: 'Tashkiliy',
