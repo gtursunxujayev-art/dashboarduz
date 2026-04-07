@@ -46,6 +46,7 @@ export default function CourseSalesDetailPage() {
     roles.includes('Tashkiliy')
       && !roles.includes('Admin')
       && !roles.includes('Manager')
+      && !roles.includes('TeamLeader')
       && !roles.includes('Agent')
       && !roles.includes('Finance'),
   );
