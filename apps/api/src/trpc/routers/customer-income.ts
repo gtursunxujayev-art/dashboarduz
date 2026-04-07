@@ -25,6 +25,9 @@ import {
 import { buildSaleChainMetricsBySaleId, getSaleAgreementAmount, type SaleChainSaleRow } from '../../services/income-chain';
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent'] as const;
+const SALES_MANAGER_ROLE_TOKENS = new Set(
+  SALES_MANAGER_ROLES.map((role) => String(role).trim().toLowerCase()),
+);
 const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'Manager', 'TeamLeader', 'Organizator', 'Organizer', 'Tashkiliy']);
@@ -72,6 +75,24 @@ const TARIFF_CHANGE_GROUP_ENV_KEYS = [
 
 function isAdminUser(roles: string[]): boolean {
   return roles.includes('Admin');
+}
+
+function hasSalesManagerRole(roles: unknown): boolean {
+  if (Array.isArray(roles)) {
+    return roles.some((role) => SALES_MANAGER_ROLE_TOKENS.has(String(role).trim().toLowerCase()));
+  }
+  if (typeof roles === 'string') {
+    const normalized = roles.trim().toLowerCase();
+    if (SALES_MANAGER_ROLE_TOKENS.has(normalized)) {
+      return true;
+    }
+    return normalized
+      .split(/[,\s|;]+/)
+      .map((token) => token.trim())
+      .filter(Boolean)
+      .some((token) => SALES_MANAGER_ROLE_TOKENS.has(token));
+  }
+  return false;
 }
 
 function extractErrorText(error: unknown): string {
@@ -2199,16 +2220,14 @@ async function assertManagerBelongsToTenant(tenantId: string, managerUserId: str
       id: managerUserId,
       tenantId,
       isActive: true,
-      roles: {
-        hasSome: [...SALES_MANAGER_ROLES],
-      },
     },
     select: {
       id: true,
+      roles: true,
     },
   });
 
-  if (!manager) {
+  if (!manager || !hasSalesManagerRole(manager.roles)) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected sales manager is not available.' });
   }
 }
@@ -2376,14 +2395,12 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
       where: {
         tenantId,
         isActive: true,
-        roles: {
-          hasSome: [...SALES_MANAGER_ROLES],
-        },
       },
       select: {
         id: true,
         name: true,
         username: true,
+        roles: true,
       },
     }),
     prisma.course.findMany({
@@ -2439,7 +2456,16 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
     aliasCandidates.set(normalizedAlias, existing);
   };
 
-  for (const manager of managers) {
+  const managerRows = managers as Array<{
+    id: string;
+    name: string | null;
+    username: string | null;
+    roles: string[];
+  }>;
+  const availableManagersFiltered = managerRows.filter((manager) => hasSalesManagerRole(manager.roles));
+  const availableManagers = availableManagersFiltered.length > 0 ? availableManagersFiltered : managerRows;
+
+  for (const manager of availableManagers) {
     addManagerAlias(manager.id, manager.id);
     if (manager.username) {
       addManagerAlias(manager.username, manager.id);
@@ -3469,9 +3495,6 @@ export const customerIncomeRouter = router({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
-          roles: {
-            hasSome: [...SALES_MANAGER_ROLES],
-          },
           ...(scopedManagerUserId
             ? {
                 id: scopedManagerUserId,
@@ -3560,13 +3583,17 @@ export const customerIncomeRouter = router({
       scopedManagerUserId,
     });
 
+    const managerRows = managers as Array<{
+      id: string;
+      name: string | null;
+      username: string | null;
+      roles: string[];
+    }>;
+    const availableManagersFiltered = managerRows.filter((manager) => hasSalesManagerRole(manager.roles));
+    const availableManagers = availableManagersFiltered.length > 0 ? availableManagersFiltered : managerRows;
+
     return {
-      managers: (managers as Array<{
-        id: string;
-        name: string | null;
-        username: string | null;
-        roles: string[];
-      }>).map((manager) => ({
+      managers: availableManagers.map((manager) => ({
         id: manager.id,
         label: manager.name || manager.username || manager.id,
         roles: manager.roles,
