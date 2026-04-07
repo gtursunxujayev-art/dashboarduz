@@ -158,8 +158,8 @@ export default function BonusPage() {
   const { user } = useAuth();
   const roles = user?.roles || [];
   const isAdmin = Boolean(roles.includes('Admin'));
-  const isManager = Boolean(roles.includes('Manager') && !isAdmin);
-  const canView = isAdmin || isManager;
+  const isManagerLike = Boolean((roles.includes('Manager') || roles.includes('TeamLeader')) && !isAdmin);
+  const canView = isAdmin || isManagerLike;
 
   const [salaryBonusMode, setSalaryBonusMode] = useState<BonusMode>('on_income');
   const [bonusRulesState, setBonusRulesState] = useState<BonusRulesState>(() => createDefaultBonusRulesState());
@@ -656,7 +656,7 @@ export default function BonusPage() {
       <div className="space-y-6">
         <div className="rounded-lg bg-white p-6 shadow">
           <h1 className="text-xl font-semibold text-gray-900">Bonus</h1>
-          <p className="mt-2 text-sm text-red-600">Bu sahifa faqat Admin va Manager uchun mavjud.</p>
+          <p className="mt-2 text-sm text-red-600">Bu sahifa faqat Admin va Manager/Team lider uchun mavjud.</p>
         </div>
       </div>
     );
@@ -671,9 +671,9 @@ export default function BonusPage() {
         </div>
 
         <div className="p-6">
-          {isManager && (
+          {isManagerLike && (
             <p className="mb-4 rounded-md bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
-              Manager bu sahifani ko&apos;ra oladi, lekin o&apos;zgartirish faqat Admin uchun ochiq.
+              Manager/Team lider bu sahifani ko&apos;ra oladi, lekin o&apos;zgartirish faqat Admin uchun ochiq.
             </p>
           )}
 
