@@ -153,6 +153,7 @@ export default function FinancePage() {
   const isAgentOnly = roles.includes('Agent')
     && !roles.includes('Admin')
     && !roles.includes('Manager')
+    && !roles.includes('TeamLeader')
     && !roles.includes('Finance');
   const [range, setRange] = useState<DashboardRange>('month');
   const [dateFrom, setDateFrom] = useState(getTashkentToday());
