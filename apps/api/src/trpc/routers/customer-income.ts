@@ -92,6 +92,24 @@ function isMissingCourseHiddenFromIncomeFormColumnError(error: unknown): boolean
   );
 }
 
+function isMissingCourseStartDateColumnError(error: unknown): boolean {
+  const message = String((error as any)?.message || '').toLowerCase();
+  return (
+    message.includes('does not exist')
+    && message.includes('startdate')
+    && (message.includes('courses.startdate') || message.includes('courses'))
+  );
+}
+
+function isMissingCourseEndDateColumnError(error: unknown): boolean {
+  const message = String((error as any)?.message || '').toLowerCase();
+  return (
+    message.includes('does not exist')
+    && message.includes('enddate')
+    && (message.includes('courses.enddate') || message.includes('courses'))
+  );
+}
+
 function isMissingHistoricalImportSchemaError(error: unknown): boolean {
   const message = String((error as any)?.message || '').toLowerCase();
   return (
@@ -551,6 +569,8 @@ type CourseWithTariffsSafe = {
   id: string;
   name: string;
   category: string;
+  startDate: Date | null;
+  endDate: Date | null;
   isActive: boolean;
   isHiddenFromIncomeForm: boolean;
   createdAt: Date;
@@ -594,6 +614,8 @@ async function fetchCoursesWithTariffsSafe(params: {
         id: true,
         name: true,
         category: true,
+        startDate: true,
+        endDate: true,
         isActive: true,
         isHiddenFromIncomeForm: true,
         createdAt: true,
@@ -628,7 +650,9 @@ async function fetchCoursesWithTariffsSafe(params: {
   } catch (error) {
     const missingCategoryColumn = isMissingCourseCategoryColumnError(error);
     const missingHiddenColumn = isMissingCourseHiddenFromIncomeFormColumnError(error);
-    if (!missingCategoryColumn && !missingHiddenColumn) {
+    const missingStartDateColumn = isMissingCourseStartDateColumnError(error);
+    const missingEndDateColumn = isMissingCourseEndDateColumnError(error);
+    if (!missingCategoryColumn && !missingHiddenColumn && !missingStartDateColumn && !missingEndDateColumn) {
       throw error;
     }
 
@@ -646,6 +670,8 @@ async function fetchCoursesWithTariffsSafe(params: {
         id: true,
         name: true,
         ...(missingCategoryColumn ? {} : { category: true }),
+        ...(missingStartDateColumn ? {} : { startDate: true }),
+        ...(missingEndDateColumn ? {} : { endDate: true }),
         isActive: true,
         ...(missingHiddenColumn ? {} : { isHiddenFromIncomeForm: true }),
         createdAt: true,
@@ -680,6 +706,8 @@ async function fetchCoursesWithTariffsSafe(params: {
       id: string;
       name: string;
       category?: string;
+      startDate?: Date | null;
+      endDate?: Date | null;
       isActive: boolean;
       isHiddenFromIncomeForm?: boolean;
       createdAt: Date;
@@ -688,6 +716,8 @@ async function fetchCoursesWithTariffsSafe(params: {
     }>).map((course) => ({
       ...course,
       category: course.category ?? 'offline',
+      startDate: course.startDate ?? null,
+      endDate: course.endDate ?? null,
       isHiddenFromIncomeForm: course.isHiddenFromIncomeForm ?? false,
     }));
   }
@@ -3718,10 +3748,18 @@ export const customerIncomeRouter = router({
       if (!name) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course name is required.' });
       }
+      const startDate = input.startDate ? parseDateInput(input.startDate) : null;
+      const endDate = input.endDate ? parseDateInput(input.endDate) : null;
+      if (startDate && endDate && endDate.getTime() < startDate.getTime()) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Course end date must be same or later than start date.',
+        });
+      }
 
       await ensureAdditionalServiceCategoryReady(input.category);
 
-      const upsertCourse = () => prisma.course.upsert({
+      const upsertCourse = (params: { withCategory: boolean; withDates: boolean }) => prisma.course.upsert({
         where: {
           tenantId_name: {
             tenantId: ctx.tenantId,
@@ -3731,45 +3769,42 @@ export const customerIncomeRouter = router({
         create: {
           tenantId: ctx.tenantId,
           name,
-          category: input.category,
+          ...(params.withCategory ? { category: input.category } : {}),
+          ...(params.withDates ? { startDate, endDate } : {}),
           isActive: true,
         },
         update: {
-          category: input.category,
+          ...(params.withCategory ? { category: input.category } : {}),
+          ...(params.withDates ? { startDate, endDate } : {}),
           isActive: true,
         },
       });
 
       try {
-        return await upsertCourse();
+        return await upsertCourse({ withCategory: true, withDates: true });
       } catch (error) {
+        let normalizedError = error;
         if (isCourseCategoryConstraintOutdatedError(error)) {
           try {
             await ensureCourseCategoryConstraintSupportsAdditionalService();
-            return await upsertCourse();
-          } catch {
-            throwCourseCategoryMigrationError();
+            return await upsertCourse({ withCategory: true, withDates: true });
+          } catch (retryError) {
+            normalizedError = retryError;
+            if (isCourseCategoryConstraintOutdatedError(retryError)) {
+              throwCourseCategoryMigrationError();
+            }
           }
         }
-        if (!isMissingCourseCategoryColumnError(error)) {
-          throw error;
+        const missingCategoryColumn = isMissingCourseCategoryColumnError(normalizedError);
+        const missingStartDateColumn = isMissingCourseStartDateColumnError(normalizedError);
+        const missingEndDateColumn = isMissingCourseEndDateColumnError(normalizedError);
+        if (!missingCategoryColumn && !missingStartDateColumn && !missingEndDateColumn) {
+          throw normalizedError;
         }
 
-        return prisma.course.upsert({
-          where: {
-            tenantId_name: {
-              tenantId: ctx.tenantId,
-              name,
-            },
-          },
-          create: {
-            tenantId: ctx.tenantId,
-            name,
-            isActive: true,
-          },
-          update: {
-            isActive: true,
-          },
+        return upsertCourse({
+          withCategory: !missingCategoryColumn,
+          withDates: !missingStartDateColumn && !missingEndDateColumn,
         });
       }
     }),
@@ -3874,6 +3909,8 @@ export const customerIncomeRouter = router({
         courseId: z.string().uuid(),
         name: z.string().min(1).max(120).optional(),
         category: z.enum(COURSE_CATEGORY_VALUES).optional(),
+        startDate: z.string().optional().nullable(),
+        endDate: z.string().optional().nullable(),
         isActive: z.boolean().optional(),
         isFaol: z.boolean().optional(),
         isHiddenFromIncomeForm: z.boolean().optional(),
@@ -3895,6 +3932,8 @@ export const customerIncomeRouter = router({
       const data: {
         name?: string;
         category?: string;
+        startDate?: Date | null;
+        endDate?: Date | null;
         isActive?: boolean;
         isHiddenFromIncomeForm?: boolean;
       } = {};
@@ -3903,6 +3942,24 @@ export const customerIncomeRouter = router({
       }
       if (typeof input.category === 'string') {
         data.category = input.category;
+      }
+      if (input.startDate !== undefined) {
+        data.startDate = input.startDate ? parseDateInput(input.startDate) : null;
+      }
+      if (input.endDate !== undefined) {
+        data.endDate = input.endDate ? parseDateInput(input.endDate) : null;
+      }
+      if (
+        data.startDate !== undefined
+        && data.endDate !== undefined
+        && data.startDate
+        && data.endDate
+        && data.endDate.getTime() < data.startDate.getTime()
+      ) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Course end date must be same or later than start date.',
+        });
       }
       if (typeof input.isActive === 'boolean') {
         data.isActive = input.isActive;
@@ -3935,7 +3992,12 @@ export const customerIncomeRouter = router({
             throwCourseCategoryMigrationError();
           }
         }
-        if (!isMissingCourseCategoryColumnError(error) && !isMissingCourseHiddenFromIncomeFormColumnError(error)) {
+        if (
+          !isMissingCourseCategoryColumnError(error)
+          && !isMissingCourseHiddenFromIncomeFormColumnError(error)
+          && !isMissingCourseStartDateColumnError(error)
+          && !isMissingCourseEndDateColumnError(error)
+        ) {
           throw error;
         }
 
