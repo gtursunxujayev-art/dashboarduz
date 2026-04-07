@@ -94,19 +94,29 @@ function isMissingCourseHiddenFromIncomeFormColumnError(error: unknown): boolean
 
 function isMissingCourseStartDateColumnError(error: unknown): boolean {
   const message = String((error as any)?.message || '').toLowerCase();
+  if (!message.includes('does not exist')) {
+    return false;
+  }
   return (
-    message.includes('does not exist')
-    && message.includes('startdate')
-    && (message.includes('courses.startdate') || message.includes('courses'))
+    message.includes('courses.startdate')
+    || message.includes('course.startdate')
+    || message.includes('"startdate"')
+    || message.includes(' startdate ')
+    || message.includes('`startdate`')
   );
 }
 
 function isMissingCourseEndDateColumnError(error: unknown): boolean {
   const message = String((error as any)?.message || '').toLowerCase();
+  if (!message.includes('does not exist')) {
+    return false;
+  }
   return (
-    message.includes('does not exist')
-    && message.includes('enddate')
-    && (message.includes('courses.enddate') || message.includes('courses'))
+    message.includes('courses.enddate')
+    || message.includes('course.enddate')
+    || message.includes('"enddate"')
+    || message.includes(' enddate ')
+    || message.includes('`enddate`')
   );
 }
 
