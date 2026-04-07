@@ -56,7 +56,11 @@ function toDateInputValue(value: Date | string | null | undefined): string {
 
 export default function CoursesPage() {
   const { user } = useAuth();
-  const canManageCourses = Boolean(user?.roles?.includes('Admin') || user?.roles?.includes('Manager'));
+  const canManageCourses = Boolean(
+    user?.roles?.includes('Admin')
+    || user?.roles?.includes('Manager')
+    || user?.roles?.includes('TeamLeader'),
+  );
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
