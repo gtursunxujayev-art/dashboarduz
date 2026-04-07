@@ -72,6 +72,7 @@ const TARIFF_CHANGE_GROUP_ENV_KEYS = [
   'CHANGE_GROUP_ID',
   'CHANGE_GROUP_IDS',
 ] as const;
+const CANONICAL_COURSE_CATEGORIES = new Set(['online', 'offline', 'intensive', 'additional_service']);
 
 function isAdminUser(roles: string[]): boolean {
   return roles.includes('Admin');
@@ -93,6 +94,29 @@ function hasSalesManagerRole(roles: unknown): boolean {
       .some((token) => SALES_MANAGER_ROLE_TOKENS.has(token));
   }
   return false;
+}
+
+function normalizeCourseCategoryValue(value: unknown): string {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) {
+    return 'offline';
+  }
+  if (CANONICAL_COURSE_CATEGORIES.has(normalized)) {
+    return normalized;
+  }
+  if (normalized === 'ofline' || normalized === 'offlayn' || normalized === 'offline_course') {
+    return 'offline';
+  }
+  if (normalized === 'onlayn' || normalized === 'online_course') {
+    return 'online';
+  }
+  if (normalized === 'intensiv') {
+    return 'intensive';
+  }
+  if (normalized === "qo'shimcha_xizmat" || normalized === 'qoshimcha_xizmat' || normalized === 'additional') {
+    return 'additional_service';
+  }
+  return 'offline';
 }
 
 function extractErrorText(error: unknown): string {
@@ -681,7 +705,10 @@ async function fetchCoursesWithTariffsSafe(params: {
       },
     });
 
-    return courses as CourseWithTariffsSafe[];
+    return (courses as CourseWithTariffsSafe[]).map((course) => ({
+      ...course,
+      category: normalizeCourseCategoryValue(course.category),
+    }));
   } catch (error) {
     const missingCategoryColumn = isMissingCourseCategoryColumnError(error);
     const missingHiddenColumn = isMissingCourseHiddenFromIncomeFormColumnError(error);
@@ -691,24 +718,13 @@ async function fetchCoursesWithTariffsSafe(params: {
       throw error;
     }
 
-    const fallbackWhere: Prisma.CourseWhereInput = {
-      ...baseWhere,
-      ...(params.excludeHiddenFromIncomeForm && !missingHiddenColumn
-        ? { isHiddenFromIncomeForm: false }
-        : {}),
-    };
-
     const fallbackCourses = await prisma.course.findMany({
-      where: fallbackWhere,
+      where: baseWhere,
       orderBy: { name: 'asc' },
       select: {
         id: true,
         name: true,
-        ...(missingCategoryColumn ? {} : { category: true }),
-        ...(missingStartDateColumn ? {} : { startDate: true }),
-        ...(missingEndDateColumn ? {} : { endDate: true }),
         isActive: true,
-        ...(missingHiddenColumn ? {} : { isHiddenFromIncomeForm: true }),
         createdAt: true,
         updatedAt: true,
         tariffs: {
@@ -740,20 +756,16 @@ async function fetchCoursesWithTariffsSafe(params: {
     return (fallbackCourses as Array<{
       id: string;
       name: string;
-      category?: string;
-      startDate?: Date | null;
-      endDate?: Date | null;
       isActive: boolean;
-      isHiddenFromIncomeForm?: boolean;
       createdAt: Date;
       updatedAt: Date;
       tariffs: CourseWithTariffsSafe['tariffs'];
     }>).map((course) => ({
       ...course,
-      category: course.category ?? 'offline',
-      startDate: course.startDate ?? null,
-      endDate: course.endDate ?? null,
-      isHiddenFromIncomeForm: course.isHiddenFromIncomeForm ?? false,
+      category: normalizeCourseCategoryValue(null),
+      startDate: null,
+      endDate: null,
+      isHiddenFromIncomeForm: false,
     }));
   }
 }
@@ -769,7 +781,10 @@ async function fetchCourseOptionsSafe(tenantId: string): Promise<Array<{ id: str
         category: true,
       },
     });
-    return courses as Array<{ id: string; name: string; category: string }>;
+    return (courses as Array<{ id: string; name: string; category: string }>).map((course) => ({
+      ...course,
+      category: normalizeCourseCategoryValue(course.category),
+    }));
   } catch (error) {
     if (!isMissingCourseCategoryColumnError(error)) {
       throw error;
@@ -786,7 +801,7 @@ async function fetchCourseOptionsSafe(tenantId: string): Promise<Array<{ id: str
 
     return (fallbackCourses as Array<{ id: string; name: string }>).map((course) => ({
       ...course,
-      category: 'offline',
+      category: normalizeCourseCategoryValue(null),
     }));
   }
 }
