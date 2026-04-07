@@ -3,12 +3,13 @@
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 
-type RecipientRole = 'all' | 'Admin' | 'Manager' | 'Agent' | 'Finance' | 'Tashkiliy';
+type RecipientRole = 'all' | 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'Finance' | 'Tashkiliy';
 
 const roleOptions: Array<{ value: RecipientRole; label: string }> = [
   { value: 'all', label: 'Barcha rollar' },
   { value: 'Admin', label: 'Admin' },
   { value: 'Manager', label: 'Menejer' },
+  { value: 'TeamLeader', label: 'Team lider' },
   { value: 'Agent', label: 'Agent' },
   { value: 'Finance', label: 'Moliya' },
   { value: 'Tashkiliy', label: 'Tashkiliy' },
@@ -240,4 +241,3 @@ export default function TelegramBotPage() {
     </div>
   );
 }
-
