@@ -112,6 +112,7 @@ export default function DashboardPage() {
       roles.includes('Agent')
         && !roles.includes('Admin')
         && !roles.includes('Manager')
+        && !roles.includes('TeamLeader')
         && !roles.includes('Finance'),
     );
     const hasFinanceRole = Boolean(roles.includes('Finance'));
@@ -120,12 +121,14 @@ export default function DashboardPage() {
       hasFinanceRole
         && !roles.includes('Admin')
         && !roles.includes('Manager')
+        && !roles.includes('TeamLeader')
         && !roles.includes('Agent'),
     );
     const isTashkiliyOnly = Boolean(
       roles.includes('Tashkiliy')
         && !roles.includes('Admin')
         && !roles.includes('Manager')
+        && !roles.includes('TeamLeader')
         && !roles.includes('Agent')
         && !roles.includes('Finance'),
     );
