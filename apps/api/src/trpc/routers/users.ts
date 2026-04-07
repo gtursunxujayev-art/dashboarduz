@@ -9,7 +9,7 @@ import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live'
 import { amocrmService } from '../../services/integrations/amocrm';
 import { parseTelegramRecipients } from '../../services/integrations/telegram-recipients';
 
-const roleSchema = z.enum(['Admin', 'Manager', 'Agent', 'Finance', 'Tashkiliy']);
+const roleSchema = z.enum(['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy']);
 
 function isMissingUserMappingColumnError(error: unknown) {
   const message = String((error as any)?.message || '');
