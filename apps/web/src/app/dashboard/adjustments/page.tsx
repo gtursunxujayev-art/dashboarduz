@@ -69,6 +69,7 @@ export default function AdjustmentsPage() {
   const canApproveTariffChange =
     roles.includes('Admin')
     || roles.includes('Manager')
+    || roles.includes('TeamLeader')
     || roles.includes('Tashkiliy')
     || roles.includes('Organizator')
     || roles.includes('Organizer');
