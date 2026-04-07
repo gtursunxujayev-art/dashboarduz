@@ -10,7 +10,7 @@ import {
   getTenantAmoCRMContext,
 } from '../../services/integrations/amocrm-live';
 
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 
 async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
   const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
