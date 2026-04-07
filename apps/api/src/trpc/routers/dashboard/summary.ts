@@ -805,7 +805,7 @@ export const summaryProcedures = {
             tenantId: ctx.tenantId,
             isActive: true,
             roles: {
-              hasSome: ['Admin', 'Manager', 'Agent'],
+              hasSome: ['Admin', 'Manager', 'TeamLeader', 'Agent'],
             },
           },
           orderBy: { name: 'asc' },
