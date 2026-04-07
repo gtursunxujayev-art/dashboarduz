@@ -8,7 +8,7 @@ const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 const INCOME_LIFECYCLE_ACTIVE = 'active';
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'Finance']);
+const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
 
 type CourseSalesRange = z.infer<typeof courseSalesRangeSchema>;
