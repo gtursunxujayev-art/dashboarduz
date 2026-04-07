@@ -74,29 +74,36 @@ function isAdminUser(roles: string[]): boolean {
   return roles.includes('Admin');
 }
 
+function extractErrorText(error: unknown): string {
+  const message = String((error as any)?.message || '');
+  const cause = String((error as any)?.cause || '');
+  let serialized = '';
+  try {
+    serialized = JSON.stringify(error);
+  } catch {
+    serialized = '';
+  }
+  return `${message}\n${cause}\n${serialized}`.toLowerCase();
+}
+
 function isMissingCourseCategoryColumnError(error: unknown): boolean {
-  const message = String((error as any)?.message || '').toLowerCase();
+  const message = extractErrorText(error);
   return (
-    message.includes('does not exist')
-    && message.includes('category')
-    && (message.includes('courses.category') || message.includes('courses'))
+    (message.includes('courses.category') || message.includes('course.category') || message.includes(' category '))
+    && (message.includes('does not exist') || message.includes('unknown') || message.includes('column'))
   );
 }
 
 function isMissingCourseHiddenFromIncomeFormColumnError(error: unknown): boolean {
-  const message = String((error as any)?.message || '').toLowerCase();
+  const message = extractErrorText(error);
   return (
-    message.includes('does not exist')
-    && message.includes('ishiddenfromincomeform')
-    && (message.includes('courses.ishiddenfromincomeform') || message.includes('courses'))
+    (message.includes('courses.ishiddenfromincomeform') || message.includes('ishiddenfromincomeform'))
+    && (message.includes('does not exist') || message.includes('unknown') || message.includes('column'))
   );
 }
 
 function isMissingCourseStartDateColumnError(error: unknown): boolean {
-  const message = String((error as any)?.message || '').toLowerCase();
-  if (!message.includes('does not exist')) {
-    return false;
-  }
+  const message = extractErrorText(error);
   return (
     message.includes('courses.startdate')
     || message.includes('course.startdate')
@@ -107,10 +114,7 @@ function isMissingCourseStartDateColumnError(error: unknown): boolean {
 }
 
 function isMissingCourseEndDateColumnError(error: unknown): boolean {
-  const message = String((error as any)?.message || '').toLowerCase();
-  if (!message.includes('does not exist')) {
-    return false;
-  }
+  const message = extractErrorText(error);
   return (
     message.includes('courses.enddate')
     || message.includes('course.enddate')
