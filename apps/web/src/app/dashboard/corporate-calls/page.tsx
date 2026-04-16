@@ -89,6 +89,13 @@ export default function CorporateCallsPage() {
       await listQuery.refetch();
     },
   });
+  const deleteMutation = trpc.corporateCalls.delete.useMutation({
+    onSuccess: async () => {
+      setSuccessMessage("Korporativ qo'ng'iroq yozuvi o'chirildi.");
+      setWarningMessage(null);
+      await listQuery.refetch();
+    },
+  });
 
   useEffect(() => {
     if (managers.length === 0) return;
@@ -133,6 +140,19 @@ export default function CorporateCallsPage() {
       date: formDate,
       duration: formDuration.trim(),
     });
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!canChooseCustomDate) {
+      return;
+    }
+    const confirmed = window.confirm("Ushbu korporativ qo'ng'iroq yozuvini o'chirmoqchimisiz?");
+    if (!confirmed) {
+      return;
+    }
+    setSuccessMessage(null);
+    setWarningMessage(null);
+    await deleteMutation.mutateAsync({ id });
   };
 
   return (
@@ -293,6 +313,9 @@ export default function CorporateCallsPage() {
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Menejer</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Davomiylik</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Oxirgi kiritilgan vaqt</th>
+                    {canChooseCustomDate && (
+                      <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Amal</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
@@ -302,6 +325,18 @@ export default function CorporateCallsPage() {
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.managerName}</td>
                       <td className="px-3 py-2 text-sm font-medium text-gray-900 dark:text-slate-100">{row.duration}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.updatedAt || row.createdAt)}</td>
+                      {canChooseCustomDate && (
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(row.id)}
+                            disabled={deleteMutation.isLoading}
+                            className="rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            O'chirish
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
