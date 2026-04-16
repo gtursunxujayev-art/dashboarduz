@@ -689,6 +689,7 @@ function buildSellersListCacheKey(
   scopedResponsibleUserId: string | null,
   pipelineIds: string[],
   range: SellerRange,
+  corporateRevision: string,
   dateFrom?: string,
   dateTo?: string,
 ): string {
@@ -697,6 +698,7 @@ function buildSellersListCacheKey(
     scopedResponsibleUserId || 'all',
     pipelineIds.slice().sort().join(','),
     range,
+    corporateRevision,
     dateFrom || '',
     dateTo || '',
   ].join('|');
@@ -767,11 +769,19 @@ export const sellersRouter = router({
     timings.managerPreparationMs = Date.now() - managerPreparationStartedMs;
 
     const managerIdList = Array.from(managerIds);
+    const corporateRevision = await prisma.corporateCallDuration.aggregate({
+      where: { tenantId: ctx.tenantId },
+      _max: { updatedAt: true },
+    });
+    const corporateRevisionKey = corporateRevision._max.updatedAt
+      ? corporateRevision._max.updatedAt.toISOString()
+      : '';
     const listCacheKey = buildSellersListCacheKey(
       ctx.tenantId,
       scope.isScoped ? (scope.responsibleUserId || '__unmapped__') : null,
       selectedPipelineIds,
       range,
+      corporateRevisionKey,
       input?.dateFrom,
       input?.dateTo,
     );
