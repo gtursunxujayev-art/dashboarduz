@@ -43,6 +43,7 @@ import {
 } from './helpers';
 import { getOrSet, buildCacheKey } from '../../../services/cache';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
+import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 
 export const summaryProcedures = {
   summary: protectedProcedure
@@ -247,7 +248,7 @@ export const summaryProcedures = {
             tenantId: ctx.tenantId,
             isActive: true,
             roles: {
-              has: 'Agent',
+              hasSome: ['Agent', 'TeamLeader'],
             },
             ...(scope.isScoped
               ? {
@@ -273,7 +274,7 @@ export const summaryProcedures = {
             tenantId: ctx.tenantId,
             isActive: true,
             roles: {
-              has: 'Agent',
+              hasSome: ['Agent', 'TeamLeader'],
             },
             ...(scope.isScoped
               ? {
@@ -314,6 +315,12 @@ export const summaryProcedures = {
         : new Map();
       activityFetchMs = Date.now() - activityFetchStartedMs;
       const activityTotals = summarizeAmoCRMActivityMetrics(activityByManager);
+      const corporateDurationByUserId = await getCorporateCallDurationByManager({
+        tenantId: ctx.tenantId,
+        managerUserIds: agentUsers.map((agent) => agent.id),
+        rangeStart,
+        rangeEnd,
+      });
 
       const reasonCounts = new Map<string, number>();
       const sourceCounts = new Map<string, number>();
@@ -455,8 +462,9 @@ export const summaryProcedures = {
           || keyByAmo
           || (extensionByUtel && isAllowedUtelManagerExtension(extensionByUtel)),
         );
+        const manualDurationSeconds = corporateDurationByUserId.get(agent.id) || 0;
 
-        if (!hasCallMapping) {
+        if (!hasCallMapping && manualDurationSeconds <= 0) {
           continue;
         }
 
@@ -484,7 +492,7 @@ export const summaryProcedures = {
           }
         }
 
-        talkSecondsByAgent.set(agent.id, talkSeconds);
+        talkSecondsByAgent.set(agent.id, talkSeconds + manualDurationSeconds);
         callCountByAgent.set(agent.id, callCount);
       }
 
