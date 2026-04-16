@@ -31,6 +31,7 @@ export default function CorporateCallsPage() {
   const [formDate, setFormDate] = useState(today);
   const [formDuration, setFormDuration] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
   const [listFrom, setListFrom] = useState(getTashkentDate(-7));
   const [listTo, setListTo] = useState(today);
@@ -54,9 +55,20 @@ export default function CorporateCallsPage() {
   });
 
   const upsertMutation = trpc.corporateCalls.upsert.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (result: any) => {
       setFormDuration('');
       setSuccessMessage("Korporativ qo'ng'iroq davomiyligi saqlandi.");
+      setWarningMessage(null);
+      if (result?.telegram?.sent === false) {
+        const reason = String(result?.telegram?.reason || '');
+        if (reason === 'group_missing') {
+          setWarningMessage("Telegramga yuborilmadi: KORPORATIV_GROUP_ID (yoki CORPORATE_CALL_GROUP_ID) sozlanmagan.");
+        } else if (reason === 'token_missing') {
+          setWarningMessage("Telegramga yuborilmadi: bot token topilmadi.");
+        } else {
+          setWarningMessage("Telegramga yuborishda xatolik bo'ldi.");
+        }
+      }
       await listQuery.refetch();
     },
   });
@@ -86,6 +98,7 @@ export default function CorporateCallsPage() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSuccessMessage(null);
+    setWarningMessage(null);
 
     if (!formDuration.trim()) {
       return;
@@ -117,6 +130,11 @@ export default function CorporateCallsPage() {
           {upsertMutation.error && (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
               {upsertMutation.error.message}
+            </p>
+          )}
+          {warningMessage && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+              {warningMessage}
             </p>
           )}
 
@@ -269,4 +287,3 @@ export default function CorporateCallsPage() {
     </div>
   );
 }
-
