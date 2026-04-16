@@ -54,6 +54,12 @@ const envSchema = z.object({
   REFUND_GROUP_IDS: z.string().optional(),
   RETURN_GROUP_ID: z.string().optional(),
   RETURN_GROUP_IDS: z.string().optional(),
+  KORPORATIV_GROUP_ID: z.string().optional(),
+  KORPORATIV_GROUP_IDS: z.string().optional(),
+  CORPORATE_GROUP_ID: z.string().optional(),
+  CORPORATE_GROUP_IDS: z.string().optional(),
+  CORPORATE_CALL_GROUP_ID: z.string().optional(),
+  CORPORATE_CALL_GROUP_IDS: z.string().optional(),
   TELEGRAM_DEBUG_KEY: z.string().optional(),
   
   // AmoCRM
