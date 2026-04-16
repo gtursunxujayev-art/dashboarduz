@@ -12,6 +12,7 @@ import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live'
 import { log, LogLevel } from '../../services/observability';
 import { decryptIntegrationTokens } from '../../services/security/encryption';
 import { telegramService } from '../../services/integrations/telegram';
+import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
 
 const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
@@ -439,6 +440,7 @@ function buildMetrics(
     incomeAmountOverride?: number | null;
     neutralizeLeadOutcomes?: boolean;
     activityMetrics?: AmoCRMActivityMetrics | null;
+    manualDurationSeconds?: number;
   },
 ) {
   const activeLeadsCount = activeLeads.length;
@@ -456,7 +458,8 @@ function buildMetrics(
   const totalCalls = calls.length;
   const inboundCalls = calls.filter((call) => call.direction === 'inbound').length;
   const outboundCalls = calls.filter((call) => call.direction === 'outbound').length;
-  const totalCallDuration = calls.reduce((sum, call) => sum + (call.duration || 0), 0);
+  const manualDurationSeconds = Math.max(0, Number(options?.manualDurationSeconds || 0));
+  const totalCallDuration = calls.reduce((sum, call) => sum + (call.duration || 0), 0) + manualDurationSeconds;
   const averageCallDuration = totalCalls > 0 ? totalCallDuration / totalCalls : 0;
   const activeCallDays = new Set(
     calls
@@ -973,6 +976,23 @@ export const sellersRouter = router({
         managerIdByUserId.set(userId, managerId);
       }
     }
+    const corporateDurationByUserId = await getCorporateCallDurationByManager({
+      tenantId: ctx.tenantId,
+      managerUserIds: Array.from(managerIdByUserId.keys()),
+      rangeStart,
+      rangeEnd,
+    });
+    const corporateDurationByManager = new Map<string, number>();
+    for (const [userId, durationSeconds] of corporateDurationByUserId.entries()) {
+      const managerId = managerIdByUserId.get(userId);
+      if (!managerId) {
+        continue;
+      }
+      corporateDurationByManager.set(
+        managerId,
+        (corporateDurationByManager.get(managerId) || 0) + durationSeconds,
+      );
+    }
 
     for (const income of incomes) {
       const managerId = managerIdByUserId.get(income.managerUserId || '');
@@ -1013,6 +1033,7 @@ export const sellersRouter = router({
             neutralizeLeadOutcomes: true,
             activityMetrics: managerActivity,
             incomeAmountOverride: salesMetrics.incomeAmount,
+            manualDurationSeconds: corporateDurationByManager.get(managerId) || 0,
             }),
             salesCount: salesMetrics.newSalesCount,
             totalDealAmount: salesMetrics.newSalesAgreementAmount,
@@ -1228,6 +1249,14 @@ export const sellersRouter = router({
             },
           })
         : [];
+      const corporateDurationByUserId = await getCorporateCallDurationByManager({
+        tenantId: ctx.tenantId,
+        managerUserIds: mappedManagerUserIds,
+        rangeStart,
+        rangeEnd,
+      });
+      const manualDurationSeconds = Array.from(corporateDurationByUserId.values())
+        .reduce((sum, value) => sum + value, 0);
       const salesMetrics = summarizeSellerIncomeMetrics(sellerIncomes, rangeStart, rangeEnd);
       const activityMetrics = (
         await getAmoCRMActivityMetrics({
@@ -1254,6 +1283,7 @@ export const sellersRouter = router({
         {
           incomeAmountOverride: salesMetrics.incomeAmount,
           activityMetrics,
+          manualDurationSeconds,
         },
       );
 
@@ -1467,6 +1497,14 @@ export const sellersRouter = router({
           rangeKind: input.range === 'last30days' ? 'custom' : input.range,
         }),
       ]);
+      const corporateDurationByUserId = await getCorporateCallDurationByManager({
+        tenantId: ctx.tenantId,
+        managerUserIds: mappedUsers.map((row) => row.id),
+        rangeStart,
+        rangeEnd,
+      });
+      const manualDurationSeconds = Array.from(corporateDurationByUserId.values())
+        .reduce((sum, value) => sum + value, 0);
 
       const salesMetrics = summarizeSellerIncomeMetrics(sellerIncomes, rangeStart, rangeEnd);
       const activityMetrics = activityMetricsMap.get(input.id) || null;
@@ -1484,6 +1522,7 @@ export const sellersRouter = router({
           neutralizeLeadOutcomes: true,
           incomeAmountOverride: salesMetrics.incomeAmount,
           activityMetrics,
+          manualDurationSeconds,
         },
       );
 
