@@ -9,6 +9,7 @@ const AGENT_ALLOWED_PATHS = [
   '/dashboard',
   '/dashboard/leads',
   '/dashboard/calls',
+  '/dashboard/corporate-calls',
   '/dashboard/income',
   '/dashboard/adjustments',
   '/dashboard/sotuvchilar',
