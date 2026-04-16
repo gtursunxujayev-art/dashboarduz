@@ -5,6 +5,7 @@ import { telegramService } from '../integrations/telegram';
 import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 import { LogLevel, log } from '../observability';
+import { getCorporateCallDurationByManager } from '../corporate-call-durations';
 
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5 (Asia/Tashkent)
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
@@ -342,6 +343,12 @@ async function collectAgentMetricsForTenant(params: {
   }
 
   const agentIds = normalizedAgents.map((agent) => agent.id);
+  const corporateDurationByAgentId = await getCorporateCallDurationByManager({
+    tenantId: params.tenantId,
+    managerUserIds: agentIds,
+    rangeStart: params.periodStart,
+    rangeEnd: params.periodEnd,
+  });
   const extensionToAgentId = new Map<string, string>();
   for (const agent of normalizedAgents) {
     if (agent.utelExtension) {
@@ -468,7 +475,7 @@ async function collectAgentMetricsForTenant(params: {
     telegramId: agent.telegramId,
     incomeToday: incomeByAgentId.get(agent.id) || 0,
     callsCount: callsCountByAgentId.get(agent.id) || 0,
-    callDurationSeconds: callDurationByAgentId.get(agent.id) || 0,
+    callDurationSeconds: (callDurationByAgentId.get(agent.id) || 0) + (corporateDurationByAgentId.get(agent.id) || 0),
     followUpsDone: followUpsByAgentId.get(agent.id) || 0,
   }));
 
