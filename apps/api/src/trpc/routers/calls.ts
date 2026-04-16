@@ -2,6 +2,7 @@ import { router, protectedProcedure } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
+import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
 
 const callsListSchema = z.object({
   page: z.number().int().positive().default(1),
@@ -515,6 +516,13 @@ export const callsRouter = router({
       }
     }
 
+    const corporateDurationByManager = await getCorporateCallDurationByManager({
+      tenantId: ctx.tenantId,
+      managerUserIds: mappedAgents.map((agent) => agent.id),
+      rangeStart,
+      rangeEnd,
+    });
+
     const rows = mappedAgents
       .map((agent) => {
         const stat = byAgent.get(agent.id);
@@ -523,6 +531,7 @@ export const callsRouter = router({
         const averageDailyCalls = activeDays > 0
           ? Number((totalCalls / activeDays).toFixed(1))
           : 0;
+        const corporateDurationSeconds = corporateDurationByManager.get(agent.id) || 0;
 
         return {
           userId: agent.id,
@@ -533,7 +542,7 @@ export const callsRouter = router({
           callsToday: stat?.callsToday || 0,
           incomingCalls: stat?.incomingCalls || 0,
           outgoingCalls: stat?.outgoingCalls || 0,
-          totalDurationSeconds: stat?.totalDurationSeconds || 0,
+          totalDurationSeconds: (stat?.totalDurationSeconds || 0) + corporateDurationSeconds,
         };
       })
       .sort((a, b) => (
