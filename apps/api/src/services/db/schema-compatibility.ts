@@ -60,6 +60,36 @@ const COMPATIBILITY_SQL: string[] = [
     ON "courses" ("endDate");
   `,
   `
+  CREATE TABLE IF NOT EXISTS "corporate_call_durations" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "managerUserId" TEXT NOT NULL,
+    "callDate" TIMESTAMP(3) NOT NULL,
+    "durationSeconds" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "corporate_call_durations_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "corporate_call_durations_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "corporate_call_durations_managerUserId_fkey" FOREIGN KEY ("managerUserId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  );
+  `,
+  `
+  CREATE UNIQUE INDEX IF NOT EXISTS "corporate_call_durations_tenantId_managerUserId_callDate_key"
+    ON "corporate_call_durations" ("tenantId", "managerUserId", "callDate");
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS "corporate_call_durations_tenantId_idx"
+    ON "corporate_call_durations" ("tenantId");
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS "corporate_call_durations_managerUserId_idx"
+    ON "corporate_call_durations" ("managerUserId");
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS "corporate_call_durations_callDate_idx"
+    ON "corporate_call_durations" ("callDate");
+  `,
+  `
   ALTER TABLE "customers"
     ADD COLUMN IF NOT EXISTS "profileCourseId" TEXT,
     ADD COLUMN IF NOT EXISTS "profileTariffId" TEXT,
