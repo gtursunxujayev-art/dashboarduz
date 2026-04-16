@@ -287,13 +287,17 @@ export const corporateCallsRouter = router({
           durationSeconds,
         },
         update: {
-          durationSeconds,
+          durationSeconds: {
+            increment: durationSeconds,
+          },
         },
         select: {
           id: true,
           managerUserId: true,
           callDate: true,
           durationSeconds: true,
+          createdAt: true,
+          updatedAt: true,
           manager: {
             select: {
               name: true,
@@ -329,6 +333,8 @@ export const corporateCallsRouter = router({
         date,
         durationSeconds: entry.durationSeconds,
         duration: formatDurationToHms(entry.durationSeconds),
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt,
         telegram,
       };
     }),
@@ -375,6 +381,7 @@ export const corporateCallsRouter = router({
           callDate: true,
           durationSeconds: true,
           createdAt: true,
+          updatedAt: true,
           manager: {
             select: {
               name: true,
@@ -393,6 +400,7 @@ export const corporateCallsRouter = router({
           durationSeconds: row.durationSeconds,
           duration: formatDurationToHms(row.durationSeconds),
           createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
         })),
       };
     }),
