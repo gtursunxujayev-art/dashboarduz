@@ -214,6 +214,12 @@ async function resolveTelegramDebugContext(req: express.Request): Promise<{
       ...parseTelegramGroupIds(process.env.REFUND_GROUP_IDS),
       ...parseTelegramGroupIds(process.env.RETURN_GROUP_ID),
       ...parseTelegramGroupIds(process.env.RETURN_GROUP_IDS),
+      ...parseTelegramGroupIds(process.env.KORPORATIV_GROUP_ID),
+      ...parseTelegramGroupIds(process.env.KORPORATIV_GROUP_IDS),
+      ...parseTelegramGroupIds(process.env.CORPORATE_GROUP_ID),
+      ...parseTelegramGroupIds(process.env.CORPORATE_GROUP_IDS),
+      ...parseTelegramGroupIds(process.env.CORPORATE_CALL_GROUP_ID),
+      ...parseTelegramGroupIds(process.env.CORPORATE_CALL_GROUP_IDS),
     ]),
   );
   const groupIds = explicitGroups.length > 0 ? explicitGroups : envGroups;
@@ -310,7 +316,7 @@ app.post('/debug/telegram', async (req, res) => {
     if (!context.groupIds.length) {
       return res.status(400).json({
         ok: false,
-        error: 'Group id not found. Set OFLINE_GROUP_ID/OFFLINE_GROUP_ID or pass group_id in request.',
+        error: 'Group id not found. Set OFFLINE/ONLINE/REFUND/KORPORATIV group env ids or pass group_id in request.',
       });
     }
 
