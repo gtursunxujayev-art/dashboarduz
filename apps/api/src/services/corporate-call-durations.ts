@@ -49,19 +49,11 @@ export function parseDurationToSeconds(input: string): number {
     throw new TRPCError({ code: 'BAD_REQUEST', message: "Qo'ng'iroq davomiyligi kiritilishi kerak." });
   }
 
-  if (/^\d+$/.test(normalized)) {
-    const value = Number.parseInt(normalized, 10);
-    if (!Number.isFinite(value) || value < 0) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: "Qo'ng'iroq davomiyligi noto'g'ri." });
-    }
-    return value;
+  if (!/^\d{2}:\d{2}:\d{2}$/.test(normalized)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: "Davomiylik HH:MM:SS formatida bo'lishi kerak." });
   }
 
   const parts = normalized.split(':').map((part) => part.trim());
-  if (parts.length < 2 || parts.length > 3 || parts.some((part) => !/^\d+$/.test(part))) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: "Davomiylik HH:MM yoki HH:MM:SS formatida bo'lishi kerak." });
-  }
-
   const hours = Number.parseInt(parts[0] || '0', 10);
   const minutes = Number.parseInt(parts[1] || '0', 10);
   const seconds = Number.parseInt(parts[2] || '0', 10);
