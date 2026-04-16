@@ -404,4 +404,34 @@ export const corporateCallsRouter = router({
         })),
       };
     }),
+
+  delete: protectedProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!isAdmin(ctx.user.roles || [])) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: "Faqat admin o'chira oladi." });
+      }
+
+      const existing = await prisma.corporateCallDuration.findFirst({
+        where: {
+          id: input.id,
+          tenantId: ctx.tenantId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: "Yozuv topilmadi." });
+      }
+
+      await prisma.corporateCallDuration.delete({
+        where: { id: existing.id },
+      });
+
+      return { success: true, id: existing.id };
+    }),
 });
