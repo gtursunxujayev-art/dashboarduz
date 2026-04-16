@@ -126,6 +126,7 @@ async function sendCorporateCallAddedTelegram(params: {
   tenantId: string;
   date: string;
   managerName: string;
+  duration: string;
 }) {
   const groupIds = parseTelegramGroupIdsFromEnvKeys(CORPORATE_GROUP_ENV_KEYS);
   if (!groupIds.length) {
@@ -142,6 +143,8 @@ async function sendCorporateCallAddedTelegram(params: {
     '#korporativ',
     toHashtag(params.managerName),
     "✅ Qo'shildi",
+    '',
+    `"${params.duration}"`,
   ].join('\n');
 
   const errors: string[] = [];
@@ -306,6 +309,7 @@ export const corporateCallsRouter = router({
         tenantId: ctx.tenantId,
         date,
         managerName,
+        duration: formatDurationToHms(entry.durationSeconds),
       });
 
       if (!telegram.sent) {
@@ -393,4 +397,3 @@ export const corporateCallsRouter = router({
       };
     }),
 });
-
