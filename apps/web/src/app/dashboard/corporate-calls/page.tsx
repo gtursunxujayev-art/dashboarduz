@@ -292,7 +292,7 @@ export default function CorporateCallsPage() {
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Sana</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Menejer</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Davomiylik</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Kiritilgan vaqt</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Oxirgi kiritilgan vaqt</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
@@ -301,7 +301,7 @@ export default function CorporateCallsPage() {
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.date}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.managerName}</td>
                       <td className="px-3 py-2 text-sm font-medium text-gray-900 dark:text-slate-100">{row.duration}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.createdAt)}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.updatedAt || row.createdAt)}</td>
                     </tr>
                   ))}
                 </tbody>
