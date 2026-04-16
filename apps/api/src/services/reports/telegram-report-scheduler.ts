@@ -6,6 +6,7 @@ import { decryptIntegrationTokens } from '../security/encryption';
 import { getRedisClient } from '../queue/redis-client';
 import { amocrmService } from '../integrations/amocrm';
 import { extractLeadValue, getTenantAmoCRMContext, humanizeKey } from '../integrations/amocrm-live';
+import { getCorporateCallDurationByManager, getCorporateCallDurationTotal } from '../corporate-call-durations';
 
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
@@ -601,7 +602,7 @@ async function collectMetrics(params: {
     params.selectedPipelineIds,
   );
 
-  const [callAggregate, incomes, users] = await Promise.all([
+  const [callAggregate, incomes, users, corporateDurationTotal] = await Promise.all([
     prisma.call.aggregate({
       where: {
         tenantId: params.tenantId,
@@ -647,6 +648,11 @@ async function collectMetrics(params: {
         amocrmResponsibleUserId: true,
         utelManagerExternalId: true,
       },
+    }),
+    getCorporateCallDurationTotal({
+      tenantId: params.tenantId,
+      rangeStart: params.periodStart,
+      rangeEnd: params.periodEnd,
     }),
   ]);
 
@@ -816,6 +822,12 @@ async function collectMetrics(params: {
 
   const extensionValues = Array.from(managerByExtension.keys());
   const managerCallDurationByUserId = new Map<string, number>();
+  const corporateDurationByUserId = await getCorporateCallDurationByManager({
+    tenantId: params.tenantId,
+    managerUserIds: users.map((user) => user.id),
+    rangeStart: params.periodStart,
+    rangeEnd: params.periodEnd,
+  });
   if (extensionValues.length > 0) {
     const managerCalls = await prisma.call.findMany({
       where: {
@@ -921,7 +933,7 @@ async function collectMetrics(params: {
       sales: row.sales,
       conversion: row.leads > 0 ? normalizePercentage((row.sales / row.leads) * 100) : 0,
       amount: row.amount,
-      callDurationSeconds: managerCallDurationByUserId.get(row.userId) || 0,
+      callDurationSeconds: (managerCallDurationByUserId.get(row.userId) || 0) + (corporateDurationByUserId.get(row.userId) || 0),
     }))
     .filter((row) => row.leads > 0 || row.sales > 0 || row.amount > 0)
     .sort((a, b) => {
@@ -948,7 +960,7 @@ async function collectMetrics(params: {
     intensiveSalesCount,
     intensiveAgreementTotal,
     totalCalls: Number(callAggregate._count.id || 0),
-    talkDurationSeconds: Number(callAggregate._sum.duration || 0),
+    talkDurationSeconds: Number(callAggregate._sum.duration || 0) + corporateDurationTotal,
     reasonBreakdown,
     sourceBreakdown,
     managerRows,
