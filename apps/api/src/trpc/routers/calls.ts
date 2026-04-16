@@ -397,7 +397,7 @@ export const callsRouter = router({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
-          roles: { has: 'Agent' },
+          roles: { hasSome: ['Agent', 'TeamLeader'] },
         },
         orderBy: { createdAt: 'asc' },
         select: {
