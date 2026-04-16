@@ -56,6 +56,13 @@ export const summaryProcedures = {
       }),
     )
     .query(async ({ ctx, input }) => {
+      const corporateRevision = await prisma.corporateCallDuration.aggregate({
+        where: { tenantId: ctx.tenantId },
+        _max: { updatedAt: true },
+      });
+      const corporateRevisionKey = corporateRevision._max.updatedAt
+        ? corporateRevision._max.updatedAt.toISOString()
+        : '';
       const cacheKey = buildCacheKey('summary', {
         t: ctx.tenantId,
         u: ctx.user.userId,
@@ -63,6 +70,7 @@ export const summaryProcedures = {
         p: input.pipelineIds,
         df: input.dateFrom,
         dt: input.dateTo,
+        cr: corporateRevisionKey,
       });
       return getOrSet(cacheKey, 120, async () => {
       const now = new Date();
