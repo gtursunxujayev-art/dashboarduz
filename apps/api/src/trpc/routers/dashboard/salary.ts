@@ -92,7 +92,7 @@ export const salaryProcedures = {
           tenantId: ctx.tenantId,
           isActive: true,
           roles: {
-            has: 'Agent',
+            hasSome: ['Agent', 'TeamLeader'],
           },
         },
         orderBy: [{ name: 'asc' }, { username: 'asc' }],
