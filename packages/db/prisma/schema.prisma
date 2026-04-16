@@ -40,6 +40,7 @@ model Tenant {
   incomes         Income[]
   incomeAdjustmentRequests IncomeAdjustmentRequest[]
   historicalImportSessions HistoricalImportSession[]
+  corporateCallDurations CorporateCallDuration[]
 
   @@index([subdomain])
   @@map("tenants")
@@ -72,6 +73,7 @@ model User {
   requestedIncomeAdjustments IncomeAdjustmentRequest[] @relation("IncomeAdjustmentRequestedBy")
   reviewedIncomeAdjustments IncomeAdjustmentRequest[] @relation("IncomeAdjustmentReviewedBy")
   createdHistoricalImportSessions HistoricalImportSession[] @relation("HistoricalImportCreatedBy")
+  corporateCallDurations CorporateCallDuration[] @relation("CorporateCallDurationManager")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -511,4 +513,23 @@ model IncomeAdjustmentRequest {
   @@index([reviewedByUserId])
   @@index([createdAt])
   @@map("income_adjustment_requests")
+}
+
+model CorporateCallDuration {
+  id              String   @id @default(uuid())
+  tenantId        String
+  managerUserId   String
+  callDate        DateTime
+  durationSeconds Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  manager  User   @relation("CorporateCallDurationManager", fields: [managerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, managerUserId, callDate])
+  @@index([tenantId])
+  @@index([managerUserId])
+  @@index([callDate])
+  @@map("corporate_call_durations")
 }
