@@ -23,6 +23,21 @@ function formatDateTime(value: string | Date): string {
   return new Date(value).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' });
 }
 
+function normalizeDurationInput(rawValue: string): string {
+  const digitsOnly = String(rawValue || '').replace(/\D/g, '').slice(0, 6);
+  const hh = digitsOnly.slice(0, 2);
+  const mm = digitsOnly.slice(2, 4);
+  const ss = digitsOnly.slice(4, 6);
+
+  if (digitsOnly.length <= 2) {
+    return hh;
+  }
+  if (digitsOnly.length <= 4) {
+    return `${hh}:${mm}`;
+  }
+  return `${hh}:${mm}:${ss}`;
+}
+
 export default function CorporateCallsPage() {
   const today = getTashkentDate(0);
   const yesterday = getTashkentDate(-1);
@@ -30,6 +45,7 @@ export default function CorporateCallsPage() {
   const [formManagerUserId, setFormManagerUserId] = useState('');
   const [formDate, setFormDate] = useState(today);
   const [formDuration, setFormDuration] = useState('');
+  const [durationError, setDurationError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
@@ -57,6 +73,7 @@ export default function CorporateCallsPage() {
   const upsertMutation = trpc.corporateCalls.upsert.useMutation({
     onSuccess: async (result: any) => {
       setFormDuration('');
+      setDurationError(null);
       setSuccessMessage("Korporativ qo'ng'iroq davomiyligi saqlandi.");
       setWarningMessage(null);
       if (result?.telegram?.sent === false) {
@@ -99,8 +116,15 @@ export default function CorporateCallsPage() {
     event.preventDefault();
     setSuccessMessage(null);
     setWarningMessage(null);
+    setDurationError(null);
 
     if (!formDuration.trim()) {
+      setDurationError("Davomiylik HH:MM:SS formatida kiritilishi kerak.");
+      return;
+    }
+
+    if (!/^\d{2}:\d{2}:\d{2}$/.test(formDuration.trim())) {
+      setDurationError("Davomiylik HH:MM:SS formatida kiritilishi kerak.");
       return;
     }
 
@@ -130,6 +154,11 @@ export default function CorporateCallsPage() {
           {upsertMutation.error && (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
               {upsertMutation.error.message}
+            </p>
+          )}
+          {durationError && (
+            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+              {durationError}
             </p>
           )}
           {warningMessage && (
@@ -179,8 +208,13 @@ export default function CorporateCallsPage() {
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Davomiylik</label>
                 <input
                   value={formDuration}
-                  onChange={(event) => setFormDuration(event.target.value)}
-                  placeholder="HH:MM:SS yoki HH:MM"
+                  onChange={(event) => {
+                    setDurationError(null);
+                    setFormDuration(normalizeDurationInput(event.target.value));
+                  }}
+                  inputMode="numeric"
+                  maxLength={8}
+                  placeholder="HH:MM:SS"
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                 />
               </div>
