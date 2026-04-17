@@ -42,24 +42,94 @@ function formatDuration(seconds: number | null | undefined): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+function formatDurationReadable(seconds: number | null | undefined): string {
+  const safe = Math.max(0, Math.floor(seconds || 0));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  if (hours > 0) return `${hours} soat ${minutes} daqiqa`;
+  return `${minutes} daqiqa`;
+}
+
+function formatPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '-';
+  return `${value.toFixed(1)}%`;
+}
+
+type KpiBadge = 'good' | 'warning' | 'critical' | 'neutral';
+
+const BADGE_COLORS: Record<KpiBadge, string> = {
+  good: 'border-emerald-500/40 bg-emerald-500/10',
+  warning: 'border-amber-500/40 bg-amber-500/10',
+  critical: 'border-red-500/40 bg-red-500/10',
+  neutral: 'border-slate-700/60 bg-slate-900/70',
+};
+
+const BADGE_TEXT: Record<KpiBadge, string> = {
+  good: 'text-emerald-300',
+  warning: 'text-amber-300',
+  critical: 'text-red-300',
+  neutral: 'text-slate-300',
+};
+
+function getConversionBadge(rate: number | null | undefined): KpiBadge {
+  if (rate === null || rate === undefined) return 'neutral';
+  if (rate >= 15) return 'good';
+  if (rate >= 10) return 'warning';
+  return 'critical';
+}
+
+function getFollowUpBadge(completed: number, overdue: number): KpiBadge {
+  const total = completed + overdue;
+  if (total === 0) return 'neutral';
+  const rate = (completed / total) * 100;
+  if (rate >= 90) return 'good';
+  if (rate >= 80) return 'warning';
+  return 'critical';
+}
+
+function getOutboundBadge(outbound: number, total: number): KpiBadge {
+  if (total === 0) return 'neutral';
+  const rate = (outbound / total) * 100;
+  if (rate >= 60) return 'good';
+  if (rate >= 50) return 'warning';
+  return 'critical';
+}
+
+function getDailyTalkBadge(seconds: number | null | undefined, hasCalls: boolean): KpiBadge {
+  if (!hasCalls) return 'neutral';
+  const s = seconds ?? 0;
+  if (s >= 7200) return 'good';
+  if (s >= 5400) return 'warning';
+  return 'critical';
+}
+
 function MetricCard({
   title,
   value,
   subtitle,
   extra,
+  badge,
 }: {
   title: string;
   value: string | number;
   subtitle?: string | null;
   extra?: string | null;
+  badge?: KpiBadge;
 }) {
+  const b = badge ?? 'neutral';
   return (
-    <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-5">
+    <div className={`rounded-2xl border p-5 ${BADGE_COLORS[b]}`}>
       <p className="text-sm text-slate-300">{title}</p>
-      <p className="mt-2 text-4xl font-semibold text-white">{value}</p>
+      <p className={`mt-2 text-4xl font-semibold ${badge ? BADGE_TEXT[b] : 'text-white'}`}>{value}</p>
       {subtitle ? <p className="mt-3 text-sm text-slate-300">{subtitle}</p> : null}
       {extra ? <p className="mt-1 text-sm font-semibold text-white">{extra}</p> : null}
     </div>
+  );
+}
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">{children}</h3>
   );
 }
 
@@ -71,18 +141,9 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
 
   const queryInput = useMemo(() => {
     if (range === 'custom') {
-      return {
-        id: params.id,
-        range,
-        dateFrom,
-        dateTo,
-      };
+      return { id: params.id, range, dateFrom, dateTo };
     }
-
-    return {
-      id: params.id,
-      range,
-    };
+    return { id: params.id, range };
   }, [params.id, range, dateFrom, dateTo]);
 
   const sellerQuery = trpc.sellers.getById.useQuery(queryInput, {
@@ -105,18 +166,25 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
     return <p className="text-sm text-red-300">Sotuvchi topilmadi.</p>;
   }
 
-  const { seller, metrics } = sellerQuery.data;
+  const { seller, metrics: m } = sellerQuery.data;
   const displayName = seller.name || seller.email || seller.phone || 'Sotuvchi';
+
+  // Computed KPIs
+  const salesCount = m.newSalesCount ?? m.salesCount ?? 0;
+  const followUpTotal = (m.followUpCount ?? 0) + (m.overdueFollowUpCount ?? 0);
+  const followUpRate = followUpTotal > 0 ? ((m.followUpCount ?? 0) / followUpTotal) * 100 : null;
+  const outboundRate = (m.totalCalls ?? 0) > 0 ? ((m.outboundCalls ?? 0) / (m.totalCalls ?? 1)) * 100 : null;
+  const inboundRate = (m.totalCalls ?? 0) > 0 ? ((m.inboundCalls ?? 0) / (m.totalCalls ?? 1)) * 100 : null;
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-white">{displayName}</h1>
             <p className="mt-2 text-sm text-slate-300">Agent bo'yicha sotuv, tushum, CRM va qo'ng'iroq ko'rsatkichlari.</p>
           </div>
-
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <button
               onClick={() => {
@@ -180,47 +248,126 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
         ) : null}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        <MetricCard
-          title="Sotuv shartnomasi"
-          value={metrics.newSalesCount ?? metrics.salesCount ?? 0}
-          subtitle={`Kelishuv - ${formatAmount(metrics.newSalesAgreementAmount)}`}
-          extra={`Tushum - ${formatAmount(metrics.incomeAmount)}`}
-        />
-        <MetricCard
-          title="Sotuv - Onlayn"
-          value={metrics.onlineSalesCount ?? 0}
-          subtitle={`Kelishuv - ${formatAmount(metrics.onlineSalesAgreementAmount)}`}
-          extra={`Tushum - ${formatAmount(metrics.onlineSalesIncomeAmount)}`}
-        />
-        <MetricCard
-          title="Sotuv - Oflayn"
-          value={metrics.offlineSalesCount ?? 0}
-          subtitle={`Kelishuv - ${formatAmount(metrics.offlineSalesAgreementAmount)}`}
-          extra={`Tushum - ${formatAmount(metrics.offlineSalesIncomeAmount)}`}
-        />
-        <MetricCard
-          title="Sotuv - Intensiv"
-          value={metrics.intensiveSalesCount ?? 0}
-          subtitle={`Kelishuv - ${formatAmount(metrics.intensiveSalesAgreementAmount)}`}
-          extra={`Tushum - ${formatAmount(metrics.intensiveSalesIncomeAmount)}`}
-        />
-        <MetricCard
-          title="Qo'ng'iroqlar"
-          value={metrics.totalCalls ?? 0}
-          subtitle={`Davomiylik - ${formatDuration(metrics.totalCallDuration)}`}
-          extra={`Kunlik o'rtacha - ${metrics.averageDailyCalls ?? 0}`}
-        />
-        <MetricCard
-          title="O'rtacha sotuv"
-          value={formatAmount(metrics.averageAgreementAmount ?? metrics.averageDealAmount)}
-          subtitle="Bir sotuvga to'g'ri keladigan o'rtacha kelishuv"
-        />
-        <MetricCard title="Bajarilgan follow-up" value={metrics.followUpCount ?? 0} subtitle="Yakunlangan vazifalar" />
-        <MetricCard title="Yozuvlar" value={metrics.noteCount ?? 0} subtitle="CRM izohlari" />
-        <MetricCard title="CRM o'zgarishlari" value={metrics.stageChangeCount ?? 0} subtitle="Bosqich almashuvlari" />
-        <MetricCard title="Bugungi follow-up" value={metrics.todayFollowUpCount ?? 0} subtitle="Bugun uchun vazifalar" />
-        <MetricCard title="Muddati o'tgan follow-up" value={metrics.overdueFollowUpCount ?? 0} subtitle="Kechikkan follow-up lar" />
+      {/* KPI Performance Indicators */}
+      <div>
+        <SectionHeading>Asosiy ko'rsatkichlar (KPI)</SectionHeading>
+        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <MetricCard
+            title="Konversiya"
+            value={formatPercent(m.conversionRate)}
+            subtitle={`${m.activeLeads ?? 0} faol lid → ${salesCount} sotuv`}
+            badge={getConversionBadge(m.conversionRate)}
+          />
+          <MetricCard
+            title="O'rtacha sotuv"
+            value={formatAmount(m.averageAgreementAmount ?? m.averageDealAmount)}
+            subtitle="Bir sotuvga o'rtacha kelishuv"
+          />
+          <MetricCard
+            title="Follow-up bajarish"
+            value={followUpRate !== null ? `${followUpRate.toFixed(0)}%` : '-'}
+            subtitle={`${m.followUpCount ?? 0} bajarildi / ${m.overdueFollowUpCount ?? 0} kechikdi`}
+            badge={followUpRate !== null ? getFollowUpBadge(m.followUpCount ?? 0, m.overdueFollowUpCount ?? 0) : undefined}
+          />
+          <MetricCard
+            title="Kunlik suhbat vaqti"
+            value={formatDurationReadable(m.averageDailyCallDuration)}
+            subtitle={`Kunlik o'rtacha ${m.averageDailyCalls ?? 0} qo'ng'iroq`}
+            badge={getDailyTalkBadge(m.averageDailyCallDuration, (m.totalCalls ?? 0) > 0)}
+          />
+        </div>
+      </div>
+
+      {/* Sales Breakdown */}
+      <div>
+        <SectionHeading>Sotuv ko'rsatkichlari</SectionHeading>
+        <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            title="Sotuv shartnomasi"
+            value={salesCount}
+            subtitle={`Kelishuv - ${formatAmount(m.newSalesAgreementAmount)}`}
+            extra={`Tushum - ${formatAmount(m.incomeAmount)}`}
+          />
+          <MetricCard
+            title="Sotuv - Onlayn"
+            value={m.onlineSalesCount ?? 0}
+            subtitle={`Kelishuv - ${formatAmount(m.onlineSalesAgreementAmount)}`}
+            extra={`Tushum - ${formatAmount(m.onlineSalesIncomeAmount)}`}
+          />
+          <MetricCard
+            title="Sotuv - Oflayn"
+            value={m.offlineSalesCount ?? 0}
+            subtitle={`Kelishuv - ${formatAmount(m.offlineSalesAgreementAmount)}`}
+            extra={`Tushum - ${formatAmount(m.offlineSalesIncomeAmount)}`}
+          />
+          <MetricCard
+            title="Sotuv - Intensiv"
+            value={m.intensiveSalesCount ?? 0}
+            subtitle={`Kelishuv - ${formatAmount(m.intensiveSalesAgreementAmount)}`}
+            extra={`Tushum - ${formatAmount(m.intensiveSalesIncomeAmount)}`}
+          />
+        </div>
+      </div>
+
+      {/* Calls & Activity */}
+      <div>
+        <SectionHeading>Qo'ng'iroqlar va faollik</SectionHeading>
+        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <MetricCard
+            title="Jami qo'ng'iroqlar"
+            value={m.totalCalls ?? 0}
+            subtitle={`Davomiylik - ${formatDuration(m.totalCallDuration)}`}
+          />
+          <MetricCard
+            title="Chiquvchi qo'ng'iroqlar"
+            value={`${m.outboundCalls ?? 0} (${outboundRate !== null ? outboundRate.toFixed(0) + '%' : '-'})`}
+            subtitle="Proaktiv qo'ng'iroqlar"
+            badge={outboundRate !== null ? getOutboundBadge(m.outboundCalls ?? 0, m.totalCalls ?? 0) : undefined}
+          />
+          <MetricCard
+            title="Kiruvchi qo'ng'iroqlar"
+            value={`${m.inboundCalls ?? 0} (${inboundRate !== null ? inboundRate.toFixed(0) + '%' : '-'})`}
+            subtitle="Qabul qilingan qo'ng'iroqlar"
+          />
+          <MetricCard
+            title="O'rtacha davomiylik"
+            value={formatDuration(m.averageCallDuration)}
+            subtitle="Har bir qo'ng'iroq uchun"
+          />
+        </div>
+      </div>
+
+      {/* CRM Activity */}
+      <div>
+        <SectionHeading>CRM faoliyat</SectionHeading>
+        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <MetricCard title="Bajarilgan follow-up" value={m.followUpCount ?? 0} subtitle="Yakunlangan vazifalar" />
+          <MetricCard title="Bugungi follow-up" value={m.todayFollowUpCount ?? 0} subtitle="Bugun uchun vazifalar" />
+          <MetricCard
+            title="Muddati o'tgan"
+            value={m.overdueFollowUpCount ?? 0}
+            subtitle="Kechikkan follow-up lar"
+            badge={(m.overdueFollowUpCount ?? 0) > 5 ? 'critical' : (m.overdueFollowUpCount ?? 0) > 0 ? 'warning' : 'good'}
+          />
+          <MetricCard title="Yozuvlar" value={m.noteCount ?? 0} subtitle="CRM izohlari" />
+          <MetricCard title="Bosqich o'zgarishi" value={m.stageChangeCount ?? 0} subtitle="Bosqich almashuvlari" />
+        </div>
+      </div>
+
+      {/* Lead Metrics */}
+      <div>
+        <SectionHeading>Lid ko'rsatkichlari</SectionHeading>
+        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <MetricCard title="Faol lidlar" value={m.activeLeads ?? 0} subtitle="Hozirgi faol lidlar" />
+          <MetricCard title="Yutilgan lidlar" value={m.wonLeads ?? 0} subtitle="Muvaffaqiyatli sotuvlar" />
+          <MetricCard title="Yo'qotilgan lidlar" value={m.lostLeads ?? 0} subtitle="Yo'qotilgan imkoniyatlar" />
+          <MetricCard
+            title="Konversiya"
+            value={formatPercent(m.conversionRate)}
+            subtitle={`Jami ${m.totalLeads ?? 0} liddan`}
+            badge={getConversionBadge(m.conversionRate)}
+          />
+        </div>
       </div>
     </div>
   );
