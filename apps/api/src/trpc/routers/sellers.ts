@@ -55,6 +55,9 @@ type SellerSalesMetrics = {
   intensiveSalesCount: number;
   intensiveSalesAgreementAmount: number;
   intensiveSalesIncomeAmount: number;
+  totalPaidAmount: number;
+  totalAgreementAmount: number;
+  debtCollectionRate: number;
 };
 
 type SellerReportSeller = {
@@ -241,6 +244,8 @@ function summarizeSellerIncomeMetrics(
   let intensiveSalesCount = 0;
   let intensiveSalesAgreementAmount = 0;
   let intensiveSalesIncomeAmount = 0;
+  let totalPaidAmount = 0;
+  let totalAgreementAmount = 0;
 
   for (const income of incomes) {
     const paymentAmount = Number(income.paymentAmount || 0);
@@ -248,6 +253,8 @@ function summarizeSellerIncomeMetrics(
     const category = resolveSellerIncomeCategory(income);
 
     incomeAmount += paymentAmount;
+    totalPaidAmount += paymentAmount;
+    totalAgreementAmount += agreementAmount;
 
     if (income.type === 'new_sale') {
       newSalesCount += 1;
@@ -292,6 +299,11 @@ function summarizeSellerIncomeMetrics(
     intensiveSalesCount,
     intensiveSalesAgreementAmount: Number(intensiveSalesAgreementAmount.toFixed(2)),
     intensiveSalesIncomeAmount: Number(intensiveSalesIncomeAmount.toFixed(2)),
+    totalPaidAmount: Number(totalPaidAmount.toFixed(2)),
+    totalAgreementAmount: Number(totalAgreementAmount.toFixed(2)),
+    debtCollectionRate: totalAgreementAmount > 0
+      ? Number(((totalPaidAmount / totalAgreementAmount) * 100).toFixed(2))
+      : 0,
   };
 }
 
@@ -431,6 +443,106 @@ async function getAgentResponsibleScope(tenantId: string, userId: string, roles:
   };
 }
 
+async function computeLeadResponseTimes(params: {
+  accessToken: string;
+  baseUrl: string | undefined;
+  managerIds: string[];
+  newLeads: AmoCRMLead[];
+  rangeStart: Date;
+  rangeEnd: Date;
+}): Promise<Map<string, { avgResponseSeconds: number; medianResponseSeconds: number; respondedCount: number; totalCount: number }>> {
+  const result = new Map<string, { avgResponseSeconds: number; medianResponseSeconds: number; respondedCount: number; totalCount: number }>();
+  if (!params.newLeads.length || !params.managerIds.length) {
+    return result;
+  }
+
+  // Fetch events (notes, status changes, etc.) for leads in the period
+  let events: Array<Record<string, unknown>> = [];
+  try {
+    events = await amocrmService.fetchAllEvents(
+      params.accessToken,
+      {
+        dateFrom: params.rangeStart,
+        dateTo: params.rangeEnd,
+        userIds: params.managerIds,
+        entityType: 'lead',
+        limit: 250,
+        maxPages: 30,
+      },
+      params.baseUrl,
+    );
+  } catch {
+    return result;
+  }
+
+  // Map entity_id -> earliest event timestamp (seconds)
+  const firstEventByLead = new Map<string, number>();
+  for (const event of events) {
+    const entityId = String(event.entity_id ?? '').trim();
+    if (!entityId) continue;
+    const createdAt = event.created_at;
+    let eventTs: number | null = null;
+    if (typeof createdAt === 'number' && Number.isFinite(createdAt)) {
+      eventTs = createdAt > 1_000_000_000_000 ? createdAt / 1000 : createdAt;
+    } else if (typeof createdAt === 'string') {
+      const asNum = Number(createdAt);
+      if (!Number.isNaN(asNum)) {
+        eventTs = asNum > 1_000_000_000_000 ? asNum / 1000 : asNum;
+      }
+    }
+    if (eventTs === null) continue;
+    const existing = firstEventByLead.get(entityId);
+    if (!existing || eventTs < existing) {
+      firstEventByLead.set(entityId, eventTs);
+    }
+  }
+
+  // Group new leads by responsible manager
+  const leadsByManager = new Map<string, AmoCRMLead[]>();
+  const managerIdSet = new Set(params.managerIds);
+  for (const lead of params.newLeads) {
+    const managerId = asString(lead.responsible_user_id);
+    if (!managerId || !managerIdSet.has(managerId)) continue;
+    const current = leadsByManager.get(managerId) || [];
+    current.push(lead);
+    leadsByManager.set(managerId, current);
+  }
+
+  // Calculate response times per manager
+  for (const [managerId, leads] of leadsByManager.entries()) {
+    const responseTimes: number[] = [];
+    for (const lead of leads) {
+      const leadId = asString(lead.id);
+      if (!leadId) continue;
+      const leadCreatedAt = parseAmoDate(lead.created_at).getTime() / 1000;
+      const firstEvent = firstEventByLead.get(leadId);
+      if (firstEvent !== undefined && firstEvent > leadCreatedAt) {
+        responseTimes.push(firstEvent - leadCreatedAt);
+      }
+    }
+    const totalCount = leads.length;
+    const respondedCount = responseTimes.length;
+    if (respondedCount === 0) {
+      result.set(managerId, { avgResponseSeconds: 0, medianResponseSeconds: 0, respondedCount: 0, totalCount });
+      continue;
+    }
+    const avg = responseTimes.reduce((s, v) => s + v, 0) / respondedCount;
+    const sorted = responseTimes.slice().sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 === 0
+      ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
+      : (sorted[mid] ?? 0);
+    result.set(managerId, {
+      avgResponseSeconds: Math.round(avg),
+      medianResponseSeconds: Math.round(median as number),
+      respondedCount,
+      totalCount,
+    });
+  }
+
+  return result;
+}
+
 function buildMetrics(
   activeLeads: AmoCRMLead[],
   wonLeadsData: AmoCRMLead[],
@@ -458,6 +570,8 @@ function buildMetrics(
   const totalCalls = calls.length;
   const inboundCalls = calls.filter((call) => call.direction === 'inbound').length;
   const outboundCalls = calls.filter((call) => call.direction === 'outbound').length;
+  const missedCalls = calls.filter((call) => call.status === 'missed').length;
+  const missedCallRate = totalCalls > 0 ? (missedCalls / totalCalls) * 100 : 0;
   const manualDurationSeconds = Math.max(0, Number(options?.manualDurationSeconds || 0));
   const totalCallDuration = calls.reduce((sum, call) => sum + (call.duration || 0), 0) + manualDurationSeconds;
   const averageCallDuration = totalCalls > 0 ? totalCallDuration / totalCalls : 0;
@@ -493,6 +607,8 @@ function buildMetrics(
     totalCalls,
     inboundCalls,
     outboundCalls,
+    missedCalls,
+    missedCallRate: Number(missedCallRate.toFixed(2)),
     totalCallDuration,
     averageCallDuration: Number(averageCallDuration.toFixed(2)),
     averageDailyCalls: Number(averageDailyCalls.toFixed(2)),
@@ -817,6 +933,19 @@ export const sellersRouter = router({
       });
     })();
 
+    const newLeadsInRangePromise = amocrmService.fetchAllLeads(
+      amoContext.accessToken,
+      {
+        pipelineIds: selectedPipelineIds,
+        responsibleUserIds: managerIdList,
+        createdAtFrom: rangeStart,
+        createdAtTo: rangeEnd,
+        limit: 250,
+        maxPages: 20,
+      },
+      amoContext.baseUrl,
+    );
+
     const activityFetchStartedMs = Date.now();
     const roundedNow = new Date(Math.floor(Date.now() / (5 * 60 * 1000)) * (5 * 60 * 1000));
     const activityPromise = getAmoCRMActivityMetrics({
@@ -853,8 +982,9 @@ export const sellersRouter = router({
       }
     })();
 
-    const [activeLeads, activityByManager, extensionsByManager, userMappings] = await Promise.all([
+    const [activeLeads, newLeadsInRange, activityByManager, extensionsByManager, userMappings] = await Promise.all([
       activeLeadsPromise,
+      newLeadsInRangePromise,
       activityPromise,
       extensionsByManagerPromise,
       userMappingsPromise,
@@ -862,6 +992,16 @@ export const sellersRouter = router({
     timings.amocrmLeadsMs = Date.now() - leadsFetchStartedMs;
     timings.activityFetchMs = Date.now() - activityFetchStartedMs;
     timings.extensionMappingMs = Date.now() - extensionMappingStartedMs;
+
+    // Start lead response time computation in parallel (doesn't block other work)
+    const leadResponseTimePromise = computeLeadResponseTimes({
+      accessToken: amoContext.accessToken,
+      baseUrl: amoContext.baseUrl,
+      managerIds: managerIdList,
+      newLeads: newLeadsInRange,
+      rangeStart,
+      rangeEnd,
+    });
 
     const leadsGroupingStartedMs = Date.now();
     const activeLeadsByManager = new Map<string, AmoCRMLead[]>();
@@ -873,6 +1013,16 @@ export const sellersRouter = router({
       const current = activeLeadsByManager.get(responsibleUserId) || [];
       current.push(lead);
       activeLeadsByManager.set(responsibleUserId, current);
+    }
+    const newLeadsByManager = new Map<string, AmoCRMLead[]>();
+    for (const lead of newLeadsInRange) {
+      const responsibleUserId = getLeadResponsibleId(lead);
+      if (!responsibleUserId || !managerIds.has(responsibleUserId)) {
+        continue;
+      }
+      const current = newLeadsByManager.get(responsibleUserId) || [];
+      current.push(lead);
+      newLeadsByManager.set(responsibleUserId, current);
     }
     timings.leadsGroupingMs = Date.now() - leadsGroupingStartedMs;
 
@@ -924,31 +1074,96 @@ export const sellersRouter = router({
 
     const incomeFetchStartedMs = Date.now();
     const allManagerUserIds = Array.from(new Set(Array.from(managerUserIdsByAmoId.values()).flat()));
-    const incomes = allManagerUserIds.length > 0
-      ? await prisma.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            lifecycleStatus: 'active',
-            managerUserId: { in: allManagerUserIds },
-            entryDate: {
-              gte: rangeStart,
-              lte: rangeEnd,
-            },
-          },
-          select: {
-            managerUserId: true,
-            type: true,
-            paymentAmount: true,
-            coursePriceAmount: true,
-            course: {
-              select: {
-                category: true,
-                name: true,
+    const [incomes, refundRequests, incomesWithCustomer, incomesWithDeadline] = await Promise.all([
+      allManagerUserIds.length > 0
+        ? prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: 'active',
+              managerUserId: { in: allManagerUserIds },
+              entryDate: {
+                gte: rangeStart,
+                lte: rangeEnd,
               },
             },
-          },
-        })
-      : [];
+            select: {
+              managerUserId: true,
+              type: true,
+              paymentAmount: true,
+              coursePriceAmount: true,
+              course: {
+                select: {
+                  category: true,
+                  name: true,
+                },
+              },
+            },
+          })
+        : [],
+      // Refund requests by manager in period
+      allManagerUserIds.length > 0
+        ? prisma.incomeAdjustmentRequest.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              type: 'refund',
+              status: 'approved',
+              createdAt: {
+                gte: rangeStart,
+                lte: rangeEnd,
+              },
+              income: {
+                managerUserId: { in: allManagerUserIds },
+              },
+            },
+            select: {
+              income: {
+                select: { managerUserId: true },
+              },
+            },
+          })
+        : [],
+      // Incomes with customerId for new vs repeat
+      allManagerUserIds.length > 0
+        ? prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: 'active',
+              type: 'new_sale',
+              managerUserId: { in: allManagerUserIds },
+              entryDate: {
+                gte: rangeStart,
+                lte: rangeEnd,
+              },
+            },
+            select: {
+              managerUserId: true,
+              customerId: true,
+            },
+          })
+        : [],
+      // Incomes with deadline for payment adherence
+      allManagerUserIds.length > 0
+        ? prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: 'active',
+              managerUserId: { in: allManagerUserIds },
+              entryDate: {
+                gte: rangeStart,
+                lte: rangeEnd,
+              },
+              deadline: { not: null },
+            },
+            select: {
+              managerUserId: true,
+              entryDate: true,
+              deadline: true,
+              paymentAmount: true,
+              remainingDebtAmount: true,
+            },
+          })
+        : [],
+    ]);
     timings.incomeFetchMs = Date.now() - incomeFetchStartedMs;
 
     const callsGroupingStartedMs = Date.now();
@@ -1018,7 +1233,64 @@ export const sellersRouter = router({
       });
       incomesByManager.set(managerId, current);
     }
+    // Group refund requests by manager
+    const refundsByManager = new Map<string, number>();
+    for (const req of refundRequests) {
+      const managerId = managerIdByUserId.get(req.income.managerUserId || '');
+      if (!managerId) continue;
+      refundsByManager.set(managerId, (refundsByManager.get(managerId) || 0) + 1);
+    }
+
+    // New vs Repeat customers: find which customerIds had purchases before rangeStart
+    const allCustomerIds = [...new Set(incomesWithCustomer.map((i) => i.customerId))];
+    const repeatCustomerIds = new Set<string>();
+    if (allCustomerIds.length > 0) {
+      const priorIncomes = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          lifecycleStatus: 'active',
+          customerId: { in: allCustomerIds },
+          entryDate: { lt: rangeStart },
+        },
+        select: { customerId: true },
+        distinct: ['customerId'],
+      });
+      for (const pi of priorIncomes) {
+        repeatCustomerIds.add(pi.customerId);
+      }
+    }
+    // Group new vs repeat by manager
+    const newCustomersByManager = new Map<string, number>();
+    const repeatCustomersByManager = new Map<string, number>();
+    const seenCustomerByManager = new Map<string, Set<string>>();
+    for (const inc of incomesWithCustomer) {
+      const managerId = managerIdByUserId.get(inc.managerUserId || '');
+      if (!managerId) continue;
+      const seen = seenCustomerByManager.get(managerId) || new Set();
+      if (seen.has(inc.customerId)) continue;
+      seen.add(inc.customerId);
+      seenCustomerByManager.set(managerId, seen);
+      if (repeatCustomerIds.has(inc.customerId)) {
+        repeatCustomersByManager.set(managerId, (repeatCustomersByManager.get(managerId) || 0) + 1);
+      } else {
+        newCustomersByManager.set(managerId, (newCustomersByManager.get(managerId) || 0) + 1);
+      }
+    }
+
+    // Payment deadline adherence by manager
+    const deadlineMetByManager = new Map<string, number>();
+    const deadlineTotalByManager = new Map<string, number>();
+    for (const inc of incomesWithDeadline) {
+      const managerId = managerIdByUserId.get(inc.managerUserId || '');
+      if (!managerId || !inc.deadline) continue;
+      deadlineTotalByManager.set(managerId, (deadlineTotalByManager.get(managerId) || 0) + 1);
+      if (inc.remainingDebtAmount <= 0 || inc.entryDate <= inc.deadline) {
+        deadlineMetByManager.set(managerId, (deadlineMetByManager.get(managerId) || 0) + 1);
+      }
+    }
     timings.incomeGroupingMs = Date.now() - incomeGroupingStartedMs;
+
+    const leadResponseTimeByManager = await leadResponseTimePromise;
 
     const buildResponseStartedMs = Date.now();
     const result = managers
@@ -1029,6 +1301,12 @@ export const sellersRouter = router({
         const managerActivity = activityByManager.get(managerId) || null;
         const managerIncomes = incomesByManager.get(managerId) || [];
         const salesMetrics = summarizeSellerIncomeMetrics(managerIncomes, rangeStart, rangeEnd);
+
+        const managerNewLeads = newLeadsByManager.get(managerId) || [];
+        const newLeadCount = managerNewLeads.length;
+        const listConversionRate = newLeadCount > 0
+          ? Number(((salesMetrics.newSalesCount / newLeadCount) * 100).toFixed(2))
+          : 0;
 
         return {
           id: managerId,
@@ -1049,6 +1327,22 @@ export const sellersRouter = router({
             totalDealAmount: salesMetrics.newSalesAgreementAmount,
             averageDealAmount: salesMetrics.averageAgreementAmount,
             ...salesMetrics,
+            conversionRate: listConversionRate,
+            refundCount: refundsByManager.get(managerId) || 0,
+            refundRate: salesMetrics.newSalesCount > 0
+              ? Number((((refundsByManager.get(managerId) || 0) / salesMetrics.newSalesCount) * 100).toFixed(2))
+              : 0,
+            newCustomers: newCustomersByManager.get(managerId) || 0,
+            repeatCustomers: repeatCustomersByManager.get(managerId) || 0,
+            newCustomerRate: ((newCustomersByManager.get(managerId) || 0) + (repeatCustomersByManager.get(managerId) || 0)) > 0
+              ? Number((((newCustomersByManager.get(managerId) || 0) / ((newCustomersByManager.get(managerId) || 0) + (repeatCustomersByManager.get(managerId) || 0))) * 100).toFixed(2))
+              : 0,
+            deadlineTotal: deadlineTotalByManager.get(managerId) || 0,
+            deadlineMet: deadlineMetByManager.get(managerId) || 0,
+            deadlineAdherenceRate: (deadlineTotalByManager.get(managerId) || 0) > 0
+              ? Number((((deadlineMetByManager.get(managerId) || 0) / (deadlineTotalByManager.get(managerId) || 0)) * 100).toFixed(2))
+              : 0,
+            leadResponseTime: leadResponseTimeByManager.get(managerId) || { avgResponseSeconds: 0, medianResponseSeconds: 0, respondedCount: 0, totalCount: 0 },
           },
         };
       })
@@ -1235,41 +1529,104 @@ export const sellersRouter = router({
         }
       }
 
-      const sellerIncomes = mappedManagerUserIds.length > 0
-        ? await prisma.income.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              lifecycleStatus: 'active',
-              managerUserId: { in: mappedManagerUserIds },
-              entryDate: {
-                gte: rangeStart,
-                lte: rangeEnd,
-              },
-            },
-            select: {
-              type: true,
-              paymentAmount: true,
-              coursePriceAmount: true,
-              course: {
-                select: {
-                  category: true,
-                  name: true,
+      const [sellerIncomes, detailRefundRequests, detailIncomesWithCustomer, detailIncomesWithDeadline] = await Promise.all([
+        mappedManagerUserIds.length > 0
+          ? prisma.income.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                lifecycleStatus: 'active',
+                managerUserId: { in: mappedManagerUserIds },
+                entryDate: {
+                  gte: rangeStart,
+                  lte: rangeEnd,
                 },
               },
-            },
-          })
-        : [];
-      const corporateDurationByUserId = await getCorporateCallDurationByManager({
-        tenantId: ctx.tenantId,
-        managerUserIds: mappedManagerUserIds,
-        rangeStart,
-        rangeEnd,
-      });
-      const manualDurationSeconds = Array.from(corporateDurationByUserId.values())
-        .reduce((sum, value) => sum + value, 0);
-      const salesMetrics = summarizeSellerIncomeMetrics(sellerIncomes, rangeStart, rangeEnd);
-      const activityMetrics = (
-        await getAmoCRMActivityMetrics({
+              select: {
+                type: true,
+                paymentAmount: true,
+                coursePriceAmount: true,
+                course: {
+                  select: {
+                    category: true,
+                    name: true,
+                  },
+                },
+              },
+            })
+          : [],
+        mappedManagerUserIds.length > 0
+          ? prisma.incomeAdjustmentRequest.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                type: 'refund',
+                status: 'approved',
+                createdAt: {
+                  gte: rangeStart,
+                  lte: rangeEnd,
+                },
+                income: {
+                  managerUserId: { in: mappedManagerUserIds },
+                },
+              },
+              select: { id: true },
+            })
+          : [],
+        mappedManagerUserIds.length > 0
+          ? prisma.income.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                lifecycleStatus: 'active',
+                type: 'new_sale',
+                managerUserId: { in: mappedManagerUserIds },
+                entryDate: {
+                  gte: rangeStart,
+                  lte: rangeEnd,
+                },
+              },
+              select: { customerId: true },
+            })
+          : [],
+        mappedManagerUserIds.length > 0
+          ? prisma.income.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                lifecycleStatus: 'active',
+                managerUserId: { in: mappedManagerUserIds },
+                entryDate: {
+                  gte: rangeStart,
+                  lte: rangeEnd,
+                },
+                deadline: { not: null },
+              },
+              select: {
+                entryDate: true,
+                deadline: true,
+                paymentAmount: true,
+                remainingDebtAmount: true,
+              },
+            })
+          : [],
+      ]);
+      const [corporateDurationByUserId, newLeadsForManager, activityMetricsMap] = await Promise.all([
+        getCorporateCallDurationByManager({
+          tenantId: ctx.tenantId,
+          managerUserIds: mappedManagerUserIds,
+          rangeStart,
+          rangeEnd,
+        }),
+        amocrmService.fetchAllLeads(
+          amoContext.accessToken,
+          {
+            pipelineIds: selectedPipelineIds,
+            responsibleUserIds: [input.id],
+            createdAtFrom: rangeStart,
+            createdAtTo: rangeEnd,
+            limit: 250,
+            maxPages: 20,
+          },
+          amoContext.baseUrl,
+        ),
+        getAmoCRMActivityMetrics({
           tenantId: ctx.tenantId,
           accessToken: amoContext.accessToken,
           baseUrl: amoContext.baseUrl,
@@ -1277,8 +1634,21 @@ export const sellersRouter = router({
           rangeStart,
           rangeEnd,
           rangeKind: input.range === 'last30days' ? 'custom' : input.range,
-        })
-      ).get(input.id) || null;
+        }),
+      ]);
+      // Start lead response time (runs while we build metrics below)
+      const detailLeadResponsePromise = computeLeadResponseTimes({
+        accessToken: amoContext.accessToken,
+        baseUrl: amoContext.baseUrl,
+        managerIds: [input.id],
+        newLeads: newLeadsForManager,
+        rangeStart,
+        rangeEnd,
+      });
+      const manualDurationSeconds = Array.from(corporateDurationByUserId.values())
+        .reduce((sum, value) => sum + value, 0);
+      const salesMetrics = summarizeSellerIncomeMetrics(sellerIncomes, rangeStart, rangeEnd);
+      const activityMetrics = activityMetricsMap.get(input.id) || null;
 
       const metrics = buildMetrics(
         activeLeads,
@@ -1322,6 +1692,63 @@ export const sellersRouter = router({
           };
         });
 
+      const detailNewLeadCount = newLeadsForManager.length;
+      const detailConversionRate = detailNewLeadCount > 0
+        ? Number(((salesMetrics.newSalesCount / detailNewLeadCount) * 100).toFixed(2))
+        : 0;
+
+      // Refund rate
+      const detailRefundCount = detailRefundRequests.length;
+      const detailRefundRate = salesMetrics.newSalesCount > 0
+        ? Number(((detailRefundCount / salesMetrics.newSalesCount) * 100).toFixed(2))
+        : 0;
+
+      // New vs repeat customers
+      const detailCustomerIds = [...new Set(detailIncomesWithCustomer.map((i) => i.customerId))];
+      let detailNewCustomers = 0;
+      let detailRepeatCustomers = 0;
+      if (detailCustomerIds.length > 0) {
+        const detailPriorCustomers = await prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            lifecycleStatus: 'active',
+            customerId: { in: detailCustomerIds },
+            entryDate: { lt: rangeStart },
+          },
+          select: { customerId: true },
+          distinct: ['customerId'],
+        });
+        const detailRepeatSet = new Set(detailPriorCustomers.map((p) => p.customerId));
+        for (const cid of detailCustomerIds) {
+          if (detailRepeatSet.has(cid)) {
+            detailRepeatCustomers++;
+          } else {
+            detailNewCustomers++;
+          }
+        }
+      }
+      const detailTotalCustomers = detailNewCustomers + detailRepeatCustomers;
+      const detailNewCustomerRate = detailTotalCustomers > 0
+        ? Number(((detailNewCustomers / detailTotalCustomers) * 100).toFixed(2))
+        : 0;
+
+      // Payment deadline adherence
+      let detailDeadlineTotal = 0;
+      let detailDeadlineMet = 0;
+      for (const inc of detailIncomesWithDeadline) {
+        if (!inc.deadline) continue;
+        detailDeadlineTotal++;
+        if (inc.remainingDebtAmount <= 0 || inc.entryDate <= inc.deadline) {
+          detailDeadlineMet++;
+        }
+      }
+      const detailDeadlineAdherenceRate = detailDeadlineTotal > 0
+        ? Number(((detailDeadlineMet / detailDeadlineTotal) * 100).toFixed(2))
+        : 0;
+
+      const detailLeadResponseMap = await detailLeadResponsePromise;
+      const detailLeadResponseTime = detailLeadResponseMap.get(input.id) || { avgResponseSeconds: 0, medianResponseSeconds: 0, respondedCount: 0, totalCount: 0 };
+
       return {
         seller: {
           id: input.id,
@@ -1338,6 +1765,16 @@ export const sellersRouter = router({
           totalDealAmount: salesMetrics.newSalesAgreementAmount,
           averageDealAmount: salesMetrics.averageAgreementAmount,
           ...salesMetrics,
+          conversionRate: detailConversionRate,
+          refundCount: detailRefundCount,
+          refundRate: detailRefundRate,
+          newCustomers: detailNewCustomers,
+          repeatCustomers: detailRepeatCustomers,
+          newCustomerRate: detailNewCustomerRate,
+          deadlineTotal: detailDeadlineTotal,
+          deadlineMet: detailDeadlineMet,
+          deadlineAdherenceRate: detailDeadlineAdherenceRate,
+          leadResponseTime: detailLeadResponseTime,
         },
         recentLeads,
         recentCalls,
