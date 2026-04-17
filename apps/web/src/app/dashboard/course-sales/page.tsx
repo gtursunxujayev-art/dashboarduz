@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
-import { trpc } from '@/lib/trpc';
+import { trpc, trpcClient } from '@/lib/trpc';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
@@ -246,8 +246,32 @@ export default function CourseSalesPage() {
   };
 
   const exportFilteredList = async () => {
+    const fetchAllFilteredCustomers = async () => {
+      const pageSize = 200;
+      let currentPage = 1;
+      let totalPages = 1;
+      const rows: any[] = [];
+
+      while (currentPage <= totalPages) {
+        const response = await (trpcClient as any).courseSales.customers.query({
+          courseId: courseId || '00000000-0000-0000-0000-000000000000',
+          tariffId: tariffId || undefined,
+          subTariffId: subTariffId || undefined,
+          query: searchQuery || undefined,
+          page: currentPage,
+          limit: pageSize,
+        });
+        rows.push(...(response?.rows ?? []));
+        totalPages = Math.max(1, Number(response?.totalPages ?? 1));
+        currentPage += 1;
+      }
+
+      return rows;
+    };
+
     const XLSX = await import('xlsx');
-    const data = customers.map((row: any) => ({
+    const allRows = await fetchAllFilteredCustomers();
+    const data = allRows.map((row: any) => ({
       'Mijoz raqami': row.customerNumber,
       Ism: row.customerName,
       Telegram: row.telegramUsername || '-',
