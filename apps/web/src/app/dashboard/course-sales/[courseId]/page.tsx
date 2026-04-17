@@ -40,6 +40,7 @@ function formatDate(value?: string | null): string {
 
 export default function CourseSalesDetailPage() {
   const { user } = useAuth();
+  const trpcUtils = trpc.useUtils();
   const roles = user?.roles || [];
   const isAdmin = Boolean(roles.includes('Admin'));
   const isTashkiliyOnly = Boolean(
@@ -892,4 +893,3 @@ export default function CourseSalesDetailPage() {
     </div>
   );
 }
-  const trpcUtils = trpc.useUtils();
