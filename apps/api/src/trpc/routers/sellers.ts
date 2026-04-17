@@ -807,7 +807,7 @@ export const sellersRouter = router({
           pipelineIds: selectedPipelineIds,
           responsibleUserIds: managerIdList,
           limit: 250,
-          maxPages: 300,
+          maxPages: 20,
         },
         amoContext.baseUrl,
       );
@@ -824,9 +824,9 @@ export const sellersRouter = router({
       accessToken: amoContext.accessToken,
       baseUrl: amoContext.baseUrl,
       managerIds: managerIdList,
-      rangeStart: new Date(0),
-      rangeEnd: roundedNow,
-      rangeKind: 'today',
+      rangeStart,
+      rangeEnd: roundedNow < rangeEnd ? roundedNow : rangeEnd,
+      rangeKind: range === 'today' ? 'today' : (range === 'last30days' ? 'month' : range),
       cacheTtlMs: SELLERS_ACTIVITY_CACHE_TTL_MS,
     });
 
