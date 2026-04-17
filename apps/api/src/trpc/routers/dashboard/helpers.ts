@@ -85,12 +85,29 @@ export type SalaryPlanBonus = {
   updatedAt: string;
 };
 
+export type KpiThreshold = {
+  full: number;
+  half: number;
+};
+
+export type KpiSettings = {
+  enabled: boolean;
+  monthlyBudget: number;
+  thresholds: {
+    conversionRate: KpiThreshold;
+    dailyTalkTime: KpiThreshold;
+    debtCollectionRate: KpiThreshold;
+    followUpCount: KpiThreshold;
+  };
+};
+
 export type SalarySettingsSnapshot = {
   bonusMode: SalaryBonusMode;
   bonusPercentages: SalaryBreakdown;
   bonusRules: SalaryBonusRules;
   fixedSalaries: Map<string, number>;
   planBonuses: SalaryPlanBonus[];
+  kpiSettings: KpiSettings;
 };
 
 export function isMissingUserMappingColumnError(error: unknown) {
@@ -712,12 +729,33 @@ export function extractSalarySettings(settings: unknown): SalarySettingsSnapshot
     .map((item) => normalizePlanBonus(item))
     .filter((item): item is SalaryPlanBonus => Boolean(item));
 
+  const rawKpi = asObject(salarySettings?.kpiSettings);
+  const rawKpiThresholds = asObject(rawKpi?.thresholds);
+  const parseThreshold = (raw: unknown): KpiThreshold => {
+    const obj = asObject(raw);
+    return {
+      full: toFiniteNumber(obj?.full, 0),
+      half: toFiniteNumber(obj?.half, 0),
+    };
+  };
+  const kpiSettings: KpiSettings = {
+    enabled: rawKpi?.enabled === true,
+    monthlyBudget: Math.max(0, Math.round(toFiniteNumber(rawKpi?.monthlyBudget, 0))),
+    thresholds: {
+      conversionRate: parseThreshold(rawKpiThresholds?.conversionRate),
+      dailyTalkTime: parseThreshold(rawKpiThresholds?.dailyTalkTime),
+      debtCollectionRate: parseThreshold(rawKpiThresholds?.debtCollectionRate),
+      followUpCount: parseThreshold(rawKpiThresholds?.followUpCount),
+    },
+  };
+
   return {
     bonusMode,
     bonusPercentages,
     bonusRules,
     fixedSalaries,
     planBonuses,
+    kpiSettings,
   };
 }
 
