@@ -19,7 +19,13 @@ import {
   type SalaryBreakdown,
   type SalaryCategory,
   type PlanBonusPeriodMode,
+  type KpiThreshold,
+  type KpiSettings,
+  isMissingUserMappingColumnError,
 } from './helpers';
+import { amocrmService } from '../../../services/integrations/amocrm';
+import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
+import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 
 function calculateProratedFixedSalary(
   monthlyFixedSalary: number,
@@ -58,6 +64,19 @@ function calculateProratedFixedSalary(
   }
 
   return Math.round(total);
+}
+
+function scoreKpi(value: number, threshold: KpiThreshold, higherIsBetter: boolean): number {
+  if (threshold.full <= 0 && threshold.half <= 0) return 0;
+  if (higherIsBetter) {
+    if (value >= threshold.full) return 1;
+    if (value >= threshold.half) return 0.5;
+    return 0;
+  }
+  // lower is better (not used currently, but safe)
+  if (value <= threshold.full) return 1;
+  if (value <= threshold.half) return 0.5;
+  return 0;
 }
 
 export const salaryProcedures = {
@@ -121,6 +140,10 @@ export const salaryProcedures = {
         scopedToCurrentAgent: Boolean(scopedManagerUserId),
         bonusMode: salarySettings.bonusMode,
         bonusPercentages: salarySettings.bonusPercentages,
+        kpiSettings: salarySettings.kpiSettings.enabled ? {
+          monthlyBudget: salarySettings.kpiSettings.monthlyBudget,
+          thresholds: salarySettings.kpiSettings.thresholds,
+        } : null,
         totals: {
           fixedSalary: 0,
           bonus: 0,
@@ -137,6 +160,12 @@ export const salaryProcedures = {
           planBonusAmount: number;
           totalSalary: number;
           bonusBreakdown: SalaryBreakdown;
+          kpiBreakdown: {
+            conversionRate: { value: number; score: number; amount: number };
+            dailyTalkTime: { value: number; score: number; amount: number };
+            debtCollectionRate: { value: number; score: number; amount: number };
+            followUpCount: { value: number; score: number; amount: number };
+          } | null;
           planProgress: Array<{
             planId: string;
             name: string;
@@ -162,6 +191,12 @@ export const salaryProcedures = {
         bonusAmount: number;
         planBonusAmount: number;
         bonusBreakdown: SalaryBreakdown;
+        kpiBreakdown: {
+          conversionRate: { value: number; score: number; amount: number };
+          dailyTalkTime: { value: number; score: number; amount: number };
+          debtCollectionRate: { value: number; score: number; amount: number };
+          followUpCount: { value: number; score: number; amount: number };
+        } | null;
         planProgress: Array<{
           planId: string;
           name: string;
@@ -186,6 +221,7 @@ export const salaryProcedures = {
         bonusAmount: 0,
         planBonusAmount: 0,
         bonusBreakdown: createZeroBreakdown(),
+        kpiBreakdown: null,
         planProgress: [],
       });
     }
@@ -533,6 +569,202 @@ export const salaryProcedures = {
       }
     }
 
+    // ── KPI Scoring ──
+    const kpi = salarySettings.kpiSettings;
+    if (kpi.enabled && kpi.monthlyBudget > 0) {
+      // Fetch agent -> AmoCRM mapping + extensions
+      let agentAmoMappings: Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }> = [];
+      try {
+        agentAmoMappings = await prisma.user.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: agentIds },
+            isActive: true,
+          },
+          select: {
+            id: true,
+            amocrmResponsibleUserId: true,
+            utelManagerExternalId: true,
+          },
+        }) as Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>;
+      } catch (error) {
+        if (!isMissingUserMappingColumnError(error)) throw error;
+      }
+
+      const agentAmoIdMap = new Map<string, string>(); // agentId -> amoId
+      const amoIdToAgentId = new Map<string, string>(); // amoId -> agentId
+      const agentExtensions = new Map<string, string[]>(); // agentId -> extensions
+      for (const mapping of agentAmoMappings) {
+        if (mapping.amocrmResponsibleUserId) {
+          agentAmoIdMap.set(mapping.id, mapping.amocrmResponsibleUserId);
+          amoIdToAgentId.set(mapping.amocrmResponsibleUserId, mapping.id);
+        }
+        if (mapping.utelManagerExternalId) {
+          const ext = mapping.utelManagerExternalId.replace(/[^\d]/g, '');
+          if (ext.length >= 2) {
+            const existing = agentExtensions.get(mapping.id) || [];
+            existing.push(ext);
+            agentExtensions.set(mapping.id, existing);
+          }
+        }
+      }
+
+      const amoManagerIds = Array.from(new Set(agentAmoIdMap.values()));
+      const allExtensions = Array.from(new Set(Array.from(agentExtensions.values()).flat()));
+
+      // Parallel fetch: new leads, calls, activity, all incomes for debt collection
+      const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+      const [newLeads, calls, activityByManager, allIncomes] = await Promise.all([
+        amoContext && amoManagerIds.length > 0
+          ? amocrmService.fetchAllLeads(
+              amoContext.accessToken,
+              {
+                responsibleUserIds: amoManagerIds,
+                createdAtFrom: rangeStart,
+                createdAtTo: rangeEnd,
+                limit: 250,
+                maxPages: 20,
+              },
+              amoContext.baseUrl,
+            )
+          : Promise.resolve([]),
+        allExtensions.length > 0
+          ? prisma.call.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                provider: 'utel',
+                startedAt: { gte: rangeStart, lte: rangeEnd },
+                OR: [
+                  { from: { in: allExtensions } },
+                  { to: { in: allExtensions } },
+                ],
+              },
+              select: {
+                from: true,
+                to: true,
+                duration: true,
+                startedAt: true,
+              },
+            })
+          : Promise.resolve([]),
+        amoContext && amoManagerIds.length > 0
+          ? getAmoCRMActivityMetrics({
+              tenantId: ctx.tenantId,
+              accessToken: amoContext.accessToken,
+              baseUrl: amoContext.baseUrl,
+              managerIds: amoManagerIds,
+              rangeStart,
+              rangeEnd,
+              rangeKind: 'custom',
+            })
+          : Promise.resolve(new Map<string, { followUpCount: number; noteCount: number; stageChangeCount: number; overdueFollowUpCount: number; todayFollowUpCount: number }>()),
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            managerUserId: { in: agentIds },
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            entryDate: { gte: rangeStart, lte: rangeEnd },
+          },
+          select: {
+            managerUserId: true,
+            type: true,
+            paymentAmount: true,
+            coursePriceAmount: true,
+          },
+        }),
+      ]);
+
+      // Group new leads by AmoCRM manager -> count per agent
+      const newLeadCountByAgent = new Map<string, number>();
+      for (const lead of newLeads) {
+        const amoId = String(lead.responsible_user_id ?? '').trim();
+        const agentId = amoIdToAgentId.get(amoId);
+        if (agentId) {
+          newLeadCountByAgent.set(agentId, (newLeadCountByAgent.get(agentId) || 0) + 1);
+        }
+      }
+
+      // Group calls by agent -> total duration
+      const extensionToAgent = new Map<string, string>();
+      for (const [agentId, exts] of agentExtensions.entries()) {
+        for (const ext of exts) {
+          extensionToAgent.set(ext, agentId);
+        }
+      }
+      const callDurationByAgent = new Map<string, number>();
+      const callDaysByAgent = new Map<string, Set<string>>();
+      for (const call of calls) {
+        const fromExt = (call.from || '').replace(/[^\d]/g, '');
+        const toExt = (call.to || '').replace(/[^\d]/g, '');
+        const agentId = extensionToAgent.get(fromExt) || extensionToAgent.get(toExt);
+        if (!agentId) continue;
+        callDurationByAgent.set(agentId, (callDurationByAgent.get(agentId) || 0) + (call.duration || 0));
+        if (call.startedAt) {
+          const dayKey = call.startedAt.toISOString().slice(0, 10);
+          const days = callDaysByAgent.get(agentId) || new Set<string>();
+          days.add(dayKey);
+          callDaysByAgent.set(agentId, days);
+        }
+      }
+
+      // Group incomes for debt collection by agent
+      const paidByAgent = new Map<string, number>();
+      const agreementByAgent = new Map<string, number>();
+      const salesCountByAgent = new Map<string, number>();
+      for (const inc of allIncomes) {
+        const agentId = inc.managerUserId;
+        paidByAgent.set(agentId, (paidByAgent.get(agentId) || 0) + (inc.paymentAmount || 0));
+        agreementByAgent.set(agentId, (agreementByAgent.get(agentId) || 0) + (inc.coursePriceAmount || 0));
+        if (inc.type === 'new_sale') {
+          salesCountByAgent.set(agentId, (salesCountByAgent.get(agentId) || 0) + 1);
+        }
+      }
+
+      // Score each agent
+      const perKpiBudget = Math.round(kpi.monthlyBudget / 4);
+      for (const salaryRow of salaryByAgent.values()) {
+        const agentId = salaryRow.userId;
+        const amoId = agentAmoIdMap.get(agentId);
+
+        // 1. Conversion Rate = sales / new leads * 100
+        const salesCount = salesCountByAgent.get(agentId) || 0;
+        const newLeadCount = newLeadCountByAgent.get(agentId) || 0;
+        const conversionRate = newLeadCount > 0 ? (salesCount / newLeadCount) * 100 : 0;
+        const conversionScore = scoreKpi(conversionRate, kpi.thresholds.conversionRate, true);
+
+        // 2. Daily Talk Time (seconds) = total duration / active call days
+        const totalDuration = callDurationByAgent.get(agentId) || 0;
+        const activeDays = (callDaysByAgent.get(agentId) || new Set()).size;
+        const dailyTalkTime = activeDays > 0 ? totalDuration / activeDays : 0;
+        const talkTimeScore = scoreKpi(dailyTalkTime, kpi.thresholds.dailyTalkTime, true);
+
+        // 3. Debt Collection Rate = paid / agreement * 100
+        const totalPaid = paidByAgent.get(agentId) || 0;
+        const totalAgreement = agreementByAgent.get(agentId) || 0;
+        const debtCollectionRate = totalAgreement > 0 ? (totalPaid / totalAgreement) * 100 : 0;
+        const debtScore = scoreKpi(debtCollectionRate, kpi.thresholds.debtCollectionRate, true);
+
+        // 4. Follow-up Count
+        const activity = amoId ? activityByManager.get(amoId) : null;
+        const followUpCount = activity?.followUpCount ?? 0;
+        const followUpScore = scoreKpi(followUpCount, kpi.thresholds.followUpCount, true);
+
+        salaryRow.kpiAmount = Math.round(
+          conversionScore * perKpiBudget
+          + talkTimeScore * perKpiBudget
+          + debtScore * perKpiBudget
+          + followUpScore * perKpiBudget,
+        );
+
+        salaryRow.kpiBreakdown = {
+          conversionRate: { value: Number(conversionRate.toFixed(2)), score: conversionScore, amount: Math.round(conversionScore * perKpiBudget) },
+          dailyTalkTime: { value: Math.round(dailyTalkTime), score: talkTimeScore, amount: Math.round(talkTimeScore * perKpiBudget) },
+          debtCollectionRate: { value: Number(debtCollectionRate.toFixed(2)), score: debtScore, amount: Math.round(debtScore * perKpiBudget) },
+          followUpCount: { value: followUpCount, score: followUpScore, amount: Math.round(followUpScore * perKpiBudget) },
+        };
+      }
+    }
+
     const byAgent = Array.from(salaryByAgent.values())
       .map((row) => ({
         ...row,
@@ -563,6 +795,10 @@ export const salaryProcedures = {
       scopedToCurrentAgent: Boolean(scopedManagerUserId),
       bonusMode: salarySettings.bonusMode,
       bonusPercentages: salarySettings.bonusPercentages,
+      kpiSettings: kpi.enabled ? {
+        monthlyBudget: kpi.monthlyBudget,
+        thresholds: kpi.thresholds,
+      } : null,
       totals,
       byAgent,
       currentUser: byAgent.find((row) => row.userId === ctx.user.userId) || null,
