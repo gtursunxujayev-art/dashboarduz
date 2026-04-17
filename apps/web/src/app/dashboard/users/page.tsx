@@ -15,6 +15,10 @@ const roleLabels: Record<(typeof availableRoles)[number], string> = {
 
 type UserRole = (typeof availableRoles)[number];
 
+function roleNeedsManagerMapping(role: UserRole) {
+  return role === 'Agent' || role === 'TeamLeader';
+}
+
 export default function UsersPage() {
   const usersQuery = trpc.users.list.useQuery();
   const amocrmManagersQuery = trpc.users.amocrmManagers.useQuery(undefined, {
@@ -85,8 +89,8 @@ export default function UsersPage() {
       const created = await createUser.mutateAsync({
         name: newName.trim() || undefined,
         role: newRole,
-        amocrmResponsibleUserId: newRole === 'Agent' ? (newAmoManagerId || undefined) : undefined,
-        utelManagerExternalId: newRole === 'Agent' ? (newUtelManagerId || undefined) : undefined,
+        amocrmResponsibleUserId: roleNeedsManagerMapping(newRole) ? (newAmoManagerId || undefined) : undefined,
+        utelManagerExternalId: roleNeedsManagerMapping(newRole) ? (newUtelManagerId || undefined) : undefined,
         telegramChatId: newTelegramChatId || undefined,
       });
 
@@ -112,10 +116,10 @@ export default function UsersPage() {
       await updateRole.mutateAsync({
         userId,
         roles: [roleDrafts[userId] || 'Agent'],
-        amocrmResponsibleUserId: (roleDrafts[userId] || 'Agent') === 'Agent'
+        amocrmResponsibleUserId: roleNeedsManagerMapping(roleDrafts[userId] || 'Agent')
           ? (managerDrafts[userId] || undefined)
           : undefined,
-        utelManagerExternalId: (roleDrafts[userId] || 'Agent') === 'Agent'
+        utelManagerExternalId: roleNeedsManagerMapping(roleDrafts[userId] || 'Agent')
           ? (utelDrafts[userId] || undefined)
           : undefined,
         telegramChatId: telegramDrafts[userId] || undefined,
@@ -218,10 +222,10 @@ export default function UsersPage() {
             <select
               value={newAmoManagerId}
               onChange={(event) => setNewAmoManagerId(event.target.value)}
-              disabled={newRole !== 'Agent'}
+              disabled={!roleNeedsManagerMapping(newRole)}
               className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
             >
-              <option value="">{newRole === 'Agent' ? 'AmoCRM menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
+              <option value="">{roleNeedsManagerMapping(newRole) ? 'AmoCRM menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
               {amocrmManagers.map((manager: any) => (
                 <option key={manager.id} value={manager.id}>
                   {manager.name}
@@ -231,10 +235,10 @@ export default function UsersPage() {
             <select
               value={newUtelManagerId}
               onChange={(event) => setNewUtelManagerId(event.target.value)}
-              disabled={newRole !== 'Agent'}
+              disabled={!roleNeedsManagerMapping(newRole)}
               className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
             >
-              <option value="">{newRole === 'Agent' ? 'UTeL menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
+              <option value="">{roleNeedsManagerMapping(newRole) ? 'UTeL menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
               {utelManagers.map((manager: any) => (
                 <option key={manager.id} value={manager.id}>
                   {manager.name}
@@ -316,11 +320,11 @@ export default function UsersPage() {
                             onChange={(event) =>
                               setManagerDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
                             }
-                            disabled={(roleDrafts[user.id] || 'Agent') !== 'Agent'}
+                            disabled={!roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')}
                             className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
                           >
                             <option value="">
-                              {(roleDrafts[user.id] || 'Agent') === 'Agent'
+                              {roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')
                                 ? 'AmoCRM menejerini tanlang'
                                 : 'Bu rol uchun shart emas'}
                             </option>
@@ -335,11 +339,11 @@ export default function UsersPage() {
                             onChange={(event) =>
                               setUtelDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
                             }
-                            disabled={(roleDrafts[user.id] || 'Agent') !== 'Agent'}
+                            disabled={!roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')}
                             className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
                           >
                             <option value="">
-                              {(roleDrafts[user.id] || 'Agent') === 'Agent'
+                              {roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')
                                 ? 'UTeL menejerini tanlang'
                                 : 'Bu rol uchun shart emas'}
                             </option>
