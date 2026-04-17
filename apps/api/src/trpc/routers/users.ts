@@ -10,6 +10,15 @@ import { amocrmService } from '../../services/integrations/amocrm';
 import { parseTelegramRecipients } from '../../services/integrations/telegram-recipients';
 
 const roleSchema = z.enum(['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy']);
+const MAPPING_ROLES: UserRole[] = ['Agent', 'TeamLeader'];
+
+function roleNeedsManagerMapping(role: UserRole): boolean {
+  return MAPPING_ROLES.includes(role);
+}
+
+function rolesNeedManagerMapping(roles: UserRole[]): boolean {
+  return roles.some((role) => roleNeedsManagerMapping(role));
+}
 
 function isMissingUserMappingColumnError(error: unknown) {
   const message = String((error as any)?.message || '');
@@ -303,10 +312,10 @@ export const usersRouter = router({
       const passwordHash = await hashPassword(plainPassword);
 
       const role = input.role as UserRole;
-      if (role === 'Agent' && !input.amocrmResponsibleUserId) {
+      if (roleNeedsManagerMapping(role) && !input.amocrmResponsibleUserId) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'AmoCRM manager mapping is required for Agent users.',
+          message: 'AmoCRM manager mapping is required for Agent/TeamLeader users.',
         });
       }
 
@@ -319,7 +328,7 @@ export const usersRouter = router({
         roles: [role],
       };
 
-      if (role === 'Agent') {
+      if (roleNeedsManagerMapping(role)) {
         createData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || null;
         createData.utelManagerExternalId = input.utelManagerExternalId || null;
       }
@@ -403,7 +412,7 @@ export const usersRouter = router({
 
       let previousAmoResponsibleUserId: string | null = null;
       let previousUtelManagerExternalId: string | null = null;
-      if (input.roles.includes('Agent')) {
+      if (rolesNeedManagerMapping(input.roles as UserRole[])) {
         try {
           const mappingSource = await prisma.user.findFirst({
             where: {
@@ -431,7 +440,7 @@ export const usersRouter = router({
       const updateData: any = {
         roles: input.roles as UserRole[],
       };
-      if (input.roles.includes('Agent')) {
+      if (rolesNeedManagerMapping(input.roles as UserRole[])) {
         updateData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || previousAmoResponsibleUserId || null;
         updateData.utelManagerExternalId = input.utelManagerExternalId || previousUtelManagerExternalId || null;
       }
