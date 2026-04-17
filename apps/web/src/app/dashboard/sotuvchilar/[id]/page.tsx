@@ -103,6 +103,50 @@ function getDailyTalkBadge(seconds: number | null | undefined, hasCalls: boolean
   return 'critical';
 }
 
+function getMissedCallBadge(rate: number | null | undefined): KpiBadge {
+  if (rate === null || rate === undefined) return 'neutral';
+  if (rate <= 5) return 'good';
+  if (rate <= 10) return 'warning';
+  return 'critical';
+}
+
+function getDebtCollectionBadge(rate: number | null | undefined): KpiBadge {
+  if (rate === null || rate === undefined) return 'neutral';
+  if (rate >= 85) return 'good';
+  if (rate >= 70) return 'warning';
+  return 'critical';
+}
+
+function getRefundBadge(rate: number | null | undefined): KpiBadge {
+  if (rate === null || rate === undefined) return 'neutral';
+  if (rate <= 5) return 'good';
+  if (rate <= 8) return 'warning';
+  return 'critical';
+}
+
+function getDeadlineBadge(rate: number | null | undefined): KpiBadge {
+  if (rate === null || rate === undefined) return 'neutral';
+  if (rate >= 90) return 'good';
+  if (rate >= 75) return 'warning';
+  return 'critical';
+}
+
+function getResponseTimeBadge(seconds: number): KpiBadge {
+  if (seconds <= 0) return 'neutral';
+  if (seconds <= 300) return 'good';       // <= 5 min
+  if (seconds <= 1800) return 'warning';   // <= 30 min
+  return 'critical';
+}
+
+function formatResponseTime(seconds: number): string {
+  if (seconds <= 0) return '-';
+  if (seconds < 60) return `${seconds} son`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} daq`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return `${h} soat ${m} daq`;
+}
+
 function MetricCard({
   title,
   value,
@@ -251,7 +295,7 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
       {/* KPI Performance Indicators */}
       <div>
         <SectionHeading>Asosiy ko'rsatkichlar (KPI)</SectionHeading>
-        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
           <MetricCard
             title="Konversiya"
             value={formatPercent(m.conversionRate)}
@@ -274,6 +318,12 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
             value={formatDurationReadable(m.averageDailyCallDuration)}
             subtitle={`Kunlik o'rtacha ${m.averageDailyCalls ?? 0} qo'ng'iroq`}
             badge={getDailyTalkBadge(m.averageDailyCallDuration, (m.totalCalls ?? 0) > 0)}
+          />
+          <MetricCard
+            title="Lid javob vaqti"
+            value={formatResponseTime(m.leadResponseTime?.avgResponseSeconds ?? 0)}
+            subtitle={`Median: ${formatResponseTime(m.leadResponseTime?.medianResponseSeconds ?? 0)} | ${m.leadResponseTime?.respondedCount ?? 0}/${m.leadResponseTime?.totalCount ?? 0} lid`}
+            badge={getResponseTimeBadge(m.leadResponseTime?.avgResponseSeconds ?? 0)}
           />
         </div>
       </div>
@@ -312,7 +362,7 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
       {/* Calls & Activity */}
       <div>
         <SectionHeading>Qo'ng'iroqlar va faollik</SectionHeading>
-        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
           <MetricCard
             title="Jami qo'ng'iroqlar"
             value={m.totalCalls ?? 0}
@@ -328,6 +378,12 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
             title="Kiruvchi qo'ng'iroqlar"
             value={`${m.inboundCalls ?? 0} (${inboundRate !== null ? inboundRate.toFixed(0) + '%' : '-'})`}
             subtitle="Qabul qilingan qo'ng'iroqlar"
+          />
+          <MetricCard
+            title="O'tkazib yuborilgan"
+            value={`${m.missedCalls ?? 0} (${formatPercent(m.missedCallRate)})`}
+            subtitle="Javobsiz qo'ng'iroqlar"
+            badge={getMissedCallBadge(m.missedCallRate)}
           />
           <MetricCard
             title="O'rtacha davomiylik"
@@ -366,6 +422,36 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
             value={formatPercent(m.conversionRate)}
             subtitle={`Jami ${m.totalLeads ?? 0} liddan`}
             badge={getConversionBadge(m.conversionRate)}
+          />
+        </div>
+      </div>
+
+      {/* Financial KPIs */}
+      <div>
+        <SectionHeading>Moliyaviy ko'rsatkichlar</SectionHeading>
+        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <MetricCard
+            title="Qarz yig'ish darajasi"
+            value={formatPercent(m.debtCollectionRate)}
+            subtitle={`${formatAmount(m.totalPaidAmount)} / ${formatAmount(m.totalAgreementAmount)}`}
+            badge={getDebtCollectionBadge(m.debtCollectionRate)}
+          />
+          <MetricCard
+            title="Qaytarish darajasi"
+            value={formatPercent(m.refundRate)}
+            subtitle={`${m.refundCount ?? 0} ta qaytarish / ${salesCount} sotuv`}
+            badge={getRefundBadge(m.refundRate)}
+          />
+          <MetricCard
+            title="To'lov muddati"
+            value={formatPercent(m.deadlineAdherenceRate)}
+            subtitle={`${m.deadlineMet ?? 0} / ${m.deadlineTotal ?? 0} o'z vaqtida`}
+            badge={getDeadlineBadge(m.deadlineAdherenceRate)}
+          />
+          <MetricCard
+            title="Yangi vs Qayta mijozlar"
+            value={`${m.newCustomers ?? 0} / ${m.repeatCustomers ?? 0}`}
+            subtitle={`Yangi mijoz: ${formatPercent(m.newCustomerRate)}`}
           />
         </div>
       </div>
