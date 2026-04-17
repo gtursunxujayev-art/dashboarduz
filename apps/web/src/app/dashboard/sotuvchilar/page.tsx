@@ -76,6 +76,43 @@ function getOutboundBadge(outbound: number, total: number): KpiBadge {
   return 'critical';
 }
 
+function getMissedCallBadge(rate: number | null | undefined): KpiBadge {
+  if (rate === null || rate === undefined) return 'neutral';
+  if (rate <= 5) return 'good';
+  if (rate <= 10) return 'warning';
+  return 'critical';
+}
+
+function getDebtCollectionBadge(rate: number | null | undefined): KpiBadge {
+  if (rate === null || rate === undefined) return 'neutral';
+  if (rate >= 85) return 'good';
+  if (rate >= 70) return 'warning';
+  return 'critical';
+}
+
+function getRefundBadge(rate: number | null | undefined): KpiBadge {
+  if (rate === null || rate === undefined) return 'neutral';
+  if (rate <= 5) return 'good';
+  if (rate <= 8) return 'warning';
+  return 'critical';
+}
+
+function getResponseTimeBadge(seconds: number): KpiBadge {
+  if (seconds <= 0) return 'neutral';
+  if (seconds <= 300) return 'good';
+  if (seconds <= 1800) return 'warning';
+  return 'critical';
+}
+
+function formatResponseTime(seconds: number): string {
+  if (seconds <= 0) return '-';
+  if (seconds < 60) return `${seconds} son`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} daq`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return `${h} soat ${m} daq`;
+}
+
 const BADGE_COLORS: Record<KpiBadge, string> = {
   good: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
   warning: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
@@ -136,7 +173,7 @@ function AgentCard({ seller }: { seller: any }) {
       </div>
 
       {/* KPI indicators */}
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="mt-3 grid grid-cols-3 gap-2">
         <KpiPill
           label="Konversiya"
           value={formatPercent(m.conversionRate)}
@@ -153,14 +190,24 @@ function AgentCard({ seller }: { seller: any }) {
           badge={outboundRate !== null ? getOutboundBadge(m.outboundCalls ?? 0, m.totalCalls ?? 0) : 'neutral'}
         />
         <KpiPill
-          label="Kunlik suhbat"
-          value={formatDuration(m.averageDailyCallDuration)}
-          badge={
-            (m.averageDailyCallDuration ?? 0) >= 7200 ? 'good'
-            : (m.averageDailyCallDuration ?? 0) >= 5400 ? 'warning'
-            : (m.totalCalls ?? 0) === 0 ? 'neutral'
-            : 'critical'
-          }
+          label="O'tkazib yub."
+          value={formatPercent(m.missedCallRate)}
+          badge={getMissedCallBadge(m.missedCallRate)}
+        />
+        <KpiPill
+          label="Qarz yig'ish"
+          value={formatPercent(m.debtCollectionRate)}
+          badge={getDebtCollectionBadge(m.debtCollectionRate)}
+        />
+        <KpiPill
+          label="Qaytarish"
+          value={formatPercent(m.refundRate)}
+          badge={getRefundBadge(m.refundRate)}
+        />
+        <KpiPill
+          label="Javob vaqti"
+          value={formatResponseTime(m.leadResponseTime?.avgResponseSeconds ?? 0)}
+          badge={getResponseTimeBadge(m.leadResponseTime?.avgResponseSeconds ?? 0)}
         />
       </div>
     </Link>
