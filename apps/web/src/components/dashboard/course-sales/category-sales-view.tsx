@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
-import { trpc, trpcClient } from '@/lib/trpc';
+import { trpc } from '@/lib/trpc';
 
 type CourseTypeCategory = 'online' | 'offline' | 'intensive';
 
@@ -258,49 +258,53 @@ export default function CourseTypeSalesView({
   };
 
   const exportFilteredList = async () => {
-    const fetchAllFilteredCustomers = async () => {
-      const pageSize = 200;
-      let currentPage = 1;
-      let totalPages = 1;
-      const rows: any[] = [];
+    try {
+      const fetchAllFilteredCustomers = async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let totalPages = 1;
+        const rows: any[] = [];
 
-      while (currentPage <= totalPages) {
-        const response = await (trpcClient as any).courseSales.typeCustomers.query({
-          category,
-          courseId: courseId || undefined,
-          tariffId: tariffId || undefined,
-          subTariffId: subTariffId || undefined,
-          query: searchQuery || undefined,
-          page: currentPage,
-          limit: pageSize,
-        });
-        rows.push(...(response?.rows ?? []));
-        totalPages = Math.max(1, Number(response?.totalPages ?? 1));
-        currentPage += 1;
-      }
+        while (currentPage <= totalPages) {
+          const response = await trpcUtils.courseSales.typeCustomers.fetch({
+            category,
+            courseId: courseId || undefined,
+            tariffId: tariffId || undefined,
+            subTariffId: subTariffId || undefined,
+            query: searchQuery || undefined,
+            page: currentPage,
+            limit: pageSize,
+          });
+          rows.push(...(response?.rows ?? []));
+          totalPages = Math.max(1, Number(response?.totalPages ?? 1));
+          currentPage += 1;
+        }
 
-      return rows;
-    };
+        return rows;
+      };
 
-    const XLSX = await import('xlsx');
-    const allRows = await fetchAllFilteredCustomers();
-    const data = allRows.map((row: any) => ({
-      'Mijoz raqami': row.customerNumber,
-      Ism: row.customerName,
-      Telegram: row.telegramUsername || '-',
-      "Mas'ul agent": row.managerLabel,
-      Kurs: row.courseName || '-',
-      Tarif: row.tariffName || '-',
-      Subtarif: row.subTariffName || '-',
-      Kelishuv: row.agreementAmount || 0,
-      "To'langan": row.paidAmount || 0,
-      Qarz: row.debtAmount || 0,
-      "Oxirgi faollik": formatDate(row.lastActivityAt),
-    }));
-    const sheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, 'Kurs_turi_sotuvi');
-    XLSX.writeFile(workbook, `kurs-turi-${toSlug(category)}-${Date.now()}.xlsx`);
+      const XLSX = await import('xlsx');
+      const allRows = await fetchAllFilteredCustomers();
+      const data = allRows.map((row: any) => ({
+        'Mijoz raqami': row.customerNumber,
+        Ism: row.customerName,
+        Telegram: row.telegramUsername || '-',
+        "Mas'ul agent": row.managerLabel,
+        Kurs: row.courseName || '-',
+        Tarif: row.tariffName || '-',
+        Subtarif: row.subTariffName || '-',
+        Kelishuv: row.agreementAmount || 0,
+        "To'langan": row.paidAmount || 0,
+        Qarz: row.debtAmount || 0,
+        "Oxirgi faollik": formatDate(row.lastActivityAt),
+      }));
+      const sheet = XLSX.utils.json_to_sheet(data);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Kurs_turi_sotuvi');
+      XLSX.writeFile(workbook, `kurs-turi-${toSlug(category)}-${Date.now()}.xlsx`);
+    } catch (error: any) {
+      setActionError(error?.message || "Ro'yxatni yuklab bo'lmadi.");
+    }
   };
 
   const resolveCourseDeleteAction = (
@@ -829,3 +833,4 @@ export default function CourseTypeSalesView({
     </div>
   );
 }
+  const trpcUtils = trpc.useUtils();
