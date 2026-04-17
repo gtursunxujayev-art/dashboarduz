@@ -46,6 +46,7 @@ export default function CourseTypeSalesView({
   description,
 }: CourseTypeSalesViewProps) {
   const { user } = useAuth();
+  const trpcUtils = trpc.useUtils();
   const roles = useMemo(() => user?.roles ?? [], [user?.roles]);
   const isAdmin = Boolean(roles.includes('Admin'));
   const isTashkiliyOnly = Boolean(
@@ -833,4 +834,3 @@ export default function CourseTypeSalesView({
     </div>
   );
 }
-  const trpcUtils = trpc.useUtils();
