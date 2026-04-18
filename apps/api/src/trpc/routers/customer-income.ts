@@ -169,6 +169,22 @@ function isMissingCourseEndDateColumnError(error: unknown): boolean {
   );
 }
 
+function isMissingSubTariffSchemaError(error: unknown): boolean {
+  const message = extractErrorText(error);
+  return (
+    (
+      message.includes('sub_tariffs')
+      || message.includes('subtariff')
+      || message.includes('subtariffid')
+    )
+    && (
+      message.includes('does not exist')
+      || message.includes('unknown')
+      || message.includes('column')
+    )
+  );
+}
+
 function isMissingHistoricalImportSchemaError(error: unknown): boolean {
   const message = String((error as any)?.message || '').toLowerCase();
   return (
@@ -203,6 +219,14 @@ function extractSaleSubTariffId(meta: Prisma.JsonValue | null | undefined): stri
   }
   const normalized = candidate.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function resolveManagerLabel(
+  manager: { id?: string | null; name?: string | null; username?: string | null } | null | undefined,
+  fallbackId?: string | null,
+): string {
+  const candidate = manager?.name || manager?.username || manager?.id || fallbackId || null;
+  return candidate ? String(candidate) : '-';
 }
 
 function withSaleSubTariffMeta(
@@ -5255,7 +5279,7 @@ export const customerIncomeRouter = router({
           ...sale,
           paymentAmount: paidBySaleId.get(sale.id) ?? Number(sale.paymentAmount || 0),
           lifecycleStatus: getIncomeLifecycleLabel(sale.lifecycleStatus),
-          managerLabel: sale.manager.name || sale.manager.username || sale.manager.id,
+          managerLabel: resolveManagerLabel(sale.manager),
           canCreateRequest: sale.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE,
           canChangeTariff: sale.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE,
         })),
@@ -5263,23 +5287,32 @@ export const customerIncomeRouter = router({
     }),
 
   customerPaymentHistory: protectedProcedure
-    .input(z.object({ customerId: z.string().uuid() }))
+    .input(z.object({ customerId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const customerLookupValue = input.customerId.trim();
 
-      const customer = await prisma.customer.findFirst({
-        where: {
-          id: input.customerId,
-          tenantId: ctx.tenantId,
-          ...(scopedManagerUserId
-            ? {
-                incomes: {
-                  some: {
-                    managerUserId: scopedManagerUserId,
-                  },
+      if (!customerLookupValue) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Customer id is required.' });
+      }
+
+      const customerWhereBase: Prisma.CustomerWhereInput = {
+        tenantId: ctx.tenantId,
+        ...(scopedManagerUserId
+          ? {
+              incomes: {
+                some: {
+                  managerUserId: scopedManagerUserId,
                 },
-              }
-            : {}),
+              },
+            }
+          : {}),
+      };
+
+      let customer = await prisma.customer.findFirst({
+        where: {
+          ...customerWhereBase,
+          id: customerLookupValue,
         },
         select: {
           id: true,
@@ -5291,6 +5324,24 @@ export const customerIncomeRouter = router({
           profileSubTariffId: true,
         },
       });
+
+      if (!customer && CUSTOMER_NUMBER_REGEX.test(customerLookupValue)) {
+        customer = await prisma.customer.findFirst({
+          where: {
+            ...customerWhereBase,
+            customerNumber: customerLookupValue,
+          },
+          select: {
+            id: true,
+            customerNumber: true,
+            name: true,
+            telegramUsername: true,
+            profileCourseId: true,
+            profileTariffId: true,
+            profileSubTariffId: true,
+          },
+        });
+      }
 
       if (!customer) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Customer not found.' });
@@ -5380,18 +5431,24 @@ export const customerIncomeRouter = router({
 
       const subTariffNameById = new Map<string, string>();
       if (collectedSubTariffIds.size > 0) {
-        const subTariffs = await prisma.subTariff.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            id: { in: Array.from(collectedSubTariffIds) },
-          },
-          select: {
-            id: true,
-            name: true,
-          },
-        });
-        for (const subTariff of subTariffs) {
-          subTariffNameById.set(subTariff.id, subTariff.name);
+        try {
+          const subTariffs = await prisma.subTariff.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              id: { in: Array.from(collectedSubTariffIds) },
+            },
+            select: {
+              id: true,
+              name: true,
+            },
+          });
+          for (const subTariff of subTariffs) {
+            subTariffNameById.set(subTariff.id, subTariff.name);
+          }
+        } catch (error) {
+          if (!isMissingSubTariffSchemaError(error)) {
+            throw error;
+          }
         }
       }
 
@@ -5415,7 +5472,7 @@ export const customerIncomeRouter = router({
           agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
           firstPaymentAmount: sale.paymentAmount ?? 0,
           remainingDebtAmount: sale.remainingDebtAmount ?? 0,
-          managerLabel: sale.manager.name || sale.manager.username || sale.manager.id,
+          managerLabel: resolveManagerLabel(sale.manager),
         })),
         payments: paymentHistory.map((income) => {
           const fallbackCourse = income.relatedDebtIncome?.course?.name || '-';
@@ -5439,7 +5496,7 @@ export const customerIncomeRouter = router({
               const effectiveSubTariffId = saleSubTariffId || profileMatchedSubTariffId;
               return effectiveSubTariffId ? subTariffNameById.get(effectiveSubTariffId) || null : null;
             })(),
-            managerLabel: income.manager.name || income.manager.username || income.manager.id,
+            managerLabel: resolveManagerLabel(income.manager),
             debtSourceIncomeId: income.relatedDebtIncomeId || income.id,
           };
         }),
