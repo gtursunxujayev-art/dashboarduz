@@ -31,6 +31,7 @@ export default function UsersPage() {
     retry: false,
   });
   const createUser = trpc.users.create.useMutation();
+  const updateName = trpc.users.updateName.useMutation();
   const updateRole = trpc.users.updateRole.useMutation();
   const updateCredentials = trpc.users.updateCredentials.useMutation();
 
@@ -51,6 +52,7 @@ export default function UsersPage() {
   const [telegramDrafts, setTelegramDrafts] = useState<Record<string, string>>({});
   const [loginDrafts, setLoginDrafts] = useState<Record<string, string>>({});
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
+  const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
 
   const amocrmManagers = useMemo(() => amocrmManagersQuery.data || [], [amocrmManagersQuery.data]);
   const utelManagers = useMemo(() => utelManagersQuery.data || [], [utelManagersQuery.data]);
@@ -63,6 +65,7 @@ export default function UsersPage() {
     const nextUtelDrafts: Record<string, string> = {};
     const nextTelegramDrafts: Record<string, string> = {};
     const nextLoginDrafts: Record<string, string> = {};
+    const nextNameDrafts: Record<string, string> = {};
 
     for (const user of users as any[]) {
       nextRoleDrafts[user.id] = (user.roles?.[0] || 'Agent') as UserRole;
@@ -70,6 +73,7 @@ export default function UsersPage() {
       nextUtelDrafts[user.id] = user.utelManagerExternalId || '';
       nextTelegramDrafts[user.id] = user.telegramId || '';
       nextLoginDrafts[user.id] = user.username || '';
+      nextNameDrafts[user.id] = user.name || '';
     }
 
     setRoleDrafts(nextRoleDrafts);
@@ -77,6 +81,7 @@ export default function UsersPage() {
     setUtelDrafts(nextUtelDrafts);
     setTelegramDrafts(nextTelegramDrafts);
     setLoginDrafts(nextLoginDrafts);
+    setNameDrafts(nextNameDrafts);
   }, [usersQuery.data]);
 
   const handleCreateUser = async () => {
@@ -128,6 +133,23 @@ export default function UsersPage() {
       await usersQuery.refetch();
     } catch (mutationError: any) {
       setError(mutationError?.message || "Rolni yangilashda xatolik");
+    }
+  };
+
+  const handleNameSave = async (userId: string) => {
+    setError(null);
+    setSuccess(null);
+    setGeneratedResetPassword(null);
+
+    try {
+      await updateName.mutateAsync({
+        userId,
+        name: nameDrafts[userId] || undefined,
+      });
+      setSuccess("Foydalanuvchi ismi saqlandi.");
+      await usersQuery.refetch();
+    } catch (mutationError: any) {
+      setError(mutationError?.message || "Foydalanuvchi ismini yangilashda xatolik");
     }
   };
 
@@ -297,8 +319,27 @@ export default function UsersPage() {
                     return (
                     <tr key={user.id}>
                       <td className="px-4 py-3 text-sm text-gray-800">
-                        {user.name || user.email || user.phone || 'Foydalanuvchi'}
-                        <div className="text-xs text-gray-500">ID: {user.id}</div>
+                        <div className="space-y-2">
+                          <input
+                            value={nameDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setNameDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            placeholder="Foydalanuvchi ismi"
+                            className="w-full min-w-[220px] rounded-md border border-gray-300 px-2 py-1 text-sm"
+                          />
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs text-gray-500">ID: {user.id}</div>
+                            <button
+                              type="button"
+                              onClick={() => handleNameSave(user.id)}
+                              disabled={updateName.isLoading}
+                              className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                              {updateName.isLoading ? 'Saqlanmoqda...' : 'Ismni saqlash'}
+                            </button>
+                          </div>
+                        </div>
                       </td>
                       <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
                         <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-[130px_1fr_1fr_1fr_auto]">
