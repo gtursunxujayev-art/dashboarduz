@@ -386,6 +386,70 @@ export const usersRouter = router({
       };
     }),
 
+  updateName: managerProcedure
+    .input(
+      z.object({
+        userId: z.string().uuid(),
+        name: z.string().max(120).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const user = await prisma.user.findFirst({
+        where: {
+          id: input.userId,
+          tenantId: ctx.tenantId,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      }
+
+      const normalizedNameRaw = input.name?.trim();
+      const normalizedName = normalizedNameRaw ? normalizedNameRaw : null;
+
+      const updated = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          name: normalizedName,
+        },
+        select: {
+          id: true,
+          username: true,
+          name: true,
+          email: true,
+          phone: true,
+          roles: true,
+          amocrmResponsibleUserId: true,
+          utelManagerExternalId: true,
+          telegramId: true,
+          isActive: true,
+          lastLoginAt: true,
+          createdAt: true,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'user_name_update',
+          resource: 'user',
+          resourceId: user.id,
+          metadata: {
+            previousName: user.name || null,
+            nextName: normalizedName,
+          },
+        },
+      });
+
+      return updated;
+    }),
+
   updateRole: managerProcedure
     .input(
       z.object({
