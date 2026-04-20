@@ -35,7 +35,7 @@ type SellerIncomeMetricSource = {
   paymentAmount: number | null;
   coursePriceAmount: number | null;
   course: {
-    category: string | null;
+    category?: string | null;
     name?: string | null;
   } | null;
 };
@@ -407,6 +407,23 @@ function isAllowedUtelManagerExtension(value: unknown): boolean {
 function isMissingUserMappingColumnError(error: unknown) {
   const message = String((error as any)?.message || '');
   return message.includes('amocrmResponsibleUserId') || message.includes('utelManagerExternalId');
+}
+
+function isSchemaCompatibilityError(error: unknown, hints: string[] = []): boolean {
+  const message = String((error as any)?.message || '').toLowerCase();
+  const isMissingSchema =
+    message.includes('does not exist')
+    || message.includes('unknown column')
+    || message.includes('p2022')
+    || message.includes('relation')
+    || message.includes('column');
+  if (!isMissingSchema) {
+    return false;
+  }
+  if (!hints.length) {
+    return true;
+  }
+  return hints.some((hint) => message.includes(hint.toLowerCase()));
 }
 
 function toManagerRole(user: AmoCRMUser): string[] {
@@ -885,10 +902,21 @@ export const sellersRouter = router({
     timings.managerPreparationMs = Date.now() - managerPreparationStartedMs;
 
     const managerIdList = Array.from(managerIds);
-    const corporateRevision = await prisma.corporateCallDuration.aggregate({
-      where: { tenantId: ctx.tenantId },
-      _max: { updatedAt: true },
-    });
+    let corporateRevision: { _max: { updatedAt: Date | null } } = { _max: { updatedAt: null } };
+    try {
+      corporateRevision = await prisma.corporateCallDuration.aggregate({
+        where: { tenantId: ctx.tenantId },
+        _max: { updatedAt: true },
+      });
+    } catch (error) {
+      if (!isSchemaCompatibilityError(error, ['corporatecallduration', 'updatedat'])) {
+        throw error;
+      }
+      log(LogLevel.WARN, 'Sellers list: corporate duration revision fallback applied', {
+        tenantId: ctx.tenantId,
+        error: String((error as Error)?.message || error),
+      });
+    }
     const corporateRevisionKey = corporateRevision._max.updatedAt
       ? corporateRevision._max.updatedAt.toISOString()
       : '';
@@ -1046,8 +1074,10 @@ export const sellersRouter = router({
 
     const callsFetchStartedMs = Date.now();
     const extensionValues = Array.from(new Set(Array.from(extensionsByManager.values()).flat()));
-    const calls = extensionValues.length > 0
-      ? await prisma.call.findMany({
+    let calls: Array<{ from: string; to: string; duration: number | null; direction: string; status: string; startedAt: Date | null }> = [];
+    if (extensionValues.length > 0) {
+      try {
+        calls = await prisma.call.findMany({
           where: {
             tenantId: ctx.tenantId,
             provider: 'utel',
@@ -1068,100 +1098,213 @@ export const sellersRouter = router({
             status: true,
             startedAt: true,
           },
-        })
-      : [];
+        });
+      } catch (error) {
+        if (!isSchemaCompatibilityError(error, ['call', 'startedat', 'duration'])) {
+          throw error;
+        }
+        log(LogLevel.WARN, 'Sellers list: calls fallback applied (empty calls)', {
+          tenantId: ctx.tenantId,
+          error: String((error as Error)?.message || error),
+        });
+        calls = [];
+      }
+    }
     timings.callsFetchMs = Date.now() - callsFetchStartedMs;
 
     const incomeFetchStartedMs = Date.now();
     const allManagerUserIds = Array.from(new Set(Array.from(managerUserIdsByAmoId.values()).flat()));
     const [incomes, refundRequests, incomesWithCustomer, incomesWithDeadline] = await Promise.all([
       allManagerUserIds.length > 0
-        ? prisma.income.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              lifecycleStatus: 'active',
-              managerUserId: { in: allManagerUserIds },
-              entryDate: {
-                gte: rangeStart,
-                lte: rangeEnd,
-              },
-            },
-            select: {
-              managerUserId: true,
-              type: true,
-              paymentAmount: true,
-              coursePriceAmount: true,
-              course: {
-                select: {
-                  category: true,
-                  name: true,
+        ? (async () => {
+            try {
+              return await prisma.income.findMany({
+                where: {
+                  tenantId: ctx.tenantId,
+                  lifecycleStatus: 'active',
+                  managerUserId: { in: allManagerUserIds },
+                  entryDate: {
+                    gte: rangeStart,
+                    lte: rangeEnd,
+                  },
                 },
-              },
-            },
-          })
+                select: {
+                  managerUserId: true,
+                  type: true,
+                  paymentAmount: true,
+                  coursePriceAmount: true,
+                  course: {
+                    select: {
+                      category: true,
+                      name: true,
+                    },
+                  },
+                },
+              });
+            } catch (error) {
+              if (!isSchemaCompatibilityError(error, ['lifestylestatus', 'lifecyclestatus', 'category', 'course'])) {
+                throw error;
+              }
+              log(LogLevel.WARN, 'Sellers list: incomes fallback applied', {
+                tenantId: ctx.tenantId,
+                error: String((error as Error)?.message || error),
+              });
+              return await prisma.income.findMany({
+                where: {
+                  tenantId: ctx.tenantId,
+                  managerUserId: { in: allManagerUserIds },
+                  entryDate: {
+                    gte: rangeStart,
+                    lte: rangeEnd,
+                  },
+                },
+                select: {
+                  managerUserId: true,
+                  type: true,
+                  paymentAmount: true,
+                  coursePriceAmount: true,
+                  course: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              });
+            }
+          })()
         : [],
       // Refund requests by manager in period
       allManagerUserIds.length > 0
-        ? prisma.incomeAdjustmentRequest.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              type: 'refund',
-              status: 'approved',
-              createdAt: {
-                gte: rangeStart,
-                lte: rangeEnd,
-              },
-              income: {
-                managerUserId: { in: allManagerUserIds },
-              },
-            },
-            select: {
-              income: {
-                select: { managerUserId: true },
-              },
-            },
-          })
+        ? (async () => {
+            try {
+              return await prisma.incomeAdjustmentRequest.findMany({
+                where: {
+                  tenantId: ctx.tenantId,
+                  type: 'refund',
+                  status: 'approved',
+                  createdAt: {
+                    gte: rangeStart,
+                    lte: rangeEnd,
+                  },
+                  income: {
+                    managerUserId: { in: allManagerUserIds },
+                  },
+                },
+                select: {
+                  income: {
+                    select: { managerUserId: true },
+                  },
+                },
+              });
+            } catch (error) {
+              if (!isSchemaCompatibilityError(error, ['incomeadjustmentrequest'])) {
+                throw error;
+              }
+              log(LogLevel.WARN, 'Sellers list: refund requests fallback applied (empty)', {
+                tenantId: ctx.tenantId,
+                error: String((error as Error)?.message || error),
+              });
+              return [];
+            }
+          })()
         : [],
       // Incomes with customerId for new vs repeat
       allManagerUserIds.length > 0
-        ? prisma.income.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              lifecycleStatus: 'active',
-              type: 'new_sale',
-              managerUserId: { in: allManagerUserIds },
-              entryDate: {
-                gte: rangeStart,
-                lte: rangeEnd,
-              },
-            },
-            select: {
-              managerUserId: true,
-              customerId: true,
-            },
-          })
+        ? (async () => {
+            try {
+              return await prisma.income.findMany({
+                where: {
+                  tenantId: ctx.tenantId,
+                  lifecycleStatus: 'active',
+                  type: 'new_sale',
+                  managerUserId: { in: allManagerUserIds },
+                  entryDate: {
+                    gte: rangeStart,
+                    lte: rangeEnd,
+                  },
+                },
+                select: {
+                  managerUserId: true,
+                  customerId: true,
+                },
+              });
+            } catch (error) {
+              if (!isSchemaCompatibilityError(error, ['lifecyclestatus'])) {
+                throw error;
+              }
+              log(LogLevel.WARN, 'Sellers list: customer split fallback applied', {
+                tenantId: ctx.tenantId,
+                error: String((error as Error)?.message || error),
+              });
+              return await prisma.income.findMany({
+                where: {
+                  tenantId: ctx.tenantId,
+                  type: 'new_sale',
+                  managerUserId: { in: allManagerUserIds },
+                  entryDate: {
+                    gte: rangeStart,
+                    lte: rangeEnd,
+                  },
+                },
+                select: {
+                  managerUserId: true,
+                  customerId: true,
+                },
+              });
+            }
+          })()
         : [],
       // Incomes with deadline for payment adherence
       allManagerUserIds.length > 0
-        ? prisma.income.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              lifecycleStatus: 'active',
-              managerUserId: { in: allManagerUserIds },
-              entryDate: {
-                gte: rangeStart,
-                lte: rangeEnd,
-              },
-              deadline: { not: null },
-            },
-            select: {
-              managerUserId: true,
-              entryDate: true,
-              deadline: true,
-              paymentAmount: true,
-              remainingDebtAmount: true,
-            },
-          })
+        ? (async () => {
+            try {
+              return await prisma.income.findMany({
+                where: {
+                  tenantId: ctx.tenantId,
+                  lifecycleStatus: 'active',
+                  managerUserId: { in: allManagerUserIds },
+                  entryDate: {
+                    gte: rangeStart,
+                    lte: rangeEnd,
+                  },
+                  deadline: { not: null },
+                },
+                select: {
+                  managerUserId: true,
+                  entryDate: true,
+                  deadline: true,
+                  paymentAmount: true,
+                  remainingDebtAmount: true,
+                },
+              });
+            } catch (error) {
+              if (!isSchemaCompatibilityError(error, ['lifecyclestatus'])) {
+                throw error;
+              }
+              log(LogLevel.WARN, 'Sellers list: deadline adherence fallback applied', {
+                tenantId: ctx.tenantId,
+                error: String((error as Error)?.message || error),
+              });
+              return await prisma.income.findMany({
+                where: {
+                  tenantId: ctx.tenantId,
+                  managerUserId: { in: allManagerUserIds },
+                  entryDate: {
+                    gte: rangeStart,
+                    lte: rangeEnd,
+                  },
+                  deadline: { not: null },
+                },
+                select: {
+                  managerUserId: true,
+                  entryDate: true,
+                  deadline: true,
+                  paymentAmount: true,
+                  remainingDebtAmount: true,
+                },
+              });
+            }
+          })()
         : [],
     ]);
     timings.incomeFetchMs = Date.now() - incomeFetchStartedMs;
@@ -1201,12 +1344,24 @@ export const sellersRouter = router({
         managerIdByUserId.set(userId, managerId);
       }
     }
-    const corporateDurationByUserId = await getCorporateCallDurationByManager({
-      tenantId: ctx.tenantId,
-      managerUserIds: Array.from(managerIdByUserId.keys()),
-      rangeStart,
-      rangeEnd,
-    });
+    let corporateDurationByUserId = new Map<string, number>();
+    try {
+      corporateDurationByUserId = await getCorporateCallDurationByManager({
+        tenantId: ctx.tenantId,
+        managerUserIds: Array.from(managerIdByUserId.keys()),
+        rangeStart,
+        rangeEnd,
+      });
+    } catch (error) {
+      if (!isSchemaCompatibilityError(error, ['corporatecallduration', 'durationseconds', 'calldate'])) {
+        throw error;
+      }
+      log(LogLevel.WARN, 'Sellers list: corporate call duration fallback applied (empty)', {
+        tenantId: ctx.tenantId,
+        error: String((error as Error)?.message || error),
+      });
+      corporateDurationByUserId = new Map<string, number>();
+    }
     const corporateDurationByManager = new Map<string, number>();
     for (const [userId, durationSeconds] of corporateDurationByUserId.entries()) {
       const managerId = managerIdByUserId.get(userId);
