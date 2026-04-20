@@ -834,8 +834,27 @@ function isAgentOnly(roles: string[]): boolean {
   return roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 }
 
+function isTeamLeaderSelfScoped(roles: string[]): boolean {
+  return (
+    roles.includes('TeamLeader')
+    && !roles.includes('Admin')
+    && !roles.includes('Manager')
+  );
+}
+
+function shouldSelfScopeManagerActions(roles: string[]): boolean {
+  return isAgentOnly(roles) || isTeamLeaderSelfScoped(roles);
+}
+
 function isPrivilegedAdjustmentViewer(roles: string[]): boolean {
-  return roles.some((role) => PRIVILEGED_ROLES.has(role) || role === 'Organizator' || role === 'Organizer' || role === 'Tashkiliy');
+  return roles.some((role) => (
+    role === 'Admin'
+    || role === 'Manager'
+    || role === 'Finance'
+    || role === 'Organizator'
+    || role === 'Organizer'
+    || role === 'Tashkiliy'
+  ));
 }
 
 function canApproveRefundRequest(roles: string[]): boolean {
@@ -3527,7 +3546,7 @@ function shouldBackfillCustomerText(currentValue: string | null | undefined, fal
 
 export const customerIncomeRouter = router({
   formOptions: protectedProcedure.query(async ({ ctx }) => {
-    const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+    const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
 
     const [managersInitial, customers, outstandingDebts] = await Promise.all([
       prisma.user.findMany({
@@ -3748,7 +3767,7 @@ export const customerIncomeRouter = router({
   searchCustomers: protectedProcedure
     .input(customerSearchSchema)
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
       const query = input.query?.trim();
       const customers = await prisma.customer.findMany({
         where: {
@@ -3809,7 +3828,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
       const normalizedCustomerNumber = input.customerNumber.replace(/\D/g, '').trim();
 
       if (!normalizedCustomerNumber) {
@@ -4303,10 +4322,10 @@ export const customerIncomeRouter = router({
   createIncome: protectedProcedure
     .input(createIncomeSchema)
     .mutation(async ({ ctx, input }) => {
-      if (isAgentOnly(ctx.user.roles) && input.managerUserId !== ctx.user.userId) {
+      if (shouldSelfScopeManagerActions(ctx.user.roles) && input.managerUserId !== ctx.user.userId) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'Agents can create income records only for themselves.',
+          message: 'You can create income records only for yourself.',
         });
       }
 
@@ -4943,7 +4962,7 @@ export const customerIncomeRouter = router({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
       const searchQuery = (input?.query || '').trim();
         const incomes = await prisma.income.findMany({
           where: {
@@ -5182,7 +5201,7 @@ export const customerIncomeRouter = router({
   listAdjustableIncomes: protectedProcedure
     .input(z.object({ customerId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
 
       const customer = await prisma.customer.findFirst({
         where: {
@@ -5289,7 +5308,7 @@ export const customerIncomeRouter = router({
   customerPaymentHistory: protectedProcedure
     .input(z.object({ customerId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
       const customerLookupValue = input.customerId.trim();
 
       if (!customerLookupValue) {
@@ -5719,7 +5738,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
       const sourceIncomeRaw = await prisma.income.findFirst({
         where: {
           id: input.incomeId,
@@ -5987,6 +6006,17 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Only pending requests can be approved.' });
       }
 
+      if (
+        isTeamLeaderSelfScoped(ctx.user.roles)
+        && request.requestedByUserId !== ctx.user.userId
+        && request.income.managerUserId !== ctx.user.userId
+      ) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Team leader can approve only own requests.',
+        });
+      }
+
       if (request.type === ADJUSTMENT_TYPE_REFUND && !canApproveRefundRequest(ctx.user.roles)) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin or Finance role is required to approve refunds.' });
       }
@@ -6180,6 +6210,7 @@ export const customerIncomeRouter = router({
               courseId: true,
               tariffId: true,
               lifecycleStatus: true,
+              managerUserId: true,
             },
           },
         },
@@ -6191,6 +6222,17 @@ export const customerIncomeRouter = router({
 
       if (request.status !== ADJUSTMENT_STATUS_PENDING) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Only pending requests can be rejected.' });
+      }
+
+      if (
+        isTeamLeaderSelfScoped(ctx.user.roles)
+        && request.requestedByUserId !== ctx.user.userId
+        && request.income.managerUserId !== ctx.user.userId
+      ) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Team leader can reject only own requests.',
+        });
       }
 
       if (request.type === ADJUSTMENT_TYPE_REFUND && !canApproveRefundRequest(ctx.user.roles)) {
