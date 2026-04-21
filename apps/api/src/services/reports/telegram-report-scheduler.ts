@@ -258,12 +258,35 @@ function topBreakdownRows(entries: Array<{ label: string; value: number }>, fall
   if (!entries.length) {
     return [`${fallbackLabel}: 0`];
   }
-  return entries.slice(0, 5).map((entry) => {
+  return entries.map((entry) => {
     const normalizedLabel = entry.label.trim().length > 0
       ? humanizeKey(entry.label)
       : fallbackLabel;
     return `${normalizedLabel}: ${entry.value}`;
   });
+}
+
+function fitTwoColumnThreeRows(lines: string[]): { left: string[]; right: string[] } {
+  const items = lines.length > 0 ? lines : ["Ma'lumot yo'q: 0"];
+  const half = Math.ceil(items.length / 2);
+  const leftRaw = items.slice(0, half);
+  const rightRaw = items.slice(half);
+
+  const fitColumn = (columnItems: string[]): string[] => {
+    if (columnItems.length <= 3) {
+      return columnItems;
+    }
+    return [
+      columnItems[0] || '-',
+      columnItems[1] || '-',
+      columnItems.slice(2).join(' | '),
+    ];
+  };
+
+  return {
+    left: fitColumn(leftRaw),
+    right: fitColumn(rightRaw),
+  };
 }
 
 function createStyledReportPdf(params: {
@@ -275,14 +298,14 @@ function createStyledReportPdf(params: {
   metrics: ReportMetrics;
 }): Buffer {
   const c = new PdfCanvas();
-  const dark: PdfColor = [0.03, 0.08, 0.2];
+  const dark: PdfColor = [138 / 255, 21 / 255, 56 / 255];
   const lightBorder: PdfColor = [0.72, 0.78, 0.86];
   const cardBg: PdfColor = [0.96, 0.97, 0.99];
   const textDark: PdfColor = [0.11, 0.16, 0.24];
   const accent: PdfColor = [0.12, 0.4, 0.95];
   const white: PdfColor = [1, 1, 1];
   const headerDateRange = `${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`;
-  const fontDelta = -2;
+  const fontDelta = 0;
   const size = (base: number): number => Math.max(6, base + fontDelta);
 
   c.rect(16, 24, 547, 62, { fill: dark });
@@ -361,25 +384,42 @@ function createStyledReportPdf(params: {
   c.text(358, 54, `Suhbat davomiyligi: ${formatDuration(params.metrics.talkDurationSeconds)}`, { size: size(11), color: textDark });
   c.text(374, 54, `Online/Offline/Intensiv sotuvlar: ${params.metrics.onlineSalesCount}/${params.metrics.offlineSalesCount}/${params.metrics.intensiveSalesCount}`, { size: size(10), color: textDark });
 
-  c.rect(410, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
+  c.rect(410, 44, 503, 22, { fill: dark });
   c.text(414, 54, 'Sifatsiz lid sabablari', { font: 'F2', size: size(12), color: white });
-  let y = 438;
-  const reasonLines = topBreakdownRows(params.metrics.reasonBreakdown, "Ma'lumot yo'q").slice(0, 2);
-  for (const line of reasonLines) {
-    c.text(y, 54, line, { size: size(10), color: textDark });
-    y += 14;
+  const reasonLines = topBreakdownRows(params.metrics.reasonBreakdown, "Ma'lumot yo'q");
+  const reasonGrid = fitTwoColumnThreeRows(reasonLines);
+  const breakdownRowHeight = 14;
+  const breakdownColLeftA = 54;
+  const breakdownColLeftB = 300;
+  for (let row = 0; row < 3; row += 1) {
+    const y = 438 + row * breakdownRowHeight;
+    const reasonLeft = reasonGrid.left[row];
+    const reasonRight = reasonGrid.right[row];
+    if (typeof reasonLeft === 'string') {
+      c.text(y, breakdownColLeftA, reasonLeft, { size: size(9), color: textDark });
+    }
+    if (typeof reasonRight === 'string') {
+      c.text(y, breakdownColLeftB, reasonRight, { size: size(9), color: textDark });
+    }
   }
 
-  c.rect(498, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
+  c.rect(498, 44, 503, 22, { fill: dark });
   c.text(502, 54, 'Lid manbalari', { font: 'F2', size: size(12), color: white });
-  y = 526;
-  const sourceLines = topBreakdownRows(params.metrics.sourceBreakdown, "Ma'lumot yo'q").slice(0, 2);
-  for (const line of sourceLines) {
-    c.text(y, 54, line, { size: size(10), color: textDark });
-    y += 14;
+  const sourceLines = topBreakdownRows(params.metrics.sourceBreakdown, "Ma'lumot yo'q");
+  const sourceGrid = fitTwoColumnThreeRows(sourceLines);
+  for (let row = 0; row < 3; row += 1) {
+    const y = 526 + row * breakdownRowHeight;
+    const sourceLeft = sourceGrid.left[row];
+    const sourceRight = sourceGrid.right[row];
+    if (typeof sourceLeft === 'string') {
+      c.text(y, breakdownColLeftA, sourceLeft, { size: size(9), color: textDark });
+    }
+    if (typeof sourceRight === 'string') {
+      c.text(y, breakdownColLeftB, sourceRight, { size: size(9), color: textDark });
+    }
   }
 
-  c.rect(588, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
+  c.rect(588, 44, 503, 22, { fill: dark });
   c.text(592, 54, "Menejerlar bo'yicha sotuvlar", { font: 'F2', size: size(12), color: white });
 
   const tableTop = 614;
