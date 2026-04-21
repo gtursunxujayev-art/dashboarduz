@@ -38,6 +38,8 @@ type ReportMetrics = {
   conversionPercent: number;
   agreementTotal: number;
   incomeTotal: number;
+  newSalesIncomeTotal: number;
+  debtRepaymentIncomeTotal: number;
   onlineSalesCount: number;
   onlineAgreementTotal: number;
   offlineSalesCount: number;
@@ -290,33 +292,60 @@ function createStyledReportPdf(params: {
   c.text(92, 44, `Davr: ${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`, { size: size(10), color: textDark });
   c.text(106, 44, `Tayyorlangan: ${formatLocalDateTime(params.generatedAt)}`, { size: size(10), color: textDark });
 
-  const cardTitles = [
-    'Kelishuv summasi',
-    'Tushum',
-    'Online kelishuv summasi',
-    'Offline kelishuv summasi',
-    'Yangi lidlar',
-    'Sifatli lidlar',
-  ];
-  const cardValues = [
-    formatCurrency(params.metrics.agreementTotal),
-    formatCurrency(params.metrics.incomeTotal),
-    formatCurrency(params.metrics.onlineAgreementTotal),
-    formatCurrency(params.metrics.offlineAgreementTotal),
-    String(params.metrics.newLeads),
-    `${params.metrics.qualifiedLeads} (${params.metrics.qualifiedShare.toFixed(1)}%)`,
-  ];
+  const cardTop = 130;
+  const cardHeight = 60;
+  const cardRowStep = 74;
+  const cardLeft = (col: number) => 44 + col * 172;
+  const cardRowTop = (row: number) => cardTop + row * cardRowStep;
 
-  let cardTop = 130;
-  for (let index = 0; index < cardTitles.length; index += 1) {
-    const row = Math.floor(index / 3);
-    const col = index % 3;
-    const top = cardTop + row * 70;
-    const left = 44 + col * 172;
-    c.rect(top, left, 160, 56, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
-    c.text(top + 12, left + 10, cardTitles[index] || '-', { size: size(9), color: [0.4, 0.46, 0.56] });
-    c.text(top + 30, left + 10, cardValues[index] || '-', { font: 'F2', size: size(14), color: accent });
-  }
+  const drawStandardCard = (row: number, col: number, title: string, value: string) => {
+    const top = cardRowTop(row);
+    const left = cardLeft(col);
+    c.rect(top, left, 160, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
+    c.text(top + 12, left + 10, title, { size: size(9), color: [0.4, 0.46, 0.56] });
+    c.text(top + 30, left + 10, value, { font: 'F2', size: size(14), color: accent });
+  };
+
+  drawStandardCard(0, 0, 'Kelishuv summasi', formatCurrency(params.metrics.agreementTotal));
+  drawStandardCard(0, 2, 'Online kelishuv summasi', formatCurrency(params.metrics.onlineAgreementTotal));
+  drawStandardCard(1, 0, 'Offline kelishuv summasi', formatCurrency(params.metrics.offlineAgreementTotal));
+  drawStandardCard(1, 2, 'Sifatli lidlar', `${params.metrics.qualifiedLeads} (${params.metrics.qualifiedShare.toFixed(1)}%)`);
+
+  // Tushum card with new-sale vs debt-repayment split.
+  const incomeTop = cardRowTop(0);
+  const incomeLeft = cardLeft(1);
+  c.rect(incomeTop, incomeLeft, 160, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
+  c.text(incomeTop + 12, incomeLeft + 10, 'Tushum', { size: size(9), color: [0.4, 0.46, 0.56] });
+  c.text(incomeTop + 26, incomeLeft + 10, formatCurrency(params.metrics.incomeTotal), { font: 'F2', size: size(14), color: accent });
+  c.text(incomeTop + 41, incomeLeft + 10, `Yangi sotuv: ${formatCurrency(params.metrics.newSalesIncomeTotal)}`, {
+    size: size(8),
+    color: textDark,
+  });
+  c.text(incomeTop + 51, incomeLeft + 10, `Qarz to'lovi: ${formatCurrency(params.metrics.debtRepaymentIncomeTotal)}`, {
+    size: size(8),
+    color: textDark,
+  });
+
+  // Split half cards in the middle slot of row 2.
+  const splitTop = cardRowTop(1);
+  const splitLeft = cardLeft(1);
+  const splitGap = 4;
+  const splitHeight = Math.floor((cardHeight - splitGap) / 2);
+
+  c.rect(splitTop, splitLeft, 160, splitHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
+  c.text(splitTop + 9, splitLeft + 10, 'Yangi lidlar', { size: size(8), color: [0.4, 0.46, 0.56] });
+  c.text(splitTop + 20, splitLeft + 10, String(params.metrics.newLeads), { font: 'F2', size: size(12), color: accent });
+
+  const salesTop = splitTop + splitHeight + splitGap;
+  c.rect(salesTop, splitLeft, 160, splitHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
+  c.text(salesTop + 8, splitLeft + 10, 'Sotuv', { size: size(8), color: [0.4, 0.46, 0.56] });
+  c.text(salesTop + 18, splitLeft + 10, String(params.metrics.newSalesCount), { font: 'F2', size: size(11), color: accent });
+  c.text(
+    salesTop + 18,
+    splitLeft + 66,
+    `Online: ${params.metrics.onlineSalesCount}  Oflayn: ${params.metrics.offlineSalesCount}`,
+    { size: size(7.5), color: textDark },
+  );
 
   c.rect(276, 44, 503, 116, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
   c.text(288, 54, `Sifatsiz lidlar: ${params.metrics.nonQualifiedLeads}`, { font: 'F2', size: size(12), color: textDark });
@@ -329,7 +358,8 @@ function createStyledReportPdf(params: {
   c.rect(410, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
   c.text(414, 54, 'Sifatsiz lid sabablari', { font: 'F2', size: size(12), color: white });
   let y = 438;
-  for (const line of topBreakdownRows(params.metrics.reasonBreakdown, "Ma'lumot yo'q")) {
+  const reasonLines = topBreakdownRows(params.metrics.reasonBreakdown, "Ma'lumot yo'q").slice(0, 2);
+  for (const line of reasonLines) {
     c.text(y, 54, line, { size: size(10), color: textDark });
     y += 14;
   }
@@ -337,7 +367,8 @@ function createStyledReportPdf(params: {
   c.rect(498, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
   c.text(502, 54, 'Lid manbalari', { font: 'F2', size: size(12), color: white });
   y = 526;
-  for (const line of topBreakdownRows(params.metrics.sourceBreakdown, "Ma'lumot yo'q")) {
+  const sourceLines = topBreakdownRows(params.metrics.sourceBreakdown, "Ma'lumot yo'q").slice(0, 2);
+  for (const line of sourceLines) {
     c.text(y, 54, line, { size: size(10), color: textDark });
     y += 14;
   }
@@ -658,7 +689,10 @@ async function collectMetrics(params: {
         },
       },
       select: {
+        id: true,
         type: true,
+        relatedDebtIncomeId: true,
+        entryDate: true,
         managerUserId: true,
         paymentAmount: true,
         coursePriceAmount: true,
@@ -802,6 +836,8 @@ async function collectMetrics(params: {
   let incomeTotal = 0;
   let newSalesCount = 0;
   let agreementTotal = 0;
+  let newSalesIncomeTotal = 0;
+  let debtRepaymentIncomeTotal = 0;
 
   let onlineSalesCount = 0;
   let offlineSalesCount = 0;
@@ -811,8 +847,88 @@ async function collectMetrics(params: {
   let intensiveAgreementTotal = 0;
   const managerSalesByUserId = new Map<string, { sales: number; amount: number }>();
 
+  const repaymentRelatedIds = [...new Set(
+    incomes
+      .filter((income) => income.type === 'repayment' && income.relatedDebtIncomeId)
+      .map((income) => String(income.relatedDebtIncomeId)),
+  )];
+  const linkedIncomeById = new Map<string, {
+    id: string;
+    type: string;
+    entryDate: Date;
+    relatedDebtIncomeId: string | null;
+  }>();
+  let lookupIds = repaymentRelatedIds;
+  for (let depth = 0; depth < 6 && lookupIds.length > 0; depth += 1) {
+    const rows = await prisma.income.findMany({
+      where: {
+        tenantId: params.tenantId,
+        id: { in: lookupIds },
+      },
+      select: {
+        id: true,
+        type: true,
+        entryDate: true,
+        relatedDebtIncomeId: true,
+      },
+    });
+    lookupIds = [];
+    for (const row of rows) {
+      linkedIncomeById.set(row.id, {
+        id: row.id,
+        type: String(row.type),
+        entryDate: row.entryDate,
+        relatedDebtIncomeId: row.relatedDebtIncomeId ? String(row.relatedDebtIncomeId) : null,
+      });
+    }
+    for (const row of rows) {
+      if (row.type !== 'new_sale' && row.relatedDebtIncomeId && !linkedIncomeById.has(String(row.relatedDebtIncomeId))) {
+        lookupIds.push(String(row.relatedDebtIncomeId));
+      }
+    }
+    lookupIds = [...new Set(lookupIds)];
+  }
+
+  const resolveRootSaleEntryDate = (incomeId: string | null | undefined): Date | null => {
+    if (!incomeId) return null;
+    let currentId = String(incomeId);
+    for (let depth = 0; depth < 10; depth += 1) {
+      const row = linkedIncomeById.get(currentId);
+      if (!row) {
+        return null;
+      }
+      if (row.type === 'new_sale') {
+        return row.entryDate;
+      }
+      if (!row.relatedDebtIncomeId) {
+        return null;
+      }
+      currentId = row.relatedDebtIncomeId;
+    }
+    return null;
+  };
+
   for (const income of incomes) {
-    incomeTotal += Number(income.paymentAmount || 0);
+    const paymentAmount = Number(income.paymentAmount || 0);
+    incomeTotal += paymentAmount;
+
+    if (income.type === 'new_sale') {
+      newSalesIncomeTotal += paymentAmount;
+    } else if (income.type === 'repayment') {
+      const saleEntryDate = resolveRootSaleEntryDate(income.relatedDebtIncomeId);
+      const isSaleCreatedInSelectedRange = Boolean(
+        saleEntryDate
+        && saleEntryDate.getTime() >= params.periodStart.getTime()
+        && saleEntryDate.getTime() <= params.periodEnd.getTime(),
+      );
+      if (isSaleCreatedInSelectedRange) {
+        newSalesIncomeTotal += paymentAmount;
+      } else {
+        debtRepaymentIncomeTotal += paymentAmount;
+      }
+    } else {
+      debtRepaymentIncomeTotal += paymentAmount;
+    }
 
     if (income.type !== 'new_sale') {
       continue;
@@ -987,6 +1103,8 @@ async function collectMetrics(params: {
     conversionPercent,
     agreementTotal,
     incomeTotal,
+    newSalesIncomeTotal,
+    debtRepaymentIncomeTotal,
     onlineSalesCount,
     onlineAgreementTotal,
     offlineSalesCount,
