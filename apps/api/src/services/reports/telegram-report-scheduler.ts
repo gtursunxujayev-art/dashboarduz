@@ -280,25 +280,27 @@ function createStyledReportPdf(params: {
   const accent: PdfColor = [0.12, 0.4, 0.95];
   const white: PdfColor = [1, 1, 1];
   const headerDateRange = `${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`;
+  const fontDelta = -2;
+  const size = (base: number): number => Math.max(6, base + fontDelta);
 
   c.rect(16, 24, 547, 62, { fill: dark });
-  c.text(28, 44, params.tenantName, { font: 'F2', size: 20, color: white });
-  c.text(52, 270, params.title, { font: 'F1', size: 12, color: [0.76, 0.82, 0.92] });
-  c.text(28, 360, `Sana: ${headerDateRange}`, { size: 10, color: [0.76, 0.82, 0.92] });
-  c.text(92, 44, `Davr: ${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`, { size: 10, color: textDark });
-  c.text(106, 44, `Tayyorlangan: ${formatLocalDateTime(params.generatedAt)}`, { size: 10, color: textDark });
+  c.text(28, 44, params.tenantName, { font: 'F2', size: size(20), color: white });
+  c.text(52, 270, params.title, { font: 'F1', size: size(12), color: [0.76, 0.82, 0.92] });
+  c.text(28, 360, `Sana: ${headerDateRange}`, { size: size(10), color: [0.76, 0.82, 0.92] });
+  c.text(92, 44, `Davr: ${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`, { size: size(10), color: textDark });
+  c.text(106, 44, `Tayyorlangan: ${formatLocalDateTime(params.generatedAt)}`, { size: size(10), color: textDark });
 
   const cardTitles = [
-    'Tushum',
     'Kelishuv summasi',
-    'Online tushum',
-    'Offline tushum',
+    'Tushum',
+    'Online kelishuv summasi',
+    'Offline kelishuv summasi',
     'Yangi lidlar',
     'Sifatli lidlar',
   ];
   const cardValues = [
-    formatCurrency(params.metrics.incomeTotal),
     formatCurrency(params.metrics.agreementTotal),
+    formatCurrency(params.metrics.incomeTotal),
     formatCurrency(params.metrics.onlineAgreementTotal),
     formatCurrency(params.metrics.offlineAgreementTotal),
     String(params.metrics.newLeads),
@@ -312,36 +314,36 @@ function createStyledReportPdf(params: {
     const top = cardTop + row * 70;
     const left = 44 + col * 172;
     c.rect(top, left, 160, 56, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
-    c.text(top + 12, left + 10, cardTitles[index] || '-', { size: 9, color: [0.4, 0.46, 0.56] });
-    c.text(top + 30, left + 10, cardValues[index] || '-', { font: 'F2', size: 14, color: accent });
+    c.text(top + 12, left + 10, cardTitles[index] || '-', { size: size(9), color: [0.4, 0.46, 0.56] });
+    c.text(top + 30, left + 10, cardValues[index] || '-', { font: 'F2', size: size(14), color: accent });
   }
 
   c.rect(276, 44, 503, 116, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
-  c.text(288, 54, `Sifatsiz lidlar: ${params.metrics.nonQualifiedLeads}`, { font: 'F2', size: 12, color: textDark });
-  c.text(306, 54, `Yangi sotuvlar: ${params.metrics.newSalesCount}`, { font: 'F2', size: 12, color: textDark });
-  c.text(324, 54, `Coversion (sotuv -> lid): ${params.metrics.conversionPercent.toFixed(2)}%`, { font: 'F2', size: 12, color: textDark });
-  c.text(342, 54, `Qo'ng'iroqlar: ${params.metrics.totalCalls}`, { size: 11, color: textDark });
-  c.text(358, 54, `Suhbat davomiyligi: ${formatDuration(params.metrics.talkDurationSeconds)}`, { size: 11, color: textDark });
-  c.text(374, 54, `Online/Offline/Intensiv sotuvlar: ${params.metrics.onlineSalesCount}/${params.metrics.offlineSalesCount}/${params.metrics.intensiveSalesCount}`, { size: 10, color: textDark });
+  c.text(288, 54, `Sifatsiz lidlar: ${params.metrics.nonQualifiedLeads}`, { font: 'F2', size: size(12), color: textDark });
+  c.text(306, 54, `Yangi sotuvlar: ${params.metrics.newSalesCount}`, { font: 'F2', size: size(12), color: textDark });
+  c.text(324, 54, `Coversion (sotuv -> lid): ${params.metrics.conversionPercent.toFixed(2)}%`, { font: 'F2', size: size(12), color: textDark });
+  c.text(342, 54, `Qo'ng'iroqlar: ${params.metrics.totalCalls}`, { size: size(11), color: textDark });
+  c.text(358, 54, `Suhbat davomiyligi: ${formatDuration(params.metrics.talkDurationSeconds)}`, { size: size(11), color: textDark });
+  c.text(374, 54, `Online/Offline/Intensiv sotuvlar: ${params.metrics.onlineSalesCount}/${params.metrics.offlineSalesCount}/${params.metrics.intensiveSalesCount}`, { size: size(10), color: textDark });
 
   c.rect(410, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
-  c.text(414, 54, 'Sifatsiz lid sabablari', { font: 'F2', size: 12, color: white });
+  c.text(414, 54, 'Sifatsiz lid sabablari', { font: 'F2', size: size(12), color: white });
   let y = 438;
   for (const line of topBreakdownRows(params.metrics.reasonBreakdown, "Ma'lumot yo'q")) {
-    c.text(y, 54, line, { size: 10, color: textDark });
+    c.text(y, 54, line, { size: size(10), color: textDark });
     y += 14;
   }
 
   c.rect(498, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
-  c.text(502, 54, 'Lid manbalari', { font: 'F2', size: 12, color: white });
+  c.text(502, 54, 'Lid manbalari', { font: 'F2', size: size(12), color: white });
   y = 526;
   for (const line of topBreakdownRows(params.metrics.sourceBreakdown, "Ma'lumot yo'q")) {
-    c.text(y, 54, line, { size: 10, color: textDark });
+    c.text(y, 54, line, { size: size(10), color: textDark });
     y += 14;
   }
 
   c.rect(588, 44, 503, 22, { fill: [0.12, 0.16, 0.24] });
-  c.text(592, 54, "Menejerlar bo'yicha sotuvlar", { font: 'F2', size: 12, color: white });
+  c.text(592, 54, "Menejerlar bo'yicha sotuvlar", { font: 'F2', size: size(12), color: white });
 
   const tableTop = 614;
   const columns = [
@@ -358,7 +360,7 @@ function createStyledReportPdf(params: {
   c.rect(tableTop, 54, tableWidth, 20, { fill: [0.92, 0.94, 0.98], stroke: lightBorder, lineWidth: 0.8 });
   let x = 56;
   for (const column of columns) {
-    c.text(tableTop + 5, x, column.title, { font: 'F2', size: 9, color: textDark });
+    c.text(tableTop + 5, x, column.title, { font: 'F2', size: size(9), color: textDark });
     x += column.width;
   }
 
@@ -386,12 +388,12 @@ function createStyledReportPdf(params: {
 
     let currentX = 56;
     for (const [colIndex, column] of columns.entries()) {
-      c.text(rowTop + 4, currentX, values[colIndex] || '-', { size: 8.5, color: textDark });
+      c.text(rowTop + 4, currentX, values[colIndex] || '-', { size: size(8.5), color: textDark });
       currentX += column.width;
     }
   }
 
-  c.text(808, 44, 'Dashboarduz tomonidan yaratildi', { size: 8, color: [0.5, 0.56, 0.66] });
+  c.text(808, 44, 'Dashboarduz tomonidan yaratildi', { size: size(8), color: [0.5, 0.56, 0.66] });
   return c.build();
 }
 
@@ -517,6 +519,23 @@ function buildPreviousWeekWindow(nowUtc: Date): ReportWindow {
   };
 }
 
+function buildCurrentWeekWindow(nowUtc: Date): ReportWindow {
+  const nowLocal = toLocalDate(nowUtc);
+  const year = nowLocal.getUTCFullYear();
+  const month = nowLocal.getUTCMonth();
+  const day = nowLocal.getUTCDate();
+  const daysSinceMonday = (nowLocal.getUTCDay() + 6) % 7;
+  const periodStart = fromLocalParts(year, month, day - daysSinceMonday, 0, 0, 0, 0);
+
+  return {
+    kind: 'weekly',
+    title: 'Haftalik hisobot (Joriy hafta)',
+    periodStart,
+    periodEnd: nowUtc,
+    periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(nowUtc)}`,
+  };
+}
+
 function buildPreviousMonthWindow(nowUtc: Date): ReportWindow {
   const nowLocal = toLocalDate(nowUtc);
   const year = nowLocal.getUTCFullYear();
@@ -540,6 +559,21 @@ function buildPreviousMonthWindow(nowUtc: Date): ReportWindow {
     periodStart,
     periodEnd,
     periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(periodEnd)}`,
+  };
+}
+
+function buildCurrentMonthWindow(nowUtc: Date): ReportWindow {
+  const nowLocal = toLocalDate(nowUtc);
+  const year = nowLocal.getUTCFullYear();
+  const month = nowLocal.getUTCMonth();
+  const periodStart = fromLocalParts(year, month, 1, 0, 0, 0, 0);
+
+  return {
+    kind: 'monthly',
+    title: 'Oylik hisobot (Joriy oy)',
+    periodStart,
+    periodEnd: nowUtc,
+    periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(nowUtc)}`,
   };
 }
 
@@ -1232,9 +1266,9 @@ export async function sendManualTelegramReportForTenant(
 
   const nowUtc = new Date();
   const window = kind === 'weekly'
-    ? buildPreviousWeekWindow(nowUtc)
+    ? buildCurrentWeekWindow(nowUtc)
     : kind === 'monthly'
-      ? buildPreviousMonthWindow(nowUtc)
+      ? buildCurrentMonthWindow(nowUtc)
       : buildTodayWindow(nowUtc);
   const redis = getRedisClient();
   const minuteKey = Math.floor(nowUtc.getTime() / 60_000);
