@@ -326,24 +326,30 @@ function createStyledReportPdf(params: {
     color: textDark,
   });
 
-  // Split half cards in the middle slot of row 2.
+  // Split half cards in the middle slot of row 2 (by width).
   const splitTop = cardRowTop(1);
   const splitLeft = cardLeft(1);
   const splitGap = 4;
-  const splitHeight = Math.floor((cardHeight - splitGap) / 2);
+  const splitWidth = Math.floor((160 - splitGap) / 2);
 
-  c.rect(splitTop, splitLeft, 160, splitHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
-  c.text(splitTop + 9, splitLeft + 10, 'Yangi lidlar', { size: size(8), color: [0.4, 0.46, 0.56] });
-  c.text(splitTop + 20, splitLeft + 10, String(params.metrics.newLeads), { font: 'F2', size: size(12), color: accent });
+  c.rect(splitTop, splitLeft, splitWidth, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
+  c.text(splitTop + 10, splitLeft + 8, 'Yangi lidlar', { size: size(8), color: [0.4, 0.46, 0.56] });
+  c.text(splitTop + 30, splitLeft + 8, String(params.metrics.newLeads), { font: 'F2', size: size(12), color: accent });
 
-  const salesTop = splitTop + splitHeight + splitGap;
-  c.rect(salesTop, splitLeft, 160, splitHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
-  c.text(salesTop + 8, splitLeft + 10, 'Sotuv', { size: size(8), color: [0.4, 0.46, 0.56] });
-  c.text(salesTop + 18, splitLeft + 10, String(params.metrics.newSalesCount), { font: 'F2', size: size(11), color: accent });
+  const salesLeft = splitLeft + splitWidth + splitGap;
+  c.rect(splitTop, salesLeft, splitWidth, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
+  c.text(splitTop + 10, salesLeft + 8, 'Sotuv', { size: size(8), color: [0.4, 0.46, 0.56] });
+  c.text(splitTop + 24, salesLeft + 8, String(params.metrics.newSalesCount), { font: 'F2', size: size(10), color: accent });
   c.text(
-    salesTop + 18,
-    splitLeft + 66,
-    `Online: ${params.metrics.onlineSalesCount}  Oflayn: ${params.metrics.offlineSalesCount}`,
+    splitTop + 38,
+    salesLeft + 8,
+    `On: ${params.metrics.onlineSalesCount}`,
+    { size: size(7.5), color: textDark },
+  );
+  c.text(
+    splitTop + 49,
+    salesLeft + 8,
+    `Of: ${params.metrics.offlineSalesCount}`,
     { size: size(7.5), color: textDark },
   );
 
