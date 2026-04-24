@@ -49,15 +49,15 @@ describe('LoginPage', () => {
 
   it('renders otp and password tabs', () => {
     render(<LoginPage />);
-    expect(screen.getByText('Phone OTP')).toBeInTheDocument();
-    expect(screen.getByText('Login + Password')).toBeInTheDocument();
-    expect(screen.getByLabelText('Phone Number')).toBeInTheDocument();
+    expect(screen.getByText('Telefon OTP')).toBeInTheDocument();
+    expect(screen.getByText('Login + Parol')).toBeInTheDocument();
+    expect(screen.getByLabelText('Telefon raqam')).toBeInTheDocument();
   });
 
   it('switches to password mode', () => {
     render(<LoginPage />);
-    fireEvent.click(screen.getByText('Login + Password'));
+    fireEvent.click(screen.getByText('Login + Parol'));
     expect(screen.getByLabelText('Login')).toBeInTheDocument();
-    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    expect(screen.getByLabelText('Parol')).toBeInTheDocument();
   });
 });
