@@ -4,6 +4,21 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import Link from 'next/link';
 
+interface LeadRow {
+  id: string;
+  title?: string | null;
+  amocrmId?: string | number | null;
+  status?: string | null;
+  source?: string | null;
+  pipelineName?: string | null;
+  createdAt: string | Date;
+  contact?: {
+    name?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
+}
+
 export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -61,7 +76,7 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {leads.map((lead: any) => (
+            {(leads as LeadRow[]).map((lead) => (
               <tr key={lead.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
