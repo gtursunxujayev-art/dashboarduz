@@ -12,7 +12,11 @@ export class EncryptionService {
     const encryptionKey = process.env.ENCRYPTION_KEY;
     
     if (!encryptionKey) {
-      logger.warn('ENCRYPTION_KEY not set, encryption service disabled');
+      if (process.env.NODE_ENV === 'production') {
+        logger.error('CRITICAL: ENCRYPTION_KEY not set in production; encryption service disabled. Integration tokens cannot be encrypted/decrypted.');
+      } else {
+        logger.warn('ENCRYPTION_KEY not set, encryption service disabled');
+      }
       return;
     }
 
