@@ -1,6 +1,7 @@
 // Rate limiting service per tenant
 
 import { getRedisClient } from '../queue/redis-client';
+import { logger } from '../../lib/logger';
 
 export interface RateLimitConfig {
   windowMs: number; // Time window in milliseconds
@@ -14,6 +15,55 @@ export class RateLimiter {
     maxRequests: 100, // 100 requests per minute
     keyPrefix: 'rate_limit',
   };
+
+  // Per-process in-memory fallback used only when Redis is unreachable.
+  // Sliding window of timestamps keyed by `${prefix}:${tenantId}:${endpoint}`.
+  private memoryWindow: Map<string, number[]> = new Map();
+  private lastFallbackWarnAt = 0;
+
+  private warnFallback(error: unknown, op: string): void {
+    const now = Date.now();
+    if (now - this.lastFallbackWarnAt > 60_000) {
+      this.lastFallbackWarnAt = now;
+      logger.warn({ err: error, op }, 'RateLimiter: Redis unavailable, using in-memory fallback');
+    }
+  }
+
+  private memoryCheck(
+    key: string,
+    now: number,
+    finalConfig: RateLimitConfig,
+  ): { count: number } {
+    const windowStart = now - finalConfig.windowMs;
+    const existing = this.memoryWindow.get(key) || [];
+    // Drop entries outside the window
+    const trimmed = existing.filter((ts) => ts > windowStart);
+    trimmed.push(now);
+    this.memoryWindow.set(key, trimmed);
+    // Opportunistic cleanup: cap memory usage
+    if (this.memoryWindow.size > 10_000) {
+      for (const [k, v] of this.memoryWindow) {
+        if (v.length === 0 || v[v.length - 1]! < windowStart) {
+          this.memoryWindow.delete(k);
+        }
+      }
+    }
+    return { count: trimmed.length };
+  }
+
+  private memoryInfo(
+    key: string,
+    now: number,
+    finalConfig: RateLimitConfig,
+  ): { count: number } {
+    const windowStart = now - finalConfig.windowMs;
+    const existing = this.memoryWindow.get(key) || [];
+    const trimmed = existing.filter((ts) => ts > windowStart);
+    if (trimmed.length !== existing.length) {
+      this.memoryWindow.set(key, trimmed);
+    }
+    return { count: trimmed.length };
+  }
 
   // Check if request is allowed
   async isAllowed(
@@ -66,12 +116,14 @@ export class RateLimiter {
         limit: finalConfig.maxRequests,
       };
     } catch (error: any) {
-      console.error('[RateLimiter] Error checking rate limit:', error);
-      
-      // Fail open - allow request if Redis fails
+      this.warnFallback(error, 'isAllowed');
+
+      // Redis unavailable: use per-process in-memory sliding window so we still throttle.
+      const { count } = this.memoryCheck(key, now, finalConfig);
+      const remaining = Math.max(0, finalConfig.maxRequests - count);
       return {
-        allowed: true,
-        remaining: finalConfig.maxRequests,
+        allowed: count <= finalConfig.maxRequests,
+        remaining,
         resetTime: now + finalConfig.windowMs,
         limit: finalConfig.maxRequests,
       };
@@ -110,10 +162,12 @@ export class RateLimiter {
         limit: finalConfig.maxRequests,
       };
     } catch (error: any) {
-      console.error('[RateLimiter] Error getting rate limit info:', error);
-      
+      this.warnFallback(error, 'getRateLimitInfo');
+
+      const { count } = this.memoryInfo(key, now, finalConfig);
+      const remaining = Math.max(0, finalConfig.maxRequests - count);
       return {
-        remaining: finalConfig.maxRequests,
+        remaining,
         resetTime: now + finalConfig.windowMs,
         limit: finalConfig.maxRequests,
       };
@@ -134,8 +188,10 @@ export class RateLimiter {
     try {
       await redis.del(key);
     } catch (error: any) {
-      console.error('[RateLimiter] Error resetting rate limit:', error);
+      this.warnFallback(error, 'resetRateLimit');
     }
+    // Also clear any in-memory fallback entry for the same key.
+    this.memoryWindow.delete(key);
   }
 
   // Get all rate limit keys for a tenant (for admin purposes)
@@ -149,13 +205,20 @@ export class RateLimiter {
     const pattern = `${this.defaultConfig.keyPrefix}:${tenantId}:*`;
     
     try {
-      const keys = await redis.keys(pattern);
+      // Use cursor-based SCAN instead of KEYS to avoid blocking Redis on large key spaces.
+      const keys: string[] = [];
+      let cursor = '0';
+      do {
+        const [nextCursor, batch] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = nextCursor;
+        keys.push(...batch);
+      } while (cursor !== '0');
+
       const results = [];
-      
       for (const key of keys) {
         const endpoint = key.split(':').pop() || 'unknown';
         const info = await this.getRateLimitInfo(tenantId, endpoint);
-        
+
         results.push({
           endpoint,
           remaining: info.remaining,
@@ -163,10 +226,10 @@ export class RateLimiter {
           resetTime: info.resetTime,
         });
       }
-      
+
       return results;
     } catch (error: any) {
-      console.error('[RateLimiter] Error getting tenant rate limits:', error);
+      this.warnFallback(error, 'getTenantRateLimits');
       return [];
     }
   }
