@@ -7,7 +7,15 @@
       "Bash(npm test:*)",
       "Bash(npx tsx:*)",
       "Bash(npm run:*)",
-      "Bash(npx jest:*)"
+      "Bash(npx jest:*)",
+      "Bash(grep -r '$queryRaw\\\\|$executeRaw\\\\|$executeRawUnsafe' /c/Users/user/Documents/GitHub/dashboarduz/apps/api/src '--include=*.ts')",
+      "Bash(find /c/Users/user/Documents/GitHub/dashboarduz/apps/web/src/components/dashboard -name \"*.tsx\" -exec grep -l \"useMemo\\\\|useCallback\\\\|React.memo\" {} \\\\;)",
+      "Bash(find \"C:/Users/user/Documents/GitHub/dashboarduz/apps/api/src\" -name \"*.ts\" -exec grep -l \"findMany\\\\|findUnique\" {} \\\\;)",
+      "Bash(grep -r \"sql\\\\`\" /c/Users/user/Documents/GitHub/dashboarduz/apps/api/src --include=\"*.ts\")",
+      "Bash(find /c/Users/user/Documents/GitHub/dashboarduz/apps/web/src -name \"*.tsx\" -exec grep -l \"dynamic\\\\|lazy\\\\|Suspense\" {} \\\\;)",
+      "Bash(grep -r \"className.*\\\\`\" /c/Users/user/Documents/GitHub/dashboarduz/apps/web/src/app/dashboard/page.tsx)",
+      "Bash(npm audit *)",
+      "Bash(npm view *)"
     ]
   }
 }
