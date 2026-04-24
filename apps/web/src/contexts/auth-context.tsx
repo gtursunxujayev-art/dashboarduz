@@ -6,6 +6,13 @@ import { trpc } from '@/lib/trpc';
 
 type UserRole = 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'Finance' | 'Tashkiliy';
 
+const KNOWN_USER_ROLES: readonly UserRole[] = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy'];
+
+function narrowRoles(roles: readonly string[] | null | undefined): UserRole[] {
+  if (!roles) return [];
+  return roles.filter((role): role is UserRole => (KNOWN_USER_ROLES as readonly string[]).includes(role));
+}
+
 interface JWTPayload {
   userId: string;
   tenantId: string;
@@ -53,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const nextUser = {
           userId: response.data.id,
           tenantId: response.data.tenantId,
-          roles: response.data.roles as UserRole[],
+          roles: narrowRoles(response.data.roles as readonly string[]),
           username: response.data.username || undefined,
           name: response.data.name || undefined,
           email: response.data.email || undefined,
