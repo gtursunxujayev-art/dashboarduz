@@ -8,8 +8,7 @@
   },
   "plugins": [
     "@typescript-eslint",
-    "import",
-    "no-console"
+    "import"
   ],
   "extends": [
     "eslint:recommended",
@@ -38,8 +37,8 @@
       "varsIgnorePattern": "^_"
     }],
     
-    // Console logging rules
-    "no-console/no-console": ["error", {
+    // Console logging rules (use built-in eslint no-console)
+    "no-console": ["error", {
       "allow": ["warn", "error"]
     }],
     
@@ -100,13 +99,13 @@
         "@typescript-eslint/no-unsafe-call": "off",
         "@typescript-eslint/no-unsafe-member-access": "off",
         "@typescript-eslint/no-unsafe-return": "off",
-        "no-console/no-console": "off"
+        "no-console": "off"
       }
     },
     {
       "files": ["**/scripts/**/*.ts"],
       "rules": {
-        "no-console/no-console": "off"
+        "no-console": "off"
       }
     }
   ]
