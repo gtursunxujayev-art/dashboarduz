@@ -14,6 +14,7 @@ import { TRPCError } from '@trpc/server';
 import { rateLimiter } from '../../services/security/rate-limiter';
 import { hashPassword, verifyPassword } from '../../services/auth/password';
 import { signJWT } from '../../services/auth/jwt';
+import { logger, maskPhone } from '../../lib/logger';
 
 export const authRouter = router({
   registerWithPassword: publicProcedure
@@ -225,7 +226,7 @@ export const authRouter = router({
           sessionId: result.messageId,
         };
       } catch (error: any) {
-        console.error('[Auth] OTP request error:', error);
+        logger.error({ err: error, phone: maskPhone(input?.phone) }, '[Auth] OTP request error');
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: error.message || 'Failed to send OTP',
@@ -345,7 +346,7 @@ export const authRouter = router({
           throw error;
         }
         
-        console.error('[Auth] OTP verify error:', error);
+        logger.error({ err: error, phone: maskPhone(input?.phone) }, '[Auth] OTP verify error');
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: error.message || 'OTP verification failed',
