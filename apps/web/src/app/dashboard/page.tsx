@@ -840,7 +840,7 @@ export default function DashboardPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => saveDashboardLayout().catch(() => null)}
+                onClick={() => saveDashboardLayout().catch((err) => { console.error('saveDashboardLayout failed', err); return null; })}
                 disabled={saveDashboardLayoutMutation.isPending}
                 className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-green-300"
               >
