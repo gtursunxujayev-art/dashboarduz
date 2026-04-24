@@ -2,30 +2,31 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import IntegrationCards from '@/components/dashboard/integration-cards';
 
-jest.mock('@/lib/trpc', () => ({
-  trpc: {
-    integrations: {
-      list: {
-        useQuery: () => ({
-          data: [],
-          refetch: jest.fn(),
-        }),
-      },
-      connectAmoCRM: {
-        useMutation: () => ({ mutateAsync: jest.fn() }),
-      },
-      connectTelegram: {
-        useMutation: () => ({ mutateAsync: jest.fn() }),
-      },
-      connectVoIP: {
-        useMutation: () => ({ mutateAsync: jest.fn() }),
-      },
-      disconnect: {
-        useMutation: () => ({ mutateAsync: jest.fn() }),
+jest.mock('@/lib/trpc', () => {
+  const mutationStub = () => ({ useMutation: () => ({ mutateAsync: jest.fn() }) });
+  const queryStub = (data: unknown = undefined) => ({
+    useQuery: () => ({ data, refetch: jest.fn(), isLoading: false }),
+  });
+
+  return {
+    trpc: {
+      integrations: {
+        list: queryStub([]),
+        getAmoCRMPipelines: queryStub({ pipelines: [], hasExplicitSelection: false, selectedPipelineIds: [] }),
+        getTelegramReportRecipients: queryStub({ connected: false, recipients: [] }),
+        connectAmoCRM: mutationStub(),
+        connectTelegram: mutationStub(),
+        connectVoIP: mutationStub(),
+        updateAmoCRMPipelines: mutationStub(),
+        updateTelegramReportRecipients: mutationStub(),
+        sendTelegramTodayReportNow: mutationStub(),
+        sendTelegramWeeklyReportNow: mutationStub(),
+        sendTelegramMonthlyReportNow: mutationStub(),
+        disconnect: mutationStub(),
       },
     },
-  },
-}));
+  };
+});
 
 describe('IntegrationCards', () => {
   it('renders all MVP integration cards', () => {
