@@ -58,7 +58,7 @@ export default function CorporateCallsPage() {
     refetchOnWindowFocus: false,
   });
   const canChooseCustomDate = optionsQuery.data?.canChooseCustomDate ?? false;
-  const managers = optionsQuery.data?.managers ?? [];
+  const managers = useMemo(() => optionsQuery.data?.managers ?? [], [optionsQuery.data?.managers]);
 
   const listQuery = trpc.corporateCalls.list.useQuery({
     managerUserId: canChooseCustomDate ? (listManagerUserId || undefined) : undefined,
