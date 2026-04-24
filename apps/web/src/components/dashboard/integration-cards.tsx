@@ -4,6 +4,39 @@ import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 
 type IntegrationId = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel';
+
+interface IntegrationConfig {
+  webhookUrl?: string | null;
+  lastValidatedAt?: string | null;
+  connectionMode?: string | null;
+  [key: string]: unknown;
+}
+
+interface IntegrationListItem {
+  type: IntegrationId | string;
+  status: string;
+  config?: unknown;
+  lastSyncAt?: string | null;
+}
+
+interface AmoPipelineStatus {
+  id?: string;
+  name?: string;
+}
+
+interface AmoPipeline {
+  id: string;
+  name: string;
+  statuses?: AmoPipelineStatus[];
+}
+
+function asIntegrationConfig(value: unknown): IntegrationConfig {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as IntegrationConfig;
+  }
+  return {};
+}
+
 type TelegramReportRecipient = {
   chatId: string;
   displayName: string;
@@ -85,9 +118,13 @@ export default function IntegrationCards() {
   const [telegramReportSentMessage, setTelegramReportSentMessage] = useState<string | null>(null);
 
   const listQuery = trpc.integrations.list.useQuery();
-  const telegramConnected = Boolean(listQuery.data?.find((it: any) => it.type === 'telegram' && it.status === 'active'));
+  const integrationsList = useMemo<IntegrationListItem[]>(
+    () => (listQuery.data || []) as IntegrationListItem[],
+    [listQuery.data],
+  );
+  const telegramConnected = Boolean(integrationsList.find((it) => it.type === 'telegram' && it.status === 'active'));
   const amoPipelinesQuery = trpc.integrations.getAmoCRMPipelines.useQuery(undefined, {
-    enabled: Boolean(listQuery.data?.find((it: any) => it.type === 'amocrm' && it.status === 'active')),
+    enabled: Boolean(integrationsList.find((it) => it.type === 'amocrm' && it.status === 'active')),
     retry: false,
   });
   const telegramRecipientsQuery = trpc.integrations.getTelegramReportRecipients.useQuery(undefined, {
@@ -106,22 +143,22 @@ export default function IntegrationCards() {
 
   const integrations = useMemo(() => {
     return integrationCatalog.map((item) => {
-      const connected = listQuery.data?.find((it: any) => it.type === item.id);
+      const connected = integrationsList.find((it) => it.type === item.id);
       return {
         ...item,
         status: connected?.status || 'disconnected',
-        config: (connected?.config as Record<string, unknown> | undefined) || undefined,
-        lastSyncAt: connected?.lastSyncAt as string | undefined,
+        config: connected?.config ? asIntegrationConfig(connected.config) : undefined,
+        lastSyncAt: connected?.lastSyncAt ?? undefined,
       };
     });
-  }, [listQuery.data]);
+  }, [integrationsList]);
 
   useEffect(() => {
     if (!amoPipelinesQuery.data) {
       return;
     }
 
-    const availableIds = amoPipelinesQuery.data.pipelines.map((pipeline: any) => pipeline.id);
+    const availableIds = (amoPipelinesQuery.data.pipelines as AmoPipeline[]).map((pipeline) => pipeline.id);
     if (amoPipelinesQuery.data.hasExplicitSelection) {
       setSelectedPipelineIds(amoPipelinesQuery.data.selectedPipelineIds);
       return;
@@ -300,10 +337,10 @@ export default function IntegrationCards() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {integrations.map((integration) => {
-          const integrationConfig = integration.config || {};
-          const webhookUrl = String((integrationConfig as any).webhookUrl || '');
+          const integrationConfig: IntegrationConfig = integration.config || {};
+          const webhookUrl = String(integrationConfig.webhookUrl || '');
           const loading = actionLoading === integration.id;
-          const pipelines = amoPipelinesQuery.data?.pipelines || [];
+          const pipelines = (amoPipelinesQuery.data?.pipelines || []) as AmoPipeline[];
           const isAmoActive = integration.id === 'amocrm' && integration.status === 'active';
           const isTelegramActive = integration.id === 'telegram' && integration.status === 'active';
           const telegramRecipients = (telegramRecipientsQuery.data?.recipients || []) as TelegramReportRecipient[];
@@ -322,12 +359,12 @@ export default function IntegrationCards() {
               {integration.status === 'active' && (
                 <div className="mt-3 space-y-1 text-xs text-gray-600">
                   {integration.lastSyncAt && <p>Oxirgi sinxron: {new Date(integration.lastSyncAt).toLocaleString()}</p>}
-                  {(integrationConfig as any).lastValidatedAt && (
-                    <p>Oxirgi tekshiruv: {new Date(String((integrationConfig as any).lastValidatedAt)).toLocaleString()}</p>
+                  {integrationConfig.lastValidatedAt && (
+                    <p>Oxirgi tekshiruv: {new Date(String(integrationConfig.lastValidatedAt)).toLocaleString()}</p>
                   )}
                   {webhookUrl && <p className="break-all">Webhook manzili: {webhookUrl}</p>}
-                  {(integrationConfig as any).connectionMode && (
-                    <p>Rejim: {String((integrationConfig as any).connectionMode)}</p>
+                  {integrationConfig.connectionMode && (
+                    <p>Rejim: {String(integrationConfig.connectionMode)}</p>
                   )}
                 </div>
               )}
@@ -352,7 +389,7 @@ export default function IntegrationCards() {
                     <p className="mt-3 text-sm text-gray-500">AmoCRM dan pipeline ma'lumoti kelmadi.</p>
                   ) : (
                     <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
-                      {pipelines.map((pipeline: any) => (
+                      {pipelines.map((pipeline) => (
                         <label key={pipeline.id} className="flex items-start gap-3 rounded-md border border-gray-100 px-3 py-2 text-sm text-gray-700">
                           <input
                             type="checkbox"
@@ -371,7 +408,7 @@ export default function IntegrationCards() {
                             <p className="font-medium text-gray-900">{pipeline.name}</p>
                             {Array.isArray(pipeline.statuses) && pipeline.statuses.length > 0 && (
                               <p className="text-xs text-gray-500">
-                                Bosqichlar: {pipeline.statuses.map((status: any) => status.name).join(', ')}
+                                Bosqichlar: {pipeline.statuses.map((status) => status.name).join(', ')}
                               </p>
                             )}
                           </div>
