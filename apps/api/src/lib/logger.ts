@@ -48,3 +48,15 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 export const logger = pino(loggerOptions);
+
+/**
+ * Mask a phone number for safe logging — keeps the last 4 digits, replaces
+ * earlier digits with '*'. Returns undefined if the input is falsy.
+ *
+ * Examples: '+998901234567' -> '+*********4567', '5551234' -> '***1234'.
+ */
+export function maskPhone(phone: string | null | undefined): string | undefined {
+  if (!phone) return undefined;
+  const str = String(phone);
+  return str.replace(/\d(?=\d{4})/g, '*');
+}
