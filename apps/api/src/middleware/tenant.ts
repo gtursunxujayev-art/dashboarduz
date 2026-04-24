@@ -71,7 +71,13 @@ export function optionalTenant(req: Request, _res: Response, next: NextFunction)
     
     next();
   } catch (err) {
-    // Silently fail for optional tenant resolution
+    // Token present but invalid; proceed unauthenticated for optional resolution but log for observability.
+    logger.warn({
+      err,
+      msg: 'optionalTenant: JWT parse failed; proceeding unauthenticated',
+      path: req.path,
+      ip: req.ip,
+    });
     next();
   }
 }
