@@ -285,15 +285,17 @@ app.get('/debug/telegram', async (req, res) => {
   }
 
   const context = await resolveTelegramDebugContext(req);
-  return res.json({
+  const responseBody: Record<string, unknown> = {
     ok: true,
     endpoint: '/debug/telegram',
     mode: 'inspect',
     tenantId: context.tenantId,
-    tokenSource: context.tokenSource,
-    hasBotToken: Boolean(context.botToken),
     groupIds: context.groupIds,
-  });
+  };
+  if (context.botToken) {
+    responseBody.hasBotToken = true;
+  }
+  return res.json(responseBody);
 });
 
 app.post('/debug/telegram', async (req, res) => {
