@@ -56,6 +56,6 @@ describe('ProtectedRoute', () => {
       </ProtectedRoute>,
     );
 
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.getByText('Yuklanmoqda...')).toBeInTheDocument();
   });
 });
