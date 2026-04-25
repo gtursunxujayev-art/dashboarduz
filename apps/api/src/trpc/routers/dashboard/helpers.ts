@@ -101,6 +101,15 @@ export type KpiSettings = {
   };
 };
 
+export type AttendancePenaltySettings = {
+  lateMinutePenaltyUZS: number;
+  missingHourPenaltyUZS: number;
+  absenceDayPenaltyUZS: number;
+  applyToFixedSalary: boolean;
+  applyToKpi: boolean;
+  monthlyPenaltyCapUZS: number;
+};
+
 export type SalarySettingsSnapshot = {
   bonusMode: SalaryBonusMode;
   bonusPercentages: SalaryBreakdown;
@@ -108,6 +117,7 @@ export type SalarySettingsSnapshot = {
   fixedSalaries: Map<string, number>;
   planBonuses: SalaryPlanBonus[];
   kpiSettings: KpiSettings;
+  attendancePenaltySettings: AttendancePenaltySettings;
 };
 
 export function isMissingUserMappingColumnError(error: unknown) {
@@ -749,6 +759,16 @@ export function extractSalarySettings(settings: unknown): SalarySettingsSnapshot
     },
   };
 
+  const rawAttendancePenalty = asObject(salarySettings?.attendancePenaltySettings);
+  const attendancePenaltySettings: AttendancePenaltySettings = {
+    lateMinutePenaltyUZS: Math.max(0, Math.round(toFiniteNumber(rawAttendancePenalty?.lateMinutePenaltyUZS, 0))),
+    missingHourPenaltyUZS: Math.max(0, Math.round(toFiniteNumber(rawAttendancePenalty?.missingHourPenaltyUZS, 0))),
+    absenceDayPenaltyUZS: Math.max(0, Math.round(toFiniteNumber(rawAttendancePenalty?.absenceDayPenaltyUZS, 0))),
+    applyToFixedSalary: rawAttendancePenalty?.applyToFixedSalary === true,
+    applyToKpi: rawAttendancePenalty?.applyToKpi === true,
+    monthlyPenaltyCapUZS: Math.max(0, Math.round(toFiniteNumber(rawAttendancePenalty?.monthlyPenaltyCapUZS, 0))),
+  };
+
   return {
     bonusMode,
     bonusPercentages,
@@ -756,6 +776,7 @@ export function extractSalarySettings(settings: unknown): SalarySettingsSnapshot
     fixedSalaries,
     planBonuses,
     kpiSettings,
+    attendancePenaltySettings,
   };
 }
 
