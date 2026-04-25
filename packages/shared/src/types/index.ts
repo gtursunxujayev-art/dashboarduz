@@ -6,7 +6,7 @@ export type UserRole = 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'Finance' 
 
 export type AuthProvider = 'phone' | 'telegram' | 'email';
 
-export type IntegrationType = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel';
+export type IntegrationType = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel' | 'faceid_attendance';
 
 export type IntegrationStatus = 'pending' | 'active' | 'error' | 'disconnected';
 
