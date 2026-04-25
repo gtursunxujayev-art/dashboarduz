@@ -79,6 +79,14 @@ function scoreKpi(value: number, threshold: KpiThreshold, higherIsBetter: boolea
   return 0;
 }
 
+function toLocalDateKey(date: Date): string {
+  const shifted = shiftToReportTimezone(date);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export const salaryProcedures = {
   salarySummary: protectedProcedure
     .input(
@@ -144,11 +152,16 @@ export const salaryProcedures = {
           monthlyBudget: salarySettings.kpiSettings.monthlyBudget,
           thresholds: salarySettings.kpiSettings.thresholds,
         } : null,
+        attendancePenaltySettings: salarySettings.attendancePenaltySettings,
         totals: {
           fixedSalary: 0,
           bonus: 0,
           planBonus: 0,
           kpi: 0,
+          attendancePenaltyFixed: 0,
+          attendancePenaltyKpi: 0,
+          attendancePenalty: 0,
+          salaryAfterAttendance: 0,
           salary: 0,
         },
         byAgent: [] as Array<{
@@ -158,6 +171,10 @@ export const salaryProcedures = {
           kpiAmount: number;
           bonusAmount: number;
           planBonusAmount: number;
+          attendancePenaltyFixed: number;
+          attendancePenaltyKpi: number;
+          attendancePenaltyTotal: number;
+          salaryAfterAttendance: number;
           totalSalary: number;
           bonusBreakdown: SalaryBreakdown;
           kpiBreakdown: {
@@ -190,6 +207,10 @@ export const salaryProcedures = {
         kpiAmount: number;
         bonusAmount: number;
         planBonusAmount: number;
+        attendancePenaltyFixed: number;
+        attendancePenaltyKpi: number;
+        attendancePenaltyTotal: number;
+        salaryAfterAttendance: number;
         bonusBreakdown: SalaryBreakdown;
         kpiBreakdown: {
           conversionRate: { value: number; score: number; amount: number };
@@ -220,6 +241,10 @@ export const salaryProcedures = {
         kpiAmount: 0,
         bonusAmount: 0,
         planBonusAmount: 0,
+        attendancePenaltyFixed: 0,
+        attendancePenaltyKpi: 0,
+        attendancePenaltyTotal: 0,
+        salaryAfterAttendance: 0,
         bonusBreakdown: createZeroBreakdown(),
         kpiBreakdown: null,
         planProgress: [],
@@ -765,12 +790,84 @@ export const salaryProcedures = {
       }
     }
 
+    const attendancePenaltySettings = salarySettings.attendancePenaltySettings;
+    const hasAttendancePenalty =
+      (attendancePenaltySettings.applyToFixedSalary || attendancePenaltySettings.applyToKpi)
+      && (
+        attendancePenaltySettings.lateMinutePenaltyUZS > 0
+        || attendancePenaltySettings.missingHourPenaltyUZS > 0
+        || attendancePenaltySettings.absenceDayPenaltyUZS > 0
+      );
+
+    if (hasAttendancePenalty) {
+      const dateFrom = toLocalDateKey(rangeStart);
+      const dateTo = toLocalDateKey(rangeEnd);
+      const summaries = await prisma.attendanceDaySummary.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          userId: { in: agentIds },
+          summaryDate: {
+            gte: dateFrom,
+            lte: dateTo,
+          },
+        },
+        select: {
+          userId: true,
+          lateMinutes: true,
+          missingSeconds: true,
+          absence: true,
+        },
+      });
+
+      const aggregate = new Map<string, { lateMinutes: number; missingSeconds: number; absenceDays: number }>();
+      for (const row of summaries) {
+        const existing = aggregate.get(row.userId) ?? { lateMinutes: 0, missingSeconds: 0, absenceDays: 0 };
+        existing.lateMinutes += Math.max(0, row.lateMinutes ?? 0);
+        existing.missingSeconds += Math.max(0, row.missingSeconds ?? 0);
+        existing.absenceDays += row.absence ? 1 : 0;
+        aggregate.set(row.userId, existing);
+      }
+
+      for (const salaryRow of salaryByAgent.values()) {
+        const metrics = aggregate.get(salaryRow.userId) ?? { lateMinutes: 0, missingSeconds: 0, absenceDays: 0 };
+        const latePenalty = metrics.lateMinutes * attendancePenaltySettings.lateMinutePenaltyUZS;
+        const missingHourPenalty = Math.round((metrics.missingSeconds / 3600) * attendancePenaltySettings.missingHourPenaltyUZS);
+        const absencePenalty = metrics.absenceDays * attendancePenaltySettings.absenceDayPenaltyUZS;
+        let remainingPenalty = latePenalty + missingHourPenalty + absencePenalty;
+
+        if (attendancePenaltySettings.monthlyPenaltyCapUZS > 0) {
+          remainingPenalty = Math.min(remainingPenalty, attendancePenaltySettings.monthlyPenaltyCapUZS);
+        }
+
+        let fixedPenalty = 0;
+        let kpiPenalty = 0;
+        if (attendancePenaltySettings.applyToFixedSalary && remainingPenalty > 0) {
+          fixedPenalty = Math.min(salaryRow.fixedSalary, remainingPenalty);
+          remainingPenalty -= fixedPenalty;
+        }
+        if (attendancePenaltySettings.applyToKpi && remainingPenalty > 0) {
+          kpiPenalty = Math.min(salaryRow.kpiAmount, remainingPenalty);
+          remainingPenalty -= kpiPenalty;
+        }
+
+        salaryRow.attendancePenaltyFixed = fixedPenalty;
+        salaryRow.attendancePenaltyKpi = kpiPenalty;
+        salaryRow.attendancePenaltyTotal = fixedPenalty + kpiPenalty;
+      }
+    }
+
     const byAgent = Array.from(salaryByAgent.values())
       .map((row) => ({
         ...row,
         totalSalary: row.fixedSalary + row.kpiAmount + row.bonusAmount + row.planBonusAmount,
+        salaryAfterAttendance:
+          row.fixedSalary
+          + row.kpiAmount
+          + row.bonusAmount
+          + row.planBonusAmount
+          - row.attendancePenaltyTotal,
       }))
-      .sort((a, b) => b.totalSalary - a.totalSalary);
+      .sort((a, b) => b.salaryAfterAttendance - a.salaryAfterAttendance);
 
     const totals = byAgent.reduce(
       (acc, row) => ({
@@ -778,6 +875,10 @@ export const salaryProcedures = {
         bonus: acc.bonus + row.bonusAmount,
         planBonus: acc.planBonus + row.planBonusAmount,
         kpi: acc.kpi + row.kpiAmount,
+        attendancePenaltyFixed: acc.attendancePenaltyFixed + row.attendancePenaltyFixed,
+        attendancePenaltyKpi: acc.attendancePenaltyKpi + row.attendancePenaltyKpi,
+        attendancePenalty: acc.attendancePenalty + row.attendancePenaltyTotal,
+        salaryAfterAttendance: acc.salaryAfterAttendance + row.salaryAfterAttendance,
         salary: acc.salary + row.totalSalary,
       }),
       {
@@ -785,6 +886,10 @@ export const salaryProcedures = {
         bonus: 0,
         planBonus: 0,
         kpi: 0,
+        attendancePenaltyFixed: 0,
+        attendancePenaltyKpi: 0,
+        attendancePenalty: 0,
+        salaryAfterAttendance: 0,
         salary: 0,
       },
     );
@@ -795,6 +900,7 @@ export const salaryProcedures = {
       scopedToCurrentAgent: Boolean(scopedManagerUserId),
       bonusMode: salarySettings.bonusMode,
       bonusPercentages: salarySettings.bonusPercentages,
+      attendancePenaltySettings: salarySettings.attendancePenaltySettings,
       kpiSettings: kpi.enabled ? {
         monthlyBudget: kpi.monthlyBudget,
         thresholds: kpi.thresholds,
