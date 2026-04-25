@@ -51,6 +51,15 @@ type FixedSalaryRow = {
   amount: number;
 };
 
+type AttendancePenaltySettings = {
+  lateMinutePenaltyUZS: number;
+  missingHourPenaltyUZS: number;
+  absenceDayPenaltyUZS: number;
+  applyToFixedSalary: boolean;
+  applyToKpi: boolean;
+  monthlyPenaltyCapUZS: number;
+};
+
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -221,6 +230,21 @@ function parseBonusRules(settings: unknown): {
       offline: sanitizeCategoryRule(rawRules.offline, rawPercentages.offline),
       intensive: sanitizeCategoryRule(rawRules.intensive, rawPercentages.intensive),
     },
+  };
+}
+
+function parseAttendancePenaltySettings(settings: unknown): AttendancePenaltySettings {
+  const settingsObject = asObject(settings);
+  const salarySettings = asObject(settingsObject.salary);
+  const raw = asObject(salarySettings.attendancePenaltySettings);
+
+  return {
+    lateMinutePenaltyUZS: Math.max(0, Math.round(toFiniteNumber(raw.lateMinutePenaltyUZS, 0))),
+    missingHourPenaltyUZS: Math.max(0, Math.round(toFiniteNumber(raw.missingHourPenaltyUZS, 0))),
+    absenceDayPenaltyUZS: Math.max(0, Math.round(toFiniteNumber(raw.absenceDayPenaltyUZS, 0))),
+    applyToFixedSalary: raw.applyToFixedSalary === true,
+    applyToKpi: raw.applyToKpi === true,
+    monthlyPenaltyCapUZS: Math.max(0, Math.round(toFiniteNumber(raw.monthlyPenaltyCapUZS, 0))),
   };
 }
 
@@ -471,6 +495,15 @@ const updateFixedSalariesInput = z.object({
   ),
 });
 
+const updateAttendancePenaltySettingsInput = z.object({
+  lateMinutePenaltyUZS: z.number().int().nonnegative(),
+  missingHourPenaltyUZS: z.number().int().nonnegative(),
+  absenceDayPenaltyUZS: z.number().int().nonnegative(),
+  applyToFixedSalary: z.boolean(),
+  applyToKpi: z.boolean(),
+  monthlyPenaltyCapUZS: z.number().int().nonnegative(),
+});
+
 export const bonusRouter = router({
   getSalaryConfig: protectedProcedure.query(async ({ ctx }) => {
     if (!canReadBonusPlans(ctx.user.roles)) {
@@ -490,6 +523,7 @@ export const bonusRouter = router({
       bonusMode: parsed.bonusMode,
       bonusRules: parsed.bonusRules,
       fixedSalaries: parseFixedSalaries(tenant.settings),
+      attendancePenaltySettings: parseAttendancePenaltySettings(tenant.settings),
     };
   }),
 
@@ -627,6 +661,54 @@ export const bonusRouter = router({
 
     return { success: true };
   }),
+
+  updateAttendancePenaltySettings: adminProcedure
+    .input(updateAttendancePenaltySettingsInput)
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: ctx.tenantId },
+        select: { settings: true },
+      });
+      if (!tenant) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
+      }
+
+      const settingsObject = asObject(tenant.settings);
+      const salarySettings = asObject(settingsObject.salary);
+      const nextSettings = {
+        ...settingsObject,
+        salary: {
+          ...salarySettings,
+          attendancePenaltySettings: {
+            lateMinutePenaltyUZS: Math.max(0, Math.round(input.lateMinutePenaltyUZS)),
+            missingHourPenaltyUZS: Math.max(0, Math.round(input.missingHourPenaltyUZS)),
+            absenceDayPenaltyUZS: Math.max(0, Math.round(input.absenceDayPenaltyUZS)),
+            applyToFixedSalary: input.applyToFixedSalary,
+            applyToKpi: input.applyToKpi,
+            monthlyPenaltyCapUZS: Math.max(0, Math.round(input.monthlyPenaltyCapUZS)),
+          },
+        },
+      };
+
+      await prisma.tenant.update({
+        where: { id: ctx.tenantId },
+        data: {
+          settings: JSON.parse(JSON.stringify(nextSettings)),
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'attendance_penalty_settings_update',
+          resource: 'tenant_settings',
+          resourceId: ctx.tenantId,
+        },
+      });
+
+      return { success: true };
+    }),
 
   listPlans: protectedProcedure.query(async ({ ctx }) => {
     if (!canReadBonusPlans(ctx.user.roles)) {
