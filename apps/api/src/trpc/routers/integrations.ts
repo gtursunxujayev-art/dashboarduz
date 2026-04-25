@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { adminProcedure, router } from '../trpc';
 import { z } from 'zod';
-import { amocrmConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
+import { amocrmConnectSchema, faceIdConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { encryptIntegrationTokens } from '../../services/security/encryption';
@@ -20,6 +20,13 @@ function normalizeBaseUrl(url?: string): string | null {
   return url.replace(/\/+$/, '');
 }
 
+function asObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
 function getPublicApiBaseUrl(): string {
   const explicit = normalizeBaseUrl(process.env.PUBLIC_API_URL || process.env.API_URL);
   if (explicit) {
@@ -33,6 +40,31 @@ function getPublicApiBaseUrl(): string {
 
   const port = process.env.PORT || '3001';
   return `http://localhost:${port}`;
+}
+
+function buildFaceIdWebhookToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function hashFaceIdWebhookToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function normalizeBranchWhitelist(branchWhitelist?: string[]): string[] {
+  if (!Array.isArray(branchWhitelist)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of branchWhitelist) {
+    const branch = String(raw || '').trim();
+    if (!branch) continue;
+    const key = branch.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(branch);
+  }
+  return normalized;
 }
 
 async function fetchAmoCRMAccountByToken(accessToken: string, baseUrl: string) {
@@ -67,7 +99,7 @@ export const integrationsRouter = router({
   }),
 
   getByType: adminProcedure
-    .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel']) }))
+    .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel', 'faceid_attendance']) }))
     .query(async ({ input, ctx }) => {
       return prisma.integration.findUnique({
         where: {
@@ -579,8 +611,173 @@ export const integrationsRouter = router({
       };
     }),
 
+  connectFaceId: adminProcedure
+    .input(faceIdConnectSchema)
+    .mutation(async ({ input, ctx }) => {
+      const webhookToken = String(input?.webhookToken || '').trim() || buildFaceIdWebhookToken();
+      const webhookTokenHash = hashFaceIdWebhookToken(webhookToken);
+      const branchWhitelist = normalizeBranchWhitelist(input?.branchWhitelist);
+      const validatedAt = new Date();
+      const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/faceid`;
+
+      const integration = await prisma.integration.upsert({
+        where: {
+          tenantId_type: {
+            tenantId: ctx.tenantId,
+            type: 'faceid_attendance',
+          },
+        },
+        update: {
+          status: 'active',
+          tokensEncrypted: encryptIntegrationTokens({ webhookToken }),
+          config: {
+            enabled: true,
+            webhookUrl,
+            webhookTokenHash,
+            branchWhitelist,
+            lastValidatedAt: validatedAt.toISOString(),
+          },
+          lastSyncAt: validatedAt,
+          errorMessage: null,
+        },
+        create: {
+          tenantId: ctx.tenantId,
+          type: 'faceid_attendance',
+          status: 'active',
+          tokensEncrypted: encryptIntegrationTokens({ webhookToken }),
+          config: {
+            enabled: true,
+            webhookUrl,
+            webhookTokenHash,
+            branchWhitelist,
+            lastValidatedAt: validatedAt.toISOString(),
+          },
+          lastSyncAt: validatedAt,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'integration_connect',
+          resource: 'integration',
+          resourceId: integration.id,
+          metadata: { type: 'faceid_attendance' },
+        },
+      });
+
+      return {
+        integration,
+        connection: {
+          verified: true,
+          validatedAt: validatedAt.toISOString(),
+          webhookUrl,
+          webhookToken,
+          branchWhitelist,
+        },
+      };
+    }),
+
+  rotateFaceIdToken: adminProcedure
+    .input(z.object({}))
+    .mutation(async ({ ctx }) => {
+      const integration = await prisma.integration.findUnique({
+        where: {
+          tenantId_type: {
+            tenantId: ctx.tenantId,
+            type: 'faceid_attendance',
+          },
+        },
+      });
+      if (!integration) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Face ID integration is not connected.',
+        });
+      }
+
+      const webhookToken = buildFaceIdWebhookToken();
+      const webhookTokenHash = hashFaceIdWebhookToken(webhookToken);
+      const existingConfig = asObject(integration.config);
+      const nextConfig = {
+        ...existingConfig,
+        enabled: true,
+        webhookUrl: `${getPublicApiBaseUrl()}/webhooks/faceid`,
+        webhookTokenHash,
+        lastValidatedAt: new Date().toISOString(),
+      };
+
+      const updated = await prisma.integration.update({
+        where: { id: integration.id },
+        data: {
+          status: 'active',
+          tokensEncrypted: encryptIntegrationTokens({ webhookToken }),
+          config: nextConfig,
+          lastSyncAt: new Date(),
+          errorMessage: null,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'integration_update',
+          resource: 'integration',
+          resourceId: updated.id,
+          metadata: { type: 'faceid_attendance', action: 'rotate_webhook_token' },
+        },
+      });
+
+      return {
+        success: true,
+        webhookToken,
+        webhookUrl: String(nextConfig.webhookUrl || ''),
+      };
+    }),
+
+  getFaceIdStatus: adminProcedure.query(async ({ ctx }) => {
+    const integration = await prisma.integration.findUnique({
+      where: {
+        tenantId_type: {
+          tenantId: ctx.tenantId,
+          type: 'faceid_attendance',
+        },
+      },
+      select: {
+        status: true,
+        config: true,
+        lastSyncAt: true,
+        tokensEncrypted: true,
+      },
+    });
+
+    if (!integration || integration.status !== 'active') {
+      return {
+        connected: false,
+        webhookUrl: `${getPublicApiBaseUrl()}/webhooks/faceid`,
+        hasToken: false,
+        branchWhitelist: [] as string[],
+        lastSyncAt: null as string | null,
+      };
+    }
+
+    const config = asObject(integration.config);
+    return {
+      connected: true,
+      webhookUrl: String(config.webhookUrl || `${getPublicApiBaseUrl()}/webhooks/faceid`),
+      hasToken: Boolean(integration.tokensEncrypted),
+      branchWhitelist: normalizeBranchWhitelist(
+        Array.isArray(config.branchWhitelist) ? (config.branchWhitelist as string[]) : [],
+      ),
+      lastSyncAt: integration.lastSyncAt ? integration.lastSyncAt.toISOString() : null,
+      lastValidatedAt: typeof config.lastValidatedAt === 'string' ? config.lastValidatedAt : null,
+    };
+  }),
+
   disconnect: adminProcedure
-    .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel']) }))
+    .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel', 'faceid_attendance']) }))
     .mutation(async ({ input, ctx }) => {
       await prisma.integration.updateMany({
         where: {
