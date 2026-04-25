@@ -41,6 +41,10 @@ model Tenant {
   incomeAdjustmentRequests IncomeAdjustmentRequest[]
   historicalImportSessions HistoricalImportSession[]
   corporateCallDurations CorporateCallDuration[]
+  attendanceEvents AttendanceEvent[]
+  attendanceDaySummaries AttendanceDaySummary[]
+  attendanceAdjustments AttendanceAdjustment[]
+  attendanceAdjustmentAudits AttendanceAdjustmentAudit[]
 
   @@index([subdomain])
   @@map("tenants")
@@ -74,6 +78,11 @@ model User {
   reviewedIncomeAdjustments IncomeAdjustmentRequest[] @relation("IncomeAdjustmentReviewedBy")
   createdHistoricalImportSessions HistoricalImportSession[] @relation("HistoricalImportCreatedBy")
   corporateCallDurations CorporateCallDuration[] @relation("CorporateCallDurationManager")
+  attendanceEvents AttendanceEvent[] @relation("AttendanceEventUser")
+  attendanceDaySummaries AttendanceDaySummary[] @relation("AttendanceDaySummaryUser")
+  attendanceAdjustmentSubjects AttendanceAdjustment[] @relation("AttendanceAdjustmentSubject")
+  createdAttendanceAdjustments AttendanceAdjustment[] @relation("AttendanceAdjustmentCreatedBy")
+  attendanceAdjustmentAudits AttendanceAdjustmentAudit[] @relation("AttendanceAdjustmentAuditActor")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -111,7 +120,7 @@ model UserAuthLink {
 model Integration {
   id              String   @id @default(uuid())
   tenantId        String
-  type            String   // amocrm, telegram, google_sheets, voip_utel
+  type            String   // amocrm, telegram, google_sheets, voip_utel, faceid_attendance
   status          String   @default("pending") // pending, active, error, disconnected
   config          Json?    // integration-specific config
   tokensEncrypted String?  // encrypted tokens (access_token, refresh_token)
@@ -532,4 +541,119 @@ model CorporateCallDuration {
   @@index([managerUserId])
   @@index([callDate])
   @@map("corporate_call_durations")
+}
+
+model AttendanceEvent {
+  id             String   @id @default(uuid())
+  tenantId       String
+  userId         String?
+  externalUserId String?
+  externalPhone  String?
+  firstName      String?
+  lastName       String?
+  externalRole   String?
+  eventType      String
+  action         String   // IN, OUT
+  eventAt        DateTime
+  localDate      String   // YYYY-MM-DD in Asia/Tashkent
+  localTime      String?
+  source         String   @default("FACE_ID")
+  branchName     String?
+  latitude       Float?
+  longitude      Float?
+  lateMinutes    Int      @default(0)
+  idempotencyKey String?
+  rawPayload     Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation("AttendanceEventUser", fields: [userId], references: [id], onDelete: SetNull)
+  adjustments AttendanceAdjustment[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([localDate])
+  @@index([eventAt])
+  @@index([eventType, action])
+  @@map("attendance_events")
+}
+
+model AttendanceDaySummary {
+  id               String   @id @default(uuid())
+  tenantId         String
+  userId           String
+  summaryDate      String   // YYYY-MM-DD in Asia/Tashkent
+  workedSeconds    Int      @default(0)
+  requiredSeconds  Int      @default(32400)
+  missingSeconds   Int      @default(0)
+  lateMinutes      Int      @default(0)
+  lateCount        Int      @default(0)
+  absence          Boolean  @default(false)
+  unmatchedInCount Int      @default(0)
+  unmatchedOutCount Int     @default(0)
+  anomalyCount     Int      @default(0)
+  firstInAt        DateTime?
+  lastOutAt        DateTime?
+  sourceUpdatedAt  DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation("AttendanceDaySummaryUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, summaryDate])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([summaryDate])
+  @@index([tenantId, summaryDate])
+  @@map("attendance_day_summaries")
+}
+
+model AttendanceAdjustment {
+  id              String   @id @default(uuid())
+  tenantId        String
+  userId          String?
+  eventId         String?
+  summaryDate     String?
+  action          String
+  reason          String
+  beforeData      Json?
+  afterData       Json?
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User?           @relation("AttendanceAdjustmentSubject", fields: [userId], references: [id], onDelete: SetNull)
+  event     AttendanceEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  createdBy User            @relation("AttendanceAdjustmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  auditEntries AttendanceAdjustmentAudit[]
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([eventId])
+  @@index([summaryDate])
+  @@index([createdByUserId])
+  @@map("attendance_adjustments")
+}
+
+model AttendanceAdjustmentAudit {
+  id           String   @id @default(uuid())
+  adjustmentId String
+  tenantId     String
+  actorUserId  String
+  action       String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  adjustment AttendanceAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor      User                 @relation("AttendanceAdjustmentAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([adjustmentId])
+  @@index([actorUserId])
+  @@index([createdAt])
+  @@map("attendance_adjustment_audits")
 }
