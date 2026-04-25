@@ -22,6 +22,23 @@ function buildIdempotencyKey(source: string, tenantId: string, payload: string):
   return crypto.createHash('sha256').update(`${source}:${tenantId}:${payload}`).digest('hex');
 }
 
+function hashFaceIdWebhookToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function extractBearerToken(req: Request): string | null {
+  const raw = req.headers.authorization;
+  if (!raw || typeof raw !== 'string') {
+    return null;
+  }
+  const match = raw.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    return null;
+  }
+  const token = String(match[1] || '').trim();
+  return token || null;
+}
+
 function resolveVoipProvider(req: Request): string {
   const headerProvider = req.headers['x-voip-provider'];
   const queryProvider = req.query.provider;
@@ -1196,6 +1213,109 @@ router.post('/telegram', async (req: Request, res: Response) => {
     return res.status(200).json({ received: true });
   } catch (err) {
     logger.error({ err }, 'Telegram webhook handler failed');
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/faceid', async (_req: Request, res: Response) => {
+  return res.status(200).json({
+    ok: true,
+    endpoint: '/webhooks/faceid',
+    method: 'POST',
+    message: 'Face ID webhook endpoint is alive. Send Bearer token in Authorization header.',
+    requiredHeader: 'Authorization: Bearer <token>',
+  });
+});
+
+router.post('/faceid', async (req: Request, res: Response) => {
+  try {
+    const rawBody = getRawBody(req);
+    const bearerToken = extractBearerToken(req);
+    if (!bearerToken) {
+      return res.status(401).json({ error: 'Missing or invalid Authorization Bearer token' });
+    }
+
+    const webhookTokenHash = hashFaceIdWebhookToken(bearerToken);
+    const integration = await prisma.integration.findFirst({
+      where: {
+        type: 'faceid_attendance',
+        status: 'active',
+        config: {
+          path: ['webhookTokenHash'],
+          equals: webhookTokenHash,
+        },
+      },
+    });
+
+    if (!integration) {
+      return res.status(403).json({ error: 'Invalid Face ID webhook token' });
+    }
+
+    const webhookLimit = await rateLimiter.isAllowed(integration.tenantId, 'webhook:faceid', {
+      maxRequests: 600,
+      windowMs: 60 * 1000,
+      keyPrefix: 'webhook',
+    });
+    if (!webhookLimit.allowed) {
+      return res.status(429).json({ error: 'Rate limit exceeded' });
+    }
+
+    const idempotencyKey = buildIdempotencyKey('faceid', integration.tenantId, rawBody);
+    const eventType = String(req.body?.event_type || req.body?.request?.event_type || 'check_in_out');
+
+    let event;
+    try {
+      event = await prisma.webhookEvent.create({
+        data: {
+          tenantId: integration.tenantId,
+          source: 'faceid',
+          eventType,
+          idempotencyKey,
+          rawPayload: req.body,
+          processed: false,
+        },
+      });
+    } catch (error: any) {
+      if (isUniqueViolation(error)) {
+        logger.info({ msg: 'Duplicate Face ID webhook ignored', idempotencyKey });
+        return res.status(200).json({ received: true, duplicate: true });
+      }
+      if (isMissingWebhookIdempotencyColumnError(error)) {
+        logger.warn({ msg: 'WebhookEvent.idempotencyKey column missing, creating Face ID event without idempotency key' });
+        event = await prisma.webhookEvent.create({
+          data: {
+            tenantId: integration.tenantId,
+            source: 'faceid',
+            eventType,
+            rawPayload: req.body,
+            processed: false,
+          },
+        });
+      } else {
+        throw error;
+      }
+    }
+
+    await enqueueWebhookJob({
+      jobName: 'process-faceid-webhook',
+      eventId: event.id,
+      tenantId: integration.tenantId,
+      idempotencyKey,
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId: integration.tenantId,
+        action: 'webhook_received',
+        resource: 'webhook',
+        resourceId: event.id,
+        metadata: { source: 'faceid', eventType },
+      },
+    });
+
+    return res.status(200).json({ received: true });
+  } catch (err) {
+    logger.error({ err }, 'Face ID webhook handler failed');
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
