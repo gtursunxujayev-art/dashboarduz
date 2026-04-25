@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 
-type IntegrationId = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel';
+type IntegrationId = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel' | 'faceid_attendance';
 
 interface IntegrationConfig {
   webhookUrl?: string | null;
@@ -78,6 +78,12 @@ const integrationCatalog: Array<{
     description: "Faqat webhook rejimi: UTeL va boshqa operatorlardan qo'ng'iroqlar qabul qilinadi.",
     color: 'bg-purple-50 border-purple-200',
   },
+  {
+    id: 'faceid_attendance',
+    name: 'Face ID Davomat',
+    description: "Face ID webhook orqali IN/OUT davomat eventlari qabul qilinadi (Bearer token).",
+    color: 'bg-rose-50 border-rose-200',
+  },
 ];
 
 function statusBadge(status: string) {
@@ -112,6 +118,9 @@ export default function IntegrationCards() {
   const [amocrmLongLivedToken, setAmocrmLongLivedToken] = useState('');
   const [amocrmBaseUrl, setAmocrmBaseUrl] = useState('');
   const [telegramToken, setTelegramToken] = useState('');
+  const [faceIdWebhookToken, setFaceIdWebhookToken] = useState('');
+  const [faceIdBranchWhitelistInput, setFaceIdBranchWhitelistInput] = useState('');
+  const [lastGeneratedFaceIdToken, setLastGeneratedFaceIdToken] = useState<string | null>(null);
   const [selectedPipelineIds, setSelectedPipelineIds] = useState<string[]>([]);
   const [selectedTelegramRecipientIds, setSelectedTelegramRecipientIds] = useState<string[]>([]);
   const [telegramSelectionSavedAt, setTelegramSelectionSavedAt] = useState<string | null>(null);
@@ -134,6 +143,9 @@ export default function IntegrationCards() {
   const connectAmoCRM = trpc.integrations.connectAmoCRM.useMutation();
   const connectTelegram = trpc.integrations.connectTelegram.useMutation();
   const connectVoIP = trpc.integrations.connectVoIP.useMutation();
+  const connectFaceId = trpc.integrations.connectFaceId.useMutation();
+  const rotateFaceIdToken = trpc.integrations.rotateFaceIdToken.useMutation();
+  const faceIdStatusQuery = trpc.integrations.getFaceIdStatus.useQuery();
   const updateAmoCRMPipelines = trpc.integrations.updateAmoCRMPipelines.useMutation();
   const updateTelegramReportRecipients = trpc.integrations.updateTelegramReportRecipients.useMutation();
   const sendTelegramTodayReportNow = trpc.integrations.sendTelegramTodayReportNow.useMutation();
@@ -184,6 +196,7 @@ export default function IntegrationCards() {
     setError(null);
     setTelegramSelectionSavedAt(null);
     setTelegramReportSentMessage(null);
+    setLastGeneratedFaceIdToken(null);
     setActionLoading(integrationId);
 
     try {
@@ -217,6 +230,22 @@ export default function IntegrationCards() {
         return;
       }
 
+      if (integrationId === 'faceid_attendance') {
+        const branchWhitelist = faceIdBranchWhitelistInput
+          .split(/[\n,;]+/)
+          .map((branch) => branch.trim())
+          .filter((branch) => branch.length > 0);
+
+        const result = await connectFaceId.mutateAsync({
+          webhookToken: faceIdWebhookToken.trim() || undefined,
+          branchWhitelist,
+        });
+        setFaceIdWebhookToken('');
+        setLastGeneratedFaceIdToken(result.connection.webhookToken || null);
+        await Promise.all([listQuery.refetch(), faceIdStatusQuery.refetch()]);
+        return;
+      }
+
       setError("Google Sheets integratsiyasi MVP da o'chirilgan");
     } catch (err: any) {
       setError(err?.message || `${integrationId} ulanishida xatolik`);
@@ -232,10 +261,11 @@ export default function IntegrationCards() {
     setError(null);
     setTelegramSelectionSavedAt(null);
     setTelegramReportSentMessage(null);
+    setLastGeneratedFaceIdToken(null);
     setActionLoading(integrationId);
     try {
       await disconnectIntegration.mutateAsync({ type: integrationId });
-      await listQuery.refetch();
+      await Promise.all([listQuery.refetch(), faceIdStatusQuery.refetch()]);
     } catch (err: any) {
       setError(err?.message || `${integrationId} uzishda xatolik`);
     } finally {
@@ -265,6 +295,7 @@ export default function IntegrationCards() {
     setActionLoading('telegram');
     setTelegramSelectionSavedAt(null);
     setTelegramReportSentMessage(null);
+    setLastGeneratedFaceIdToken(null);
 
     try {
       await updateTelegramReportRecipients.mutateAsync({
@@ -274,6 +305,20 @@ export default function IntegrationCards() {
       setTelegramSelectionSavedAt(new Date().toISOString());
     } catch (err: any) {
       setError(err?.message || 'Telegram hisobot oluvchilarini saqlashda xatolik');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRotateFaceIdToken = async () => {
+    setError(null);
+    setActionLoading('faceid_attendance');
+    try {
+      const result = await rotateFaceIdToken.mutateAsync({});
+      setLastGeneratedFaceIdToken(result.webhookToken || null);
+      await Promise.all([listQuery.refetch(), faceIdStatusQuery.refetch()]);
+    } catch (err: any) {
+      setError(err?.message || 'Face ID token yangilashda xatolik');
     } finally {
       setActionLoading(null);
     }
@@ -343,6 +388,8 @@ export default function IntegrationCards() {
           const pipelines = (amoPipelinesQuery.data?.pipelines || []) as AmoPipeline[];
           const isAmoActive = integration.id === 'amocrm' && integration.status === 'active';
           const isTelegramActive = integration.id === 'telegram' && integration.status === 'active';
+          const isFaceIdActive = integration.id === 'faceid_attendance' && integration.status === 'active';
+          const faceIdStatus = faceIdStatusQuery.data;
           const telegramRecipients = (telegramRecipientsQuery.data?.recipients || []) as TelegramReportRecipient[];
 
           return (
@@ -535,6 +582,48 @@ export default function IntegrationCards() {
                 </div>
               )}
 
+              {isFaceIdActive && (
+                <div className="mt-4 rounded-md border border-rose-100 bg-white p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Face ID webhook sozlamasi</p>
+                      <p className="text-xs text-gray-500">
+                        Bearer token bilan <span className="font-mono">POST /webhooks/faceid</span> endpointiga yuboriladi.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-1 text-xs text-gray-600">
+                    <p className="break-all">
+                      Webhook: {String(faceIdStatus?.webhookUrl || integrationConfig.webhookUrl || '')}
+                    </p>
+                    <p>Token holati: {faceIdStatus?.hasToken ? 'Mavjud' : 'Yo‘q'}</p>
+                    {Array.isArray(faceIdStatus?.branchWhitelist) && faceIdStatus.branchWhitelist.length > 0 && (
+                      <p>Ruxsat etilgan filiallar: {faceIdStatus.branchWhitelist.join(', ')}</p>
+                    )}
+                    {faceIdStatus?.lastSyncAt && (
+                      <p>Oxirgi sinxron: {new Date(faceIdStatus.lastSyncAt).toLocaleString()}</p>
+                    )}
+                    {lastGeneratedFaceIdToken && (
+                      <p className="break-all rounded border border-rose-200 bg-rose-50 px-2 py-1 text-rose-800">
+                        Yangi token: <span className="font-mono">{lastGeneratedFaceIdToken}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={handleRotateFaceIdToken}
+                      disabled={loading}
+                      className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-800 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading ? 'Yangilanmoqda...' : 'Tokenni yangilash'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {integration.id === 'amocrm' && integration.status !== 'active' && (
                 <div className="mt-4 space-y-2">
                   <div>
@@ -573,6 +662,36 @@ export default function IntegrationCards() {
                 </div>
               )}
 
+              {integration.id === 'faceid_attendance' && integration.status === 'disconnected' && (
+                <div className="mt-4 space-y-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700">Webhook token (ixtiyoriy)</label>
+                    <input
+                      type="text"
+                      value={faceIdWebhookToken}
+                      onChange={(e) => setFaceIdWebhookToken(e.target.value)}
+                      placeholder="Bo'sh qoldirilsa token avtomatik yaratiladi"
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700">Filiallar ro'yxati (ixtiyoriy)</label>
+                    <input
+                      type="text"
+                      value={faceIdBranchWhitelistInput}
+                      onChange={(e) => setFaceIdBranchWhitelistInput(e.target.value)}
+                      placeholder="Masalan: Labzak, Chilonzor"
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  {lastGeneratedFaceIdToken && (
+                    <p className="break-all rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-800">
+                      Yaratilgan token: <span className="font-mono">{lastGeneratedFaceIdToken}</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="mt-4 flex gap-2">
                 {integration.status === 'disconnected' || (integration.id === 'amocrm' && integration.status !== 'active') ? (
                   <button
@@ -581,7 +700,15 @@ export default function IntegrationCards() {
                     disabled={loading || integration.id === 'google_sheets'}
                   className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                    {loading ? "Ulanmoqda..." : integration.id === 'google_sheets' ? "O'chirilgan" : integration.id === 'amocrm' ? 'Token orqali ulash' : 'Ulash'}
+                    {loading
+                      ? "Ulanmoqda..."
+                      : integration.id === 'google_sheets'
+                        ? "O'chirilgan"
+                        : integration.id === 'amocrm'
+                          ? 'Token orqali ulash'
+                          : integration.id === 'faceid_attendance'
+                            ? 'Webhookni ulash'
+                            : 'Ulash'}
                   </button>
                 ) : (
                   <button
@@ -601,5 +728,4 @@ export default function IntegrationCards() {
     </div>
   );
 }
-
 
