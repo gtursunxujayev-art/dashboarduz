@@ -164,6 +164,12 @@ export default function BonusPage() {
   const [salaryBonusMode, setSalaryBonusMode] = useState<BonusMode>('on_income');
   const [bonusRulesState, setBonusRulesState] = useState<BonusRulesState>(() => createDefaultBonusRulesState());
   const [fixedSalaryByAgent, setFixedSalaryByAgent] = useState<Record<string, string>>({});
+  const [attendancePenaltyLateMinute, setAttendancePenaltyLateMinute] = useState('0');
+  const [attendancePenaltyMissingHour, setAttendancePenaltyMissingHour] = useState('0');
+  const [attendancePenaltyAbsenceDay, setAttendancePenaltyAbsenceDay] = useState('0');
+  const [attendancePenaltyCap, setAttendancePenaltyCap] = useState('0');
+  const [attendanceApplyFixed, setAttendanceApplyFixed] = useState(false);
+  const [attendanceApplyKpi, setAttendanceApplyKpi] = useState(false);
 
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [planName, setPlanName] = useState('');
@@ -201,6 +207,7 @@ export default function BonusPage() {
 
   const updateBonusRulesMutation = trpc.bonus.updateBonusRules.useMutation();
   const updateFixedSalariesMutation = trpc.bonus.updateFixedSalaries.useMutation();
+  const updateAttendancePenaltySettingsMutation = trpc.bonus.updateAttendancePenaltySettings.useMutation();
   const createPlan = trpc.bonus.createPlan.useMutation();
   const updatePlan = trpc.bonus.updatePlan.useMutation();
   const deletePlan = trpc.bonus.deletePlan.useMutation();
@@ -230,6 +237,14 @@ export default function BonusPage() {
       nextFixed[userId] = Number.isFinite(amount) && amount > 0 ? String(Math.round(amount)) : '';
     }
     setFixedSalaryByAgent(nextFixed);
+
+    const attendanceSettings = salaryConfigQuery.data.attendancePenaltySettings as Record<string, unknown> | undefined;
+    setAttendancePenaltyLateMinute(String(Number(attendanceSettings?.lateMinutePenaltyUZS || 0)));
+    setAttendancePenaltyMissingHour(String(Number(attendanceSettings?.missingHourPenaltyUZS || 0)));
+    setAttendancePenaltyAbsenceDay(String(Number(attendanceSettings?.absenceDayPenaltyUZS || 0)));
+    setAttendancePenaltyCap(String(Number(attendanceSettings?.monthlyPenaltyCapUZS || 0)));
+    setAttendanceApplyFixed(Boolean(attendanceSettings?.applyToFixedSalary));
+    setAttendanceApplyKpi(Boolean(attendanceSettings?.applyToKpi));
   }, [salaryConfigQuery.data]);
 
   const agentUsers = useMemo<AgentUserOption[]>(() => {
@@ -458,6 +473,32 @@ export default function BonusPage() {
       setSuccess("Fiks maoshlar muvaffaqiyatli saqlandi.");
     } catch (saveError: any) {
       setError(saveError?.message || "Fiks maoshlarni saqlashda xatolik.");
+    }
+  };
+
+  const handleSaveAttendancePenaltySettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    if (!isAdmin) {
+      setError("Faqat admin davomat jarimalarini o'zgartira oladi.");
+      return;
+    }
+
+    try {
+      await updateAttendancePenaltySettingsMutation.mutateAsync({
+        lateMinutePenaltyUZS: parseAmountInput(attendancePenaltyLateMinute),
+        missingHourPenaltyUZS: parseAmountInput(attendancePenaltyMissingHour),
+        absenceDayPenaltyUZS: parseAmountInput(attendancePenaltyAbsenceDay),
+        applyToFixedSalary: attendanceApplyFixed,
+        applyToKpi: attendanceApplyKpi,
+        monthlyPenaltyCapUZS: parseAmountInput(attendancePenaltyCap),
+      });
+      await salaryConfigQuery.refetch();
+      setSuccess('Davomat jarima sozlamalari saqlandi.');
+    } catch (saveError: any) {
+      setError(saveError?.message || 'Davomat jarima sozlamalarini saqlashda xatolik.');
     }
   };
 
@@ -821,6 +862,94 @@ export default function BonusPage() {
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
               {updateBonusRulesMutation.isLoading ? 'Saqlanmoqda...' : "Bonus qoidalarini saqlash"}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-white shadow">
+        <div className="border-b border-gray-100 px-6 py-5">
+          <h2 className="text-lg font-semibold text-gray-900">Davomat jarimalari</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Face ID davomat ma&apos;lumotlari asosida oylik jarima hisoblash sozlamalari.
+          </p>
+        </div>
+        <div className="p-6">
+          <form onSubmit={handleSaveAttendancePenaltySettings} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Kechikish jarimasi (1 daqiqa/UZS)</label>
+                <input
+                  value={attendancePenaltyLateMinute}
+                  onChange={(event) => setAttendancePenaltyLateMinute(event.target.value.replace(/[^\d]/g, ''))}
+                  disabled={!isAdmin}
+                  inputMode="numeric"
+                  placeholder="0"
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Yetishmagan vaqt jarimasi (1 soat/UZS)</label>
+                <input
+                  value={attendancePenaltyMissingHour}
+                  onChange={(event) => setAttendancePenaltyMissingHour(event.target.value.replace(/[^\d]/g, ''))}
+                  disabled={!isAdmin}
+                  inputMode="numeric"
+                  placeholder="0"
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Kelmagan kun jarimasi (1 kun/UZS)</label>
+                <input
+                  value={attendancePenaltyAbsenceDay}
+                  onChange={(event) => setAttendancePenaltyAbsenceDay(event.target.value.replace(/[^\d]/g, ''))}
+                  disabled={!isAdmin}
+                  inputMode="numeric"
+                  placeholder="0"
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Oylik maksimal jarima (UZS)</label>
+                <input
+                  value={attendancePenaltyCap}
+                  onChange={(event) => setAttendancePenaltyCap(event.target.value.replace(/[^\d]/g, ''))}
+                  disabled={!isAdmin}
+                  inputMode="numeric"
+                  placeholder="0"
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={attendanceApplyFixed}
+                  onChange={(event) => setAttendanceApplyFixed(event.target.checked)}
+                  disabled={!isAdmin}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-60"
+                />
+                Fiks maoshdan ushlansin
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={attendanceApplyKpi}
+                  onChange={(event) => setAttendanceApplyKpi(event.target.checked)}
+                  disabled={!isAdmin}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-60"
+                />
+                KPIdan ushlansin
+              </label>
+            </div>
+            <button
+              type="submit"
+              disabled={!isAdmin || updateAttendancePenaltySettingsMutation.isLoading || salaryConfigQuery.isLoading}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {updateAttendancePenaltySettingsMutation.isLoading ? 'Saqlanmoqda...' : 'Davomat jarimalarini saqlash'}
             </button>
           </form>
         </div>
