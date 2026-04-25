@@ -10,6 +10,7 @@ const AGENT_ALLOWED_PATHS = [
   '/dashboard/leads',
   '/dashboard/calls',
   '/dashboard/corporate-calls',
+  '/dashboard/attendance',
   '/dashboard/income',
   '/dashboard/adjustments',
   '/dashboard/sotuvchilar',
@@ -21,6 +22,7 @@ const AGENT_ALLOWED_PATHS = [
 const FINANCE_ALLOWED_PATHS = [
   '/dashboard',
   '/dashboard/adjustments',
+  '/dashboard/attendance',
   '/dashboard/course-sales',
   '/dashboard/analytics',
   '/dashboard/finance',
@@ -28,6 +30,7 @@ const FINANCE_ALLOWED_PATHS = [
 const TASHKILIY_ALLOWED_PATHS = [
   '/dashboard',
   '/dashboard/adjustments',
+  '/dashboard/attendance',
   '/dashboard/customers',
   '/dashboard/course-sales',
   '/dashboard/courses',
