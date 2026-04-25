@@ -6,6 +6,7 @@ import { decryptIntegrationTokens } from '../services/security/encryption';
 import { rateLimiter } from '../services/security/rate-limiter';
 import { asObject, getSelectedPipelineIds } from '../services/integrations/amocrm-live';
 import { upsertTelegramRecipient } from '../services/integrations/telegram-recipients';
+import { ingestFaceIdEvent } from '../services/attendance/faceid';
 
 function normalizePhone(phone?: string | null): string {
   if (!phone) {
@@ -685,6 +686,9 @@ export async function processWebhookEvent(eventId: string) {
       case 'telegram':
         await processTelegramWebhook(event, tenantId);
         break;
+      case 'faceid':
+        await processFaceIdWebhook(event, tenantId);
+        break;
       default:
         log(LogLevel.WARN, 'Unknown webhook source', { eventId, source: event.source });
     }
@@ -1084,6 +1088,29 @@ async function processTelegramWebhook(event: any, tenantId: string) {
       lastSyncAt: new Date(),
       config: nextConfig as any,
     },
+  });
+}
+
+async function processFaceIdWebhook(event: any, tenantId: string) {
+  const integration = await prisma.integration.findFirst({
+    where: {
+      tenantId,
+      type: 'faceid_attendance',
+      status: 'active',
+    },
+    select: {
+      config: true,
+    },
+  });
+
+  if (!integration) {
+    throw new Error('No active Face ID integration found');
+  }
+
+  await ingestFaceIdEvent({
+    tenantId,
+    integrationConfig: integration.config,
+    payload: event.rawPayload,
   });
 }
 
