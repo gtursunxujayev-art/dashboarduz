@@ -120,6 +120,7 @@ export default function IntegrationCards() {
   const [telegramToken, setTelegramToken] = useState('');
   const [faceIdWebhookToken, setFaceIdWebhookToken] = useState('');
   const [faceIdBranchWhitelistInput, setFaceIdBranchWhitelistInput] = useState('');
+  const [faceIdUnmatchedPolicy, setFaceIdUnmatchedPolicy] = useState<'store' | 'ignore'>('store');
   const [lastGeneratedFaceIdToken, setLastGeneratedFaceIdToken] = useState<string | null>(null);
   const [selectedPipelineIds, setSelectedPipelineIds] = useState<string[]>([]);
   const [selectedTelegramRecipientIds, setSelectedTelegramRecipientIds] = useState<string[]>([]);
@@ -144,6 +145,7 @@ export default function IntegrationCards() {
   const connectTelegram = trpc.integrations.connectTelegram.useMutation();
   const connectVoIP = trpc.integrations.connectVoIP.useMutation();
   const connectFaceId = trpc.integrations.connectFaceId.useMutation();
+  const updateFaceIdSettings = trpc.integrations.updateFaceIdSettings.useMutation();
   const rotateFaceIdToken = trpc.integrations.rotateFaceIdToken.useMutation();
   const faceIdStatusQuery = trpc.integrations.getFaceIdStatus.useQuery();
   const updateAmoCRMPipelines = trpc.integrations.updateAmoCRMPipelines.useMutation();
@@ -192,6 +194,18 @@ export default function IntegrationCards() {
     setSelectedTelegramRecipientIds(selected);
   }, [telegramRecipientsQuery.data]);
 
+  useEffect(() => {
+    if (!faceIdStatusQuery.data) {
+      return;
+    }
+
+    const whitelist = Array.isArray(faceIdStatusQuery.data.branchWhitelist)
+      ? faceIdStatusQuery.data.branchWhitelist.join(', ')
+      : '';
+    setFaceIdBranchWhitelistInput(whitelist);
+    setFaceIdUnmatchedPolicy(faceIdStatusQuery.data.unmatchedUserPolicy === 'ignore' ? 'ignore' : 'store');
+  }, [faceIdStatusQuery.data]);
+
   const handleConnect = async (integrationId: IntegrationId) => {
     setError(null);
     setTelegramSelectionSavedAt(null);
@@ -239,6 +253,7 @@ export default function IntegrationCards() {
         const result = await connectFaceId.mutateAsync({
           webhookToken: faceIdWebhookToken.trim() || undefined,
           branchWhitelist,
+          unmatchedUserPolicy: faceIdUnmatchedPolicy,
         });
         setFaceIdWebhookToken('');
         setLastGeneratedFaceIdToken(result.connection.webhookToken || null);
@@ -319,6 +334,26 @@ export default function IntegrationCards() {
       await Promise.all([listQuery.refetch(), faceIdStatusQuery.refetch()]);
     } catch (err: any) {
       setError(err?.message || 'Face ID token yangilashda xatolik');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSaveFaceIdSettings = async () => {
+    setError(null);
+    setActionLoading('faceid_attendance');
+    try {
+      const branchWhitelist = faceIdBranchWhitelistInput
+        .split(/[\n,;]+/)
+        .map((branch) => branch.trim())
+        .filter((branch) => branch.length > 0);
+      await updateFaceIdSettings.mutateAsync({
+        branchWhitelist,
+        unmatchedUserPolicy: faceIdUnmatchedPolicy,
+      });
+      await Promise.all([listQuery.refetch(), faceIdStatusQuery.refetch()]);
+    } catch (err: any) {
+      setError(err?.message || 'Face ID sozlamalarini saqlashda xatolik');
     } finally {
       setActionLoading(null);
     }
@@ -598,6 +633,7 @@ export default function IntegrationCards() {
                       Webhook: {String(faceIdStatus?.webhookUrl || integrationConfig.webhookUrl || '')}
                     </p>
                     <p>Token holati: {faceIdStatus?.hasToken ? 'Mavjud' : 'Yo‘q'}</p>
+                    <p>Mos kelmagan foydalanuvchi rejimi: {faceIdStatus?.unmatchedUserPolicy === 'ignore' ? 'Ignore' : 'Store'}</p>
                     {Array.isArray(faceIdStatus?.branchWhitelist) && faceIdStatus.branchWhitelist.length > 0 && (
                       <p>Ruxsat etilgan filiallar: {faceIdStatus.branchWhitelist.join(', ')}</p>
                     )}
@@ -609,6 +645,64 @@ export default function IntegrationCards() {
                         Yangi token: <span className="font-mono">{lastGeneratedFaceIdToken}</span>
                       </p>
                     )}
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="rounded border border-rose-100 bg-rose-50 p-2 text-xs text-rose-900">
+                      <p>Kutilayotgan webhook: {Number(faceIdStatus?.health?.webhookPending || 0)}</p>
+                      <p>24 soat xatolik: {Number(faceIdStatus?.health?.webhookFailedLast24h || 0)}</p>
+                      <p>24 soat processed: {Number(faceIdStatus?.health?.webhookProcessedLast24h || 0)}</p>
+                    </div>
+                    <div className="rounded border border-rose-100 bg-rose-50 p-2 text-xs text-rose-900">
+                      <p>7 kun eventlar: {Number(faceIdStatus?.health?.eventsLast7d || 0)}</p>
+                      <p>7 kun matched: {Number(faceIdStatus?.health?.matchedEventsLast7d || 0)}</p>
+                      <p>7 kun unmatched: {Number(faceIdStatus?.health?.unmatchedEventsLast7d || 0)}</p>
+                    </div>
+                  </div>
+
+                  {Array.isArray(faceIdStatus?.recentWebhookErrors) && faceIdStatus.recentWebhookErrors.length > 0 && (
+                    <div className="mt-3 rounded border border-red-200 bg-red-50 p-2">
+                      <p className="text-xs font-semibold text-red-700">Oxirgi webhook xatolari</p>
+                      <div className="mt-1 space-y-1 text-xs text-red-700">
+                        {faceIdStatus.recentWebhookErrors.map((row: any) => (
+                          <p key={row.id}>
+                            {new Date(row.createdAt).toLocaleString()} - {row.eventType}: {String(row.errorMessage || '')}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-3 space-y-2 rounded-md border border-rose-100 bg-white p-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700">Mos kelmagan user hodisalari</label>
+                      <select
+                        value={faceIdUnmatchedPolicy}
+                        onChange={(e) => setFaceIdUnmatchedPolicy(e.target.value === 'ignore' ? 'ignore' : 'store')}
+                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                      >
+                        <option value="store">Store (anomalies uchun saqlash)</option>
+                        <option value="ignore">Ignore (saqlamaslik)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700">Filiallar ro'yxati (ixtiyoriy)</label>
+                      <input
+                        type="text"
+                        value={faceIdBranchWhitelistInput}
+                        onChange={(e) => setFaceIdBranchWhitelistInput(e.target.value)}
+                        placeholder="Masalan: Labzak, Chilonzor"
+                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSaveFaceIdSettings}
+                      disabled={loading}
+                      className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-800 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading ? 'Saqlanmoqda...' : 'Face ID sozlamalarini saqlash'}
+                    </button>
                   </div>
 
                   <div className="mt-3">
@@ -684,6 +778,17 @@ export default function IntegrationCards() {
                       className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700">Mos kelmagan user hodisalari</label>
+                    <select
+                      value={faceIdUnmatchedPolicy}
+                      onChange={(e) => setFaceIdUnmatchedPolicy(e.target.value === 'ignore' ? 'ignore' : 'store')}
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="store">Store (anomalies uchun saqlash)</option>
+                      <option value="ignore">Ignore (saqlamaslik)</option>
+                    </select>
+                  </div>
                   {lastGeneratedFaceIdToken && (
                     <p className="break-all rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-800">
                       Yaratilgan token: <span className="font-mono">{lastGeneratedFaceIdToken}</span>
@@ -728,4 +833,3 @@ export default function IntegrationCards() {
     </div>
   );
 }
-
