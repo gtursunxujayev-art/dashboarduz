@@ -67,6 +67,19 @@ function normalizeBranchWhitelist(branchWhitelist?: string[]): string[] {
   return normalized;
 }
 
+function normalizeUnmatchedUserPolicy(value: unknown): 'store' | 'ignore' {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'ignore' ? 'ignore' : 'store';
+}
+
+function toTashkentDateKey(date: Date): string {
+  const shifted = new Date(date.getTime() + 5 * 60 * 60 * 1000);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 async function fetchAmoCRMAccountByToken(accessToken: string, baseUrl: string) {
   const response = await fetch(`${baseUrl}/api/v4/account`, {
     headers: {
@@ -617,6 +630,7 @@ export const integrationsRouter = router({
       const webhookToken = String(input?.webhookToken || '').trim() || buildFaceIdWebhookToken();
       const webhookTokenHash = hashFaceIdWebhookToken(webhookToken);
       const branchWhitelist = normalizeBranchWhitelist(input?.branchWhitelist);
+      const unmatchedUserPolicy = normalizeUnmatchedUserPolicy(input?.unmatchedUserPolicy);
       const validatedAt = new Date();
       const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/faceid`;
 
@@ -635,6 +649,7 @@ export const integrationsRouter = router({
             webhookUrl,
             webhookTokenHash,
             branchWhitelist,
+            unmatchedUserPolicy,
             lastValidatedAt: validatedAt.toISOString(),
           },
           lastSyncAt: validatedAt,
@@ -650,6 +665,7 @@ export const integrationsRouter = router({
             webhookUrl,
             webhookTokenHash,
             branchWhitelist,
+            unmatchedUserPolicy,
             lastValidatedAt: validatedAt.toISOString(),
           },
           lastSyncAt: validatedAt,
@@ -675,7 +691,78 @@ export const integrationsRouter = router({
           webhookUrl,
           webhookToken,
           branchWhitelist,
+          unmatchedUserPolicy,
         },
+      };
+    }),
+
+  updateFaceIdSettings: adminProcedure
+    .input(
+      z.object({
+        branchWhitelist: z.array(z.string().min(1)).optional(),
+        unmatchedUserPolicy: z.enum(['store', 'ignore']).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const integration = await prisma.integration.findUnique({
+        where: {
+          tenantId_type: {
+            tenantId: ctx.tenantId,
+            type: 'faceid_attendance',
+          },
+        },
+        select: {
+          id: true,
+          config: true,
+        },
+      });
+
+      if (!integration) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Face ID integration is not connected.',
+        });
+      }
+
+      const existingConfig = asObject(integration.config);
+      const nextConfig = {
+        ...existingConfig,
+        enabled: true,
+        webhookUrl: String(existingConfig.webhookUrl || `${getPublicApiBaseUrl()}/webhooks/faceid`),
+        branchWhitelist: normalizeBranchWhitelist(input.branchWhitelist),
+        unmatchedUserPolicy: normalizeUnmatchedUserPolicy(input.unmatchedUserPolicy ?? existingConfig.unmatchedUserPolicy),
+        lastValidatedAt: new Date().toISOString(),
+      };
+
+      await prisma.integration.update({
+        where: { id: integration.id },
+        data: {
+          config: nextConfig,
+          lastSyncAt: new Date(),
+          errorMessage: null,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'integration_update',
+          resource: 'integration',
+          resourceId: integration.id,
+          metadata: {
+            type: 'faceid_attendance',
+            action: 'update_settings',
+            branchWhitelist: nextConfig.branchWhitelist,
+            unmatchedUserPolicy: nextConfig.unmatchedUserPolicy,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        branchWhitelist: nextConfig.branchWhitelist as string[],
+        unmatchedUserPolicy: nextConfig.unmatchedUserPolicy as 'store' | 'ignore',
       };
     }),
 
@@ -759,11 +846,111 @@ export const integrationsRouter = router({
         webhookUrl: `${getPublicApiBaseUrl()}/webhooks/faceid`,
         hasToken: false,
         branchWhitelist: [] as string[],
+        unmatchedUserPolicy: 'store' as 'store' | 'ignore',
         lastSyncAt: null as string | null,
+        health: {
+          webhookPending: 0,
+          webhookFailedLast24h: 0,
+          webhookProcessedLast24h: 0,
+          eventsLast7d: 0,
+          unmatchedEventsLast7d: 0,
+          matchedEventsLast7d: 0,
+          anomaliesLast7d: 0,
+        },
+        recentWebhookErrors: [] as Array<{
+          id: string;
+          createdAt: string;
+          errorMessage: string | null;
+          eventType: string;
+        }>,
       };
     }
 
     const config = asObject(integration.config);
+    const now = new Date();
+    const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const last7dLocal = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const last7dDateKey = toTashkentDateKey(last7dLocal);
+    const todayDateKey = toTashkentDateKey(now);
+
+    const [
+      webhookPending,
+      webhookFailedLast24h,
+      webhookProcessedLast24h,
+      eventsLast7d,
+      unmatchedEventsLast7d,
+      anomaliesLast7d,
+      recentWebhookErrors,
+    ] = await Promise.all([
+      prisma.webhookEvent.count({
+        where: {
+          tenantId: ctx.tenantId,
+          source: 'faceid',
+          processed: false,
+        },
+      }),
+      prisma.webhookEvent.count({
+        where: {
+          tenantId: ctx.tenantId,
+          source: 'faceid',
+          createdAt: { gte: last24h },
+          errorMessage: { not: null },
+        },
+      }),
+      prisma.webhookEvent.count({
+        where: {
+          tenantId: ctx.tenantId,
+          source: 'faceid',
+          createdAt: { gte: last24h },
+          processed: true,
+        },
+      }),
+      prisma.attendanceEvent.count({
+        where: {
+          tenantId: ctx.tenantId,
+          localDate: {
+            gte: last7dDateKey,
+            lte: todayDateKey,
+          },
+        },
+      }),
+      prisma.attendanceEvent.count({
+        where: {
+          tenantId: ctx.tenantId,
+          userId: null,
+          localDate: {
+            gte: last7dDateKey,
+            lte: todayDateKey,
+          },
+        },
+      }),
+      prisma.attendanceDaySummary.count({
+        where: {
+          tenantId: ctx.tenantId,
+          summaryDate: {
+            gte: last7dDateKey,
+            lte: todayDateKey,
+          },
+          OR: [{ anomalyCount: { gt: 0 } }, { absence: true }],
+        },
+      }),
+      prisma.webhookEvent.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          source: 'faceid',
+          errorMessage: { not: null },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          createdAt: true,
+          errorMessage: true,
+          eventType: true,
+        },
+      }),
+    ]);
+
     return {
       connected: true,
       webhookUrl: String(config.webhookUrl || `${getPublicApiBaseUrl()}/webhooks/faceid`),
@@ -771,8 +958,24 @@ export const integrationsRouter = router({
       branchWhitelist: normalizeBranchWhitelist(
         Array.isArray(config.branchWhitelist) ? (config.branchWhitelist as string[]) : [],
       ),
+      unmatchedUserPolicy: normalizeUnmatchedUserPolicy(config.unmatchedUserPolicy),
       lastSyncAt: integration.lastSyncAt ? integration.lastSyncAt.toISOString() : null,
       lastValidatedAt: typeof config.lastValidatedAt === 'string' ? config.lastValidatedAt : null,
+      health: {
+        webhookPending,
+        webhookFailedLast24h,
+        webhookProcessedLast24h,
+        eventsLast7d,
+        unmatchedEventsLast7d,
+        matchedEventsLast7d: Math.max(eventsLast7d - unmatchedEventsLast7d, 0),
+        anomaliesLast7d,
+      },
+      recentWebhookErrors: recentWebhookErrors.map((item) => ({
+        id: item.id,
+        createdAt: item.createdAt.toISOString(),
+        errorMessage: item.errorMessage,
+        eventType: item.eventType,
+      })),
     };
   }),
 
