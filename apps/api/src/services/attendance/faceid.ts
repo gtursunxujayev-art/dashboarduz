@@ -192,6 +192,12 @@ function parseBranchWhitelist(config: unknown): Set<string> {
   return new Set(normalized);
 }
 
+function parseUnmatchedUserPolicy(config: unknown): 'store' | 'ignore' {
+  const raw = asObject(config)?.unmatchedUserPolicy;
+  const normalized = String(raw || '').trim().toLowerCase();
+  return normalized === 'ignore' ? 'ignore' : 'store';
+}
+
 async function resolveMatchedUserId(params: {
   tenantId: string;
   parsed: FaceIdParsedEvent;
@@ -382,6 +388,14 @@ export async function ingestFaceIdEvent(params: {
     parsed,
     integrationConfig: params.integrationConfig,
   });
+
+  const unmatchedUserPolicy = parseUnmatchedUserPolicy(params.integrationConfig);
+  if (!matchedUserId && unmatchedUserPolicy === 'ignore') {
+    return {
+      ignored: true,
+      reason: 'unmatched_user',
+    };
+  }
 
   const created = await prisma.attendanceEvent.upsert({
     where: {
