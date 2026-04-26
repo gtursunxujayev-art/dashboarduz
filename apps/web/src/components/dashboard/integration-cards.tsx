@@ -633,6 +633,11 @@ export default function IntegrationCards() {
                       Webhook: {String(faceIdStatus?.webhookUrl || integrationConfig.webhookUrl || '')}
                     </p>
                     <p>Token holati: {faceIdStatus?.hasToken ? 'Mavjud' : 'Yo‘q'}</p>
+                    {!faceIdStatus?.hasToken && (
+                      <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">
+                        Token topilmadi. Avval <b>Tokenni yangilash</b> tugmasini bosing va shu tokenni Face ID yuboruvchi tizimga kiriting.
+                      </p>
+                    )}
                     <p>Mos kelmagan foydalanuvchi rejimi: {faceIdStatus?.unmatchedUserPolicy === 'ignore' ? 'Ignore' : 'Store'}</p>
                     {Array.isArray(faceIdStatus?.branchWhitelist) && faceIdStatus.branchWhitelist.length > 0 && (
                       <p>Ruxsat etilgan filiallar: {faceIdStatus.branchWhitelist.join(', ')}</p>
