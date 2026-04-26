@@ -33,6 +33,7 @@ export const voipConnectSchema = z.object({}).optional();
 export const faceIdConnectSchema = z.object({
   webhookToken: z.string().min(8).optional(),
   branchWhitelist: z.array(z.string().min(1)).optional(),
+  unmatchedUserPolicy: z.enum(['store', 'ignore']).optional(),
 });
 
 // Generic integration update
