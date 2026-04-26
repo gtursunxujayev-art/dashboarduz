@@ -39,6 +39,40 @@ function extractBearerToken(req: Request): string | null {
   return token || null;
 }
 
+function extractFaceIdToken(req: Request): string | null {
+  const bearer = extractBearerToken(req);
+  if (bearer) {
+    return bearer;
+  }
+
+  const queryToken = typeof req.query?.token === 'string'
+    ? req.query.token.trim()
+    : typeof req.query?.webhook_token === 'string'
+      ? req.query.webhook_token.trim()
+      : typeof req.query?.access_token === 'string'
+        ? req.query.access_token.trim()
+        : '';
+  if (queryToken) {
+    return queryToken;
+  }
+
+  const body = req.body as Record<string, unknown> | null | undefined;
+  if (body && typeof body === 'object') {
+    const bodyToken = typeof body.token === 'string'
+      ? body.token.trim()
+      : typeof body.webhook_token === 'string'
+        ? body.webhook_token.trim()
+        : typeof body.access_token === 'string'
+          ? body.access_token.trim()
+          : '';
+    if (bodyToken) {
+      return bodyToken;
+    }
+  }
+
+  return null;
+}
+
 function resolveVoipProvider(req: Request): string {
   const headerProvider = req.headers['x-voip-provider'];
   const queryProvider = req.query.provider;
@@ -1222,20 +1256,24 @@ router.get('/faceid', async (_req: Request, res: Response) => {
     ok: true,
     endpoint: '/webhooks/faceid',
     method: 'POST',
-    message: 'Face ID webhook endpoint is alive. Send Bearer token in Authorization header.',
+    message: 'Face ID webhook endpoint is alive. Token can be sent via Bearer header or token query/body field.',
     requiredHeader: 'Authorization: Bearer <token>',
+    alternateAuth: ['?token=<token>', '?webhook_token=<token>', 'body.token'],
   });
 });
 
 router.post('/faceid', async (req: Request, res: Response) => {
   try {
     const rawBody = getRawBody(req);
-    const bearerToken = extractBearerToken(req);
-    if (!bearerToken) {
-      return res.status(401).json({ error: 'Missing or invalid Authorization Bearer token' });
+    const webhookToken = extractFaceIdToken(req);
+    if (!webhookToken) {
+      return res.status(401).json({
+        error: 'Missing Face ID token',
+        acceptedAuth: ['Authorization: Bearer <token>', '?token=<token>', '?webhook_token=<token>', 'body.token'],
+      });
     }
 
-    const webhookTokenHash = hashFaceIdWebhookToken(bearerToken);
+    const webhookTokenHash = hashFaceIdWebhookToken(webhookToken);
     const integration = await prisma.integration.findFirst({
       where: {
         type: 'faceid_attendance',
