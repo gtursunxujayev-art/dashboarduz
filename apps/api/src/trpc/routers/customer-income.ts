@@ -22,7 +22,12 @@ import {
   type HistoricalPreparedIncomeRow,
   type HistoricalRawRow,
 } from '../../services/historical-import';
-import { buildSaleChainMetricsBySaleId, getSaleAgreementAmount, type SaleChainSaleRow } from '../../services/income-chain';
+import {
+  buildSaleChainMetricsBySaleId,
+  evaluateSaleChainConsistency,
+  getSaleAgreementAmount,
+  type SaleChainSaleRow,
+} from '../../services/income-chain';
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent'] as const;
 const SALES_MANAGER_ROLE_TOKENS = new Set(
@@ -581,42 +586,46 @@ async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params
     },
     select: {
       id: true,
-      entryDate: true,
       coursePriceAmount: true,
       debtAmount: true,
       paymentAmount: true,
-      remainingDebtAmount: true,
     },
   });
   if (!sale) {
     return;
   }
 
-  const metrics = buildSaleChainMetricsBySaleId({
-    sales: [sale],
-    chainRows: await tx.income.findMany({
-      where: {
-        tenantId: params.tenantId,
-        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-        OR: [
-          { id: sale.id },
-          { relatedDebtIncomeId: sale.id },
-        ],
-      },
-      select: {
-        id: true,
-        relatedDebtIncomeId: true,
-        paymentAmount: true,
-        entryDate: true,
-      },
-    }),
+  const chainRows = await tx.income.findMany({
+    where: {
+      tenantId: params.tenantId,
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      OR: [
+        { id: sale.id },
+        { relatedDebtIncomeId: sale.id },
+      ],
+    },
+    select: {
+      id: true,
+      type: true,
+      relatedDebtIncomeId: true,
+      paymentAmount: true,
+      entryDate: true,
+      createdAt: true,
+      debtAmount: true,
+      remainingDebtAmount: true,
+    },
   });
-  const expectedDebt = metrics.get(sale.id)?.currentDebtAmount ?? 0;
-  const storedDebt = Number(sale.remainingDebtAmount || 0);
-  if (Math.abs(expectedDebt - storedDebt) > 0.0001) {
+  const agreementAmount = getSaleAgreementAmount(sale);
+  const consistency = evaluateSaleChainConsistency({
+    saleId: sale.id,
+    agreementAmount,
+    chainRows,
+  });
+
+  if (!consistency.ok) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
-      message: 'Debt invariant mismatch after mutation. Operation cancelled to protect data consistency.',
+      message: `Debt invariant mismatch after mutation: ${consistency.issues.join(', ')}`,
     });
   }
 }
@@ -4599,9 +4608,18 @@ export const customerIncomeRouter = router({
               const refreshedIncome = await tx.income.findUnique({
                 where: { id: income.id },
               });
+              await assertSaleChainDebtInvariant(tx, {
+                tenantId: ctx.tenantId,
+                saleId: normalized.canonicalSaleId,
+              });
               return refreshedIncome ?? updatedSale;
             }
           }
+
+          await assertSaleChainDebtInvariant(tx, {
+            tenantId: ctx.tenantId,
+            saleId: chronologyCanonicalSaleId || income.id,
+          });
 
           return updatedSale;
         });
@@ -4742,8 +4760,17 @@ export const customerIncomeRouter = router({
           const refreshedIncome = await tx.income.findUnique({
             where: { id: income.id },
           });
+          await assertSaleChainDebtInvariant(tx, {
+            tenantId: ctx.tenantId,
+            saleId: normalized.canonicalSaleId,
+          });
           return refreshedIncome ?? updatedRow;
         }
+
+        await assertSaleChainDebtInvariant(tx, {
+          tenantId: ctx.tenantId,
+          saleId: sourceIncome.id,
+        });
 
         return updatedRow;
       });
@@ -7230,6 +7257,11 @@ export const customerIncomeRouter = router({
         await refreshCustomerProfileFromLatestActiveSale(tx, {
           tenantId: ctx.tenantId,
           customerId: saleIncome.customerId,
+        });
+
+        await assertSaleChainDebtInvariant(tx, {
+          tenantId: ctx.tenantId,
+          saleId: saleIncome.id,
         });
       });
 
