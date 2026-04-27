@@ -5,6 +5,7 @@ import {
   protectedProcedure,
   INCOME_LIFECYCLE_ACTIVE,
   isAgentOnly,
+  isTashkiliyOnly,
   getCurrentMonthRange,
   dashboardRangeSchema,
   resolveDateRange,
@@ -909,5 +910,387 @@ export const salaryProcedures = {
       byAgent,
       currentUser: byAgent.find((row) => row.userId === ctx.user.userId) || null,
     };
+    }),
+
+  bonusIncomeDetails: protectedProcedure
+    .input(
+      z.object({
+        range: dashboardRangeSchema.default('month'),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        courseId: z.string().uuid().optional(),
+        managerUserId: z.string().uuid().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      if (isTashkiliyOnly(ctx.user.roles)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: "Tashkiliy role cannot access bonus income details." });
+      }
+
+      const now = new Date();
+      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
+      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
+      const selectedManagerUserId = scopedManagerUserId || input.managerUserId;
+
+      const [tenant, allAgents] = await Promise.all([
+        prisma.tenant.findUnique({
+          where: { id: ctx.tenantId },
+          select: { settings: true },
+        }),
+        prisma.user.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            isActive: true,
+            roles: {
+              hasSome: ['Agent', 'TeamLeader'],
+            },
+          },
+          orderBy: [{ name: 'asc' }, { username: 'asc' }],
+          select: {
+            id: true,
+            name: true,
+            username: true,
+          },
+        }),
+      ]);
+
+      if (!tenant) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
+      }
+
+      const salarySettings = extractSalarySettings(tenant.settings);
+      const visibleAgents = selectedManagerUserId
+        ? allAgents.filter((agent) => agent.id === selectedManagerUserId)
+        : allAgents;
+      const visibleAgentIds = visibleAgents.map((agent) => agent.id);
+
+      if (!visibleAgentIds.length) {
+        return {
+          rangeStart: rangeStart.toISOString(),
+          rangeEnd: rangeEnd.toISOString(),
+          scopedToCurrentAgent: Boolean(scopedManagerUserId),
+          bonusMode: salarySettings.bonusMode,
+          agentOptions: [],
+          totals: {
+            incomeAmount: 0,
+            bonusAmount: 0,
+            rowCount: 0,
+          },
+          rows: [] as Array<{
+            id: string;
+            saleId: string | null;
+            entryDate: Date;
+            type: string;
+            customerNumber: string;
+            customerName: string;
+            managerUserId: string;
+            managerLabel: string;
+            courseName: string | null;
+            tariffName: string | null;
+            agreementAmount: number;
+            paymentAmount: number;
+            remainingDebtAmount: number;
+            calculatedBonus: number;
+            isLastPayment: boolean;
+          }>,
+        };
+      }
+
+      const incomes = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          managerUserId: { in: visibleAgentIds },
+          ...(input.courseId ? { courseId: input.courseId } : {}),
+          entryDate: {
+            gte: rangeStart,
+            lte: rangeEnd,
+          },
+        },
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        take: 3000,
+        select: {
+          id: true,
+          type: true,
+          entryDate: true,
+          createdAt: true,
+          paymentAmount: true,
+          remainingDebtAmount: true,
+          coursePriceAmount: true,
+          managerUserId: true,
+          relatedDebtIncomeId: true,
+          customer: {
+            select: {
+              customerNumber: true,
+              name: true,
+            },
+          },
+          manager: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+            },
+          },
+          course: {
+            select: {
+              name: true,
+              category: true,
+            },
+          },
+          tariff: {
+            select: {
+              name: true,
+            },
+          },
+          relatedDebtIncome: {
+            select: {
+              id: true,
+              managerUserId: true,
+              coursePriceAmount: true,
+              paymentAmount: true,
+              entryDate: true,
+              course: {
+                select: {
+                  name: true,
+                  category: true,
+                },
+              },
+              tariff: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const saleIds = Array.from(
+        new Set(
+          incomes
+            .map((income) => (income.type === 'new_sale' ? income.id : income.relatedDebtIncomeId))
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+
+      const chainRows = saleIds.length > 0
+        ? await prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              OR: [
+                { id: { in: saleIds } },
+                { relatedDebtIncomeId: { in: saleIds } },
+              ],
+            },
+            select: {
+              id: true,
+              type: true,
+              entryDate: true,
+              createdAt: true,
+              relatedDebtIncomeId: true,
+            },
+          })
+        : [];
+
+      const lastPaymentBySaleId = new Map<string, { id: string; entryDate: Date; createdAt: Date }>();
+      for (const row of chainRows) {
+        const saleId = row.type === 'new_sale' ? row.id : row.relatedDebtIncomeId;
+        if (!saleId) continue;
+        const existing = lastPaymentBySaleId.get(saleId);
+        if (
+          !existing
+          || row.entryDate.getTime() > existing.entryDate.getTime()
+          || (
+            row.entryDate.getTime() === existing.entryDate.getTime()
+            && row.createdAt.getTime() > existing.createdAt.getTime()
+          )
+        ) {
+          lastPaymentBySaleId.set(saleId, {
+            id: row.id,
+            entryDate: row.entryDate,
+            createdAt: row.createdAt,
+          });
+        }
+      }
+
+      const [fullyPaidNewSalesForBonus, closingRepaymentsForBonus] = await Promise.all([
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'new_sale',
+            managerUserId: { in: visibleAgentIds },
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            remainingDebtAmount: 0,
+            entryDate: {
+              lte: rangeEnd,
+            },
+          },
+          select: {
+            id: true,
+            managerUserId: true,
+            coursePriceAmount: true,
+            paymentAmount: true,
+            entryDate: true,
+            course: {
+              select: {
+                name: true,
+                category: true,
+              },
+            },
+          },
+        }),
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'repayment',
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            remainingDebtAmount: 0,
+            relatedDebtIncomeId: { not: null },
+            relatedDebtIncome: {
+              managerUserId: { in: visibleAgentIds },
+              type: 'new_sale',
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            },
+            entryDate: {
+              lte: rangeEnd,
+            },
+          },
+          orderBy: {
+            entryDate: 'asc',
+          },
+          select: {
+            entryDate: true,
+            relatedDebtIncomeId: true,
+          },
+        }),
+      ]);
+
+      const closeDateBySaleIdForBonus = new Map<string, Date>();
+      for (const repayment of closingRepaymentsForBonus) {
+        if (!repayment.relatedDebtIncomeId) continue;
+        if (!closeDateBySaleIdForBonus.has(repayment.relatedDebtIncomeId)) {
+          closeDateBySaleIdForBonus.set(repayment.relatedDebtIncomeId, repayment.entryDate);
+        }
+      }
+
+      const monthlyClosedCountsByAgent = new Map<string, SalaryBreakdown>();
+      for (const sale of fullyPaidNewSalesForBonus) {
+        const closeDate = closeDateBySaleIdForBonus.get(sale.id) ?? sale.entryDate;
+        if (closeDate < rangeStart || closeDate > rangeEnd) {
+          continue;
+        }
+        const category = sale.course?.category
+          ? classifyCourseCategoryFromField(sale.course.category)
+          : classifyCourseCategoryFromField(sale.course?.name);
+        if (category === 'other') {
+          continue;
+        }
+        const existing = monthlyClosedCountsByAgent.get(sale.managerUserId) ?? createZeroBreakdown();
+        existing[category] += 1;
+        monthlyClosedCountsByAgent.set(sale.managerUserId, existing);
+      }
+
+      const getMonthlyClosedCount = (agentId: string, category: SalaryCategory): number => {
+        const byAgent = monthlyClosedCountsByAgent.get(agentId);
+        return byAgent?.[category] ?? 0;
+      };
+
+      const fullyPaidSaleIds = new Set(fullyPaidNewSalesForBonus.map((sale) => sale.id));
+      const saleById = new Map(fullyPaidNewSalesForBonus.map((sale) => [sale.id, sale]));
+
+      const rows = incomes.map((income) => {
+        const saleId = income.type === 'new_sale' ? income.id : income.relatedDebtIncomeId;
+        const last = saleId ? lastPaymentBySaleId.get(saleId) : undefined;
+        const isLastPayment = Boolean(last && last.id === income.id);
+
+        const courseCategory = income.course?.category ?? income.relatedDebtIncome?.course?.category;
+        const courseName = income.course?.name ?? income.relatedDebtIncome?.course?.name;
+        const category = classifyCourseCategoryFromField(courseCategory || courseName);
+
+        let calculatedBonus = 0;
+        if (isLastPayment && category !== 'other') {
+          const closedCount = getMonthlyClosedCount(income.managerUserId, category);
+          const percentage = resolveBonusPercent(salarySettings.bonusRules[category], closedCount);
+
+          if (salarySettings.bonusMode === 'on_income') {
+            calculatedBonus = getBonusAmount(income.paymentAmount ?? 0, percentage);
+          } else if (saleId && fullyPaidSaleIds.has(saleId)) {
+            const sale = saleById.get(saleId)
+              || (income.type === 'new_sale'
+                ? {
+                    id: income.id,
+                    managerUserId: income.managerUserId,
+                    coursePriceAmount: income.coursePriceAmount,
+                    paymentAmount: income.paymentAmount ?? 0,
+                    entryDate: income.entryDate,
+                    course: income.course
+                      ? {
+                          name: income.course.name,
+                          category: income.course.category,
+                        }
+                      : null,
+                  }
+                : null);
+            if (sale) {
+              const closeDate = closeDateBySaleIdForBonus.get(saleId) ?? sale.entryDate;
+              if (closeDate >= rangeStart && closeDate <= rangeEnd) {
+                const agreementAmount = sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
+                calculatedBonus = getBonusAmount(agreementAmount, percentage);
+              }
+            }
+          }
+        }
+
+        const agreementAmount = income.type === 'new_sale'
+          ? (income.coursePriceAmount ?? income.paymentAmount ?? 0)
+          : (income.relatedDebtIncome?.coursePriceAmount ?? income.coursePriceAmount ?? income.paymentAmount ?? 0);
+
+        return {
+          id: income.id,
+          saleId: saleId || null,
+          entryDate: income.entryDate,
+          type: income.type,
+          customerNumber: income.customer.customerNumber,
+          customerName: income.customer.name,
+          managerUserId: income.managerUserId,
+          managerLabel: income.manager.name || income.manager.username || income.manager.id,
+          courseName: income.course?.name ?? income.relatedDebtIncome?.course?.name ?? null,
+          tariffName: income.tariff?.name ?? income.relatedDebtIncome?.tariff?.name ?? null,
+          agreementAmount,
+          paymentAmount: income.paymentAmount ?? 0,
+          remainingDebtAmount: income.remainingDebtAmount ?? 0,
+          calculatedBonus,
+          isLastPayment,
+        };
+      });
+
+      const totals = rows.reduce(
+        (acc, row) => {
+          acc.incomeAmount += row.paymentAmount;
+          acc.bonusAmount += row.calculatedBonus;
+          acc.rowCount += 1;
+          return acc;
+        },
+        {
+          incomeAmount: 0,
+          bonusAmount: 0,
+          rowCount: 0,
+        },
+      );
+
+      return {
+        rangeStart: rangeStart.toISOString(),
+        rangeEnd: rangeEnd.toISOString(),
+        scopedToCurrentAgent: Boolean(scopedManagerUserId),
+        bonusMode: salarySettings.bonusMode,
+        agentOptions: visibleAgents.map((agent) => ({
+          id: agent.id,
+          label: agent.name || agent.username || agent.id,
+        })),
+        totals,
+        rows,
+      };
     }),
 };
