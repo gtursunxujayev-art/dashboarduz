@@ -27,6 +27,7 @@ import {
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 
 function calculateProratedFixedSalary(
   monthlyFixedSalary: number,
@@ -1066,22 +1067,40 @@ export const salaryProcedures = {
         },
       });
 
-      const saleIds = Array.from(
-        new Set(
-          incomes
-            .map((income) => (income.type === 'new_sale' ? income.id : income.relatedDebtIncomeId))
-            .filter((value): value is string => Boolean(value)),
-        ),
-      );
+      const activeSalesForBonus = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          managerUserId: { in: visibleAgentIds },
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          entryDate: {
+            lte: rangeEnd,
+          },
+        },
+        select: {
+          id: true,
+          managerUserId: true,
+          coursePriceAmount: true,
+          paymentAmount: true,
+          entryDate: true,
+          course: {
+            select: {
+              name: true,
+              category: true,
+            },
+          },
+        },
+      });
 
-      const chainRows = saleIds.length > 0
+      const saleIdsForBonus = activeSalesForBonus.map((sale) => sale.id);
+      const bonusChainRows = saleIdsForBonus.length > 0
         ? await prisma.income.findMany({
             where: {
               tenantId: ctx.tenantId,
               lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
               OR: [
-                { id: { in: saleIds } },
-                { relatedDebtIncomeId: { in: saleIds } },
+                { id: { in: saleIdsForBonus } },
+                { relatedDebtIncomeId: { in: saleIdsForBonus } },
               ],
             },
             select: {
@@ -1090,12 +1109,18 @@ export const salaryProcedures = {
               entryDate: true,
               createdAt: true,
               relatedDebtIncomeId: true,
+              paymentAmount: true,
             },
           })
         : [];
 
+      const chainMetricsBySaleId = buildSaleChainMetricsBySaleId({
+        sales: activeSalesForBonus,
+        chainRows: bonusChainRows,
+      });
+
       const lastPaymentBySaleId = new Map<string, { id: string; entryDate: Date; createdAt: Date }>();
-      for (const row of chainRows) {
+      for (const row of bonusChainRows) {
         const saleId = row.type === 'new_sale' ? row.id : row.relatedDebtIncomeId;
         if (!saleId) continue;
         const existing = lastPaymentBySaleId.get(saleId);
@@ -1115,70 +1140,20 @@ export const salaryProcedures = {
         }
       }
 
-      const [fullyPaidNewSalesForBonus, closingRepaymentsForBonus] = await Promise.all([
-        prisma.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            type: 'new_sale',
-            managerUserId: { in: visibleAgentIds },
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            remainingDebtAmount: 0,
-            entryDate: {
-              lte: rangeEnd,
-            },
-          },
-          select: {
-            id: true,
-            managerUserId: true,
-            coursePriceAmount: true,
-            paymentAmount: true,
-            entryDate: true,
-            course: {
-              select: {
-                name: true,
-                category: true,
-              },
-            },
-          },
-        }),
-        prisma.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            type: 'repayment',
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            remainingDebtAmount: 0,
-            relatedDebtIncomeId: { not: null },
-            relatedDebtIncome: {
-              managerUserId: { in: visibleAgentIds },
-              type: 'new_sale',
-              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            },
-            entryDate: {
-              lte: rangeEnd,
-            },
-          },
-          orderBy: {
-            entryDate: 'asc',
-          },
-          select: {
-            entryDate: true,
-            relatedDebtIncomeId: true,
-          },
-        }),
-      ]);
-
       const closeDateBySaleIdForBonus = new Map<string, Date>();
-      for (const repayment of closingRepaymentsForBonus) {
-        if (!repayment.relatedDebtIncomeId) continue;
-        if (!closeDateBySaleIdForBonus.has(repayment.relatedDebtIncomeId)) {
-          closeDateBySaleIdForBonus.set(repayment.relatedDebtIncomeId, repayment.entryDate);
+      for (const sale of activeSalesForBonus) {
+        const metric = chainMetricsBySaleId.get(sale.id);
+        if (!metric || metric.currentDebtAmount > 0.0001) {
+          continue;
         }
+        const lastPayment = lastPaymentBySaleId.get(sale.id);
+        closeDateBySaleIdForBonus.set(sale.id, lastPayment?.entryDate ?? sale.entryDate);
       }
 
       const monthlyClosedCountsByAgent = new Map<string, SalaryBreakdown>();
-      for (const sale of fullyPaidNewSalesForBonus) {
-        const closeDate = closeDateBySaleIdForBonus.get(sale.id) ?? sale.entryDate;
-        if (closeDate < rangeStart || closeDate > rangeEnd) {
+      for (const sale of activeSalesForBonus) {
+        const closeDate = closeDateBySaleIdForBonus.get(sale.id);
+        if (!closeDate || closeDate < rangeStart || closeDate > rangeEnd) {
           continue;
         }
         const category = sale.course?.category
@@ -1197,8 +1172,12 @@ export const salaryProcedures = {
         return byAgent?.[category] ?? 0;
       };
 
-      const fullyPaidSaleIds = new Set(fullyPaidNewSalesForBonus.map((sale) => sale.id));
-      const saleById = new Map(fullyPaidNewSalesForBonus.map((sale) => [sale.id, sale]));
+      const fullyPaidSaleIds = new Set(
+        activeSalesForBonus
+          .filter((sale) => (chainMetricsBySaleId.get(sale.id)?.currentDebtAmount ?? 0) <= 0.0001)
+          .map((sale) => sale.id),
+      );
+      const saleById = new Map(activeSalesForBonus.map((sale) => [sale.id, sale]));
 
       const rows = incomes.map((income) => {
         const saleId = income.type === 'new_sale' ? income.id : income.relatedDebtIncomeId;
@@ -1247,6 +1226,10 @@ export const salaryProcedures = {
           ? (income.coursePriceAmount ?? income.paymentAmount ?? 0)
           : (income.relatedDebtIncome?.coursePriceAmount ?? income.coursePriceAmount ?? income.paymentAmount ?? 0);
 
+        const chainRemainingDebtAmount = saleId
+          ? (chainMetricsBySaleId.get(saleId)?.currentDebtAmount ?? Number(income.remainingDebtAmount ?? 0))
+          : Number(income.remainingDebtAmount ?? 0);
+
         return {
           id: income.id,
           saleId: saleId || null,
@@ -1260,7 +1243,7 @@ export const salaryProcedures = {
           tariffName: income.tariff?.name ?? income.relatedDebtIncome?.tariff?.name ?? null,
           agreementAmount,
           paymentAmount: income.paymentAmount ?? 0,
-          remainingDebtAmount: income.remainingDebtAmount ?? 0,
+          remainingDebtAmount: chainRemainingDebtAmount,
           calculatedBonus,
           isLastPayment,
         };
