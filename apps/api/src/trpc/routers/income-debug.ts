@@ -3,7 +3,11 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { prisma } from '@dashboarduz/db';
 import { adminProcedure, router } from '../trpc';
-import { buildSaleChainMetricsBySaleId } from '../../services/income-chain';
+import {
+  buildSaleChainMetricsBySaleId,
+  evaluateSaleChainConsistency,
+  getSaleAgreementAmount,
+} from '../../services/income-chain';
 
 const incomeDebugInput = z.object({
   mode: z.enum(['suspicious', 'future', 'unresolved', 'relink', 'imported', 'hidden', 'all']).default('suspicious'),
@@ -440,6 +444,66 @@ async function refreshCustomerProfileFromLatestActiveSaleForDebug(tx: Prisma.Tra
       profileTariffId: latestActiveSale?.tariffId ?? null,
     },
   });
+}
+
+async function getSaleChainConsistencySnapshot(params: {
+  tenantId: string;
+  saleId: string;
+}) {
+  const sale = await prisma.income.findFirst({
+    where: {
+      id: params.saleId,
+      tenantId: params.tenantId,
+      type: 'new_sale',
+      lifecycleStatus: 'active',
+    },
+    select: {
+      id: true,
+      entryDate: true,
+      coursePriceAmount: true,
+      debtAmount: true,
+      paymentAmount: true,
+    },
+  });
+
+  if (!sale) {
+    return null;
+  }
+
+  const chainRows = await prisma.income.findMany({
+    where: {
+      tenantId: params.tenantId,
+      lifecycleStatus: 'active',
+      OR: [
+        { id: sale.id },
+        { relatedDebtIncomeId: sale.id },
+      ],
+    },
+    select: {
+      id: true,
+      type: true,
+      relatedDebtIncomeId: true,
+      paymentAmount: true,
+      entryDate: true,
+      createdAt: true,
+      debtAmount: true,
+      remainingDebtAmount: true,
+    },
+  });
+
+  const agreementAmount = getSaleAgreementAmount(sale);
+  const consistency = evaluateSaleChainConsistency({
+    saleId: sale.id,
+    agreementAmount,
+    chainRows,
+  });
+
+  return {
+    saleId: sale.id,
+    agreementAmount,
+    chainRows,
+    consistency,
+  };
 }
 
 function findSnapshotMatch(params: {
@@ -894,9 +958,13 @@ export const incomeDebugRouter = router({
             },
             select: {
               id: true,
+              type: true,
               relatedDebtIncomeId: true,
               paymentAmount: true,
               entryDate: true,
+              createdAt: true,
+              debtAmount: true,
+              remainingDebtAmount: true,
             },
           })
         : [];
@@ -904,12 +972,25 @@ export const incomeDebugRouter = router({
         sales,
         chainRows,
       });
+      const chainRowsBySaleId = new Map<string, typeof chainRows>();
+      for (const row of chainRows) {
+        const saleId = row.relatedDebtIncomeId || row.id;
+        if (!chainRowsBySaleId.has(saleId)) {
+          chainRowsBySaleId.set(saleId, []);
+        }
+        chainRowsBySaleId.get(saleId)!.push(row);
+      }
       const rows = sales.map((sale) => {
         const metric = metricsBySaleId.get(sale.id);
+        const consistency = evaluateSaleChainConsistency({
+          saleId: sale.id,
+          agreementAmount: getSaleAgreementAmount(sale),
+          chainRows: chainRowsBySaleId.get(sale.id) || [],
+        });
         const expectedDebt = metric?.currentDebtAmount ?? 0;
         const expectedPaid = metric?.paidAmount ?? Number(sale.paymentAmount || 0);
         const storedDebt = Number(sale.remainingDebtAmount || 0);
-        const mismatch = Math.abs(expectedDebt - storedDebt) > 0.0001;
+        const mismatch = !consistency.ok;
         return {
           saleIncomeId: sale.id,
           customerNumber: sale.customer?.customerNumber || '',
@@ -922,6 +1003,7 @@ export const incomeDebugRouter = router({
           expectedPaid,
           agreementAmount: metric?.agreementAmount ?? Number(sale.coursePriceAmount ?? sale.debtAmount ?? sale.paymentAmount ?? 0),
           mismatch,
+          mismatchReasons: consistency.issues,
         };
       });
       const mismatchRows = rows.filter((row) => row.mismatch);
@@ -1169,20 +1251,67 @@ export const incomeDebugRouter = router({
 
       for (const sale of activeSales) {
         try {
+          const before = await getSaleChainConsistencySnapshot({
+            tenantId: ctx.tenantId,
+            saleId: sale.id,
+          });
+          if (!before) {
+            results.push({
+              saleIncomeId: sale.id,
+              customerNumber: sale.customer?.customerNumber || '',
+              customerName: sale.customer?.name || '-',
+              status: 'failed',
+              reason: 'Aktiv sotuv topilmadi.',
+            });
+            continue;
+          }
+
+          if (before.consistency.ok) {
+            results.push({
+              saleIncomeId: sale.id,
+              customerNumber: sale.customer?.customerNumber || '',
+              customerName: sale.customer?.name || '-',
+              status: 'skipped',
+              reason: 'Chain allaqachon to‘g‘ri holatda.',
+              canonicalSaleId: before.saleId,
+              didReorder: false,
+            });
+            continue;
+          }
+
           const normalized = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
             return recomputeSaleChainStateFully(tx, {
               tenantId: ctx.tenantId,
               saleId: sale.id,
             });
           });
+
+          const after = await getSaleChainConsistencySnapshot({
+            tenantId: ctx.tenantId,
+            saleId: normalized.canonicalSaleId,
+          });
+
+          if (!after?.consistency.ok) {
+            results.push({
+              saleIncomeId: sale.id,
+              customerNumber: sale.customer?.customerNumber || '',
+              customerName: sale.customer?.name || '-',
+              status: 'failed',
+              reason: `Qayta hisobdan keyin ham mismatch: ${(after?.consistency.issues || ['unknown']).join(', ')}`,
+              canonicalSaleId: normalized.canonicalSaleId,
+              didReorder: normalized.didReorder,
+            });
+            continue;
+          }
+
           results.push({
             saleIncomeId: sale.id,
             customerNumber: sale.customer?.customerNumber || '',
             customerName: sale.customer?.name || '-',
             status: 'fixed',
             reason: normalized.didReorder
-              ? 'Chain qayta tartiblandi va qarz qayta hisoblandi.'
-              : 'Chain qarzi qayta hisoblandi.',
+              ? `Chain qayta tartiblandi va qarz qayta hisoblandi. (${before.consistency.issues.join(', ')})`
+              : `Chain qarzi qayta hisoblandi. (${before.consistency.issues.join(', ')})`,
             canonicalSaleId: normalized.canonicalSaleId,
             didReorder: normalized.didReorder,
           });
