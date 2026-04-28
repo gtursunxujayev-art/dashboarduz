@@ -6867,6 +6867,7 @@ export const customerIncomeRouter = router({
       }
 
       const transferAmount = saleChain.reduce((sum, item) => sum + (item.paymentAmount || 0), 0);
+      const relinkedCount = saleChainIds.length;
       let targetSaleIncomeId: string | null = null;
       let createdRefundRequestId: string | null = null;
       let relinkedPaymentDates: string[] = [];
@@ -7106,6 +7107,7 @@ export const customerIncomeRouter = router({
       return {
         success: true,
         deletedCount: resultPayload.deletedCount,
+        relinkedCount: resultPayload.mode === 'relink' ? relinkedCount : 0,
         mode: resultPayload.mode,
         targetSaleIncomeId,
         refundRequestId: createdRefundRequestId,
