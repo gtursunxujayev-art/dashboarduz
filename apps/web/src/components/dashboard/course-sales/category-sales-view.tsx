@@ -366,7 +366,8 @@ export default function CourseTypeSalesView({
       if (result.mode === 'refund') {
         setActionSuccess("Refund so'rovi yaratildi va moliya tasdig'iga yuborildi.");
       } else if (result.mode === 'relink') {
-        setActionSuccess(`Daromad boshqa kursga o'tkazildi. O'chirilgan yozuvlar: ${result.deletedCount}.`);
+        const relinkedCount = Number((result as any)?.relinkedCount ?? 0);
+        setActionSuccess(`Daromad boshqa kursga o'tkazildi. O'tkazilgan yozuvlar: ${relinkedCount}.`);
       } else {
         setActionSuccess(`Kurs o'chirildi. O'chirilgan yozuvlar: ${result.deletedCount}.`);
       }
