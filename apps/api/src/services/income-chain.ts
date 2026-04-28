@@ -27,6 +27,8 @@ export type SaleChainMetrics = {
 export type SaleChainConsistencyResult = {
   ok: boolean;
   expectedCurrentDebtAmount: number;
+  actualSaleRemainingDebtAmount: number;
+  chainLength: number;
   issues: string[];
 };
 
@@ -98,6 +100,8 @@ export function evaluateSaleChainConsistency(params: {
     return {
       ok: false,
       expectedCurrentDebtAmount: Math.max(params.agreementAmount, 0),
+      actualSaleRemainingDebtAmount: 0,
+      chainLength: 0,
       issues: ['empty_chain'],
     };
   }
@@ -156,6 +160,8 @@ export function evaluateSaleChainConsistency(params: {
   return {
     ok: issues.length === 0,
     expectedCurrentDebtAmount: rollingDebt,
+    actualSaleRemainingDebtAmount: currentSaleRemaining,
+    chainLength: chain.length,
     issues: Array.from(new Set(issues)),
   };
 }
