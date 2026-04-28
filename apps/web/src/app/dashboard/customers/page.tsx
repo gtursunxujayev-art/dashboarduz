@@ -526,7 +526,8 @@ export default function CustomersPage() {
       if (result.mode === 'refund') {
         setPageSuccess("Refund so'rovi yaratildi va moliya tasdig'iga yuborildi.");
       } else if (result.mode === 'relink') {
-        setPageSuccess(`Daromad boshqa kursga o'tkazildi. O'chirilgan yozuvlar: ${result.deletedCount}.`);
+        const relinkedCount = Number((result as any)?.relinkedCount ?? 0);
+        setPageSuccess(`Daromad boshqa kursga o'tkazildi. O'tkazilgan yozuvlar: ${relinkedCount}.`);
       } else {
         setPageSuccess(`Kurs o'chirildi. O'chirilgan yozuvlar: ${result.deletedCount}.`);
       }
