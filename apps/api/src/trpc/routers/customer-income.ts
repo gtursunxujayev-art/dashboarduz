@@ -7039,6 +7039,11 @@ export const customerIncomeRouter = router({
           deletedCount: deleted.count,
           mode: 'delete' as const,
         };
+      }, {
+        // Relink/delete course actions can touch long payment chains.
+        // Increase interactive transaction window to avoid premature close.
+        maxWait: 15000,
+        timeout: 60000,
       });
 
       await prisma.auditLog.create({
