@@ -623,9 +623,15 @@ async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params
   });
 
   if (!consistency.ok) {
+    const invariantDebug = {
+      saleId: sale.id,
+      expectedDebt: consistency.expectedCurrentDebtAmount,
+      storedSaleDebt: consistency.actualSaleRemainingDebtAmount,
+      chainRows: consistency.chainLength,
+    };
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
-      message: `Debt invariant mismatch after mutation: ${consistency.issues.join(', ')}`,
+      message: `Debt invariant mismatch after mutation: ${consistency.issues.join(', ')} | debug=${JSON.stringify(invariantDebug)}`,
     });
   }
 }
