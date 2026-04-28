@@ -6954,6 +6954,9 @@ export const customerIncomeRouter = router({
               id: true,
               courseId: true,
               tariffId: true,
+              coursePriceAmount: true,
+              debtAmount: true,
+              paymentAmount: true,
               legacyImportMeta: true,
               customer: {
                 select: {
@@ -6981,27 +6984,51 @@ export const customerIncomeRouter = router({
             : null;
           const effectiveTargetSubTariffId = targetSaleSubTariffId || profileMatchedTargetSubTariffId || null;
 
+          const targetChainRows = await tx.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              OR: [
+                { id: targetSale.id },
+                { relatedDebtIncomeId: targetSale.id },
+              ],
+            },
+            select: {
+              id: true,
+              paymentAmount: true,
+            },
+          });
+          const targetAgreementAmount = getSaleAgreementAmount(targetSale);
+          const targetPaidAmount = targetChainRows.reduce((sum, row) => sum + Math.max(Number(row.paymentAmount || 0), 0), 0);
+          const targetCurrentDebtAmount = Math.max(targetAgreementAmount - targetPaidAmount, 0);
+
+          if (transferAmount > targetCurrentDebtAmount) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: `Summalar juda katta: o'tkaziladigan to'lov (${transferAmount.toLocaleString('uz-UZ')}) maqsad kurs qarzidan (${targetCurrentDebtAmount.toLocaleString('uz-UZ')}) katta.`,
+            });
+          }
+
           await tx.income.updateMany({
             where: {
               tenantId: ctx.tenantId,
               id: { in: saleChainIds },
             },
             data: {
+              type: 'repayment',
+              relatedDebtIncomeId: targetSale.id,
               courseId: targetSale.courseId,
               tariffId: targetSale.tariffId,
-            },
-          });
-
-          await tx.income.update({
-            where: { id: saleIncome.id },
-            data: {
-              legacyImportMeta: withSaleSubTariffMeta(null, effectiveTargetSubTariffId),
+              coursePriceAmount: null,
+              debtAmount: 0,
+              remainingDebtAmount: 0,
+              legacyImportMeta: Prisma.JsonNull,
             },
           });
 
           const normalized = await normalizeSaleChainChronology(tx, {
             tenantId: ctx.tenantId,
-            saleId: saleIncome.id,
+            saleId: targetSale.id,
           });
           if (normalized.didReorder) {
             relinkedRepaymentIds = normalized.reorderedIncomeIds.filter((id) => id !== normalized.canonicalSaleId);
@@ -7012,6 +7039,9 @@ export const customerIncomeRouter = router({
           });
 
           targetSaleIncomeId = targetSale.id;
+          relinkedPaymentDates = saleChain
+            .map((row) => row.entryDate?.toISOString?.() || String(row.entryDate))
+            .filter(Boolean);
 
           await refreshCustomerProfileFromLatestActiveSale(tx, {
             tenantId: ctx.tenantId,
