@@ -114,10 +114,6 @@ export function evaluateSaleChainConsistency(params: {
   }
 
   let rollingDebt = Math.max(params.agreementAmount - toAmount(first.paymentAmount), 0);
-  const firstRemaining = toAmount(first.remainingDebtAmount);
-  if (Math.abs(firstRemaining - rollingDebt) > tolerance) {
-    issues.push('sale_remaining_mismatch');
-  }
   if (first.debtAmount !== null && first.debtAmount !== undefined) {
     const firstDebtAmount = toAmount(first.debtAmount);
     if (Math.abs(firstDebtAmount - Math.max(params.agreementAmount, 0)) > tolerance) {
@@ -148,6 +144,13 @@ export function evaluateSaleChainConsistency(params: {
     if (Math.abs(storedRemaining - rollingDebt) > tolerance) {
       issues.push('repayment_remaining_mismatch');
     }
+  }
+
+  // In this project, new_sale.remainingDebtAmount is persisted as current chain debt
+  // (after all active repayments), not only after first payment.
+  const currentSaleRemaining = toAmount(first.remainingDebtAmount);
+  if (Math.abs(currentSaleRemaining - rollingDebt) > tolerance) {
+    issues.push('sale_remaining_mismatch');
   }
 
   return {
