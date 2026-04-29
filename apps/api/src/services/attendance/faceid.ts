@@ -47,6 +47,26 @@ type FaceIdParsedEvent = {
   rawPayload: Record<string, unknown>;
 };
 
+type FaceIdMatchStep = 'phone' | 'external_id' | 'name';
+type FaceIdUnmatchedReason =
+  | 'phone_not_found'
+  | 'external_id_not_mapped'
+  | 'name_not_unique'
+  | 'name_not_found'
+  | 'branch_filtered';
+
+type FaceIdMatchResult = {
+  userId: string | null;
+  matchStepTried: FaceIdMatchStep;
+  matchReason: FaceIdUnmatchedReason | null;
+  rawUser: {
+    id: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    phone: string | null;
+  };
+};
+
 function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -56,6 +76,18 @@ function asObject(value: unknown): Record<string, unknown> | null {
 
 function normalizePhone(value: string | null | undefined): string {
   return String(value || '').replace(/\D/g, '').trim();
+}
+
+function normalizeFullNameToken(value: string | null | undefined): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildNormalizedFullName(firstName: string | null | undefined, lastName: string | null | undefined): string {
+  return normalizeFullNameToken(`${String(firstName || '').trim()} ${String(lastName || '').trim()}`);
 }
 
 function toReportLocal(date: Date): Date {
@@ -202,32 +234,119 @@ async function resolveMatchedUserId(params: {
   tenantId: string;
   parsed: FaceIdParsedEvent;
   integrationConfig: unknown;
-}): Promise<string | null> {
-  const userExternalMap = parseExternalUserMap(params.integrationConfig);
-  if (params.parsed.externalUserId && userExternalMap[params.parsed.externalUserId]) {
-    return userExternalMap[params.parsed.externalUserId] || null;
-  }
+}): Promise<FaceIdMatchResult> {
+  const rawUser = {
+    id: params.parsed.externalUserId || null,
+    firstName: params.parsed.firstName || null,
+    lastName: params.parsed.lastName || null,
+    phone: params.parsed.externalPhone || null,
+  };
 
-  if (!params.parsed.externalPhone) {
-    return null;
-  }
-
-  const candidates = await prisma.user.findMany({
-    where: {
-      tenantId: params.tenantId,
-      isActive: true,
-      phone: { not: null },
-    },
-    select: {
-      id: true,
-      phone: true,
-    },
-    take: 5000,
-  });
-
+  // 1) Phone match first.
   const normalizedExternalPhone = normalizePhone(params.parsed.externalPhone);
-  const matched = candidates.find((candidate) => normalizePhone(candidate.phone) === normalizedExternalPhone);
-  return matched?.id || null;
+  if (normalizedExternalPhone) {
+    const phoneCandidates = await prisma.user.findMany({
+      where: {
+        tenantId: params.tenantId,
+        isActive: true,
+        phone: { not: null },
+      },
+      select: {
+        id: true,
+        phone: true,
+      },
+      take: 5000,
+    });
+
+    const matchedByPhone = phoneCandidates.filter(
+      (candidate) => normalizePhone(candidate.phone) === normalizedExternalPhone,
+    );
+    if (matchedByPhone.length === 1) {
+      return {
+        userId: matchedByPhone[0]?.id || null,
+        matchStepTried: 'phone',
+        matchReason: null,
+        rawUser,
+      };
+    }
+  }
+
+  // 2) External Face user id fallback.
+  const userExternalMap = parseExternalUserMap(params.integrationConfig);
+  if (params.parsed.externalUserId) {
+    const mappedUserId = userExternalMap[params.parsed.externalUserId];
+    if (mappedUserId) {
+      const mappedUser = await prisma.user.findFirst({
+        where: {
+          id: mappedUserId,
+          tenantId: params.tenantId,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      if (mappedUser?.id) {
+        return {
+          userId: mappedUser.id,
+          matchStepTried: 'external_id',
+          matchReason: null,
+          rawUser,
+        };
+      }
+    }
+  }
+
+  // 3) Strict unique full-name fallback.
+  const incomingNormalizedName = buildNormalizedFullName(params.parsed.firstName, params.parsed.lastName);
+  if (incomingNormalizedName) {
+    const nameCandidates = await prisma.user.findMany({
+      where: {
+        tenantId: params.tenantId,
+        isActive: true,
+        name: { not: null },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      take: 5000,
+    });
+
+    const matchedByName = nameCandidates.filter(
+      (candidate) => buildNormalizedFullName(candidate.name, null) === incomingNormalizedName,
+    );
+
+    if (matchedByName.length === 1) {
+      return {
+        userId: matchedByName[0]?.id || null,
+        matchStepTried: 'name',
+        matchReason: null,
+        rawUser,
+      };
+    }
+
+    if (matchedByName.length > 1) {
+      return {
+        userId: null,
+        matchStepTried: 'name',
+        matchReason: 'name_not_unique',
+        rawUser,
+      };
+    }
+
+    return {
+      userId: null,
+      matchStepTried: 'name',
+      matchReason: 'name_not_found',
+      rawUser,
+    };
+  }
+
+  return {
+    userId: null,
+    matchStepTried: params.parsed.externalUserId ? 'external_id' : 'phone',
+    matchReason: params.parsed.externalUserId ? 'external_id_not_mapped' : 'phone_not_found',
+    rawUser,
+  };
 }
 
 function requiredSecondsForDate(localDate: string): number {
@@ -378,24 +497,33 @@ export async function ingestFaceIdEvent(params: {
     if (!incomingBranch || !branchWhitelist.has(incomingBranch)) {
       return {
         ignored: true,
-        reason: 'branch_not_allowed',
+        reason: 'branch_filtered',
       };
     }
   }
 
-  const matchedUserId = await resolveMatchedUserId({
+  const match = await resolveMatchedUserId({
     tenantId: params.tenantId,
     parsed,
     integrationConfig: params.integrationConfig,
   });
 
   const unmatchedUserPolicy = parseUnmatchedUserPolicy(params.integrationConfig);
-  if (!matchedUserId && unmatchedUserPolicy === 'ignore') {
+  if (!match.userId && unmatchedUserPolicy === 'ignore') {
     return {
       ignored: true,
-      reason: 'unmatched_user',
+      reason: match.matchReason || 'unmatched_user',
     };
   }
+
+  const rawPayloadWithMatchMeta = {
+    ...parsed.rawPayload,
+    __matchMeta: {
+      matchReason: match.matchReason,
+      matchStepTried: match.matchStepTried,
+      rawUser: match.rawUser,
+    },
+  };
 
   const created = await prisma.attendanceEvent.upsert({
     where: {
@@ -406,7 +534,7 @@ export async function ingestFaceIdEvent(params: {
     },
     create: {
       tenantId: params.tenantId,
-      userId: matchedUserId,
+      userId: match.userId,
       externalUserId: parsed.externalUserId,
       externalPhone: parsed.externalPhone,
       firstName: parsed.firstName,
@@ -423,10 +551,10 @@ export async function ingestFaceIdEvent(params: {
       longitude: parsed.longitude,
       lateMinutes: parsed.lateMinutes,
       idempotencyKey: parsed.idempotencyKey,
-      rawPayload: parsed.rawPayload as any,
+      rawPayload: rawPayloadWithMatchMeta as any,
     },
     update: {
-      userId: matchedUserId,
+      userId: match.userId,
       externalUserId: parsed.externalUserId,
       externalPhone: parsed.externalPhone,
       firstName: parsed.firstName,
@@ -442,7 +570,7 @@ export async function ingestFaceIdEvent(params: {
       latitude: parsed.latitude,
       longitude: parsed.longitude,
       lateMinutes: parsed.lateMinutes,
-      rawPayload: parsed.rawPayload as any,
+      rawPayload: rawPayloadWithMatchMeta as any,
     },
     select: {
       id: true,
