@@ -48,6 +48,16 @@ function formatDateTime(value: string | Date | null | undefined): string {
   return new Date(value).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' });
 }
 
+function hasInPresence(row: any): boolean {
+  if (!row) return false;
+  if (row.firstInAt) return true;
+  return typeof row.inCount === 'number' && row.inCount > 0;
+}
+
+function getPresenceLabel(row: any): string {
+  return hasInPresence(row) ? 'Kelgan (IN bor)' : "Kelmagan (IN yo'q)";
+}
+
 export default function AttendancePage() {
   const { user } = useAuth();
   const roles = user?.roles || [];
@@ -460,6 +470,7 @@ export default function AttendancePage() {
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Kechikish</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">IN</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">OUT</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Davomat</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
@@ -472,6 +483,7 @@ export default function AttendancePage() {
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.lateMinutes || 0} daq</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.firstInAt)}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.lastOutAt)}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{getPresenceLabel(row)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -494,7 +506,7 @@ export default function AttendancePage() {
                   {(anomaliesQuery.data?.summaryAnomalies || []).map((row: any) => (
                     <div key={row.id} className="rounded-md border border-amber-300/40 bg-amber-50/40 px-3 py-2 text-sm dark:border-amber-800/50 dark:bg-amber-950/20">
                       <p className="font-medium text-gray-900 dark:text-slate-100">{row.user?.name || row.user?.username || row.userId}</p>
-                      <p className="text-gray-700 dark:text-slate-300">{row.summaryDate} • anomaliya: {row.anomalyCount || 0} • kelmagan: {row.absence ? 'ha' : 'yo&apos;q'}</p>
+                      <p className="text-gray-700 dark:text-slate-300">{row.summaryDate} | anomaliya: {row.anomalyCount || 0} | {getPresenceLabel(row)}</p>
                     </div>
                   ))}
                   {anomaliesQuery.isLoading && <p className="text-sm text-gray-500 dark:text-slate-400">Yuklanmoqda...</p>}
