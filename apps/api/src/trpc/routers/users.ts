@@ -47,6 +47,11 @@ function normalizeDigits(value: unknown): string {
   return String(value || '').replace(/[^\d]/g, '');
 }
 
+function normalizePhone(value: unknown): string | null {
+  const digits = normalizeDigits(value);
+  return digits.length > 0 ? digits : null;
+}
+
 function isAllowedUtelManagerExtension(value: unknown): boolean {
   const digits = normalizeDigits(value);
   if (!digits) {
@@ -299,6 +304,7 @@ export const usersRouter = router({
     .input(
       z.object({
         name: z.string().max(120).optional(),
+        phone: z.string().max(32).optional(),
         role: roleSchema,
         amocrmResponsibleUserId: z.string().optional(),
         utelManagerExternalId: z.string().optional(),
@@ -322,6 +328,7 @@ export const usersRouter = router({
       const createData: any = {
         tenantId: ctx.tenantId,
         name: input.name?.trim() || null,
+        phone: normalizePhone(input.phone),
         username,
         passwordHash,
         authProvider: 'email',
@@ -370,6 +377,7 @@ export const usersRouter = router({
           resourceId: created.id,
           metadata: {
             role,
+            phone: normalizePhone(input.phone),
             amocrmResponsibleUserId: input.amocrmResponsibleUserId || null,
             utelManagerExternalId: input.utelManagerExternalId || null,
             telegramChatId: input.telegramChatId || null,
@@ -391,6 +399,7 @@ export const usersRouter = router({
       z.object({
         userId: z.string().uuid(),
         name: z.string().max(120).optional(),
+        phone: z.string().max(32).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -402,6 +411,7 @@ export const usersRouter = router({
         select: {
           id: true,
           name: true,
+          phone: true,
         },
       });
 
@@ -411,11 +421,13 @@ export const usersRouter = router({
 
       const normalizedNameRaw = input.name?.trim();
       const normalizedName = normalizedNameRaw ? normalizedNameRaw : null;
+      const normalizedPhone = normalizePhone(input.phone);
 
       const updated = await prisma.user.update({
         where: { id: user.id },
         data: {
           name: normalizedName,
+          phone: normalizedPhone,
         },
         select: {
           id: true,
@@ -443,6 +455,8 @@ export const usersRouter = router({
           metadata: {
             previousName: user.name || null,
             nextName: normalizedName,
+            previousPhone: user.phone || null,
+            nextPhone: normalizedPhone,
           },
         },
       });
