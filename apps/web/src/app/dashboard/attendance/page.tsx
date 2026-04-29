@@ -172,6 +172,15 @@ export default function AttendancePage() {
     );
   }, [summariesQuery.data?.rows]);
 
+  const presenceByUserDate = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const row of summariesQuery.data?.rows || []) {
+      const key = `${row.userId || ''}|${row.summaryDate || ''}`;
+      map.set(key, hasInPresence(row));
+    }
+    return map;
+  }, [summariesQuery.data?.rows]);
+
   const userOptions = useMemo(
     () =>
       (usersQuery.data || [])
@@ -506,7 +515,10 @@ export default function AttendancePage() {
                   {(anomaliesQuery.data?.summaryAnomalies || []).map((row: any) => (
                     <div key={row.id} className="rounded-md border border-amber-300/40 bg-amber-50/40 px-3 py-2 text-sm dark:border-amber-800/50 dark:bg-amber-950/20">
                       <p className="font-medium text-gray-900 dark:text-slate-100">{row.user?.name || row.user?.username || row.userId}</p>
-                      <p className="text-gray-700 dark:text-slate-300">{row.summaryDate} | anomaliya: {row.anomalyCount || 0} | {getPresenceLabel(row)}</p>
+                      <p className="text-gray-700 dark:text-slate-300">
+                        {row.summaryDate} | anomaliya: {row.anomalyCount || 0} |{' '}
+                        {presenceByUserDate.get(`${row.userId || ''}|${row.summaryDate || ''}`) ? 'Kelgan (IN bor)' : "Kelmagan (IN yo'q)"}
+                      </p>
                     </div>
                   ))}
                   {anomaliesQuery.isLoading && <p className="text-sm text-gray-500 dark:text-slate-400">Yuklanmoqda...</p>}
