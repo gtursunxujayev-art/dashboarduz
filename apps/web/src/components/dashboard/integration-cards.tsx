@@ -122,6 +122,8 @@ export default function IntegrationCards() {
   const [faceIdBranchWhitelistInput, setFaceIdBranchWhitelistInput] = useState('');
   const [faceIdUnmatchedPolicy, setFaceIdUnmatchedPolicy] = useState<'store' | 'ignore'>('store');
   const [lastGeneratedFaceIdToken, setLastGeneratedFaceIdToken] = useState<string | null>(null);
+  const [faceIdExternalUserId, setFaceIdExternalUserId] = useState('');
+  const [faceIdMappedUserId, setFaceIdMappedUserId] = useState('');
   const [selectedPipelineIds, setSelectedPipelineIds] = useState<string[]>([]);
   const [selectedTelegramRecipientIds, setSelectedTelegramRecipientIds] = useState<string[]>([]);
   const [telegramSelectionSavedAt, setTelegramSelectionSavedAt] = useState<string | null>(null);
@@ -148,6 +150,10 @@ export default function IntegrationCards() {
   const updateFaceIdSettings = trpc.integrations.updateFaceIdSettings.useMutation();
   const rotateFaceIdToken = trpc.integrations.rotateFaceIdToken.useMutation();
   const faceIdStatusQuery = trpc.integrations.getFaceIdStatus.useQuery();
+  const faceIdMappingsQuery = trpc.integrations.getFaceIdMappings.useQuery();
+  const usersQuery = trpc.users.list.useQuery();
+  const upsertFaceIdMapping = trpc.integrations.upsertFaceIdMapping.useMutation();
+  const removeFaceIdMapping = trpc.integrations.removeFaceIdMapping.useMutation();
   const updateAmoCRMPipelines = trpc.integrations.updateAmoCRMPipelines.useMutation();
   const updateTelegramReportRecipients = trpc.integrations.updateTelegramReportRecipients.useMutation();
   const sendTelegramTodayReportNow = trpc.integrations.sendTelegramTodayReportNow.useMutation();
@@ -359,6 +365,40 @@ export default function IntegrationCards() {
     }
   };
 
+  const handleSaveFaceIdMapping = async () => {
+    setError(null);
+    setActionLoading('faceid_attendance');
+    try {
+      if (!faceIdExternalUserId.trim() || !faceIdMappedUserId) {
+        throw new Error('External user ID va foydalanuvchini tanlang.');
+      }
+      await upsertFaceIdMapping.mutateAsync({
+        externalUserId: faceIdExternalUserId.trim(),
+        userId: faceIdMappedUserId,
+      });
+      setFaceIdExternalUserId('');
+      setFaceIdMappedUserId('');
+      await faceIdMappingsQuery.refetch();
+    } catch (err: any) {
+      setError(err?.message || 'Face ID mappingni saqlashda xatolik');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRemoveFaceIdMapping = async (externalUserId: string) => {
+    setError(null);
+    setActionLoading('faceid_attendance');
+    try {
+      await removeFaceIdMapping.mutateAsync({ externalUserId });
+      await faceIdMappingsQuery.refetch();
+    } catch (err: any) {
+      setError(err?.message || 'Face ID mappingni o‘chirishda xatolik');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleSendTelegramTodayReportNow = async () => {
     setError(null);
     setActionLoading('telegram');
@@ -425,6 +465,13 @@ export default function IntegrationCards() {
           const isTelegramActive = integration.id === 'telegram' && integration.status === 'active';
           const isFaceIdActive = integration.id === 'faceid_attendance' && integration.status === 'active';
           const faceIdStatus = faceIdStatusQuery.data;
+          const faceIdMappings = faceIdMappingsQuery.data?.mappings || [];
+          const users = (usersQuery.data || []) as Array<{
+            id: string;
+            name: string | null;
+            username: string | null;
+            phone: string | null;
+          }>;
           const telegramRecipients = (telegramRecipientsQuery.data?.recipients || []) as TelegramReportRecipient[];
 
           return (
@@ -719,6 +766,84 @@ export default function IntegrationCards() {
                     >
                       {loading ? 'Yangilanmoqda...' : 'Tokenni yangilash'}
                     </button>
+                  </div>
+
+                  <div className="mt-3 space-y-2 rounded-md border border-rose-100 bg-white p-3">
+                    <p className="text-sm font-medium text-gray-900">Face ID user mapping</p>
+                    <p className="text-xs text-gray-500">
+                      Match order: telefon -&gt; external ID -&gt; to‘liq ism. External ID mapping faqat 2-qadamda ishlatiladi.
+                    </p>
+
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto]">
+                      <input
+                        type="text"
+                        value={faceIdExternalUserId}
+                        onChange={(e) => setFaceIdExternalUserId(e.target.value)}
+                        placeholder="External user ID (masalan: 2845)"
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                      />
+                      <select
+                        value={faceIdMappedUserId}
+                        onChange={(e) => setFaceIdMappedUserId(e.target.value)}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                      >
+                        <option value="">Foydalanuvchini tanlang</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {(user.name || user.username || user.id)}{user.phone ? ` (${user.phone})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleSaveFaceIdMapping}
+                        disabled={loading}
+                        className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-800 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {loading ? 'Saqlanmoqda...' : 'Mapping saqlash'}
+                      </button>
+                    </div>
+
+                    <div className="max-h-56 overflow-auto rounded-md border border-gray-200">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500">External ID</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500">User</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500">Telefon</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500">Holat</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500">Amal</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                          {faceIdMappings.map((row: any) => (
+                            <tr key={row.externalUserId}>
+                              <td className="px-2 py-2 text-xs text-gray-700">{row.externalUserId}</td>
+                              <td className="px-2 py-2 text-xs text-gray-700">{row.userName || row.userId}</td>
+                              <td className="px-2 py-2 text-xs text-gray-700">{row.userPhone || '-'}</td>
+                              <td className="px-2 py-2 text-xs text-gray-700">{row.userActive ? 'Faol' : 'No-faol'}</td>
+                              <td className="px-2 py-2 text-xs">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFaceIdMapping(String(row.externalUserId))}
+                                  disabled={loading}
+                                  className="rounded border border-red-200 bg-red-50 px-2 py-1 text-red-700 hover:bg-red-100 disabled:opacity-50"
+                                >
+                                  O‘chirish
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {!faceIdMappings.length && (
+                            <tr>
+                              <td colSpan={5} className="px-2 py-3 text-center text-xs text-gray-500">
+                                Hozircha external ID mappinglar yo‘q.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
