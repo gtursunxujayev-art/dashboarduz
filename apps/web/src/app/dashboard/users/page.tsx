@@ -41,6 +41,7 @@ export default function UsersPage() {
   const [generatedResetPassword, setGeneratedResetPassword] = useState<{ userId: string; password: string } | null>(null);
 
   const [newName, setNewName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('Agent');
   const [newAmoManagerId, setNewAmoManagerId] = useState('');
   const [newUtelManagerId, setNewUtelManagerId] = useState('');
@@ -53,6 +54,7 @@ export default function UsersPage() {
   const [loginDrafts, setLoginDrafts] = useState<Record<string, string>>({});
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
+  const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
 
   const amocrmManagers = useMemo(() => amocrmManagersQuery.data || [], [amocrmManagersQuery.data]);
   const utelManagers = useMemo(() => utelManagersQuery.data || [], [utelManagersQuery.data]);
@@ -66,6 +68,7 @@ export default function UsersPage() {
     const nextTelegramDrafts: Record<string, string> = {};
     const nextLoginDrafts: Record<string, string> = {};
     const nextNameDrafts: Record<string, string> = {};
+    const nextPhoneDrafts: Record<string, string> = {};
 
     for (const user of users as any[]) {
       nextRoleDrafts[user.id] = (user.roles?.[0] || 'Agent') as UserRole;
@@ -74,6 +77,7 @@ export default function UsersPage() {
       nextTelegramDrafts[user.id] = user.telegramId || '';
       nextLoginDrafts[user.id] = user.username || '';
       nextNameDrafts[user.id] = user.name || '';
+      nextPhoneDrafts[user.id] = user.phone || '';
     }
 
     setRoleDrafts(nextRoleDrafts);
@@ -82,6 +86,7 @@ export default function UsersPage() {
     setTelegramDrafts(nextTelegramDrafts);
     setLoginDrafts(nextLoginDrafts);
     setNameDrafts(nextNameDrafts);
+    setPhoneDrafts(nextPhoneDrafts);
   }, [usersQuery.data]);
 
   const handleCreateUser = async () => {
@@ -93,6 +98,7 @@ export default function UsersPage() {
     try {
       const created = await createUser.mutateAsync({
         name: newName.trim() || undefined,
+        phone: newPhone.trim() || undefined,
         role: newRole,
         amocrmResponsibleUserId: roleNeedsManagerMapping(newRole) ? (newAmoManagerId || undefined) : undefined,
         utelManagerExternalId: roleNeedsManagerMapping(newRole) ? (newUtelManagerId || undefined) : undefined,
@@ -101,6 +107,7 @@ export default function UsersPage() {
 
       setCreatedCredentials(created.credentials);
       setNewName('');
+      setNewPhone('');
       setNewRole('Agent');
       setNewAmoManagerId('');
       setNewUtelManagerId('');
@@ -145,6 +152,7 @@ export default function UsersPage() {
       await updateName.mutateAsync({
         userId,
         name: nameDrafts[userId] || undefined,
+        phone: phoneDrafts[userId] ?? '',
       });
       setSuccess("Foydalanuvchi ismi saqlandi.");
       await usersQuery.refetch();
@@ -223,11 +231,17 @@ export default function UsersPage() {
             </p>
           )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
             <input
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
               placeholder="Foydalanuvchi ismi (ixtiyoriy)"
+              className="min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <input
+              value={newPhone}
+              onChange={(event) => setNewPhone(event.target.value)}
+              placeholder="Telefon raqam (ixtiyoriy)"
               className="min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <select
@@ -328,6 +342,14 @@ export default function UsersPage() {
                             placeholder="Foydalanuvchi ismi"
                             className="w-full min-w-[220px] rounded-md border border-gray-300 px-2 py-1 text-sm"
                           />
+                          <input
+                            value={phoneDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setPhoneDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            placeholder="Telefon raqam"
+                            className="w-full min-w-[220px] rounded-md border border-gray-300 px-2 py-1 text-sm"
+                          />
                           <div className="flex items-center justify-between gap-2">
                             <div className="text-xs text-gray-500">ID: {user.id}</div>
                             <button
@@ -336,7 +358,7 @@ export default function UsersPage() {
                               disabled={updateName.isLoading}
                               className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                             >
-                              {updateName.isLoading ? 'Saqlanmoqda...' : 'Ismni saqlash'}
+                              {updateName.isLoading ? 'Saqlanmoqda...' : "Ism/telefonni saqlash"}
                             </button>
                           </div>
                         </div>
