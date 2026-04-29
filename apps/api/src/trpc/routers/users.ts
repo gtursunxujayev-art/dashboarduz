@@ -52,6 +52,20 @@ function normalizePhone(value: unknown): string | null {
   return digits.length > 0 ? digits : null;
 }
 
+function validateNormalizedPhoneOrThrow(rawPhone: string | undefined): string | null {
+  const normalized = normalizePhone(rawPhone);
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.length < 9 || normalized.length > 15) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Telefon raqam noto‘g‘ri formatda. 9-15 ta raqam kiriting.',
+    });
+  }
+  return normalized;
+}
+
 function isAllowedUtelManagerExtension(value: unknown): boolean {
   const digits = normalizeDigits(value);
   if (!digits) {
@@ -328,12 +342,28 @@ export const usersRouter = router({
       const createData: any = {
         tenantId: ctx.tenantId,
         name: input.name?.trim() || null,
-        phone: normalizePhone(input.phone),
+        phone: validateNormalizedPhoneOrThrow(input.phone),
         username,
         passwordHash,
         authProvider: 'email',
         roles: [role],
       };
+
+      if (createData.phone) {
+        const existingByPhone = await prisma.user.findFirst({
+          where: {
+            tenantId: ctx.tenantId,
+            phone: createData.phone,
+          },
+          select: { id: true },
+        });
+        if (existingByPhone?.id) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'Bu telefon raqam boshqa foydalanuvchiga biriktirilgan.',
+          });
+        }
+      }
 
       if (roleNeedsManagerMapping(role)) {
         createData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || null;
@@ -377,7 +407,7 @@ export const usersRouter = router({
           resourceId: created.id,
           metadata: {
             role,
-            phone: normalizePhone(input.phone),
+            phone: createData.phone,
             amocrmResponsibleUserId: input.amocrmResponsibleUserId || null,
             utelManagerExternalId: input.utelManagerExternalId || null,
             telegramChatId: input.telegramChatId || null,
@@ -421,7 +451,24 @@ export const usersRouter = router({
 
       const normalizedNameRaw = input.name?.trim();
       const normalizedName = normalizedNameRaw ? normalizedNameRaw : null;
-      const normalizedPhone = normalizePhone(input.phone);
+      const normalizedPhone = validateNormalizedPhoneOrThrow(input.phone);
+
+      if (normalizedPhone) {
+        const existingByPhone = await prisma.user.findFirst({
+          where: {
+            tenantId: ctx.tenantId,
+            phone: normalizedPhone,
+            NOT: { id: user.id },
+          },
+          select: { id: true },
+        });
+        if (existingByPhone?.id) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'Bu telefon raqam boshqa foydalanuvchiga biriktirilgan.',
+          });
+        }
+      }
 
       const updated = await prisma.user.update({
         where: { id: user.id },
