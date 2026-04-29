@@ -513,7 +513,13 @@ export default function AttendancePage() {
                         {(row.firstName || '')} {(row.lastName || '')} ({row.externalPhone || '-'})
                       </p>
                       <p className="text-gray-700 dark:text-slate-300">
-                        {row.localDate} • {row.action} • {formatDateTime(row.eventAt)}
+                        {row.localDate} | {row.action} | {formatDateTime(row.eventAt)}
+                      </p>
+                      <p className="text-xs text-red-700 dark:text-red-300">
+                        Sabab: {row.matchReason || 'unknown'} | Qadam: {row.matchStepTried || 'unknown'}
+                      </p>
+                      <p className="text-xs text-gray-600 dark:text-slate-300">
+                        Raw user: ID={row.rawUser?.id ?? '-'}, name={(row.rawUser?.first_name || '')} {(row.rawUser?.last_name || '')}, phone={row.rawUser?.phone_number || '-'}
                       </p>
                     </div>
                   ))}
