@@ -48,6 +48,36 @@ function toLocalTimeValue(date: Date): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+function readFaceMatchMeta(rawPayload: unknown): {
+  matchReason: string | null;
+  matchStepTried: string | null;
+  rawUser: { id: string | null; firstName: string | null; lastName: string | null; phone: string | null } | null;
+} {
+  if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+    return { matchReason: null, matchStepTried: null, rawUser: null };
+  }
+
+  const meta = (rawPayload as Record<string, unknown>).__matchMeta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return { matchReason: null, matchStepTried: null, rawUser: null };
+  }
+
+  const matchReason = String((meta as Record<string, unknown>).matchReason || '').trim() || null;
+  const matchStepTried = String((meta as Record<string, unknown>).matchStepTried || '').trim() || null;
+  const rawUserValue = (meta as Record<string, unknown>).rawUser;
+  const rawUser =
+    rawUserValue && typeof rawUserValue === 'object' && !Array.isArray(rawUserValue)
+      ? {
+          id: String((rawUserValue as Record<string, unknown>).id || '').trim() || null,
+          firstName: String((rawUserValue as Record<string, unknown>).firstName || '').trim() || null,
+          lastName: String((rawUserValue as Record<string, unknown>).lastName || '').trim() || null,
+          phone: String((rawUserValue as Record<string, unknown>).phone || '').trim() || null,
+        }
+      : null;
+
+  return { matchReason, matchStepTried, rawUser };
+}
+
 export const attendanceRouter = router({
   listEvents: protectedProcedure
     .input(
@@ -297,13 +327,31 @@ export const attendanceRouter = router({
             lastName: true,
             branchName: true,
             lateMinutes: true,
+            rawPayload: true,
           },
         }),
       ]);
 
       return {
         summaryAnomalies,
-        unmatchedEvents,
+        unmatchedEvents: unmatchedEvents.map((row) => {
+          const matchMeta = readFaceMatchMeta(row.rawPayload);
+          return {
+            id: row.id,
+            localDate: row.localDate,
+            action: row.action,
+            eventAt: row.eventAt,
+            externalUserId: row.externalUserId,
+            externalPhone: row.externalPhone,
+            firstName: row.firstName,
+            lastName: row.lastName,
+            branchName: row.branchName,
+            lateMinutes: row.lateMinutes,
+            matchReason: matchMeta.matchReason,
+            matchStepTried: matchMeta.matchStepTried,
+            rawUser: matchMeta.rawUser,
+          };
+        }),
       };
     }),
 
