@@ -849,16 +849,8 @@ function isAgentOnly(roles: string[]): boolean {
   return roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 }
 
-function isTeamLeaderSelfScoped(roles: string[]): boolean {
-  return (
-    roles.includes('TeamLeader')
-    && !roles.includes('Admin')
-    && !roles.includes('Manager')
-  );
-}
-
 function shouldSelfScopeManagerActions(roles: string[]): boolean {
-  return isAgentOnly(roles) || isTeamLeaderSelfScoped(roles);
+  return isAgentOnly(roles);
 }
 
 function isPrivilegedAdjustmentViewer(roles: string[]): boolean {
@@ -6039,17 +6031,6 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Only pending requests can be approved.' });
       }
 
-      if (
-        isTeamLeaderSelfScoped(ctx.user.roles)
-        && request.requestedByUserId !== ctx.user.userId
-        && request.income.managerUserId !== ctx.user.userId
-      ) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Team leader can approve only own requests.',
-        });
-      }
-
       if (request.type === ADJUSTMENT_TYPE_REFUND && !canApproveRefundRequest(ctx.user.roles)) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin or Finance role is required to approve refunds.' });
       }
@@ -6255,17 +6236,6 @@ export const customerIncomeRouter = router({
 
       if (request.status !== ADJUSTMENT_STATUS_PENDING) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Only pending requests can be rejected.' });
-      }
-
-      if (
-        isTeamLeaderSelfScoped(ctx.user.roles)
-        && request.requestedByUserId !== ctx.user.userId
-        && request.income.managerUserId !== ctx.user.userId
-      ) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Team leader can reject only own requests.',
-        });
       }
 
       if (request.type === ADJUSTMENT_TYPE_REFUND && !canApproveRefundRequest(ctx.user.roles)) {
