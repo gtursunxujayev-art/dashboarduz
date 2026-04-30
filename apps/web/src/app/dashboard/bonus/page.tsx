@@ -9,6 +9,7 @@ type CourseBonusMode = 'simple' | 'tiered';
 type SalaryCategory = 'online' | 'offline' | 'intensive';
 type PlanCategory = 'online' | 'offline' | 'intensive' | 'additional_service';
 type PlanPeriodMode = 'monthly' | 'all_time';
+type PenaltyTarget = 'fixed' | 'kpi';
 type BonusTier = {
   minSales: number;
   maxSales: number | null;
@@ -168,8 +169,9 @@ export default function BonusPage() {
   const [attendancePenaltyMissingHour, setAttendancePenaltyMissingHour] = useState('0');
   const [attendancePenaltyAbsenceDay, setAttendancePenaltyAbsenceDay] = useState('0');
   const [attendancePenaltyCap, setAttendancePenaltyCap] = useState('0');
-  const [attendanceApplyFixed, setAttendanceApplyFixed] = useState(false);
-  const [attendanceApplyKpi, setAttendanceApplyKpi] = useState(false);
+  const [attendanceLateTarget, setAttendanceLateTarget] = useState<PenaltyTarget>('kpi');
+  const [attendanceMissingTarget, setAttendanceMissingTarget] = useState<PenaltyTarget>('kpi');
+  const [attendanceAbsenceTarget, setAttendanceAbsenceTarget] = useState<PenaltyTarget>('fixed');
 
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [planName, setPlanName] = useState('');
@@ -243,8 +245,11 @@ export default function BonusPage() {
     setAttendancePenaltyMissingHour(String(Number(attendanceSettings?.missingHourPenaltyUZS || 0)));
     setAttendancePenaltyAbsenceDay(String(Number(attendanceSettings?.absenceDayPenaltyUZS || 0)));
     setAttendancePenaltyCap(String(Number(attendanceSettings?.monthlyPenaltyCapUZS || 0)));
-    setAttendanceApplyFixed(Boolean(attendanceSettings?.applyToFixedSalary));
-    setAttendanceApplyKpi(Boolean(attendanceSettings?.applyToKpi));
+    const parseTarget = (value: unknown, fallback: PenaltyTarget): PenaltyTarget =>
+      value === 'fixed' || value === 'kpi' ? value : fallback;
+    setAttendanceLateTarget(parseTarget(attendanceSettings?.latePenaltyTarget, 'kpi'));
+    setAttendanceMissingTarget(parseTarget(attendanceSettings?.missingHourPenaltyTarget, 'kpi'));
+    setAttendanceAbsenceTarget(parseTarget(attendanceSettings?.absenceDayPenaltyTarget, 'fixed'));
   }, [salaryConfigQuery.data]);
 
   const agentUsers = useMemo<AgentUserOption[]>(() => {
@@ -491,8 +496,17 @@ export default function BonusPage() {
         lateMinutePenaltyUZS: parseAmountInput(attendancePenaltyLateMinute),
         missingHourPenaltyUZS: parseAmountInput(attendancePenaltyMissingHour),
         absenceDayPenaltyUZS: parseAmountInput(attendancePenaltyAbsenceDay),
-        applyToFixedSalary: attendanceApplyFixed,
-        applyToKpi: attendanceApplyKpi,
+        applyToFixedSalary:
+          attendanceLateTarget === 'fixed'
+          || attendanceMissingTarget === 'fixed'
+          || attendanceAbsenceTarget === 'fixed',
+        applyToKpi:
+          attendanceLateTarget === 'kpi'
+          || attendanceMissingTarget === 'kpi'
+          || attendanceAbsenceTarget === 'kpi',
+        latePenaltyTarget: attendanceLateTarget,
+        missingHourPenaltyTarget: attendanceMissingTarget,
+        absenceDayPenaltyTarget: attendanceAbsenceTarget,
         monthlyPenaltyCapUZS: parseAmountInput(attendancePenaltyCap),
       });
       await salaryConfigQuery.refetch();
@@ -887,6 +901,16 @@ export default function BonusPage() {
                   placeholder="0"
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                 />
+                <label className="mt-2 block text-xs font-medium text-gray-600">Jarima manbasi</label>
+                <select
+                  value={attendanceLateTarget}
+                  onChange={(event) => setAttendanceLateTarget(event.target.value as PenaltyTarget)}
+                  disabled={!isAdmin}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                >
+                  <option value="fixed">Fiks maosh</option>
+                  <option value="kpi">KPI</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Yetishmagan vaqt jarimasi (1 soat/UZS)</label>
@@ -898,6 +922,16 @@ export default function BonusPage() {
                   placeholder="0"
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                 />
+                <label className="mt-2 block text-xs font-medium text-gray-600">Jarima manbasi</label>
+                <select
+                  value={attendanceMissingTarget}
+                  onChange={(event) => setAttendanceMissingTarget(event.target.value as PenaltyTarget)}
+                  disabled={!isAdmin}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                >
+                  <option value="fixed">Fiks maosh</option>
+                  <option value="kpi">KPI</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Kelmagan kun jarimasi (1 kun/UZS)</label>
@@ -909,6 +943,16 @@ export default function BonusPage() {
                   placeholder="0"
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                 />
+                <label className="mt-2 block text-xs font-medium text-gray-600">Jarima manbasi</label>
+                <select
+                  value={attendanceAbsenceTarget}
+                  onChange={(event) => setAttendanceAbsenceTarget(event.target.value as PenaltyTarget)}
+                  disabled={!isAdmin}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                >
+                  <option value="fixed">Fiks maosh</option>
+                  <option value="kpi">KPI</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Oylik maksimal jarima (UZS)</label>
@@ -921,28 +965,6 @@ export default function BonusPage() {
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={attendanceApplyFixed}
-                  onChange={(event) => setAttendanceApplyFixed(event.target.checked)}
-                  disabled={!isAdmin}
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-60"
-                />
-                Fiks maoshdan ushlansin
-              </label>
-              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={attendanceApplyKpi}
-                  onChange={(event) => setAttendanceApplyKpi(event.target.checked)}
-                  disabled={!isAdmin}
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-60"
-                />
-                KPIdan ushlansin
-              </label>
             </div>
             <button
               type="submit"
