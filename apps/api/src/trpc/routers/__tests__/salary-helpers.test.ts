@@ -67,7 +67,7 @@ describe('toPositiveInteger', () => {
 describe('createZeroBreakdown', () => {
   it('returns all zero categories', () => {
     const result = createZeroBreakdown();
-    expect(result).toEqual({ online: 0, offline: 0, intensive: 0 });
+    expect(result).toEqual({ online: 0, offline: 0, intensive: 0, additional_service: 0 });
   });
 });
 
@@ -165,13 +165,13 @@ describe('resolveBonusPercent', () => {
     expect(resolveBonusPercent(rule, 5)).toBe(12);
   });
 
-  it('returns 0 for tiered mode with 0 sales', () => {
+  it('uses fallback for tiered mode when no tier matches', () => {
     const rule = {
       mode: 'tiered' as const,
-      simplePercent: 0,
+      simplePercent: 2,
       tiers: [{ minSales: 1, maxSales: null, percent: 10 }],
     };
-    expect(resolveBonusPercent(rule, 0)).toBe(0);
+    expect(resolveBonusPercent(rule, 0)).toBe(2);
   });
 
   it('matches correct tier', () => {
@@ -187,6 +187,16 @@ describe('resolveBonusPercent', () => {
     expect(resolveBonusPercent(rule, 3)).toBe(5);
     expect(resolveBonusPercent(rule, 8)).toBe(10);
     expect(resolveBonusPercent(rule, 20)).toBe(15);
+  });
+
+  it('treats tier bounds as inclusive', () => {
+    const rule = {
+      mode: 'tiered' as const,
+      simplePercent: 1,
+      tiers: [{ minSales: 1, maxSales: 3, percent: 3 }],
+    };
+    expect(resolveBonusPercent(rule, 1)).toBe(3);
+    expect(resolveBonusPercent(rule, 3)).toBe(3);
   });
 });
 
@@ -234,6 +244,7 @@ describe('classifyCourseCategoryFromField', () => {
     expect(classifyCourseCategoryFromField('online')).toBe('online');
     expect(classifyCourseCategoryFromField('offline')).toBe('offline');
     expect(classifyCourseCategoryFromField('intensive')).toBe('intensive');
+    expect(classifyCourseCategoryFromField('additional_service')).toBe('additional_service');
   });
 
   it('falls back to classifyCourseCategory for non-canonical', () => {
@@ -287,7 +298,7 @@ describe('extractSalarySettings', () => {
   it('returns defaults for null/empty input', () => {
     const result = extractSalarySettings(null);
     expect(result.bonusMode).toBe('on_income');
-    expect(result.bonusPercentages).toEqual({ online: 0, offline: 0, intensive: 0 });
+    expect(result.bonusPercentages).toEqual({ online: 0, offline: 0, intensive: 0, additional_service: 0 });
     expect(result.fixedSalaries.size).toBe(0);
     expect(result.planBonuses).toHaveLength(0);
   });
@@ -296,7 +307,7 @@ describe('extractSalarySettings', () => {
     const result = extractSalarySettings({
       salary: {
         bonusMode: 'on_debt_closed',
-        bonusPercentages: { online: 10, offline: 15, intensive: 20 },
+        bonusPercentages: { online: 10, offline: 15, intensive: 20, additional_service: 7 },
         fixedSalaries: [
           { userId: 'user-1', amount: 5000000 },
           { userId: 'user-2', amount: 3000000 },
@@ -318,6 +329,7 @@ describe('extractSalarySettings', () => {
     expect(result.bonusPercentages.online).toBe(10);
     expect(result.bonusPercentages.offline).toBe(15);
     expect(result.bonusPercentages.intensive).toBe(20);
+    expect(result.bonusPercentages.additional_service).toBe(7);
     expect(result.fixedSalaries.get('user-1')).toBe(5000000);
     expect(result.fixedSalaries.get('user-2')).toBe(3000000);
     expect(result.planBonuses).toHaveLength(1);
