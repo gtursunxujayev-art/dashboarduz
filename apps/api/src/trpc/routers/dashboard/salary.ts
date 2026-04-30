@@ -988,6 +988,20 @@ export const salaryProcedures = {
             bonusAmount: 0,
             rowCount: 0,
           },
+          summaryTotals: {
+            incomeAmount: 0,
+            closedAgreementAmount: 0,
+            totalBonusAmount: 0,
+            bonusByCategory: createZeroBreakdown(),
+          },
+          agentSummary: [] as Array<{
+            managerUserId: string;
+            managerLabel: string;
+            incomeAmount: number;
+            closedAgreementAmount: number;
+            totalBonusAmount: number;
+            bonusByCategory: SalaryBreakdown;
+          }>,
           rows: [] as Array<{
             id: string;
             saleId: string | null;
@@ -1090,12 +1104,14 @@ export const salaryProcedures = {
           type: 'new_sale',
           managerUserId: { in: visibleAgentIds },
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          ...(input.courseId ? { courseId: input.courseId } : {}),
           entryDate: {
             lte: rangeEnd,
           },
         },
         select: {
           id: true,
+          courseId: true,
           managerUserId: true,
           coursePriceAmount: true,
           paymentAmount: true,
@@ -1127,6 +1143,7 @@ export const salaryProcedures = {
               createdAt: true,
               relatedDebtIncomeId: true,
               paymentAmount: true,
+              managerUserId: true,
             },
           })
         : [];
@@ -1235,6 +1252,13 @@ export const salaryProcedures = {
           .map((sale) => sale.id),
       );
       const saleById = new Map(activeSalesForBonus.map((sale) => [sale.id, sale]));
+      const managerUserIdByChainRowId = new Map<string, string>();
+      for (const chainRow of bonusChainRows) {
+        managerUserIdByChainRowId.set(chainRow.id, chainRow.managerUserId);
+      }
+      const managerLabelById = new Map(
+        visibleAgents.map((agent) => [agent.id, agent.name || agent.username || agent.id]),
+      );
 
       const rows = incomes.map((income) => {
         const saleId = income.type === 'new_sale' ? income.id : income.relatedDebtIncomeId;
@@ -1336,6 +1360,83 @@ export const salaryProcedures = {
         },
       );
 
+      const agentSummaryMap = new Map<string, {
+        managerUserId: string;
+        managerLabel: string;
+        incomeAmount: number;
+        closedAgreementAmount: number;
+        totalBonusAmount: number;
+        bonusByCategory: SalaryBreakdown;
+      }>();
+
+      for (const agent of visibleAgents) {
+        agentSummaryMap.set(agent.id, {
+          managerUserId: agent.id,
+          managerLabel: managerLabelById.get(agent.id) || agent.id,
+          incomeAmount: 0,
+          closedAgreementAmount: 0,
+          totalBonusAmount: 0,
+          bonusByCategory: createZeroBreakdown(),
+        });
+      }
+
+      for (const row of rows) {
+        const summary = agentSummaryMap.get(row.managerUserId);
+        if (!summary) {
+          continue;
+        }
+        summary.incomeAmount += row.paymentAmount;
+        summary.totalBonusAmount += row.calculatedBonus;
+        const category = row.bonusDebug?.category;
+        if (category && category !== 'other') {
+          summary.bonusByCategory[category] += row.calculatedBonus;
+        }
+      }
+
+      for (const [saleId, closeDate] of closeDateBySaleIdForBonus.entries()) {
+        if (closeDate < rangeStart || closeDate > rangeEnd) {
+          continue;
+        }
+        const sale = saleById.get(saleId);
+        if (!sale) {
+          continue;
+        }
+        const lastPayment = lastPaymentBySaleId.get(saleId);
+        if (!lastPayment) {
+          continue;
+        }
+        const ownerUserId = managerUserIdByChainRowId.get(lastPayment.id) || sale.managerUserId;
+        const summary = agentSummaryMap.get(ownerUserId);
+        if (!summary) {
+          continue;
+        }
+        const agreementAmount = sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
+        summary.closedAgreementAmount += agreementAmount;
+      }
+
+      const agentSummary = Array.from(agentSummaryMap.values()).sort((a, b) =>
+        a.managerLabel.localeCompare(b.managerLabel),
+      );
+
+      const summaryTotals = agentSummary.reduce(
+        (acc, row) => {
+          acc.incomeAmount += row.incomeAmount;
+          acc.closedAgreementAmount += row.closedAgreementAmount;
+          acc.totalBonusAmount += row.totalBonusAmount;
+          acc.bonusByCategory.online += row.bonusByCategory.online;
+          acc.bonusByCategory.offline += row.bonusByCategory.offline;
+          acc.bonusByCategory.intensive += row.bonusByCategory.intensive;
+          acc.bonusByCategory.additional_service += row.bonusByCategory.additional_service;
+          return acc;
+        },
+        {
+          incomeAmount: 0,
+          closedAgreementAmount: 0,
+          totalBonusAmount: 0,
+          bonusByCategory: createZeroBreakdown(),
+        },
+      );
+
       return {
         rangeStart: rangeStart.toISOString(),
         rangeEnd: rangeEnd.toISOString(),
@@ -1346,6 +1447,8 @@ export const salaryProcedures = {
           label: agent.name || agent.username || agent.id,
         })),
         totals,
+        summaryTotals,
+        agentSummary,
         rows,
       };
     }),
