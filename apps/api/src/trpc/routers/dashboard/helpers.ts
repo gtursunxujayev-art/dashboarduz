@@ -107,6 +107,9 @@ export type AttendancePenaltySettings = {
   absenceDayPenaltyUZS: number;
   applyToFixedSalary: boolean;
   applyToKpi: boolean;
+  latePenaltyTarget: 'fixed' | 'kpi';
+  missingHourPenaltyTarget: 'fixed' | 'kpi';
+  absenceDayPenaltyTarget: 'fixed' | 'kpi';
   monthlyPenaltyCapUZS: number;
 };
 
@@ -760,12 +763,19 @@ export function extractSalarySettings(settings: unknown): SalarySettingsSnapshot
   };
 
   const rawAttendancePenalty = asObject(salarySettings?.attendancePenaltySettings);
+  const parsePenaltyTarget = (value: unknown, fallback: 'fixed' | 'kpi'): 'fixed' | 'kpi' => {
+    return value === 'fixed' || value === 'kpi' ? value : fallback;
+  };
+  const fallbackTarget: 'fixed' | 'kpi' = rawAttendancePenalty?.applyToFixedSalary === true ? 'fixed' : 'kpi';
   const attendancePenaltySettings: AttendancePenaltySettings = {
     lateMinutePenaltyUZS: Math.max(0, Math.round(toFiniteNumber(rawAttendancePenalty?.lateMinutePenaltyUZS, 0))),
     missingHourPenaltyUZS: Math.max(0, Math.round(toFiniteNumber(rawAttendancePenalty?.missingHourPenaltyUZS, 0))),
     absenceDayPenaltyUZS: Math.max(0, Math.round(toFiniteNumber(rawAttendancePenalty?.absenceDayPenaltyUZS, 0))),
     applyToFixedSalary: rawAttendancePenalty?.applyToFixedSalary === true,
     applyToKpi: rawAttendancePenalty?.applyToKpi === true,
+    latePenaltyTarget: parsePenaltyTarget(rawAttendancePenalty?.latePenaltyTarget, fallbackTarget),
+    missingHourPenaltyTarget: parsePenaltyTarget(rawAttendancePenalty?.missingHourPenaltyTarget, fallbackTarget),
+    absenceDayPenaltyTarget: parsePenaltyTarget(rawAttendancePenalty?.absenceDayPenaltyTarget, 'fixed'),
     monthlyPenaltyCapUZS: Math.max(0, Math.round(toFiniteNumber(rawAttendancePenalty?.monthlyPenaltyCapUZS, 0))),
   };
 
