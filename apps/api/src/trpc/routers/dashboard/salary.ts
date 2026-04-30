@@ -794,12 +794,9 @@ export const salaryProcedures = {
 
     const attendancePenaltySettings = salarySettings.attendancePenaltySettings;
     const hasAttendancePenalty =
-      (attendancePenaltySettings.applyToFixedSalary || attendancePenaltySettings.applyToKpi)
-      && (
-        attendancePenaltySettings.lateMinutePenaltyUZS > 0
-        || attendancePenaltySettings.missingHourPenaltyUZS > 0
-        || attendancePenaltySettings.absenceDayPenaltyUZS > 0
-      );
+      attendancePenaltySettings.lateMinutePenaltyUZS > 0
+      || attendancePenaltySettings.missingHourPenaltyUZS > 0
+      || attendancePenaltySettings.absenceDayPenaltyUZS > 0;
 
     if (hasAttendancePenalty) {
       const dateFrom = toLocalDateKey(rangeStart);
@@ -832,25 +829,39 @@ export const salaryProcedures = {
 
       for (const salaryRow of salaryByAgent.values()) {
         const metrics = aggregate.get(salaryRow.userId) ?? { lateMinutes: 0, missingSeconds: 0, absenceDays: 0 };
-        const latePenalty = metrics.lateMinutes * attendancePenaltySettings.lateMinutePenaltyUZS;
-        const missingHourPenalty = Math.round((metrics.missingSeconds / 3600) * attendancePenaltySettings.missingHourPenaltyUZS);
-        const absencePenalty = metrics.absenceDays * attendancePenaltySettings.absenceDayPenaltyUZS;
-        let remainingPenalty = latePenalty + missingHourPenalty + absencePenalty;
+        const rawLatePenalty = metrics.lateMinutes * attendancePenaltySettings.lateMinutePenaltyUZS;
+        const rawMissingHourPenalty = Math.round((metrics.missingSeconds / 3600) * attendancePenaltySettings.missingHourPenaltyUZS);
+        const rawAbsencePenalty = metrics.absenceDays * attendancePenaltySettings.absenceDayPenaltyUZS;
 
-        if (attendancePenaltySettings.monthlyPenaltyCapUZS > 0) {
-          remainingPenalty = Math.min(remainingPenalty, attendancePenaltySettings.monthlyPenaltyCapUZS);
-        }
+        const cap = attendancePenaltySettings.monthlyPenaltyCapUZS > 0
+          ? attendancePenaltySettings.monthlyPenaltyCapUZS
+          : Number.MAX_SAFE_INTEGER;
+        let remainingCap = cap;
+        const cappedLatePenalty = Math.min(rawLatePenalty, remainingCap);
+        remainingCap -= cappedLatePenalty;
+        const cappedMissingHourPenalty = Math.min(rawMissingHourPenalty, remainingCap);
+        remainingCap -= cappedMissingHourPenalty;
+        const cappedAbsencePenalty = Math.min(rawAbsencePenalty, remainingCap);
 
         let fixedPenalty = 0;
         let kpiPenalty = 0;
-        if (attendancePenaltySettings.applyToFixedSalary && remainingPenalty > 0) {
-          fixedPenalty = Math.min(salaryRow.fixedSalary, remainingPenalty);
-          remainingPenalty -= fixedPenalty;
-        }
-        if (attendancePenaltySettings.applyToKpi && remainingPenalty > 0) {
-          kpiPenalty = Math.min(salaryRow.kpiAmount, remainingPenalty);
-          remainingPenalty -= kpiPenalty;
-        }
+
+        const addPenalty = (amount: number, target: 'fixed' | 'kpi') => {
+          if (amount <= 0) {
+            return;
+          }
+          if (target === 'fixed') {
+            const allowed = Math.max(0, salaryRow.fixedSalary - fixedPenalty);
+            fixedPenalty += Math.min(amount, allowed);
+            return;
+          }
+          const allowed = Math.max(0, salaryRow.kpiAmount - kpiPenalty);
+          kpiPenalty += Math.min(amount, allowed);
+        };
+
+        addPenalty(cappedLatePenalty, attendancePenaltySettings.latePenaltyTarget);
+        addPenalty(cappedMissingHourPenalty, attendancePenaltySettings.missingHourPenaltyTarget);
+        addPenalty(cappedAbsencePenalty, attendancePenaltySettings.absenceDayPenaltyTarget);
 
         salaryRow.attendancePenaltyFixed = fixedPenalty;
         salaryRow.attendancePenaltyKpi = kpiPenalty;
