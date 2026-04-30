@@ -22,6 +22,7 @@ const AGENT_ALLOWED_HREFS = new Set([
   '/dashboard/course-sales/offline',
   '/dashboard/analytics',
   '/dashboard/finance',
+  '/dashboard/finance/bonus-details',
 ]);
 const FINANCE_ALLOWED_HREFS = new Set([
   '/dashboard',
@@ -32,6 +33,7 @@ const FINANCE_ALLOWED_HREFS = new Set([
   '/dashboard/course-sales/offline',
   '/dashboard/analytics',
   '/dashboard/finance',
+  '/dashboard/finance/bonus-details',
   '/dashboard/adjustments',
 ]);
 const TASHKILIY_ALLOWED_HREFS = new Set([
@@ -86,6 +88,7 @@ const navigation: NavigationItem[] = [
     icon: 'M3 10h18M7 15h1m4 0h5M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z',
     children: [
       { name: 'Bonus', href: '/dashboard/bonus', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 1v8m0 0v1m0-1h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+      { name: 'Bonus tafsiloti', href: '/dashboard/finance/bonus-details', icon: 'M9 17v-2a4 4 0 014-4h7m-7 0V7m0 4l-3-3m3 3l-3 3M5 7h4' },
     ],
   },
   { name: 'Tushum muammolari', href: '/dashboard/income-problems', icon: 'M12 9v2m0 4h.01M10.29 3.86l-7.2 12.47A1 1 0 003.96 18h16.08a1 1 0 00.87-1.67l-7.2-12.47a1 1 0 00-1.74 0z' },
