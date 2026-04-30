@@ -7336,49 +7336,29 @@ export const customerIncomeRouter = router({
         });
       }
 
-      if (input?.courseId) {
+      if (input?.courseId || input?.tariffId) {
         andConditions.push({
-          OR: [
-            {
-              incomes: {
-                some: {
-                  ...(scopedManagerUserId
-                    ? {
-                        managerUserId: scopedManagerUserId,
-                      }
-                    : {}),
-                  lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-                  courseId: input.courseId,
-                },
-              },
+          incomes: {
+            some: {
+              type: 'new_sale',
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              ...(scopedManagerUserId
+                ? {
+                    managerUserId: scopedManagerUserId,
+                  }
+                : {}),
+              ...(input?.courseId
+                ? {
+                    courseId: input.courseId,
+                  }
+                : {}),
+              ...(input?.tariffId
+                ? {
+                    tariffId: input.tariffId,
+                  }
+                : {}),
             },
-            {
-              profileCourseId: input.courseId,
-            },
-          ],
-        });
-      }
-
-      if (input?.tariffId) {
-        andConditions.push({
-          OR: [
-            {
-              incomes: {
-                some: {
-                  ...(scopedManagerUserId
-                    ? {
-                        managerUserId: scopedManagerUserId,
-                      }
-                    : {}),
-                  lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-                  tariffId: input.tariffId,
-                },
-              },
-            },
-            {
-              profileTariffId: input.tariffId,
-            },
-          ],
+          },
         });
       }
 
@@ -7702,10 +7682,10 @@ export const customerIncomeRouter = router({
       const customersAfterSubTariffFilter = input?.subTariffId
         ? customers.filter((customer) => {
             const entries = courseEntriesByCustomer.get(customer.id) || [];
-            if (entries.some((entry) => entry.subTariffId === input.subTariffId)) {
-              return true;
-            }
-            return customer.profileSubTariffId === input.subTariffId;
+            return entries.some((entry) =>
+              entry.subTariffId === input.subTariffId
+              && (!input.courseId || entry.courseId === input.courseId)
+              && (!input.tariffId || entry.tariffId === input.tariffId));
           })
         : customers;
       const customersAfterDebtFilter = customersAfterSubTariffFilter.filter((customer) => {
