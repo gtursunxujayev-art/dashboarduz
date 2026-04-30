@@ -57,6 +57,9 @@ type AttendancePenaltySettings = {
   absenceDayPenaltyUZS: number;
   applyToFixedSalary: boolean;
   applyToKpi: boolean;
+  latePenaltyTarget: 'fixed' | 'kpi';
+  missingHourPenaltyTarget: 'fixed' | 'kpi';
+  absenceDayPenaltyTarget: 'fixed' | 'kpi';
   monthlyPenaltyCapUZS: number;
 };
 
@@ -237,6 +240,10 @@ function parseAttendancePenaltySettings(settings: unknown): AttendancePenaltySet
   const settingsObject = asObject(settings);
   const salarySettings = asObject(settingsObject.salary);
   const raw = asObject(salarySettings.attendancePenaltySettings);
+  const parseTarget = (value: unknown, fallback: 'fixed' | 'kpi'): 'fixed' | 'kpi' => {
+    return value === 'fixed' || value === 'kpi' ? value : fallback;
+  };
+  const fallbackTarget: 'fixed' | 'kpi' = raw.applyToFixedSalary === true ? 'fixed' : 'kpi';
 
   return {
     lateMinutePenaltyUZS: Math.max(0, Math.round(toFiniteNumber(raw.lateMinutePenaltyUZS, 0))),
@@ -244,6 +251,9 @@ function parseAttendancePenaltySettings(settings: unknown): AttendancePenaltySet
     absenceDayPenaltyUZS: Math.max(0, Math.round(toFiniteNumber(raw.absenceDayPenaltyUZS, 0))),
     applyToFixedSalary: raw.applyToFixedSalary === true,
     applyToKpi: raw.applyToKpi === true,
+    latePenaltyTarget: parseTarget(raw.latePenaltyTarget, fallbackTarget),
+    missingHourPenaltyTarget: parseTarget(raw.missingHourPenaltyTarget, fallbackTarget),
+    absenceDayPenaltyTarget: parseTarget(raw.absenceDayPenaltyTarget, 'fixed'),
     monthlyPenaltyCapUZS: Math.max(0, Math.round(toFiniteNumber(raw.monthlyPenaltyCapUZS, 0))),
   };
 }
@@ -501,6 +511,9 @@ const updateAttendancePenaltySettingsInput = z.object({
   absenceDayPenaltyUZS: z.number().int().nonnegative(),
   applyToFixedSalary: z.boolean(),
   applyToKpi: z.boolean(),
+  latePenaltyTarget: z.enum(['fixed', 'kpi']),
+  missingHourPenaltyTarget: z.enum(['fixed', 'kpi']),
+  absenceDayPenaltyTarget: z.enum(['fixed', 'kpi']),
   monthlyPenaltyCapUZS: z.number().int().nonnegative(),
 });
 
@@ -685,6 +698,9 @@ export const bonusRouter = router({
             absenceDayPenaltyUZS: Math.max(0, Math.round(input.absenceDayPenaltyUZS)),
             applyToFixedSalary: input.applyToFixedSalary,
             applyToKpi: input.applyToKpi,
+            latePenaltyTarget: input.latePenaltyTarget,
+            missingHourPenaltyTarget: input.missingHourPenaltyTarget,
+            absenceDayPenaltyTarget: input.absenceDayPenaltyTarget,
             monthlyPenaltyCapUZS: Math.max(0, Math.round(input.monthlyPenaltyCapUZS)),
           },
         },
