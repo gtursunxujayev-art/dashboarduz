@@ -43,7 +43,7 @@ export const REPORT_TZ_OFFSET_MS = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
 export const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 export const UTEL_MIN_EXTENSION = 100;
 export const UTEL_MAX_EXTENSION = 150;
-export const SALARY_CATEGORIES = ['online', 'offline', 'intensive'] as const;
+export const SALARY_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 export const SALARY_RULE_MODES = ['simple', 'tiered'] as const;
 export const PLAN_BONUS_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 export const PLAN_BONUS_PERIOD_MODES = ['monthly', 'all_time'] as const;
@@ -465,7 +465,9 @@ export function normalizeCourseCategoryName(value: string | null | undefined): s
     .toLowerCase();
 }
 
-export function classifyCourseCategory(courseName: string | null | undefined): 'online' | 'offline' | 'intensive' | 'other' {
+export function classifyCourseCategory(
+  courseName: string | null | undefined,
+): 'online' | 'offline' | 'intensive' | 'additional_service' | 'other' {
   const normalized = normalizeCourseCategoryName(courseName);
   if (!normalized) {
     return 'other';
@@ -495,14 +497,36 @@ export function classifyCourseCategory(courseName: string | null | undefined): '
     return 'intensive';
   }
 
+  if (
+    normalized.includes('additional_service')
+    || normalized.includes('additional service')
+    || normalized.includes("qo'shimcha")
+    || normalized.includes('qoshimcha')
+    || normalized.includes('talaba')
+    || normalized.includes('korporativ')
+    || normalized.includes("o'quv quroli")
+    || normalized.includes('quroli')
+    || normalized.includes('konsultatsiya')
+    || normalized.includes("tog' darsi")
+    || normalized.includes('sayohat')
+    || normalized.includes('obuna')
+  ) {
+    return 'additional_service';
+  }
+
   return 'other';
 }
 
 export function classifyCourseCategoryFromField(
   category: string | null | undefined,
-): 'online' | 'offline' | 'intensive' | 'other' {
+): 'online' | 'offline' | 'intensive' | 'additional_service' | 'other' {
   const normalized = String(category || '').trim().toLowerCase();
-  if (normalized === 'online' || normalized === 'offline' || normalized === 'intensive') {
+  if (
+    normalized === 'online'
+    || normalized === 'offline'
+    || normalized === 'intensive'
+    || normalized === 'additional_service'
+  ) {
     return normalized;
   }
   return classifyCourseCategory(category);
@@ -546,6 +570,7 @@ export function createZeroBreakdown(): SalaryBreakdown {
     online: 0,
     offline: 0,
     intensive: 0,
+    additional_service: 0,
   };
 }
 
@@ -635,18 +660,17 @@ export function resolveBonusPercent(rule: SalaryCategoryBonusRule, closedSalesCo
   if (rule.mode === 'simple') {
     return normalizePercentage(rule.simplePercent);
   }
-  if (closedSalesCount <= 0 || !rule.tiers.length) {
-    return 0;
+  if (!rule.tiers.length) {
+    return normalizePercentage(rule.simplePercent);
   }
-  let matchedPercent = 0;
   for (const tier of rule.tiers) {
     const withinMin = closedSalesCount >= tier.minSales;
     const withinMax = tier.maxSales === null || closedSalesCount <= tier.maxSales;
     if (withinMin && withinMax) {
-      matchedPercent = tier.percent;
+      return normalizePercentage(tier.percent);
     }
   }
-  return normalizePercentage(matchedPercent);
+  return normalizePercentage(rule.simplePercent);
 }
 
 export function toPositiveInteger(value: unknown): number {
@@ -718,11 +742,13 @@ export function extractSalarySettings(settings: unknown): SalarySettingsSnapshot
     online: normalizePercentage(rawPercentages?.online),
     offline: normalizePercentage(rawPercentages?.offline),
     intensive: normalizePercentage(rawPercentages?.intensive),
+    additional_service: normalizePercentage(rawPercentages?.additional_service),
   };
   const bonusRules: SalaryBonusRules = {
     online: normalizeCategoryBonusRule(rawRules?.online, bonusPercentages.online),
     offline: normalizeCategoryBonusRule(rawRules?.offline, bonusPercentages.offline),
     intensive: normalizeCategoryBonusRule(rawRules?.intensive, bonusPercentages.intensive),
+    additional_service: normalizeCategoryBonusRule(rawRules?.additional_service, bonusPercentages.additional_service),
   };
 
   const fixedSalaries = new Map<string, number>();
@@ -815,3 +841,4 @@ export { amocrmService } from '../../../services/integrations/amocrm';
 export { getAmoCRMActivityMetrics, summarizeAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 export { LogLevel, log } from '../../../services/observability';
 export { adminProcedure, protectedProcedure, router } from '../../trpc';
+
