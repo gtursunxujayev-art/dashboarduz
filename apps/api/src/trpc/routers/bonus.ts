@@ -5,7 +5,7 @@ import { adminProcedure, protectedProcedure, router } from '../trpc';
 
 const BONUS_PLAN_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 const BONUS_PLAN_PERIODS = ['monthly', 'all_time'] as const;
-const BONUS_RULE_CATEGORIES = ['online', 'offline', 'intensive'] as const;
+const BONUS_RULE_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 const BONUS_RULE_MODES = ['simple', 'tiered'] as const;
 const BONUS_BASE_MODES = ['on_income', 'on_debt_closed'] as const;
 const BONUS_READ_ROLES = new Set(['Admin', 'Manager', 'TeamLeader']);
@@ -81,7 +81,8 @@ function normalizeName(value: string): string {
 function getCategoryLabel(category: BonusRuleCategory): string {
   if (category === 'online') return 'Online';
   if (category === 'offline') return 'Offline';
-  return 'Intensiv';
+  if (category === 'intensive') return 'Intensiv';
+  return "Qo'shimcha xizmat";
 }
 
 function toFiniteNumber(value: unknown, fallback = 0): number {
@@ -232,6 +233,7 @@ function parseBonusRules(settings: unknown): {
       online: sanitizeCategoryRule(rawRules.online, rawPercentages.online),
       offline: sanitizeCategoryRule(rawRules.offline, rawPercentages.offline),
       intensive: sanitizeCategoryRule(rawRules.intensive, rawPercentages.intensive),
+      additional_service: sanitizeCategoryRule(rawRules.additional_service, rawPercentages.additional_service),
     },
   };
 }
@@ -493,6 +495,7 @@ const updateBonusRulesInput = z.object({
     online: categoryBonusRuleInput,
     offline: categoryBonusRuleInput,
     intensive: categoryBonusRuleInput,
+    additional_service: categoryBonusRuleInput,
   }),
 });
 
@@ -579,11 +582,19 @@ export const bonusRouter = router({
       online: sanitizeCategoryRule(input.bonusRules.online, input.bonusRules.online.simplePercent),
       offline: sanitizeCategoryRule(input.bonusRules.offline, input.bonusRules.offline.simplePercent),
       intensive: sanitizeCategoryRule(input.bonusRules.intensive, input.bonusRules.intensive.simplePercent),
+      additional_service: sanitizeCategoryRule(
+        input.bonusRules.additional_service,
+        input.bonusRules.additional_service.simplePercent,
+      ),
     };
     const compatibilityPercentages = {
       online: normalizedRules.online.mode === 'simple' ? normalizedRules.online.simplePercent : 0,
       offline: normalizedRules.offline.mode === 'simple' ? normalizedRules.offline.simplePercent : 0,
       intensive: normalizedRules.intensive.mode === 'simple' ? normalizedRules.intensive.simplePercent : 0,
+      additional_service:
+        normalizedRules.additional_service.mode === 'simple'
+          ? normalizedRules.additional_service.simplePercent
+          : 0,
     };
 
     const nextSettings = {
