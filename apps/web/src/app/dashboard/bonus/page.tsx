@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/auth-context';
 
 type BonusMode = 'on_income' | 'on_debt_closed';
 type CourseBonusMode = 'simple' | 'tiered';
-type SalaryCategory = 'online' | 'offline' | 'intensive';
+type SalaryCategory = 'online' | 'offline' | 'intensive' | 'additional_service';
 type PlanCategory = 'online' | 'offline' | 'intensive' | 'additional_service';
 type PlanPeriodMode = 'monthly' | 'all_time';
 type PenaltyTarget = 'fixed' | 'kpi';
@@ -122,7 +122,8 @@ function normalizeSubTariffName(value: string): string {
 function getSalaryCategoryLabel(category: SalaryCategory): string {
   if (category === 'online') return 'Online';
   if (category === 'offline') return 'Offline';
-  return 'Intensiv';
+  if (category === 'intensive') return 'Intensiv';
+  return "Qo'shimcha xizmat";
 }
 
 function createDefaultBonusRulesState(): BonusRulesState {
@@ -131,6 +132,7 @@ function createDefaultBonusRulesState(): BonusRulesState {
     online: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
     offline: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
     intensive: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
+    additional_service: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
   };
 }
 
@@ -224,6 +226,7 @@ export default function BonusPage() {
       online: mapRuleToState(salaryConfigQuery.data.bonusRules.online as CategoryBonusRule),
       offline: mapRuleToState(salaryConfigQuery.data.bonusRules.offline as CategoryBonusRule),
       intensive: mapRuleToState(salaryConfigQuery.data.bonusRules.intensive as CategoryBonusRule),
+      additional_service: mapRuleToState(salaryConfigQuery.data.bonusRules.additional_service as CategoryBonusRule),
     });
 
     const fixedRows = Array.isArray(salaryConfigQuery.data.fixedSalaries)
@@ -350,7 +353,7 @@ export default function BonusPage() {
   };
 
   const validateAndBuildBonusRulesPayload = (): { bonusRules: Record<SalaryCategory, CategoryBonusRule> } | null => {
-    const categories: SalaryCategory[] = ['online', 'offline', 'intensive'];
+    const categories: SalaryCategory[] = ['online', 'offline', 'intensive', 'additional_service'];
     const payload = {} as Record<SalaryCategory, CategoryBonusRule>;
 
     for (const category of categories) {
@@ -767,7 +770,7 @@ export default function BonusPage() {
               </div>
             </div>
 
-            {(['online', 'offline', 'intensive'] as SalaryCategory[]).map((category) => {
+            {(['online', 'offline', 'intensive', 'additional_service'] as SalaryCategory[]).map((category) => {
               const rule = bonusRulesState[category];
               if (!rule) return null;
               return (
@@ -818,6 +821,9 @@ export default function BonusPage() {
 
                   {rule.mode === 'tiered' && (
                     <div className="mt-4 space-y-2">
+                      <p className="text-xs text-gray-500">
+                        Tier diapazonlari inclusive ishlaydi: masalan, <span className="font-medium">1-3</span> bo&apos;lsa 1, 2 va 3 ham kiradi.
+                      </p>
                       {rule.tiers.map((tier, tierIndex) => (
                         <div key={`${category}-tier-${tierIndex}`} className="grid grid-cols-1 gap-2 md:grid-cols-4">
                           <input
