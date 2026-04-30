@@ -21,16 +21,6 @@ function getTashkentToday(): string {
   return `${year}-${month}-${day}`;
 }
 
-function getTashkentDateShift(days: number): string {
-  const now = new Date();
-  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
-  local.setDate(local.getDate() + days);
-  const year = local.getFullYear();
-  const month = String(local.getMonth() + 1).padStart(2, '0');
-  const day = String(local.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 function getPreviousWeekRange() {
   const now = new Date();
   const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
@@ -54,6 +44,47 @@ function getPreviousWeekRange() {
   return {
     dateFrom: toIso(previousWeekMonday),
     dateTo: toIso(previousWeekSunday),
+  };
+}
+
+function getCurrentWeekRange() {
+  const now = new Date();
+  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
+  local.setHours(0, 0, 0, 0);
+  const day = local.getDay();
+  const daysSinceMonday = (day + 6) % 7;
+  const currentWeekMonday = new Date(local);
+  currentWeekMonday.setDate(local.getDate() - daysSinceMonday);
+
+  const toIso = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const dayValue = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${dayValue}`;
+  };
+
+  return {
+    dateFrom: toIso(currentWeekMonday),
+    dateTo: toIso(local),
+  };
+}
+
+function getCurrentMonthRange() {
+  const now = new Date();
+  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
+  local.setHours(0, 0, 0, 0);
+  const monthStart = new Date(local.getFullYear(), local.getMonth(), 1);
+
+  const toIso = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const dayValue = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${dayValue}`;
+  };
+
+  return {
+    dateFrom: toIso(monthStart),
+    dateTo: toIso(local),
   };
 }
 
@@ -98,6 +129,16 @@ export default function FinanceBonusDetailsPage() {
   const [managerUserId, setManagerUserId] = useState('');
 
   const effectiveDateRange = useMemo(() => {
+    if (range === 'today') {
+      const today = getTashkentToday();
+      return { dateFrom: today, dateTo: today };
+    }
+    if (range === 'week') {
+      return getCurrentWeekRange();
+    }
+    if (range === 'month') {
+      return getCurrentMonthRange();
+    }
     if (range === 'last_week') {
       return getPreviousWeekRange();
     }
@@ -107,23 +148,16 @@ export default function FinanceBonusDetailsPage() {
     if (range === 'custom') {
       return { dateFrom, dateTo };
     }
-    if (range === 'today') {
-      const today = getTashkentToday();
-      return { dateFrom: today, dateTo: today };
-    }
-    if (range === 'week') {
-      return { dateFrom: getTashkentDateShift(-6), dateTo: getTashkentToday() };
-    }
-    return { dateFrom: getTashkentDateShift(-29), dateTo: getTashkentToday() };
+    return { dateFrom, dateTo };
   }, [range, dateFrom, dateTo]);
 
   const filters = useMemo(() => ({
-    range: (range === 'last_week' || range === 'last_month') ? 'custom' : range,
-    dateFrom: range === 'custom' || range === 'last_week' || range === 'last_month' ? effectiveDateRange.dateFrom : undefined,
-    dateTo: range === 'custom' || range === 'last_week' || range === 'last_month' ? effectiveDateRange.dateTo : undefined,
+    range: 'custom' as const,
+    dateFrom: effectiveDateRange.dateFrom,
+    dateTo: effectiveDateRange.dateTo,
     courseId: courseId || undefined,
     managerUserId: isAgentOnly ? undefined : (managerUserId || undefined),
-  }), [range, effectiveDateRange, courseId, managerUserId, isAgentOnly]);
+  }), [effectiveDateRange, courseId, managerUserId, isAgentOnly]);
 
   const financeOptionsQuery = trpc.dashboard.financeSummary.useQuery(filters, {
     retry: 1,
@@ -139,9 +173,11 @@ export default function FinanceBonusDetailsPage() {
   const managerOptions = useMemo(() => financeOptionsQuery.data?.managerOptions || [], [financeOptionsQuery.data]);
   const bonusRows = useMemo(() => bonusDetailsQuery.data?.rows || [], [bonusDetailsQuery.data]);
   const bonusTotals = bonusDetailsQuery.data?.totals;
+  const summaryTotals = bonusDetailsQuery.data?.summaryTotals;
+  const agentSummary = useMemo(() => bonusDetailsQuery.data?.agentSummary || [], [bonusDetailsQuery.data]);
   const bonusAgentCount = useMemo(
-    () => new Set(bonusRows.map((row: any) => row.managerUserId)).size,
-    [bonusRows],
+    () => agentSummary.length || new Set(bonusRows.map((row: any) => row.managerUserId)).size,
+    [agentSummary, bonusRows],
   );
 
   return (
@@ -234,15 +270,75 @@ export default function FinanceBonusDetailsPage() {
         </div>
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-500">Filtr bo'yicha tushum</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(bonusTotals?.incomeAmount)}</p>
+          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summaryTotals?.incomeAmount ?? bonusTotals?.incomeAmount)}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Hisoblangan bonus</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(bonusTotals?.bonusAmount)}</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">Yopilgan tushum (kelishuv)</p>
+          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summaryTotals?.closedAgreementAmount)}</p>
         </div>
       </div>
 
       <div className="rounded-lg bg-white p-6 shadow">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Agentlar bo'yicha bonuslar</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Tushum, yopilgan tushum va bonuslar kesimi (tanlangan davr bo'yicha).
+          </p>
+        </div>
+        {bonusDetailsQuery.isLoading ? (
+          <p className="text-sm text-gray-600">Yuklanmoqda...</p>
+        ) : agentSummary.length ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Yopilgan tushum</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Jami bonus</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Online</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Offline</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Intensiv</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qo'shimcha xizmat</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {agentSummary.map((row: any) => (
+                  <tr key={row.managerUserId}>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.managerLabel}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.incomeAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.closedAgreementAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(row.totalBonusAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusByCategory?.online)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusByCategory?.offline)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusByCategory?.intensive)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusByCategory?.additional_service)}</td>
+                  </tr>
+                ))}
+                {summaryTotals && (
+                  <tr className="bg-gray-50">
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">Jami</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.incomeAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.closedAgreementAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.totalBonusAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.bonusByCategory?.online)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.bonusByCategory?.offline)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.bonusByCategory?.intensive)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.bonusByCategory?.additional_service)}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-600">Tanlangan filtr bo'yicha agentlar kesimi topilmadi.</p>
+        )}
+      </div>
+
+      <div className="rounded-lg bg-white p-6 shadow">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Bonus qatorlari tafsiloti</h2>
+        </div>
         {bonusDetailsQuery.isLoading ? (
           <p className="text-sm text-gray-600">Yuklanmoqda...</p>
         ) : bonusRows.length ? (
