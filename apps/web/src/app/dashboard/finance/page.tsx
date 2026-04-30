@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
@@ -211,20 +212,6 @@ export default function FinancePage() {
     },
   );
 
-  const bonusDetailsQuery = trpc.dashboard.bonusIncomeDetails.useQuery(
-    {
-      range: (range === 'last_week' || range === 'last_month') ? 'custom' : range,
-      dateFrom: effectiveDateRange.dateFrom,
-      dateTo: effectiveDateRange.dateTo,
-      courseId: courseId || undefined,
-      managerUserId: isAgentOnly ? undefined : (managerUserId || undefined),
-    },
-    {
-      retry: 1,
-      refetchInterval: 5 * 60 * 1000,
-    },
-  );
-
   const totals = financeQuery.data?.totals;
   const managerOptions = useMemo(() => financeQuery.data?.managerOptions || [], [financeQuery.data]);
   const courseOptions = useMemo(() => financeQuery.data?.courseOptions || [], [financeQuery.data]);
@@ -237,12 +224,6 @@ export default function FinancePage() {
   const yearSeries = useMemo(() => forecast?.yearSeries || [], [forecast]);
   const salaryTotals = salaryQuery.data?.totals;
   const salaryByAgent = useMemo(() => salaryQuery.data?.byAgent || [], [salaryQuery.data]);
-  const bonusRows = useMemo(() => bonusDetailsQuery.data?.rows || [], [bonusDetailsQuery.data]);
-  const bonusTotals = bonusDetailsQuery.data?.totals;
-  const bonusAgentCount = useMemo(
-    () => new Set(bonusRows.map((row: any) => row.managerUserId)).size,
-    [bonusRows],
-  );
 
   return (
     <div className="space-y-6">
@@ -657,86 +638,32 @@ export default function FinancePage() {
         )}
       </div>
 
-      <div className="rounded-lg bg-white p-6 shadow">
-        <div className="flex items-center justify-between gap-3">
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Bonus tafsiloti</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Tanlangan davrdagi barcha tushumlar va bonus hisobi (bonus faqat oxirgi to'lov qatorida chiqadi).
+              Bonus tafsilotini alohida sahifada ko&apos;ring (real-time debug ustunlari bilan).
             </p>
           </div>
+          <Link
+            href="/dashboard/finance/bonus-details"
+            className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+          >
+            Bonus tafsilotiga o&apos;tish
+          </Link>
         </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Agentlar</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900">{bonusAgentCount}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Filtr bo'yicha tushum</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(bonusTotals?.incomeAmount)}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Hisoblangan bonus</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(bonusTotals?.bonusAmount)}</p>
-          </div>
-        </div>
-
-        {bonusDetailsQuery.isLoading ? (
-          <p className="mt-4 text-sm text-gray-600">Yuklanmoqda...</p>
-        ) : bonusDetailsQuery.error ? (
-          <p className="mt-4 text-sm text-red-700">
-            {bonusDetailsQuery.error.message || "Bonus tafsilotlarini yuklashda xatolik."}
-          </p>
-        ) : bonusRows.length ? (
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sana</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Turi</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Mijoz</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs/Tarif</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kelishuv summasi</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qolgan qarz</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Hisoblangan bonus</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {bonusRows.map((row: any) => (
-                  <tr key={row.id}>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {new Date(row.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {row.type === 'repayment' ? "Qarzdorlik to'lovi" : 'Yangi sotuv'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {row.customerNumber} - {row.customerName}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.managerLabel}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {[row.courseName, row.tariffName].filter(Boolean).join(' / ') || '-'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.agreementAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.paymentAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.remainingDebtAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-medium text-gray-900">
-                      {row.isLastPayment ? formatAmount(row.calculatedBonus) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="mt-4 text-sm text-gray-600">Tanlangan filtr bo'yicha bonus tafsiloti topilmadi.</p>
-        )}
       </div>
     </div>
   );
 }
+
+
+
+
+
+
+
+
 
 
