@@ -1004,6 +1004,12 @@ export const salaryProcedures = {
             remainingDebtAmount: number;
             calculatedBonus: number;
             isLastPayment: boolean;
+            bonusDebug: {
+              category: SalaryCategory | 'other';
+              closedCount: number;
+              appliedPercent: number;
+              usedFallback: boolean;
+            };
           }>,
         };
       }
@@ -1200,12 +1206,19 @@ export const salaryProcedures = {
         const category = classifyCourseCategoryFromField(courseCategory || courseName);
 
         let calculatedBonus = 0;
+        let appliedPercent = 0;
+        let closedCount = 0;
+        let usedFallback = false;
         if (isLastPayment && category !== 'other') {
-          const closedCount = getMonthlyClosedCount(income.managerUserId, category);
-          const percentage = resolveBonusPercent(salarySettings.bonusRules[category], closedCount);
+          closedCount = getMonthlyClosedCount(income.managerUserId, category);
+          const rule = salarySettings.bonusRules[category];
+          appliedPercent = resolveBonusPercent(rule, closedCount);
+          const tierMatched = rule.mode === 'tiered'
+            && rule.tiers.some((tier) => closedCount >= tier.minSales && (tier.maxSales === null || closedCount <= tier.maxSales));
+          usedFallback = rule.mode === 'tiered' && !tierMatched;
 
           if (salarySettings.bonusMode === 'on_income') {
-            calculatedBonus = getBonusAmount(income.paymentAmount ?? 0, percentage);
+            calculatedBonus = getBonusAmount(income.paymentAmount ?? 0, appliedPercent);
           } else if (saleId && fullyPaidSaleIds.has(saleId)) {
             const sale = saleById.get(saleId)
               || (income.type === 'new_sale'
@@ -1227,7 +1240,7 @@ export const salaryProcedures = {
               const closeDate = closeDateBySaleIdForBonus.get(saleId) ?? sale.entryDate;
               if (closeDate >= rangeStart && closeDate <= rangeEnd) {
                 const agreementAmount = sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
-                calculatedBonus = getBonusAmount(agreementAmount, percentage);
+                calculatedBonus = getBonusAmount(agreementAmount, appliedPercent);
               }
             }
           }
@@ -1257,6 +1270,12 @@ export const salaryProcedures = {
           remainingDebtAmount: chainRemainingDebtAmount,
           calculatedBonus,
           isLastPayment,
+          bonusDebug: {
+            category,
+            closedCount,
+            appliedPercent,
+            usedFallback,
+          },
         };
       });
 
