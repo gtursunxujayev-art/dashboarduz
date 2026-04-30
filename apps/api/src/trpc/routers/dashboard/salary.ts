@@ -1136,6 +1136,46 @@ export const salaryProcedures = {
         chainRows: bonusChainRows,
       });
 
+      const agreementAmountBySaleId = new Map<string, number>();
+      for (const sale of activeSalesForBonus) {
+        agreementAmountBySaleId.set(
+          sale.id,
+          sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
+        );
+      }
+
+      const debtAfterPaymentByRowId = new Map<string, number>();
+      const chainRowsBySaleId = new Map<string, typeof bonusChainRows>();
+      for (const row of bonusChainRows) {
+        const saleId = row.type === 'new_sale' ? row.id : row.relatedDebtIncomeId;
+        if (!saleId) {
+          continue;
+        }
+        const existing = chainRowsBySaleId.get(saleId) ?? [];
+        existing.push(row);
+        chainRowsBySaleId.set(saleId, existing);
+      }
+      for (const [saleId, chainRows] of chainRowsBySaleId.entries()) {
+        const agreementAmount = agreementAmountBySaleId.get(saleId) ?? 0;
+        const sorted = [...chainRows].sort((a, b) => {
+          const dateDiff = a.entryDate.getTime() - b.entryDate.getTime();
+          if (dateDiff !== 0) {
+            return dateDiff;
+          }
+          const createdDiff = a.createdAt.getTime() - b.createdAt.getTime();
+          if (createdDiff !== 0) {
+            return createdDiff;
+          }
+          return a.id.localeCompare(b.id);
+        });
+        let runningPaid = 0;
+        for (const row of sorted) {
+          runningPaid += Number(row.paymentAmount ?? 0);
+          const remaining = Math.max(agreementAmount - runningPaid, 0);
+          debtAfterPaymentByRowId.set(row.id, remaining);
+        }
+      }
+
       const lastPaymentBySaleId = new Map<string, { id: string; entryDate: Date; createdAt: Date }>();
       for (const row of bonusChainRows) {
         const saleId = row.type === 'new_sale' ? row.id : row.relatedDebtIncomeId;
@@ -1250,9 +1290,12 @@ export const salaryProcedures = {
           ? (income.coursePriceAmount ?? income.paymentAmount ?? 0)
           : (income.relatedDebtIncome?.coursePriceAmount ?? income.coursePriceAmount ?? income.paymentAmount ?? 0);
 
-        const chainRemainingDebtAmount = saleId
-          ? (chainMetricsBySaleId.get(saleId)?.currentDebtAmount ?? Number(income.remainingDebtAmount ?? 0))
-          : Number(income.remainingDebtAmount ?? 0);
+        const debtAfterPaymentAmount = debtAfterPaymentByRowId.get(income.id);
+        const chainRemainingDebtAmount = debtAfterPaymentAmount ?? (
+          saleId
+            ? (chainMetricsBySaleId.get(saleId)?.currentDebtAmount ?? Number(income.remainingDebtAmount ?? 0))
+            : Number(income.remainingDebtAmount ?? 0)
+        );
 
         return {
           id: income.id,
