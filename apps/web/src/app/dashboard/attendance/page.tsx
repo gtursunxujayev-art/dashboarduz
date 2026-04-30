@@ -43,6 +43,11 @@ function formatSeconds(totalSeconds: number): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
 }
 
+function formatSecondsOrDash(totalSeconds: number | null | undefined): string {
+  if (typeof totalSeconds !== 'number') return '-';
+  return formatSeconds(totalSeconds);
+}
+
 function formatDateTime(value: string | Date | null | undefined): string {
   if (!value) return '-';
   return new Date(value).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' });
@@ -80,7 +85,7 @@ export default function AttendancePage() {
   const [correctionError, setCorrectionError] = useState<string | null>(null);
 
   const usersQuery = trpc.users.list.useQuery(undefined, {
-    enabled: isAdmin,
+    enabled: true,
     retry: false,
   });
 
@@ -191,6 +196,71 @@ export default function AttendancePage() {
         })),
     [usersQuery.data],
   );
+
+  const allAgentUsers = useMemo(
+    () =>
+      (usersQuery.data || []).filter((currentUser: any) => {
+        if (!Array.isArray(currentUser.roles) || currentUser.isActive === false) return false;
+        return currentUser.roles.includes('Agent') || currentUser.roles.includes('TeamLeader');
+      }),
+    [usersQuery.data],
+  );
+
+  const displayRows = useMemo(() => {
+    const rows = summariesQuery.data?.rows || [];
+    const singleDay = dateFrom === dateTo;
+    if (!singleDay) return rows;
+
+    const normalizedQuery = query.trim().toLowerCase();
+    if (allAgentUsers.length === 0) return rows;
+    const filteredAgents = allAgentUsers.filter((agent: any) => {
+      if (!normalizedQuery) return true;
+      const haystack = [
+        agent.name || '',
+        agent.username || '',
+        agent.phoneNumber || '',
+        agent.phone || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+
+    if (filteredAgents.length === 0) return normalizedQuery ? [] : rows;
+
+    const byUserId = new Map<string, any>();
+    for (const row of rows) {
+      if (row?.userId) byUserId.set(row.userId, row);
+    }
+
+    return filteredAgents
+      .map((agent: any) => {
+        const existing = byUserId.get(agent.id);
+        if (existing) return existing;
+        return {
+          id: `missing-${agent.id}-${dateFrom}`,
+          summaryDate: dateFrom,
+          userId: agent.id,
+          user: {
+            name: agent.name || null,
+            username: agent.username || null,
+          },
+          workedSeconds: null,
+          missingSeconds: null,
+          lateMinutes: null,
+          firstInAt: null,
+          lastOutAt: null,
+          inCount: 0,
+        };
+      })
+      .sort((a: any, b: any) => {
+        const nameA = (a.user?.name || a.user?.username || '').toLowerCase();
+        const nameB = (b.user?.name || b.user?.username || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+  }, [summariesQuery.data?.rows, dateFrom, dateTo, query, allAgentUsers]);
+
+  const presentCount = useMemo(() => displayRows.filter((row: any) => hasInPresence(row)).length, [displayRows]);
 
   const eventOptions = useMemo(
     () =>
@@ -440,7 +510,7 @@ export default function AttendancePage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-700">
               <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Ishlangan vaqt</p>
               <p className="text-base font-semibold text-gray-900 dark:text-slate-100">{formatSeconds(totals.workedSeconds)}</p>
@@ -454,16 +524,8 @@ export default function AttendancePage() {
               <p className="text-base font-semibold text-gray-900 dark:text-slate-100">{formatSeconds(totals.missingSeconds)}</p>
             </div>
             <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-700">
-              <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Kechikish (daq)</p>
-              <p className="text-base font-semibold text-gray-900 dark:text-slate-100">{totals.lateMinutes}</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-700">
-              <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Kelmagan kun</p>
-              <p className="text-base font-semibold text-gray-900 dark:text-slate-100">{totals.absenceDays}</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-700">
-              <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Anomaliya</p>
-              <p className="text-base font-semibold text-gray-900 dark:text-slate-100">{totals.anomalies}</p>
+              <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Kelganlar soni</p>
+              <p className="text-base font-semibold text-gray-900 dark:text-slate-100">{presentCount}</p>
             </div>
           </div>
 
@@ -483,13 +545,13 @@ export default function AttendancePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
-                  {(summariesQuery.data?.rows || []).map((row: any) => (
+                  {displayRows.map((row: any) => (
                     <tr key={row.id}>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.summaryDate}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.user?.name || row.user?.username || row.userId}</td>
-                      <td className="px-3 py-2 text-sm font-medium text-gray-900 dark:text-slate-100">{formatSeconds(row.workedSeconds)}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatSeconds(row.missingSeconds)}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.lateMinutes || 0} daq</td>
+                      <td className="px-3 py-2 text-sm font-medium text-gray-900 dark:text-slate-100">{formatSecondsOrDash(row.workedSeconds)}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatSecondsOrDash(row.missingSeconds)}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{typeof row.lateMinutes === 'number' ? `${row.lateMinutes} daq` : '-'}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.firstInAt)}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.lastOutAt)}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{getPresenceLabel(row)}</td>
@@ -502,7 +564,7 @@ export default function AttendancePage() {
               <p className="px-3 py-3 text-sm text-gray-500 dark:text-slate-400">Yuklanmoqda...</p>
             ) : summariesQuery.error ? (
               <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{summariesQuery.error.message}</p>
-            ) : (summariesQuery.data?.rows || []).length === 0 ? (
+            ) : displayRows.length === 0 ? (
               <p className="px-3 py-3 text-sm text-gray-500 dark:text-slate-400">Bu filtr uchun davomat yo&apos;q.</p>
             ) : null}
           </div>
