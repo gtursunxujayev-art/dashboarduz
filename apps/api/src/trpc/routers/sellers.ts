@@ -1482,6 +1482,7 @@ export const sellersRouter = router({
             totalDealAmount: salesMetrics.newSalesAgreementAmount,
             averageDealAmount: salesMetrics.averageAgreementAmount,
             ...salesMetrics,
+            newLeadsInRange: newLeadCount,
             conversionRate: listConversionRate,
             refundCount: refundsByManager.get(managerId) || 0,
             refundRate: salesMetrics.newSalesCount > 0
@@ -1920,6 +1921,7 @@ export const sellersRouter = router({
           totalDealAmount: salesMetrics.newSalesAgreementAmount,
           averageDealAmount: salesMetrics.averageAgreementAmount,
           ...salesMetrics,
+          newLeadsInRange: detailNewLeadCount,
           conversionRate: detailConversionRate,
           refundCount: detailRefundCount,
           refundRate: detailRefundRate,
