@@ -5090,13 +5090,25 @@ export const customerIncomeRouter = router({
           createdByLabelByIncomeId.set(log.resourceId, label);
         }
   
-        return incomes.map((income) => ({
-          ...income,
-          lifecycleStatus: getIncomeLifecycleLabel(income.lifecycleStatus),
-          createdByLabel: income.legacyImportSource
-            ? 'import'
-            : (createdByLabelByIncomeId.get(income.id) || 'qo‘lda'),
-        }));
+        return incomes.map((income) => {
+          const saleSubTariffId = extractSaleSubTariffId(income.legacyImportMeta);
+          const profileMatchedSubTariffId = (
+            income.customer?.profileCourseId === income.courseId
+            && income.customer?.profileTariffId === income.tariffId
+          )
+            ? (income.customer?.profileSubTariffId || null)
+            : null;
+          const effectiveSubTariffId = saleSubTariffId || profileMatchedSubTariffId || null;
+
+          return {
+            ...income,
+            lifecycleStatus: getIncomeLifecycleLabel(income.lifecycleStatus),
+            createdByLabel: income.legacyImportSource
+              ? 'import'
+              : (createdByLabelByIncomeId.get(income.id) || 'qo‘lda'),
+            effectiveSubTariffId,
+          };
+        });
       }),
 
   exportIncomesByDateRange: adminProcedure
@@ -7759,3 +7771,4 @@ export const customerIncomeRouter = router({
       };
     }),
 });
+
