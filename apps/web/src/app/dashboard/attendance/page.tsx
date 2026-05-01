@@ -75,7 +75,7 @@ export default function AttendancePage() {
   const [dateTo, setDateTo] = useState(today);
   const [query, setQuery] = useState('');
   const [anomaliesOnly, setAnomaliesOnly] = useState(false);
-  const [correctionAction, setCorrectionAction] = useState<'add_missing_out' | 'edit_event_time' | 'mark_justified_absence'>('add_missing_out');
+  const [correctionAction, setCorrectionAction] = useState<'add_missing_in' | 'add_missing_out' | 'edit_event_time' | 'mark_justified_absence'>('add_missing_out');
   const [correctionUserId, setCorrectionUserId] = useState('');
   const [correctionEventId, setCorrectionEventId] = useState('');
   const [correctionTimestamp, setCorrectionTimestamp] = useState(nowDateTime);
@@ -286,13 +286,13 @@ export default function AttendancePage() {
     }
 
     try {
-      if (correctionAction === 'add_missing_out') {
+      if (correctionAction === 'add_missing_in' || correctionAction === 'add_missing_out') {
         if (!correctionUserId) {
           setCorrectionError("Xodimni tanlang.");
           return;
         }
         await correctionMutation.mutateAsync({
-          action: 'add_missing_out',
+          action: correctionAction,
           userId: correctionUserId,
           timestamp: new Date(correctionTimestamp).toISOString(),
           reason,
@@ -411,12 +411,13 @@ export default function AttendancePage() {
                     <label className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">Amal</label>
                     <select
                       value={correctionAction}
-                      onChange={(event) => setCorrectionAction(event.target.value as 'add_missing_out' | 'edit_event_time' | 'mark_justified_absence')}
+                      onChange={(event) => setCorrectionAction(event.target.value as 'add_missing_in' | 'add_missing_out' | 'edit_event_time' | 'mark_justified_absence')}
                       className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                     >
-                      <option value="add_missing_out">Missing OUT qo'shish</option>
+                      <option value="add_missing_in">Kirishni qo'shish</option>
+                      <option value="add_missing_out">Ketishni qo'shish</option>
                       <option value="edit_event_time">Event vaqtini tahrirlash</option>
-                      <option value="mark_justified_absence">Kelmagan kunni oqlash</option>
+                      <option value="mark_justified_absence">Kelmagan kunni sababli qilish</option>
                     </select>
                   </div>
                   <div>
@@ -458,7 +459,9 @@ export default function AttendancePage() {
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">OUT vaqti</label>
+                      <label className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">
+                        {correctionAction === 'add_missing_in' ? 'IN vaqti' : 'OUT vaqti'}
+                      </label>
                       <input
                         type="datetime-local"
                         value={correctionTimestamp}
