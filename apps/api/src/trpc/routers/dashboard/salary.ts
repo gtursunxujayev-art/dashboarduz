@@ -89,6 +89,56 @@ function toLocalDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function parseLocalDateKey(value: string): { year: number; month: number; day: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return null;
+  }
+  return {
+    year: Number.parseInt(match[1] || '0', 10),
+    month: Number.parseInt(match[2] || '0', 10),
+    day: Number.parseInt(match[3] || '0', 10),
+  };
+}
+
+function formatLocalDateKey(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function getDayOfWeekFromLocalDateKey(value: string): number {
+  const parsed = parseLocalDateKey(value);
+  if (!parsed) {
+    return 0;
+  }
+  return new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day)).getUTCDay();
+}
+
+function addOneDayToLocalDateKey(value: string): string {
+  const parsed = parseLocalDateKey(value);
+  if (!parsed) {
+    return value;
+  }
+  const next = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day + 1));
+  return formatLocalDateKey(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate());
+}
+
+function buildRequiredWorkdaysByMonth(rangeStart: Date, rangeEnd: Date): Map<string, number> {
+  const result = new Map<string, number>();
+  let cursor = toLocalDateKey(rangeStart);
+  const end = toLocalDateKey(rangeEnd);
+
+  while (cursor <= end) {
+    const dayOfWeek = getDayOfWeekFromLocalDateKey(cursor);
+    if (dayOfWeek !== 0) {
+      const monthKey = cursor.slice(0, 7);
+      result.set(monthKey, (result.get(monthKey) || 0) + 1);
+    }
+    cursor = addOneDayToLocalDateKey(cursor);
+  }
+
+  return result;
+}
+
 export const salaryProcedures = {
   salarySummary: protectedProcedure
     .input(
@@ -812,26 +862,60 @@ export const salaryProcedures = {
         },
         select: {
           userId: true,
+          summaryDate: true,
           lateMinutes: true,
           missingSeconds: true,
           absence: true,
+          firstInAt: true,
         },
       });
 
-      const aggregate = new Map<string, { lateMinutes: number; missingSeconds: number; absenceDays: number }>();
+      const aggregate = new Map<string, { lateMinutes: number; missingSeconds: number }>();
+      const presenceByUserMonth = new Map<string, { weekdayDates: Set<string>; sundayDates: Set<string> }>();
+      const requiredWorkdaysByMonth = buildRequiredWorkdaysByMonth(rangeStart, rangeEnd);
       for (const row of summaries) {
-        const existing = aggregate.get(row.userId) ?? { lateMinutes: 0, missingSeconds: 0, absenceDays: 0 };
+        const existing = aggregate.get(row.userId) ?? { lateMinutes: 0, missingSeconds: 0 };
         existing.lateMinutes += Math.max(0, row.lateMinutes ?? 0);
         existing.missingSeconds += Math.max(0, row.missingSeconds ?? 0);
-        existing.absenceDays += row.absence ? 1 : 0;
         aggregate.set(row.userId, existing);
+
+        if (row.firstInAt) {
+          const monthKey = row.summaryDate.slice(0, 7);
+          const key = `${row.userId}|${monthKey}`;
+          const monthPresence = presenceByUserMonth.get(key) ?? { weekdayDates: new Set<string>(), sundayDates: new Set<string>() };
+          const dayOfWeek = getDayOfWeekFromLocalDateKey(row.summaryDate);
+          if (dayOfWeek === 0) {
+            monthPresence.sundayDates.add(row.summaryDate);
+          } else {
+            monthPresence.weekdayDates.add(row.summaryDate);
+          }
+          presenceByUserMonth.set(key, monthPresence);
+        }
       }
 
       for (const salaryRow of salaryByAgent.values()) {
-        const metrics = aggregate.get(salaryRow.userId) ?? { lateMinutes: 0, missingSeconds: 0, absenceDays: 0 };
+        const metrics = aggregate.get(salaryRow.userId) ?? { lateMinutes: 0, missingSeconds: 0 };
         const rawLatePenalty = metrics.lateMinutes * attendancePenaltySettings.lateMinutePenaltyUZS;
         const rawMissingHourPenalty = Math.round((metrics.missingSeconds / 3600) * attendancePenaltySettings.missingHourPenaltyUZS);
-        const rawAbsencePenalty = metrics.absenceDays * attendancePenaltySettings.absenceDayPenaltyUZS;
+        const monthlyFixedSalary = salarySettings.fixedSalaries.get(salaryRow.userId) ?? salaryRow.fixedSalary;
+        let rawAbsencePenalty = 0;
+        if (monthlyFixedSalary > 0 && attendancePenaltySettings.absenceDayPenaltyUZS > 0) {
+          for (const [monthKey, requiredWorkdays] of requiredWorkdaysByMonth.entries()) {
+            if (requiredWorkdays <= 0) {
+              continue;
+            }
+            const monthPresence = presenceByUserMonth.get(`${salaryRow.userId}|${monthKey}`);
+            const weekdayAttended = monthPresence?.weekdayDates.size ?? 0;
+            const sundayCredits = monthPresence?.sundayDates.size ?? 0;
+            const creditedDays = weekdayAttended + sundayCredits;
+            const missingDays = Math.max(requiredWorkdays - creditedDays, 0);
+            if (missingDays <= 0) {
+              continue;
+            }
+            const perDayPenalty = Math.round(monthlyFixedSalary / requiredWorkdays);
+            rawAbsencePenalty += perDayPenalty * missingDays;
+          }
+        }
 
         const cap = attendancePenaltySettings.monthlyPenaltyCapUZS > 0
           ? attendancePenaltySettings.monthlyPenaltyCapUZS
@@ -861,7 +945,7 @@ export const salaryProcedures = {
 
         addPenalty(cappedLatePenalty, attendancePenaltySettings.latePenaltyTarget);
         addPenalty(cappedMissingHourPenalty, attendancePenaltySettings.missingHourPenaltyTarget);
-        addPenalty(cappedAbsencePenalty, attendancePenaltySettings.absenceDayPenaltyTarget);
+        addPenalty(cappedAbsencePenalty, 'fixed');
 
         salaryRow.attendancePenaltyFixed = fixedPenalty;
         salaryRow.attendancePenaltyKpi = kpiPenalty;
