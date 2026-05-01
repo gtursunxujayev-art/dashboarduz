@@ -30,6 +30,11 @@ type EditIncomeForm = {
   coursePriceInput: string;
 };
 
+type SubTariffOptionLike = {
+  id?: string | null;
+  name?: string | null;
+};
+
 const TELEGRAM_USERNAME_PATTERN = /^@?[A-Za-z0-9_]+$/;
 
 function getTashkentToday(): string {
@@ -95,6 +100,44 @@ function formatDateForInput(value: string | Date | null | undefined): string {
     return '';
   }
   return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
+}
+
+function normalizeTextToken(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function resolveCanonicalSubTariffId(
+  selectedValue: string,
+  options: SubTariffOptionLike[],
+): string {
+  const normalizedSelectedValue = normalizeTextToken(selectedValue);
+  if (!normalizedSelectedValue) {
+    return '';
+  }
+
+  const matchById = options.find(
+    (option) => normalizeTextToken(option.id) === normalizedSelectedValue,
+  );
+  if (matchById?.id) {
+    return normalizeTextToken(matchById.id);
+  }
+
+  const matchByName = options.find(
+    (option) => normalizeTextToken(option.name) === normalizedSelectedValue,
+  );
+  if (matchByName?.id) {
+    return normalizeTextToken(matchByName.id);
+  }
+
+  return '';
+}
+
+function getSubTariffOptionValue(option: SubTariffOptionLike): string {
+  const id = normalizeTextToken(option.id);
+  if (id) {
+    return id;
+  }
+  return normalizeTextToken(option.name);
 }
 
 function sanitizeCustomerNumber(value: string): string {
@@ -360,6 +403,10 @@ export default function IncomePage() {
     const tariff = editTariffOptions.find((item: any) => item.id === editForm.tariffId);
     return Array.isArray(tariff?.subTariffs) ? tariff.subTariffs : [];
   }, [editForm?.tariffId, editTariffOptions]);
+  const resolvedEditSubTariffId = useMemo(
+    () => resolveCanonicalSubTariffId(editForm?.subTariffId || '', editSubTariffOptions),
+    [editForm?.subTariffId, editSubTariffOptions],
+  );
   const editDebtAfterFirstPayment = useMemo(() => {
     if (!editForm || editForm.type !== 'new_sale') {
       return 0;
@@ -515,9 +562,16 @@ export default function IncomePage() {
       }
       return;
     }
-    const exists = editSubTariffOptions.some((subTariff: any) => subTariff.id === editForm.subTariffId);
-    if (!exists) {
+    if (!editForm.subTariffId) {
+      return;
+    }
+    const canonicalSubTariffId = resolveCanonicalSubTariffId(editForm.subTariffId, editSubTariffOptions);
+    if (!canonicalSubTariffId) {
       setEditForm((prev) => (prev ? { ...prev, subTariffId: '' } : prev));
+      return;
+    }
+    if (canonicalSubTariffId !== editForm.subTariffId) {
+      setEditForm((prev) => (prev ? { ...prev, subTariffId: canonicalSubTariffId } : prev));
     }
   }, [editForm, editSubTariffOptions]);
 
@@ -631,10 +685,13 @@ export default function IncomePage() {
       courseId: income.courseId || '',
       tariffId: income.tariffId || '',
       subTariffId:
+        income.effectiveSubTariffId
+        || (
         income.customer?.profileCourseId === income.courseId
         && income.customer?.profileTariffId === income.tariffId
         ? (income.customer?.profileSubTariffId || '')
-        : '',
+        : ''
+      ),
       coursePriceInput: formatAmount(income.coursePriceAmount || 0),
     });
   };
@@ -685,13 +742,17 @@ export default function IncomePage() {
         setEditError('Tarif tanlang.');
         return;
       }
-      if (editSubTariffOptions.length > 0 && !editForm.subTariffId) {
+      if (editSubTariffOptions.length > 0 && !resolvedEditSubTariffId) {
         setEditError('Subtarif tanlang.');
         return;
       }
       payload.courseId = editForm.courseId;
       payload.tariffId = editForm.tariffId;
-      payload.subTariffId = editSubTariffOptions.length > 0 ? editForm.subTariffId : null;
+      if (editSubTariffOptions.length > 0 && editForm.subTariffId && !resolvedEditSubTariffId) {
+        setEditError('Subtarif topilmadi: tarifga mos ID aniqlanmadi.');
+        return;
+      }
+      payload.subTariffId = editSubTariffOptions.length > 0 ? resolvedEditSubTariffId : null;
       payload.coursePriceAmount = coursePriceAmountValue;
     }
 
@@ -1486,7 +1547,7 @@ export default function IncomePage() {
                               prev
                                 ? {
                                     ...prev,
-                                    subTariffId: event.target.value,
+                                    subTariffId: resolveCanonicalSubTariffId(event.target.value, editSubTariffOptions),
                                   }
                                 : prev,
                             )
@@ -1495,7 +1556,10 @@ export default function IncomePage() {
                         >
                           <option value="">Subtarifni tanlang</option>
                           {editSubTariffOptions.map((subTariff: any) => (
-                            <option key={subTariff.id} value={subTariff.id}>
+                            <option
+                              key={`${normalizeTextToken(subTariff.id) || normalizeTextToken(subTariff.name)}`}
+                              value={getSubTariffOptionValue(subTariff)}
+                            >
                               {subTariff.name}
                             </option>
                           ))}
@@ -1604,4 +1668,3 @@ export default function IncomePage() {
     </div>
   );
 }
-
