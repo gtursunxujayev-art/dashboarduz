@@ -173,7 +173,6 @@ export default function BonusPage() {
   const [attendancePenaltyCap, setAttendancePenaltyCap] = useState('0');
   const [attendanceLateTarget, setAttendanceLateTarget] = useState<PenaltyTarget>('kpi');
   const [attendanceMissingTarget, setAttendanceMissingTarget] = useState<PenaltyTarget>('kpi');
-  const [attendanceAbsenceTarget, setAttendanceAbsenceTarget] = useState<PenaltyTarget>('fixed');
 
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [planName, setPlanName] = useState('');
@@ -252,7 +251,6 @@ export default function BonusPage() {
       value === 'fixed' || value === 'kpi' ? value : fallback;
     setAttendanceLateTarget(parseTarget(attendanceSettings?.latePenaltyTarget, 'kpi'));
     setAttendanceMissingTarget(parseTarget(attendanceSettings?.missingHourPenaltyTarget, 'kpi'));
-    setAttendanceAbsenceTarget(parseTarget(attendanceSettings?.absenceDayPenaltyTarget, 'fixed'));
   }, [salaryConfigQuery.data]);
 
   const agentUsers = useMemo<AgentUserOption[]>(() => {
@@ -502,14 +500,13 @@ export default function BonusPage() {
         applyToFixedSalary:
           attendanceLateTarget === 'fixed'
           || attendanceMissingTarget === 'fixed'
-          || attendanceAbsenceTarget === 'fixed',
+          || parseAmountInput(attendancePenaltyAbsenceDay) > 0,
         applyToKpi:
           attendanceLateTarget === 'kpi'
-          || attendanceMissingTarget === 'kpi'
-          || attendanceAbsenceTarget === 'kpi',
+          || attendanceMissingTarget === 'kpi',
         latePenaltyTarget: attendanceLateTarget,
         missingHourPenaltyTarget: attendanceMissingTarget,
-        absenceDayPenaltyTarget: attendanceAbsenceTarget,
+        absenceDayPenaltyTarget: 'fixed',
         monthlyPenaltyCapUZS: parseAmountInput(attendancePenaltyCap),
       });
       await salaryConfigQuery.refetch();
@@ -950,15 +947,11 @@ export default function BonusPage() {
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                 />
                 <label className="mt-2 block text-xs font-medium text-gray-600">Jarima manbasi</label>
-                <select
-                  value={attendanceAbsenceTarget}
-                  onChange={(event) => setAttendanceAbsenceTarget(event.target.value as PenaltyTarget)}
-                  disabled={!isAdmin}
-                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                >
-                  <option value="fixed">Fiks maosh</option>
-                  <option value="kpi">KPI</option>
-                </select>
+                <input
+                  value="Fiks maoshdan ushlanadi"
+                  readOnly
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Oylik maksimal jarima (UZS)</label>
