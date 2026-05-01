@@ -299,7 +299,7 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
           <MetricCard
             title="Konversiya"
             value={formatPercent(m.conversionRate)}
-            subtitle={`${m.activeLeads ?? 0} faol lid → ${salesCount} sotuv`}
+            subtitle={`Yangi lidlar: ${m.newLeadsInRange ?? 0} -> Sotuvlar: ${salesCount}`}
             badge={getConversionBadge(m.conversionRate)}
           />
           <MetricCard
@@ -413,14 +413,15 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
       {/* Lead Metrics */}
       <div>
         <SectionHeading>Lid ko'rsatkichlari</SectionHeading>
-        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
           <MetricCard title="Faol lidlar" value={m.activeLeads ?? 0} subtitle="Hozirgi faol lidlar" />
+          <MetricCard title="Yangi lidlar" value={m.newLeadsInRange ?? 0} subtitle="Filtr davridagi yangi lidlar" />
           <MetricCard title="Yutilgan lidlar" value={m.wonLeads ?? 0} subtitle="Muvaffaqiyatli sotuvlar" />
           <MetricCard title="Yo'qotilgan lidlar" value={m.lostLeads ?? 0} subtitle="Yo'qotilgan imkoniyatlar" />
           <MetricCard
             title="Konversiya"
             value={formatPercent(m.conversionRate)}
-            subtitle={`Jami ${m.totalLeads ?? 0} liddan`}
+            subtitle={`Yangi lidlar: ${m.newLeadsInRange ?? 0} -> Sotuvlar: ${salesCount}`}
             badge={getConversionBadge(m.conversionRate)}
           />
         </div>
