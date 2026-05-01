@@ -133,6 +133,7 @@ function AgentCard({ seller }: { seller: any }) {
   const m = seller.metrics;
   const displayName = seller.name || seller.email || seller.phone || 'Sotuvchi';
   const salesCount = m.newSalesCount ?? m.salesCount ?? 0;
+  const newLeadsInRange = m.newLeadsInRange ?? 0;
   const followUpTotal = (m.followUpCount ?? 0) + (m.overdueFollowUpCount ?? 0);
   const followUpRate = followUpTotal > 0 ? ((m.followUpCount ?? 0) / followUpTotal) * 100 : null;
   const outboundRate = (m.totalCalls ?? 0) > 0 ? ((m.outboundCalls ?? 0) / m.totalCalls) * 100 : null;
@@ -159,6 +160,7 @@ function AgentCard({ seller }: { seller: any }) {
           <p className="text-xs text-slate-400">Sotuvlar</p>
           <p className="mt-1 text-2xl font-bold text-white">{salesCount}</p>
           <p className="mt-1 text-xs text-slate-400">{formatAmount(m.incomeAmount)}</p>
+          <p className="mt-1 text-xs text-slate-500">Yangi lid: {newLeadsInRange}</p>
         </div>
         <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-3 text-center">
           <p className="text-xs text-slate-400">Qo'ng'iroqlar</p>
@@ -178,6 +180,11 @@ function AgentCard({ seller }: { seller: any }) {
           label="Konversiya"
           value={formatPercent(m.conversionRate)}
           badge={getConversionBadge(m.conversionRate)}
+        />
+        <KpiPill
+          label="Lid -> Sotuv"
+          value={`${newLeadsInRange} -> ${salesCount}`}
+          badge={newLeadsInRange > 0 ? 'good' : 'neutral'}
         />
         <KpiPill
           label="Follow-up"
