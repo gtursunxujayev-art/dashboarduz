@@ -359,6 +359,12 @@ export const attendanceRouter = router({
     .input(
       z.discriminatedUnion('action', [
         z.object({
+          action: z.literal('add_missing_in'),
+          userId: z.string().uuid(),
+          timestamp: z.string().min(1),
+          reason: z.string().min(1).max(500),
+        }),
+        z.object({
           action: z.literal('add_missing_out'),
           userId: z.string().uuid(),
           timestamp: z.string().min(1),
@@ -379,6 +385,77 @@ export const attendanceRouter = router({
       ]),
     )
     .mutation(async ({ ctx, input }) => {
+      if (input.action === 'add_missing_in') {
+        const eventAt = parseDateTime(input.timestamp, 'timestamp');
+        const localDate = toLocalDateKey(eventAt);
+        const localTime = toLocalTimeValue(eventAt);
+
+        const createdEvent = await prisma.attendanceEvent.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: input.userId,
+            eventType: 'check_in_out',
+            action: 'IN',
+            eventAt,
+            localDate,
+            localTime,
+            source: 'FACE_ID_MANUAL',
+            lateMinutes: 0,
+            idempotencyKey: `manual-in:${ctx.tenantId}:${input.userId}:${eventAt.toISOString()}`,
+            rawPayload: {
+              manual: true,
+              correctionReason: input.reason,
+              actorUserId: ctx.user.userId,
+            },
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        const adjustment = await prisma.attendanceAdjustment.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: input.userId,
+            eventId: createdEvent.id,
+            summaryDate: localDate,
+            action: input.action,
+            reason: input.reason,
+            beforeData: undefined,
+            afterData: {
+              createdEventId: createdEvent.id,
+              eventAt: eventAt.toISOString(),
+              localDate,
+            },
+            createdByUserId: ctx.user.userId,
+          },
+          select: { id: true },
+        });
+
+        await prisma.attendanceAdjustmentAudit.create({
+          data: {
+            adjustmentId: adjustment.id,
+            tenantId: ctx.tenantId,
+            actorUserId: ctx.user.userId,
+            action: 'created',
+            metadata: {
+              correctionAction: input.action,
+            },
+          },
+        });
+
+        await recomputeAttendanceDaySummary({
+          tenantId: ctx.tenantId,
+          userId: input.userId,
+          localDate,
+        });
+
+        return {
+          success: true,
+          adjustmentId: adjustment.id,
+        };
+      }
+
       if (input.action === 'add_missing_out') {
         const eventAt = parseDateTime(input.timestamp, 'timestamp');
         const localDate = toLocalDateKey(eventAt);
