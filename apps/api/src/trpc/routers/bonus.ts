@@ -251,11 +251,13 @@ function parseAttendancePenaltySettings(settings: unknown): AttendancePenaltySet
     lateMinutePenaltyUZS: Math.max(0, Math.round(toFiniteNumber(raw.lateMinutePenaltyUZS, 0))),
     missingHourPenaltyUZS: Math.max(0, Math.round(toFiniteNumber(raw.missingHourPenaltyUZS, 0))),
     absenceDayPenaltyUZS: Math.max(0, Math.round(toFiniteNumber(raw.absenceDayPenaltyUZS, 0))),
-    applyToFixedSalary: raw.applyToFixedSalary === true,
+    applyToFixedSalary:
+      raw.applyToFixedSalary === true
+      || Math.max(0, Math.round(toFiniteNumber(raw.absenceDayPenaltyUZS, 0))) > 0,
     applyToKpi: raw.applyToKpi === true,
     latePenaltyTarget: parseTarget(raw.latePenaltyTarget, fallbackTarget),
     missingHourPenaltyTarget: parseTarget(raw.missingHourPenaltyTarget, fallbackTarget),
-    absenceDayPenaltyTarget: parseTarget(raw.absenceDayPenaltyTarget, 'fixed'),
+    absenceDayPenaltyTarget: 'fixed',
     monthlyPenaltyCapUZS: Math.max(0, Math.round(toFiniteNumber(raw.monthlyPenaltyCapUZS, 0))),
   };
 }
@@ -707,11 +709,11 @@ export const bonusRouter = router({
             lateMinutePenaltyUZS: Math.max(0, Math.round(input.lateMinutePenaltyUZS)),
             missingHourPenaltyUZS: Math.max(0, Math.round(input.missingHourPenaltyUZS)),
             absenceDayPenaltyUZS: Math.max(0, Math.round(input.absenceDayPenaltyUZS)),
-            applyToFixedSalary: input.applyToFixedSalary,
+            applyToFixedSalary: input.applyToFixedSalary || Math.max(0, Math.round(input.absenceDayPenaltyUZS)) > 0,
             applyToKpi: input.applyToKpi,
             latePenaltyTarget: input.latePenaltyTarget,
             missingHourPenaltyTarget: input.missingHourPenaltyTarget,
-            absenceDayPenaltyTarget: input.absenceDayPenaltyTarget,
+            absenceDayPenaltyTarget: 'fixed',
             monthlyPenaltyCapUZS: Math.max(0, Math.round(input.monthlyPenaltyCapUZS)),
           },
         },
