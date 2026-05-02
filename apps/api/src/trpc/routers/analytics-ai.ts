@@ -416,13 +416,76 @@ function extractOutputText(response: any): string {
   return parts.join('\n').trim();
 }
 
-async function generateWithOpenAI(inputSummary: Awaited<ReturnType<typeof collectAnalyticsInput>>) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return { result: fallbackAnalysis(inputSummary, 'OPENAI_API_KEY is not configured.'), model: null, usedAi: false };
+function extractChatCompletionText(response: any): string {
+  return String(response?.choices?.[0]?.message?.content || '').trim();
+}
+
+function parseAiJson(text: string): unknown {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'AI provider returned empty content.' });
+  }
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const match = trimmed.match(/\{[\s\S]*\}/);
+    if (match) {
+      return JSON.parse(match[0]);
+    }
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'AI provider did not return valid JSON.' });
+  }
+}
+
+function resolveAiProvider() {
+  const explicitProvider = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
+  if (explicitProvider === 'deepseek' || (!explicitProvider && process.env.DEEPSEEK_API_KEY)) {
+    return {
+      provider: 'deepseek' as const,
+      apiKey: process.env.DEEPSEEK_API_KEY || '',
+      model: process.env.DEEPSEEK_MODEL || process.env.AI_MODEL || 'deepseek-v4-pro',
+    };
+  }
+  return {
+    provider: 'openai' as const,
+    apiKey: process.env.OPENAI_API_KEY || '',
+    model: process.env.OPENAI_MODEL || process.env.AI_MODEL || 'gpt-5.2',
+  };
+}
+
+async function generateWithDeepSeek(inputSummary: Awaited<ReturnType<typeof collectAnalyticsInput>>, apiKey: string, model: string) {
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: ANALYTICS_AI_INSTRUCTIONS },
+        {
+          role: 'user',
+          content: `Analyze this Dashboarduz metrics payload and return JSON only:\n${JSON.stringify(inputSummary)}`,
+        },
+      ],
+      response_format: { type: 'json_object' },
+      stream: false,
+      max_tokens: 2500,
+    }),
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: String(body?.error?.message || `DeepSeek request failed with status ${response.status}`),
+    });
   }
 
-  const model = process.env.OPENAI_MODEL || 'gpt-5.2';
+  return parseAiJson(extractChatCompletionText(body));
+}
+
+async function generateWithOpenAIResponses(inputSummary: Awaited<ReturnType<typeof collectAnalyticsInput>>, apiKey: string, model: string) {
   const schema = {
     type: 'object',
     additionalProperties: false,
@@ -482,8 +545,21 @@ async function generateWithOpenAI(inputSummary: Awaited<ReturnType<typeof collec
   }
 
   const text = extractOutputText(body);
-  const result = JSON.parse(text);
-  return { result, model, usedAi: true };
+  return parseAiJson(text);
+}
+
+async function generateWithAiProvider(inputSummary: Awaited<ReturnType<typeof collectAnalyticsInput>>) {
+  const provider = resolveAiProvider();
+  if (!provider.apiKey) {
+    const missingKey = provider.provider === 'deepseek' ? 'DEEPSEEK_API_KEY is not configured.' : 'OPENAI_API_KEY is not configured.';
+    return { result: fallbackAnalysis(inputSummary, missingKey), model: null, provider: provider.provider, usedAi: false };
+  }
+
+  const result = provider.provider === 'deepseek'
+    ? await generateWithDeepSeek(inputSummary, provider.apiKey, provider.model)
+    : await generateWithOpenAIResponses(inputSummary, provider.apiKey, provider.model);
+
+  return { result, model: provider.model, provider: provider.provider, usedAi: true };
 }
 
 export const analyticsAiRouter = router({
@@ -500,7 +576,7 @@ export const analyticsAiRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, new Date(), input.dateFrom, input.dateTo);
       const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, input.focus);
-      const generated = await generateWithOpenAI(inputSummary);
+      const generated = await generateWithAiProvider(inputSummary);
 
       let reportId: string | null = null;
       let reportSaved = true;
@@ -531,6 +607,7 @@ export const analyticsAiRouter = router({
         reportId,
         reportSaved,
         usedAi: generated.usedAi,
+        provider: generated.provider,
         model: generated.model,
         promptVersion: ANALYTICS_AI_PROMPT_VERSION,
         inputSummary,
