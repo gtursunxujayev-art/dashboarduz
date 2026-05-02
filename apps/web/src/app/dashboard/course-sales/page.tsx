@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
+import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
@@ -208,6 +209,46 @@ export default function CourseSalesPage() {
     totalPages: customersQuery.data?.totalPages || 1,
     total: customersQuery.data?.total || 0,
   };
+
+  const aiPageContext = useMemo(() => ({
+    pageKey: '/dashboard/course-sales',
+    rangeMode: range,
+    dateFrom: range === 'custom' ? dateFrom : undefined,
+    dateTo: range === 'custom' ? dateTo : undefined,
+    filters: {
+      courseId: courseId || null,
+      tariffId: tariffId || null,
+      subTariffId: subTariffId || null,
+      query: searchQuery || null,
+      page,
+    },
+    metrics: {
+      currentCustomerCount: summary?.currentCustomerCount ?? 0,
+      agreementAmount: summary?.currentAgreementAmount ?? summary?.rangeAgreementAmount ?? 0,
+      incomeAmount: summary?.currentIncomeAmount ?? summary?.rangeIncomeAmount ?? 0,
+      debtAmount: summary?.currentDebtAmount ?? 0,
+      customerRows: customers.length,
+      totalCustomers: pagination.total,
+    },
+  }), [
+    range,
+    dateFrom,
+    dateTo,
+    courseId,
+    tariffId,
+    subTariffId,
+    searchQuery,
+    page,
+    summary?.currentCustomerCount,
+    summary?.currentAgreementAmount,
+    summary?.rangeAgreementAmount,
+    summary?.currentIncomeAmount,
+    summary?.rangeIncomeAmount,
+    summary?.currentDebtAmount,
+    customers.length,
+    pagination.total,
+  ]);
+  useDashboardAiPageContext(aiPageContext);
 
   useEffect(() => {
     if (!courseEditCourseId) {
