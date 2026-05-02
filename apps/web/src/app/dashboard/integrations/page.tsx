@@ -104,6 +104,9 @@ export default function IntegrationsPage() {
                 <p><strong>Account:</strong> {metaStatusQuery.data?.accountName || metaStatusQuery.data?.adAccountId || '-'}</p>
                 <p><strong>Rows 30d:</strong> {metaStatusQuery.data?.rowsLast30d ?? 0}</p>
                 <p><strong>Oxirgi sync:</strong> {metaStatusQuery.data?.lastSyncAt || '-'}</p>
+                {(metaStatusQuery.data as any)?.tableMissing && (
+                  <p className="mt-1 text-red-600"><strong>DB:</strong> migration kerak</p>
+                )}
               </div>
               <input
                 value={metaSyncFrom}
