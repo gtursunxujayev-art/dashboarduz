@@ -1,4 +1,4 @@
-import { managerProcedure, router } from '../trpc';
+import { adminProcedure, managerProcedure, router } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { z } from 'zod';
 import type { UserRole } from '@dashboarduz/shared';
@@ -509,6 +509,78 @@ export const usersRouter = router({
       });
 
       return updated;
+    }),
+
+  setActive: adminProcedure
+    .input(
+      z.object({
+        userId: z.string().uuid(),
+        isActive: z.boolean(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      if (input.userId === ctx.user.userId && input.isActive === false) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "O'zingizni deaktivatsiya qila olmaysiz.",
+        });
+      }
+
+      const target = await prisma.user.findFirst({
+        where: {
+          id: input.userId,
+          tenantId: ctx.tenantId,
+        },
+        select: {
+          id: true,
+          isActive: true,
+          name: true,
+          username: true,
+        },
+      });
+
+      if (!target) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      }
+
+      if (target.isActive === input.isActive) {
+        return {
+          success: true,
+          user: {
+            id: target.id,
+            isActive: target.isActive,
+          },
+        };
+      }
+
+      const updated = await prisma.user.update({
+        where: { id: target.id },
+        data: { isActive: input.isActive },
+        select: {
+          id: true,
+          isActive: true,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: input.isActive ? 'user_activate' : 'user_deactivate',
+          resource: 'user',
+          resourceId: target.id,
+          metadata: {
+            previousIsActive: target.isActive,
+            nextIsActive: input.isActive,
+            targetLabel: target.name || target.username || target.id,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        user: updated,
+      };
     }),
 
   updateRole: managerProcedure
