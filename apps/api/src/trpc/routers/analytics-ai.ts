@@ -151,7 +151,7 @@ function extractAttributionTokens(metadata: unknown): string[] {
   return Array.from(tokens);
 }
 
-async function collectAnalyticsInput(tenantId: string, rangeStart: Date, rangeEnd: Date, focus: z.infer<typeof aiFocusSchema>) {
+export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, rangeEnd: Date, focus: z.infer<typeof aiFocusSchema>) {
   const [
     leads,
     incomes,
