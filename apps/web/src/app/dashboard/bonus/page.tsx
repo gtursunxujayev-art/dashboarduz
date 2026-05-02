@@ -30,6 +30,17 @@ type CategoryBonusRuleState = {
   }>;
 };
 type BonusRulesState = Record<SalaryCategory, CategoryBonusRuleState>;
+type KpiMetricKey =
+  | 'conversion'
+  | 'avgDailyTalkTime'
+  | 'debtCollectPercent'
+  | 'avgLeadResponseTime'
+  | 'callCount'
+  | 'followUpCount'
+  | 'followUpDonePercent'
+  | 'stageChangeCount';
+type KpiThresholdState = { full: string; half: string };
+type KpiThresholdStateMap = Record<KpiMetricKey, KpiThresholdState>;
 
 type AgentUserOption = {
   id: string;
@@ -136,6 +147,26 @@ function createDefaultBonusRulesState(): BonusRulesState {
   };
 }
 
+const KPI_METRICS: Array<{ key: KpiMetricKey; label: string }> = [
+  { key: 'conversion', label: 'Conversion' },
+  { key: 'avgDailyTalkTime', label: "O'rtacha kunlik suhbat vaqti" },
+  { key: 'debtCollectPercent', label: "Qarz undirish foizi" },
+  { key: 'avgLeadResponseTime', label: "O'rtacha lid javob vaqti" },
+  { key: 'callCount', label: "Qo'ng'iroqlar soni" },
+  { key: 'followUpCount', label: 'Follow-up soni' },
+  { key: 'followUpDonePercent', label: 'Follow-up bajarilish foizi' },
+  { key: 'stageChangeCount', label: "Bosqich o'zgarishi" },
+];
+
+const KPI_METRIC_KEYS = KPI_METRICS.map((metric) => metric.key);
+
+function createDefaultKpiThresholds(): KpiThresholdStateMap {
+  return KPI_METRIC_KEYS.reduce((acc, metric) => {
+    acc[metric] = { full: '', half: '' };
+    return acc;
+  }, {} as KpiThresholdStateMap);
+}
+
 function mapRuleToState(rule: CategoryBonusRule | undefined): CategoryBonusRuleState {
   if (!rule || rule.mode === 'simple') {
     return {
@@ -173,6 +204,9 @@ export default function BonusPage() {
   const [attendancePenaltyCap, setAttendancePenaltyCap] = useState('0');
   const [attendanceLateTarget, setAttendanceLateTarget] = useState<PenaltyTarget>('kpi');
   const [attendanceMissingTarget, setAttendanceMissingTarget] = useState<PenaltyTarget>('kpi');
+  const [kpiMonthlyAmount, setKpiMonthlyAmount] = useState('0');
+  const [kpiMetricSlots, setKpiMetricSlots] = useState<Array<KpiMetricKey | ''>>(['', '', '', '']);
+  const [kpiThresholds, setKpiThresholds] = useState<KpiThresholdStateMap>(() => createDefaultKpiThresholds());
 
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [planName, setPlanName] = useState('');
@@ -210,6 +244,7 @@ export default function BonusPage() {
 
   const updateBonusRulesMutation = trpc.bonus.updateBonusRules.useMutation();
   const updateFixedSalariesMutation = trpc.bonus.updateFixedSalaries.useMutation();
+  const updateKpiSettingsMutation = trpc.bonus.updateKpiSettings.useMutation();
   const updateAttendancePenaltySettingsMutation = trpc.bonus.updateAttendancePenaltySettings.useMutation();
   const createPlan = trpc.bonus.createPlan.useMutation();
   const updatePlan = trpc.bonus.updatePlan.useMutation();
@@ -251,17 +286,44 @@ export default function BonusPage() {
       value === 'fixed' || value === 'kpi' ? value : fallback;
     setAttendanceLateTarget(parseTarget(attendanceSettings?.latePenaltyTarget, 'kpi'));
     setAttendanceMissingTarget(parseTarget(attendanceSettings?.missingHourPenaltyTarget, 'kpi'));
+
+    const rawKpi = salaryConfigQuery.data.kpiSettings as Record<string, any> | undefined;
+    setKpiMonthlyAmount(String(Number(rawKpi?.monthlyBudget || 0)));
+    const selectedMetrics = Array.isArray(rawKpi?.selectedMetrics)
+      ? rawKpi.selectedMetrics.filter((item: unknown): item is KpiMetricKey => KPI_METRIC_KEYS.includes(item as KpiMetricKey))
+      : [];
+    setKpiMetricSlots([selectedMetrics[0] || '', selectedMetrics[1] || '', selectedMetrics[2] || '', selectedMetrics[3] || '']);
+    const thresholdState = createDefaultKpiThresholds();
+    for (const metric of KPI_METRIC_KEYS) {
+      const threshold = rawKpi?.thresholds?.[metric];
+      thresholdState[metric] = {
+        full: String(Number(threshold?.full || 0)),
+        half: String(Number(threshold?.half || 0)),
+      };
+    }
+    setKpiThresholds(thresholdState);
   }, [salaryConfigQuery.data]);
 
   const agentUsers = useMemo<AgentUserOption[]>(() => {
     const users = usersQuery.data || [];
     return users
-      .filter((currentUser: any) => Array.isArray(currentUser.roles) && currentUser.roles.includes('Agent'))
+      .filter((currentUser: any) => Array.isArray(currentUser.roles) && (currentUser.roles.includes('Agent') || currentUser.roles.includes('TeamLeader')))
+      .filter((currentUser: any) => currentUser.isActive !== false)
       .map((currentUser: any) => ({
         id: currentUser.id as string,
         label: (currentUser.name as string | null) || (currentUser.username as string | null) || currentUser.id,
       }));
   }, [usersQuery.data]);
+
+  const selectedKpiMetrics = useMemo<KpiMetricKey[]>(() => {
+    const unique = new Set<KpiMetricKey>();
+    for (const metric of kpiMetricSlots) {
+      if (metric) {
+        unique.add(metric);
+      }
+    }
+    return Array.from(unique);
+  }, [kpiMetricSlots]);
 
   const plans = useMemo<BonusPlan[]>(
     () => (plansQuery.data?.plans as BonusPlan[] | undefined) || [],
@@ -513,6 +575,59 @@ export default function BonusPage() {
       setSuccess('Davomat jarima sozlamalari saqlandi.');
     } catch (saveError: any) {
       setError(saveError?.message || 'Davomat jarima sozlamalarini saqlashda xatolik.');
+    }
+  };
+
+  const handleKpiMetricSlotChange = (index: number, value: string) => {
+    const normalized = (value || '') as KpiMetricKey | '';
+    setKpiMetricSlots((prev) => {
+      const next = [...prev];
+      next[index] = normalized;
+      return next;
+    });
+  };
+
+  const handleSaveKpiSettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    if (!isAdmin) {
+      setError("Faqat admin KPI sozlamalarini o'zgartira oladi.");
+      return;
+    }
+
+    if (!selectedKpiMetrics.length) {
+      setError("KPI uchun kamida bitta ko'rsatkich tanlang.");
+      return;
+    }
+
+    const thresholds = KPI_METRIC_KEYS.reduce((acc, metric) => {
+      acc[metric] = {
+        full: parsePositiveInt(kpiThresholds[metric]?.full || '0'),
+        half: parsePositiveInt(kpiThresholds[metric]?.half || '0'),
+      };
+      return acc;
+    }, {} as Record<KpiMetricKey, { full: number; half: number }>);
+
+    for (const metric of selectedKpiMetrics) {
+      const threshold = thresholds[metric];
+      if (!threshold || threshold.full <= 0 || threshold.half <= 0) {
+        setError(`${KPI_METRICS.find((item) => item.key === metric)?.label || metric} uchun full/half qiymat kiriting.`);
+        return;
+      }
+    }
+
+    try {
+      await updateKpiSettingsMutation.mutateAsync({
+        monthlyKpiAmount: parseAmountInput(kpiMonthlyAmount),
+        selectedMetrics: selectedKpiMetrics,
+        thresholds,
+      });
+      await salaryConfigQuery.refetch();
+      setSuccess('KPI sozlamalari saqlandi.');
+    } catch (saveError: any) {
+      setError(saveError?.message || 'KPI sozlamalarini saqlashda xatolik.');
     }
   };
 
@@ -971,6 +1086,95 @@ export default function BonusPage() {
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
               {updateAttendancePenaltySettingsMutation.isLoading ? 'Saqlanmoqda...' : 'Davomat jarimalarini saqlash'}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-white shadow">
+        <div className="border-b border-gray-100 px-6 py-5">
+          <h2 className="text-lg font-semibold text-gray-900">KPI sozlamalari</h2>
+          <p className="mt-1 text-sm text-gray-500">Oylik KPI summasi va baholash ko&apos;rsatkichlarini belgilang.</p>
+        </div>
+        <div className="p-6">
+          <form onSubmit={handleSaveKpiSettings} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Oylik KPI summasi (UZS)</label>
+                <input
+                  value={kpiMonthlyAmount}
+                  onChange={(event) => setKpiMonthlyAmount(event.target.value.replace(/[^\d]/g, ''))}
+                  disabled={!isAdmin}
+                  inputMode="numeric"
+                  placeholder="0"
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Tanlangan KPI ko&apos;rsatkichlari (maks. 4)</label>
+                <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {[0, 1, 2, 3].map((slotIndex) => (
+                    <select
+                      key={slotIndex}
+                      value={kpiMetricSlots[slotIndex] || ''}
+                      onChange={(event) => handleKpiMetricSlotChange(slotIndex, event.target.value)}
+                      disabled={!isAdmin}
+                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                    >
+                      <option value="">Tanlanmagan</option>
+                      {KPI_METRICS.map((metric) => {
+                        const selectedElsewhere = kpiMetricSlots.some((value, index) => index !== slotIndex && value === metric.key);
+                        return (
+                          <option key={metric.key} value={metric.key} disabled={selectedElsewhere}>
+                            {metric.label}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {selectedKpiMetrics.map((metric) => (
+                <div key={metric} className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                  <p className="text-sm font-medium text-gray-800">{KPI_METRICS.find((item) => item.key === metric)?.label || metric}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <input
+                      value={kpiThresholds[metric]?.half || ''}
+                      onChange={(event) => {
+                        const nextValue = event.target.value.replace(/[^\d]/g, '');
+                        setKpiThresholds((prev) => ({ ...prev, [metric]: { ...prev[metric], half: nextValue } }));
+                      }}
+                      disabled={!isAdmin}
+                      inputMode="numeric"
+                      placeholder="Half target"
+                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                    <input
+                      value={kpiThresholds[metric]?.full || ''}
+                      onChange={(event) => {
+                        const nextValue = event.target.value.replace(/[^\d]/g, '');
+                        setKpiThresholds((prev) => ({ ...prev, [metric]: { ...prev[metric], full: nextValue } }));
+                      }}
+                      disabled={!isAdmin}
+                      inputMode="numeric"
+                      placeholder="Full target"
+                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">Tanlanganda ulushi: {selectedKpiMetrics.length ? `${(100 / selectedKpiMetrics.length).toFixed(2)}%` : '0%'}</p>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="submit"
+              disabled={!isAdmin || updateKpiSettingsMutation.isLoading || salaryConfigQuery.isLoading}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {updateKpiSettingsMutation.isLoading ? 'Saqlanmoqda...' : 'KPI sozlamalarini saqlash'}
             </button>
           </form>
         </div>
