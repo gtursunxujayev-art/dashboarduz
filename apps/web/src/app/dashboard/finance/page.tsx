@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import {
   CartesianGrid,
   Line,
@@ -224,6 +225,48 @@ export default function FinancePage() {
   const yearSeries = useMemo(() => forecast?.yearSeries || [], [forecast]);
   const salaryTotals = salaryQuery.data?.totals;
   const salaryByAgent = useMemo(() => salaryQuery.data?.byAgent || [], [salaryQuery.data]);
+
+  const aiPageContext = useMemo(() => ({
+    pageKey: '/dashboard/finance',
+    rangeMode: range,
+    dateFrom: effectiveDateRange.dateFrom,
+    dateTo: effectiveDateRange.dateTo,
+    filters: {
+      courseId: courseId || null,
+      managerUserId: managerUserId || null,
+      isAgentOnly,
+    },
+    metrics: {
+      totalIncomeAmount: totals?.totalIncomeAmount ?? 0,
+      totalDebtAmount: totals?.totalDebtAmount ?? 0,
+      debtorsCount: totals?.debtorsCount ?? 0,
+      newSalesCount: totals?.newSalesCount ?? 0,
+      repaymentCount: totals?.repaymentCount ?? 0,
+      refundAmount: totals?.refundAmount ?? 0,
+      salaryAfterAttendance: salaryTotals?.salaryAfterAttendance ?? 0,
+      salaryByAgentCount: salaryByAgent.length,
+      courseBreakdownCount: incomeByCourse.length,
+      agentBreakdownCount: incomeByAgent.length,
+    },
+  }), [
+    range,
+    effectiveDateRange.dateFrom,
+    effectiveDateRange.dateTo,
+    courseId,
+    managerUserId,
+    isAgentOnly,
+    totals?.totalIncomeAmount,
+    totals?.totalDebtAmount,
+    totals?.debtorsCount,
+    totals?.newSalesCount,
+    totals?.repaymentCount,
+    totals?.refundAmount,
+    salaryTotals?.salaryAfterAttendance,
+    salaryByAgent.length,
+    incomeByCourse.length,
+    incomeByAgent.length,
+  ]);
+  useDashboardAiPageContext(aiPageContext);
 
   return (
     <div className="space-y-6">
