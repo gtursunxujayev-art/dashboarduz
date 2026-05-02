@@ -93,6 +93,46 @@ function safeJsonObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function isMissingMetaTableError(error: unknown): boolean {
+  const raw = error as any;
+  const message = [
+    raw?.message,
+    raw?.meta?.cause,
+    raw?.meta?.modelName,
+    raw?.code,
+  ].map((item) => String(item || '')).join(' ');
+  return (
+    raw?.code === 'P2021'
+    || message.includes('meta_ad_insights')
+    || message.includes('MetaAdInsight')
+  ) && (
+    message.includes('does not exist')
+    || message.includes('does not exist in the current database')
+    || message.includes('relation')
+    || raw?.code === 'P2021'
+  );
+}
+
+function isMissingAnalyticsReportTableError(error: unknown): boolean {
+  const raw = error as any;
+  const message = [
+    raw?.message,
+    raw?.meta?.cause,
+    raw?.meta?.modelName,
+    raw?.code,
+  ].map((item) => String(item || '')).join(' ');
+  return (
+    raw?.code === 'P2021'
+    || message.includes('analytics_ai_reports')
+    || message.includes('AnalyticsAiReport')
+  ) && (
+    message.includes('does not exist')
+    || message.includes('does not exist in the current database')
+    || message.includes('relation')
+    || raw?.code === 'P2021'
+  );
+}
+
 function extractAttributionTokens(metadata: unknown): string[] {
   const data = safeJsonObject(metadata);
   const tokens = new Set<string>();
@@ -116,7 +156,6 @@ async function collectAnalyticsInput(tenantId: string, rangeStart: Date, rangeEn
     leads,
     incomes,
     calls,
-    metaRows,
   ] = await Promise.all([
     prisma.lead.findMany({
       where: {
@@ -167,14 +206,47 @@ async function collectAnalyticsInput(tenantId: string, rangeStart: Date, rangeEn
         direction: true,
       },
     }),
-    prisma.metaAdInsight.findMany({
+  ]);
+
+  let metaRows: Array<{
+    campaignId: string | null;
+    campaignName: string | null;
+    adSetId: string | null;
+    adSetName: string | null;
+    adId: string | null;
+    adName: string | null;
+    spend: number;
+    clicks: number;
+    impressions: number;
+    leads: number;
+  }> = [];
+  let metaTableMissing = false;
+  try {
+    metaRows = await prisma.metaAdInsight.findMany({
       where: {
         tenantId,
         date: { gte: new Date(`${toDateOnly(rangeStart)}T00:00:00.000Z`), lte: new Date(`${toDateOnly(rangeEnd)}T00:00:00.000Z`) },
       },
+      select: {
+        campaignId: true,
+        campaignName: true,
+        adSetId: true,
+        adSetName: true,
+        adId: true,
+        adName: true,
+        spend: true,
+        clicks: true,
+        impressions: true,
+        leads: true,
+      },
       orderBy: [{ date: 'asc' }, { spend: 'desc' }],
-    }),
-  ]);
+    });
+  } catch (error) {
+    if (!isMissingMetaTableError(error)) {
+      throw error;
+    }
+    metaTableMissing = true;
+  }
 
   const sourceCounts = new Map<string, number>();
   const attributionTokens = new Set<string>();
@@ -285,8 +357,10 @@ async function collectAnalyticsInput(tenantId: string, rangeStart: Date, rangeEn
       leads: sum(metaRows.map((row) => row.leads || 0)),
       campaigns,
       attributionNote: 'Meta rows are matched to CRM only when campaign/source tokens exist. Otherwise campaign sales attribution is uncertain.',
+      tableMissing: metaTableMissing,
     },
     dataGaps: [
+      metaTableMissing ? 'Meta Ads database migration is not deployed yet. Run db:migrate:deploy.' : null,
       campaigns.some((campaign) => campaign.attribution === 'unmatched') ? 'Campaign-to-sale attribution is missing or weak for some Meta rows.' : null,
       metaRows.length === 0 ? 'Meta Ads insight rows are not synced for this range.' : null,
       qualifiedLeads === 0 ? 'Qualified lead status mapping is not clearly available in CRM lead statuses.' : null,
@@ -428,23 +502,34 @@ export const analyticsAiRouter = router({
       const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, input.focus);
       const generated = await generateWithOpenAI(inputSummary);
 
-      const report = await prisma.analyticsAiReport.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          range: input.range,
-          dateFrom: rangeStart,
-          dateTo: rangeEnd,
-          focus: input.focus,
-          promptVersion: ANALYTICS_AI_PROMPT_VERSION,
-          model: generated.model,
-          inputSummary: inputSummary as any,
-          result: generated.result as any,
-        },
-      });
+      let reportId: string | null = null;
+      let reportSaved = true;
+      try {
+        const report = await prisma.analyticsAiReport.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.user.userId,
+            range: input.range,
+            dateFrom: rangeStart,
+            dateTo: rangeEnd,
+            focus: input.focus,
+            promptVersion: ANALYTICS_AI_PROMPT_VERSION,
+            model: generated.model,
+            inputSummary: inputSummary as any,
+            result: generated.result as any,
+          },
+        });
+        reportId = report.id;
+      } catch (error) {
+        if (!isMissingAnalyticsReportTableError(error)) {
+          throw error;
+        }
+        reportSaved = false;
+      }
 
       return {
-        reportId: report.id,
+        reportId,
+        reportSaved,
         usedAi: generated.usedAi,
         model: generated.model,
         promptVersion: ANALYTICS_AI_PROMPT_VERSION,
