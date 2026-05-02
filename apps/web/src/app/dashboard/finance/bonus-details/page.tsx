@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
 
@@ -179,6 +180,40 @@ export default function FinanceBonusDetailsPage() {
     () => agentSummary.length || new Set(bonusRows.map((row: any) => row.managerUserId)).size,
     [agentSummary, bonusRows],
   );
+
+  const aiPageContext = useMemo(() => ({
+    pageKey: '/dashboard/finance/bonus-details',
+    rangeMode: range,
+    dateFrom: effectiveDateRange.dateFrom,
+    dateTo: effectiveDateRange.dateTo,
+    filters: {
+      courseId: courseId || null,
+      managerUserId: managerUserId || null,
+      isAgentOnly,
+    },
+    metrics: {
+      agentCount: bonusAgentCount,
+      incomeAmount: summaryTotals?.incomeAmount ?? bonusTotals?.incomeAmount ?? 0,
+      closedAgreementAmount: summaryTotals?.closedAgreementAmount ?? 0,
+      totalBonusAmount: summaryTotals?.totalBonusAmount ?? bonusTotals?.bonusAmount ?? 0,
+      rowCount: bonusRows.length,
+    },
+  }), [
+    range,
+    effectiveDateRange.dateFrom,
+    effectiveDateRange.dateTo,
+    courseId,
+    managerUserId,
+    isAgentOnly,
+    bonusAgentCount,
+    summaryTotals?.incomeAmount,
+    summaryTotals?.closedAgreementAmount,
+    summaryTotals?.totalBonusAmount,
+    bonusTotals?.incomeAmount,
+    bonusTotals?.bonusAmount,
+    bonusRows.length,
+  ]);
+  useDashboardAiPageContext(aiPageContext);
 
   return (
     <div className="space-y-6">
