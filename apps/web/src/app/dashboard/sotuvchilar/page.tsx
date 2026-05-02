@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { useMemo } from 'react';
 import { trpc } from '@/lib/trpc';
+import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
 function getTodayTashkent(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -237,6 +239,23 @@ export default function SotuvchilarPage() {
       refetchOnReconnect: false,
     },
   );
+
+  const aiPageContext = useMemo(() => ({
+    pageKey: '/dashboard/sotuvchilar',
+    rangeMode: 'last30days',
+    dateFrom,
+    dateTo,
+    filters: {},
+    metrics: {
+      sellersCount: sellers?.length ?? 0,
+      totalSalesCount: (sellers || []).reduce((sum: number, seller: any) => sum + Number(seller?.metrics?.newSalesCount ?? seller?.metrics?.salesCount ?? 0), 0),
+      totalIncomeAmount: (sellers || []).reduce((sum: number, seller: any) => sum + Number(seller?.metrics?.incomeAmount ?? 0), 0),
+      totalNewLeadsInRange: (sellers || []).reduce((sum: number, seller: any) => sum + Number(seller?.metrics?.newLeadsInRange ?? 0), 0),
+      totalCalls: (sellers || []).reduce((sum: number, seller: any) => sum + Number(seller?.metrics?.totalCalls ?? 0), 0),
+      totalTalkSeconds: (sellers || []).reduce((sum: number, seller: any) => sum + Number(seller?.metrics?.totalCallDuration ?? 0), 0),
+    },
+  }), [dateFrom, dateTo, sellers]);
+  useDashboardAiPageContext(aiPageContext);
 
   return (
     <div className="space-y-6">
