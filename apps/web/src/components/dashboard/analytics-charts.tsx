@@ -1,42 +1,51 @@
 'use client';
 
-import {
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-} from 'recharts';
-
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
-type PieDatum = {
+type SellerPerformanceRow = {
+  userId: string;
   name: string;
-  value: number;
-  color: string;
+  newLeads: number | null;
+  qualifiedLeads: number | null;
+  sales: number;
+  conversionPercent: number | null;
+  agreementsAmount: number;
+  incomeAmount: number;
+  talkedSeconds: number | null;
+  callsCount: number;
+  followUpCount: number;
+  noteCount: number;
+  stageChangeCount: number;
+  overdueFollowUpCount: number;
+  todayFollowUpCount: number;
 };
 
 type DashboardSummaryResponse = {
   range: DashboardRange;
   summary: {
     totalLeads: number;
+    qualifiedLeads: number;
+    nonQualifiedLeads: number;
     totalCalls: number;
-    pendingNotifications: number;
-    activeIntegrations: number;
+    totalIncomeAmount: number;
+    newSalesCount: number;
+    newSalesAgreementAmount: number;
+    onlineSalesCount: number;
+    onlineSalesAgreementAmount: number;
+    onlineSalesIncomeAmount: number;
+    offlineSalesCount: number;
+    offlineSalesAgreementAmount: number;
+    offlineSalesIncomeAmount: number;
+    intensiveSalesCount: number;
+    intensiveSalesAgreementAmount: number;
+    intensiveSalesIncomeAmount: number;
+    conversionPercent: number;
+    followUpCount: number;
+    stageChangeCount: number;
+    overdueFollowUpCount: number;
+    todayFollowUpCount: number;
   };
-  pieCharts: {
-    nonQualifiedByReason: {
-      fieldKey: string | null;
-      fieldLabel: string | null;
-      data: PieDatum[];
-    };
-    newLeadsBySource: {
-      fieldKey: string | null;
-      fieldLabel: string | null;
-      data: PieDatum[];
-    };
-  };
+  sellerPerformance: SellerPerformanceRow[];
   updatedAt: string;
 };
 
@@ -46,77 +55,54 @@ interface AnalyticsChartsProps {
   isError?: boolean;
 }
 
-function EmptyPanel({ text }: { text: string }) {
+function formatMoney(value: number) {
+  return `${Math.round(value || 0).toLocaleString('uz-UZ')} so'm`;
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return '-';
+  }
+  return `${Number(value).toFixed(2)}%`;
+}
+
+function formatDuration(seconds: number | null | undefined) {
+  if (seconds === null || seconds === undefined) {
+    return '-';
+  }
+  const safe = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const secs = safe % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function KpiCard({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 text-center text-sm text-gray-500">
-      {text}
+    <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
+      <p className={`mt-2 text-xl font-semibold ${accent ? 'text-blue-700' : 'text-gray-900'}`}>{value}</p>
     </div>
   );
 }
 
-function PieCard({
+function CategoryCard({
   title,
-  subtitle,
-  points,
-  emptyText,
+  salesCount,
+  agreement,
+  income,
 }: {
   title: string;
-  subtitle: string;
-  points: PieDatum[];
-  emptyText: string;
+  salesCount: number;
+  agreement: number;
+  income: number;
 }) {
-  const hasData = points.length > 0;
-
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <h4 className="text-base font-semibold text-gray-900">{title}</h4>
-      <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
-
-      <div className="mt-4">
-        {hasData ? (
-          <>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={points}
-                    cx="50%"
-                    cy="50%"
-                    dataKey="value"
-                    nameKey="name"
-                    outerRadius={100}
-                    label={({ percent }: { percent?: number }) => `${((percent ?? 0) * 100).toFixed(0)}%`}
-                    labelLine
-                  >
-                    {points.map((point, index) => (
-                      <Cell key={`cell-${index}`} fill={point.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => [value, 'Soni']} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {points.map((point) => (
-                <div key={point.name} className="flex items-start gap-2 text-sm text-gray-700">
-                  <span
-                    className="mt-1 inline-block h-3 w-3 rounded-full"
-                    style={{ backgroundColor: point.color }}
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate">{point.name}</p>
-                    <p className="font-semibold">{point.value}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <EmptyPanel text={emptyText} />
-        )}
-      </div>
+      <p className="text-sm font-semibold text-gray-900">{title}</p>
+      <p className="mt-2 text-2xl font-bold text-gray-900">{salesCount}</p>
+      <p className="mt-2 text-sm text-gray-600">Kelishuv: {formatMoney(agreement)}</p>
+      <p className="text-sm text-gray-600">Tushum: {formatMoney(income)}</p>
     </div>
   );
 }
@@ -126,8 +112,12 @@ export default function AnalyticsCharts({
   isLoading = false,
   isError = false,
 }: AnalyticsChartsProps) {
-  const reasonChart = data?.pieCharts.nonQualifiedByReason;
-  const sourceChart = data?.pieCharts.newLeadsBySource;
+  const rows = data?.sellerPerformance || [];
+  const teamTalkSeconds = rows.reduce((total, row) => total + (row.talkedSeconds || 0), 0);
+  const teamCalls = rows.reduce((total, row) => total + (row.callsCount || 0), 0);
+  const teamFollowUp = rows.reduce((total, row) => total + (row.followUpCount || 0), 0);
+  const teamOverdue = rows.reduce((total, row) => total + (row.overdueFollowUpCount || 0), 0);
+  const teamTodayQueue = rows.reduce((total, row) => total + (row.todayFollowUpCount || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -143,40 +133,104 @@ export default function AnalyticsCharts({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <PieCard
-          title="Sifatsiz lidlar sababi bo'yicha"
-          subtitle={
-            reasonChart?.fieldLabel
-              ? `Tanlangan davrda "${reasonChart.fieldLabel}" maydoni bo'yicha guruhlandi.`
-              : "Diagramma uchun Sozlamalarda sabab maydonini tanlang."
-          }
-          points={reasonChart?.data ?? []}
-          emptyText={
-            reasonChart?.fieldKey
-              ? 'Tanlangan davrda sifatsiz lid sabablari topilmadi.'
-              : "Avval Sozlamalarda sabab maydonini sozlang."
-          }
-        />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <KpiCard label="Jami lidlar" value={(data?.summary.totalLeads || 0).toLocaleString('uz-UZ')} />
+        <KpiCard label="Sifatli lidlar" value={(data?.summary.qualifiedLeads || 0).toLocaleString('uz-UZ')} />
+        <KpiCard label="Sifatsiz lidlar" value={(data?.summary.nonQualifiedLeads || 0).toLocaleString('uz-UZ')} />
+        <KpiCard label="Yangi sotuvlar" value={(data?.summary.newSalesCount || 0).toLocaleString('uz-UZ')} />
+        <KpiCard label="Konversiya" value={formatPercent(data?.summary.conversionPercent)} />
+        <KpiCard label="Kelishuv summasi" value={formatMoney(data?.summary.newSalesAgreementAmount || 0)} accent />
+        <KpiCard label="Tushum" value={formatMoney(data?.summary.totalIncomeAmount || 0)} accent />
+        <KpiCard label="Follow-up" value={(data?.summary.followUpCount || 0).toLocaleString('uz-UZ')} />
+        <KpiCard label="Bosqich o'zgarishi" value={(data?.summary.stageChangeCount || 0).toLocaleString('uz-UZ')} />
+      </div>
 
-        <PieCard
-          title="Yangi lidlar manba bo'yicha"
-          subtitle={
-            sourceChart?.fieldLabel
-              ? `Tanlangan davrda "${sourceChart.fieldLabel}" maydoni bo'yicha guruhlandi.`
-              : "Diagramma uchun Sozlamalarda manba maydonini tanlang."
-          }
-          points={sourceChart?.data ?? []}
-          emptyText={
-            sourceChart?.fieldKey
-              ? "Tanlangan davr uchun manba ma'lumoti topilmadi."
-              : "Avval Sozlamalarda manba maydonini sozlang."
-          }
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <CategoryCard
+          title="Online"
+          salesCount={data?.summary.onlineSalesCount || 0}
+          agreement={data?.summary.onlineSalesAgreementAmount || 0}
+          income={data?.summary.onlineSalesIncomeAmount || 0}
+        />
+        <CategoryCard
+          title="Offline"
+          salesCount={data?.summary.offlineSalesCount || 0}
+          agreement={data?.summary.offlineSalesAgreementAmount || 0}
+          income={data?.summary.offlineSalesIncomeAmount || 0}
+        />
+        <CategoryCard
+          title="Intensiv"
+          salesCount={data?.summary.intensiveSalesCount || 0}
+          agreement={data?.summary.intensiveSalesAgreementAmount || 0}
+          income={data?.summary.intensiveSalesIncomeAmount || 0}
         />
       </div>
 
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <h3 className="text-base font-semibold text-gray-900">Sotuv jamoasi overview</h3>
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <KpiCard label="Faol xodimlar" value={rows.length.toLocaleString('uz-UZ')} />
+          <KpiCard label="Jami qo'ng'iroqlar" value={teamCalls.toLocaleString('uz-UZ')} />
+          <KpiCard label="Jami suhbat vaqti" value={formatDuration(teamTalkSeconds)} />
+          <KpiCard label="Muddati o'tgan follow-up" value={teamOverdue.toLocaleString('uz-UZ')} />
+          <KpiCard label="Bugungi/navbatdagi follow-up" value={teamTodayQueue.toLocaleString('uz-UZ')} />
+        </div>
+        <p className="mt-2 text-xs text-gray-500">Jami follow-up: {teamFollowUp.toLocaleString('uz-UZ')}</p>
+      </div>
+
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <h3 className="text-base font-semibold text-gray-900">Agent performance</h3>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold text-gray-600">Agent</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Yangi lid</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Sifatli lid</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Sotuv</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Konversiya</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Kelishuv</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Tushum</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Qo'ng'iroq</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Suhbat vaqti</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Follow-up</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Bosqich o'zgarishi</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Muddati o'tgan</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-600">Bugungi/navbatdagi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rows.map((row) => (
+                <tr key={row.userId}>
+                  <td className="px-3 py-2 text-gray-900">{row.name}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{row.newLeads ?? '-'}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{row.qualifiedLeads ?? '-'}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{row.sales.toLocaleString('uz-UZ')}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{formatPercent(row.conversionPercent)}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{formatMoney(row.agreementsAmount)}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{formatMoney(row.incomeAmount)}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{row.callsCount.toLocaleString('uz-UZ')}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{formatDuration(row.talkedSeconds)}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{row.followUpCount.toLocaleString('uz-UZ')}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{row.stageChangeCount.toLocaleString('uz-UZ')}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{row.overdueFollowUpCount.toLocaleString('uz-UZ')}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{row.todayFollowUpCount.toLocaleString('uz-UZ')}</td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={13} className="px-3 py-8 text-center text-gray-500">
+                    Tanlangan davr uchun agent ma'lumotlari topilmadi.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <p className="text-center text-xs text-gray-500">
-        Ma'lumot yangilangan vaqt: {data?.updatedAt ? new Date(data.updatedAt).toLocaleString('uz-UZ') : "Mavjud emas"}
+        Ma'lumot yangilangan vaqt: {data?.updatedAt ? new Date(data.updatedAt).toLocaleString('uz-UZ') : 'Mavjud emas'}
       </p>
     </div>
   );
