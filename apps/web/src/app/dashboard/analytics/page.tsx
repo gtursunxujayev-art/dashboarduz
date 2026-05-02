@@ -78,6 +78,29 @@ export default function AnalyticsPage() {
     });
   };
 
+  const metaCampaigns = (metaInsightsQuery.data?.campaigns || []) as Array<{
+    campaignId?: string | null;
+    campaignName?: string | null;
+    spend: number;
+    clicks: number;
+    impressions: number;
+    leads: number;
+    ctr: number;
+    cpl: number | null;
+    attribution?: string;
+  }>;
+  const metaTotalSpend = metaCampaigns.reduce((total, row) => total + Number(row.spend || 0), 0);
+  const metaTotalClicks = metaCampaigns.reduce((total, row) => total + Number(row.clicks || 0), 0);
+  const metaTotalImpressions = metaCampaigns.reduce((total, row) => total + Number(row.impressions || 0), 0);
+  const metaTotalLeads = metaCampaigns.reduce((total, row) => total + Number(row.leads || 0), 0);
+  const metaWeightedCtr = metaTotalImpressions > 0
+    ? Number(((metaTotalClicks / metaTotalImpressions) * 100).toFixed(2))
+    : 0;
+  const metaBlendedCpl = metaTotalLeads > 0
+    ? Number((metaTotalSpend / metaTotalLeads).toFixed(2))
+    : null;
+  const metaWeakCampaigns = metaCampaigns.filter((row) => Number(row.spend || 0) > 0 && Number(row.leads || 0) === 0);
+
   return (
     <div className="space-y-6">
       <div>
@@ -222,6 +245,38 @@ export default function AnalyticsPage() {
           <p className="text-sm text-gray-500">Campaign/adset/ad bo&apos;yicha spend, CTR, CPL va CPQL.</p>
         </div>
         <div className="overflow-x-auto px-4 py-5 sm:p-6">
+          {metaCampaigns.length > 0 && (
+            <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Jami spend</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">{Math.round(metaTotalSpend).toLocaleString('uz-UZ')}</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Jami clicks</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">{metaTotalClicks.toLocaleString('uz-UZ')}</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Weighted CTR</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">{metaWeightedCtr}%</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Jami leads</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">{metaTotalLeads.toLocaleString('uz-UZ')}</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Blended CPL</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">
+                  {metaBlendedCpl === null ? '-' : Math.round(metaBlendedCpl).toLocaleString('uz-UZ')}
+                </p>
+              </div>
+            </div>
+          )}
+          {metaWeakCampaigns.length > 0 && (
+            <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Yuqori spend, lekin leads 0 bo'lgan kampaniyalar: {metaWeakCampaigns.slice(0, 5).map((item) => item.campaignName || 'Nomaʼlum').join(', ')}
+              {metaWeakCampaigns.length > 5 ? ` va yana ${metaWeakCampaigns.length - 5} ta` : ''}.
+            </div>
+          )}
           {metaInsightsQuery.isLoading ? (
             <p className="text-sm text-gray-500">Meta ma&apos;lumotlari yuklanmoqda...</p>
           ) : metaInsightsQuery.error ? (
