@@ -7,6 +7,7 @@ import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 import DashboardMetricCards from '@/components/dashboard/DashboardMetricCards';
 import DashboardSalarySection from '@/components/dashboard/DashboardSalarySection';
 import DashboardSellerTable from '@/components/dashboard/DashboardSellerTable';
+import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 const RANGE_OPTIONS: DashboardRange[] = ['today', 'week', 'month', 'custom'];
@@ -373,6 +374,40 @@ export default function DashboardPage() {
       return sum + Math.max(0, seconds);
     }, 0);
   }, [isAgentOnly, sellerPerformance]);
+  const aiPageContext = useMemo(() => ({
+    pageKey: '/dashboard',
+    rangeMode: range,
+    dateFrom: range === 'custom' ? dateFrom : undefined,
+    dateTo: range === 'custom' ? dateTo : undefined,
+    filters: {
+      pipelineIds,
+      isFinanceOnly,
+    },
+    metrics: {
+      newSalesCount: stats?.newSalesCount ?? 0,
+      newSalesAgreementAmount: stats?.newSalesAgreementAmount ?? 0,
+      totalIncomeAmount: stats?.totalIncomeAmount ?? financeTotals?.totalIncomeAmount ?? 0,
+      totalLeads: stats?.totalLeads ?? 0,
+      conversionPercent: stats?.conversionPercent ?? 0,
+      qualifiedLeads: stats?.qualifiedLeads ?? 0,
+      nonQualifiedLeads: stats?.nonQualifiedLeads ?? 0,
+      followUpCount: stats?.followUpCount ?? 0,
+      stageChangeCount: stats?.stageChangeCount ?? 0,
+      sellerCount: sellerPerformance.length,
+      salaryTotal: salaryTotals?.salaryAfterAttendance ?? 0,
+    },
+  }), [
+    range,
+    dateFrom,
+    dateTo,
+    pipelineIds,
+    isFinanceOnly,
+    stats,
+    financeTotals?.totalIncomeAmount,
+    sellerPerformance.length,
+    salaryTotals?.salaryAfterAttendance,
+  ]);
+  useDashboardAiPageContext(aiPageContext);
   const metricCards: DashboardCard[] = useMemo(() => isTashkiliyOnly
     ? [
         {
