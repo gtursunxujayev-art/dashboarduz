@@ -73,6 +73,15 @@ function normalizeUnmatchedUserPolicy(value: unknown): 'store' | 'ignore' {
   return normalized === 'ignore' ? 'ignore' : 'store';
 }
 
+function isMissingMetaTableError(error: unknown): boolean {
+  const message = String((error as any)?.message || '');
+  return message.includes('meta_ad_insights') && (
+    message.includes('does not exist')
+    || message.includes('does not exist in the current database')
+    || message.includes('relation')
+  );
+}
+
 function parseFaceIdUserExternalMap(config: unknown): Record<string, string> {
   const raw = asObject(asObject(config).userExternalMap);
   const result: Record<string, string> = {};
@@ -673,12 +682,21 @@ export const integrationsRouter = router({
     });
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const rowsLast30d = await prisma.metaAdInsight.count({
-      where: {
-        tenantId: ctx.tenantId,
-        date: { gte: since },
-      },
-    });
+    let rowsLast30d = 0;
+    let metaTableMissing = false;
+    try {
+      rowsLast30d = await prisma.metaAdInsight.count({
+        where: {
+          tenantId: ctx.tenantId,
+          date: { gte: since },
+        },
+      });
+    } catch (error) {
+      if (!isMissingMetaTableError(error)) {
+        throw error;
+      }
+      metaTableMissing = true;
+    }
 
     if (!integration || integration.status !== 'active') {
       return {
@@ -690,6 +708,7 @@ export const integrationsRouter = router({
         lastSyncAt: null as string | null,
         errorMessage: null as string | null,
         rowsLast30d,
+        tableMissing: metaTableMissing,
       };
     }
 
@@ -703,6 +722,7 @@ export const integrationsRouter = router({
       lastSyncAt: integration.lastSyncAt ? integration.lastSyncAt.toISOString() : null,
       errorMessage: integration.errorMessage,
       rowsLast30d,
+      tableMissing: metaTableMissing,
     };
   }),
 
