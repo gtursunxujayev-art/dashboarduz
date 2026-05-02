@@ -22,6 +22,13 @@ type SellerPerformanceRow = {
 
 type DashboardSummaryResponse = {
   range: DashboardRange;
+  sourceStatus?: {
+    amoContext?: { ok: boolean; retried: boolean; reason: string | null };
+    catalog?: { ok: boolean; retried: boolean; reason: string | null };
+    leads?: { ok: boolean; retried: boolean; reason: string | null };
+    activity?: { ok: boolean; retried: boolean; reason: string | null };
+    corporateCalls?: { ok: boolean; retried: boolean; reason: string | null };
+  };
   summary: {
     totalLeads: number;
     qualifiedLeads: number;
@@ -112,6 +119,23 @@ export default function AnalyticsCharts({
   isLoading = false,
   isError = false,
 }: AnalyticsChartsProps) {
+  const sourceStatus = data?.sourceStatus || {};
+  const sourceLabelMap: Record<string, string> = {
+    amoContext: 'AmoCRM ulanishi',
+    catalog: 'AmoCRM katalog maydonlari',
+    leads: 'AmoCRM lidlari',
+    activity: 'AmoCRM activity',
+    corporateCalls: "Korporativ qo'ng'iroqlar",
+  };
+  const degradedSources = Object.entries(sourceStatus)
+    .filter(([, value]) => value && value.ok === false)
+    .map(([key, value]) => ({
+      key,
+      label: sourceLabelMap[key] || key,
+      reason: value?.reason || 'unknown',
+      retried: Boolean(value?.retried),
+    }));
+
   const rows = data?.sellerPerformance || [];
   const teamTalkSeconds = rows.reduce((total, row) => total + (row.talkedSeconds || 0), 0);
   const teamCalls = rows.reduce((total, row) => total + (row.callsCount || 0), 0);
@@ -121,9 +145,25 @@ export default function AnalyticsCharts({
 
   return (
     <div className="space-y-6">
-      {isError && (
+      {isError && !data && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           Boshqaruv tahlillarini yuklashda xatolik yuz berdi.
+        </div>
+      )}
+
+      {degradedSources.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p className="font-medium">Ba'zi tashqi manbalar vaqtincha ishlamadi. Asosiy DB ma'lumotlari ko'rsatildi.</p>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {degradedSources.map((source) => (
+              <span
+                key={source.key}
+                className="inline-flex items-center rounded-full border border-amber-300 bg-white px-2 py-0.5 text-xs text-amber-700"
+              >
+                {source.label} ({source.reason}{source.retried ? ', retry' : ''})
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
