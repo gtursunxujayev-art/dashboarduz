@@ -4739,6 +4739,11 @@ export const customerIncomeRouter = router({
           });
 
           return updatedSale;
+        }, {
+          // Income edit can trigger chain normalization + full debt recompute.
+          // Keep transaction open long enough to prevent "Transaction not found".
+          maxWait: 15000,
+          timeout: 60000,
         });
 
         await prisma.auditLog.create({
@@ -4894,6 +4899,10 @@ export const customerIncomeRouter = router({
         });
 
         return updatedRow;
+      }, {
+        // Repayment edit can trigger chronology normalize + chain invariant repair.
+        maxWait: 15000,
+        timeout: 60000,
       });
 
       await prisma.auditLog.create({
