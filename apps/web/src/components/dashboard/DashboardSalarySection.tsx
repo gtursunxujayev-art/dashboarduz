@@ -5,6 +5,7 @@ type Props = {
   isLoading: boolean;
   error: { message: string } | null;
   isAgentOnly: boolean;
+  isTeamLeaderView?: boolean;
   salaryCurrentUser: any;
   salaryByAgent: any[];
   salaryTotals: any;
@@ -17,6 +18,7 @@ export default function DashboardSalarySection({
   isLoading,
   error,
   isAgentOnly,
+  isTeamLeaderView = false,
   salaryCurrentUser,
   salaryByAgent,
   salaryTotals,
@@ -45,7 +47,7 @@ export default function DashboardSalarySection({
 
         {isLoading ? (
           <p className="text-sm text-gray-600">Maosh ma'lumotlari yuklanmoqda...</p>
-        ) : isAgentOnly ? (
+        ) : isAgentOnly || isTeamLeaderView ? (
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -70,35 +72,73 @@ export default function DashboardSalarySection({
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <h4 className="text-sm font-semibold text-gray-900">Plan bonuslar</h4>
-              {Array.isArray(salaryCurrentUser?.planProgress) && salaryCurrentUser.planProgress.length ? (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Plan</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fakt</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bajarilish</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Ishlangan</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 bg-white">
-                      {salaryCurrentUser.planProgress.map((plan: any) => (
-                        <tr key={plan.planId}>
-                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{plan.name}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{plan.fact}/{plan.target}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{(plan.completionPercent ?? 0).toFixed(1)}%</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(plan.earnedAmount)}</td>
+            {isAgentOnly && (
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <h4 className="text-sm font-semibold text-gray-900">Plan bonuslar</h4>
+                {Array.isArray(salaryCurrentUser?.planProgress) && salaryCurrentUser.planProgress.length ? (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Plan</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fakt</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bajarilish</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Ishlangan</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-gray-600">Faol plan bonus topilmadi.</p>
-              )}
-            </div>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {salaryCurrentUser.planProgress.map((plan: any) => (
+                          <tr key={plan.planId}>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{plan.name}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{plan.fact}/{plan.target}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{(plan.completionPercent ?? 0).toFixed(1)}%</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(plan.earnedAmount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-600">Faol plan bonus topilmadi.</p>
+                )}
+              </div>
+            )}
+
+            {isTeamLeaderView && (
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <h4 className="text-sm font-semibold text-gray-900">Faol foydalanuvchilar bonusi</h4>
+                {salaryByAgent.length ? (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Xodim</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fiks</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">KPI</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Bonus</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Plan bonus</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Jami</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {salaryByAgent.map((row: any) => (
+                          <tr key={row.userId}>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.name}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.fixedSalary)}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.kpiAmount)}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusAmount)}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.planBonusAmount)}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(row.totalSalary)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-600">Faol xodimlar bo'yicha bonus topilmadi.</p>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
