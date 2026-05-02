@@ -45,6 +45,67 @@ import { getOrSet, buildCacheKey } from '../../../services/cache';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 
+type SummarySourceStatusKey = 'amoContext' | 'catalog' | 'leads' | 'activity' | 'corporateCalls';
+type SummarySourceStatusEntry = {
+  ok: boolean;
+  retried: boolean;
+  reason: string | null;
+};
+type SummarySourceStatus = Record<SummarySourceStatusKey, SummarySourceStatusEntry>;
+
+function createSummarySourceStatus(): SummarySourceStatus {
+  return {
+    amoContext: { ok: true, retried: false, reason: null },
+    catalog: { ok: true, retried: false, reason: null },
+    leads: { ok: true, retried: false, reason: null },
+    activity: { ok: true, retried: false, reason: null },
+    corporateCalls: { ok: true, retried: false, reason: null },
+  };
+}
+
+function detectSummarySourceReason(error: unknown, fallback: string): string {
+  const message = String((error as Error | undefined)?.message || '');
+  if (message.includes('Failed to decrypt integration tokens')) {
+    return 'decrypt_failed';
+  }
+  if (message.toLowerCase().includes('timeout')) {
+    return 'timeout';
+  }
+  if (message.toLowerCase().includes('network') || message.toLowerCase().includes('fetch')) {
+    return 'network_error';
+  }
+  return fallback;
+}
+
+async function runSummarySourceWithRetry<T>(params: {
+  key: SummarySourceStatusKey;
+  status: SummarySourceStatus;
+  logContext: { tenantId: string; userId: string };
+  reasonFallback: string;
+  fallback: T;
+  run: () => Promise<T>;
+}): Promise<T> {
+  const { key, status, logContext, reasonFallback, fallback, run } = params;
+  try {
+    return await run();
+  } catch (firstError) {
+    status[key].retried = true;
+    try {
+      return await run();
+    } catch (secondError) {
+      const reason = detectSummarySourceReason(secondError || firstError, reasonFallback);
+      status[key].ok = false;
+      status[key].reason = reason;
+      log(LogLevel.WARN, `Dashboard summary source degraded: ${key}`, {
+        ...logContext,
+        reason,
+        error: String((secondError as Error | undefined)?.message || (firstError as Error | undefined)?.message || secondError || firstError),
+      });
+      return fallback;
+    }
+  }
+}
+
 export const summaryProcedures = {
   summary: protectedProcedure
     .input(
@@ -94,10 +155,44 @@ export const summaryProcedures = {
       const nonQualifiedValues = asStringArray(dashboardSettings?.nonQualifiedValues);
       const qualifiedStageIds = asStringArray(dashboardSettings?.qualifiedStageIds);
 
-      const [amoContext, catalogOptions] = await Promise.all([
-        getTenantAmoCRMContext(ctx.tenantId),
-        collectCatalogFieldOptions(ctx.tenantId),
-      ]);
+      // Tahlil source map:
+      // - dashboard.summary (this route) => KPI/team block
+      // - analyticsAi.metaInsights => Meta block
+      // - analyticsAi.generateSuggestions => AI block
+      const sourceStatus = createSummarySourceStatus();
+      const sourceLogContext = {
+        tenantId: ctx.tenantId,
+        userId: ctx.user.userId,
+      };
+
+      const amoContext = await runSummarySourceWithRetry({
+        key: 'amoContext',
+        status: sourceStatus,
+        logContext: sourceLogContext,
+        reasonFallback: 'amo_context_failed',
+        fallback: null as Awaited<ReturnType<typeof getTenantAmoCRMContext>>,
+        run: async () => getTenantAmoCRMContext(ctx.tenantId),
+      });
+      if (!amoContext) {
+        sourceStatus.amoContext.ok = false;
+        sourceStatus.amoContext.reason = sourceStatus.amoContext.reason || 'amo_not_connected';
+      }
+
+      const catalogOptions = amoContext
+        ? await runSummarySourceWithRetry({
+            key: 'catalog',
+            status: sourceStatus,
+            logContext: sourceLogContext,
+            reasonFallback: 'catalog_fetch_failed',
+            fallback: [] as Awaited<ReturnType<typeof collectCatalogFieldOptions>>,
+            run: async () => collectCatalogFieldOptions(ctx.tenantId),
+          })
+        : [];
+      if (!amoContext) {
+        sourceStatus.catalog.ok = false;
+        sourceStatus.catalog.reason = 'amo_unavailable';
+      }
+
       const fieldLabelMap = buildFieldLabelMap([...getSystemLeadFieldOptions(), ...catalogOptions]);
       const selectedPipelineIds = input.pipelineIds && input.pipelineIds.length > 0
         ? input.pipelineIds
@@ -105,23 +200,31 @@ export const summaryProcedures = {
       let leadsDataAvailable = false;
       let leads: any[] = [];
       if (amoContext && (!scope.isScoped || scope.responsibleUserId)) {
-        try {
-          leads = await amocrmService.fetchAllLeads(
-            amoContext.accessToken,
-            {
-              pipelineIds: selectedPipelineIds,
-              responsibleUserIds: scope.isScoped ? [scope.responsibleUserId as string] : undefined,
-              createdAtFrom: rangeStart,
-              createdAtTo: rangeEnd,
-              limit: 250,
-            },
-            amoContext.baseUrl,
-          ) as any[];
-          leadsDataAvailable = true;
-        } catch {
-          leads = [];
-          leadsDataAvailable = false;
-        }
+        leads = await runSummarySourceWithRetry({
+          key: 'leads',
+          status: sourceStatus,
+          logContext: sourceLogContext,
+          reasonFallback: 'amo_fetch_failed',
+          fallback: [] as any[],
+          run: async () => {
+            const fetched = await amocrmService.fetchAllLeads(
+              amoContext.accessToken,
+              {
+                pipelineIds: selectedPipelineIds,
+                responsibleUserIds: scope.isScoped ? [scope.responsibleUserId as string] : undefined,
+                createdAtFrom: rangeStart,
+                createdAtTo: rangeEnd,
+                limit: 250,
+              },
+              amoContext.baseUrl,
+            );
+            return fetched as any[];
+          },
+        });
+        leadsDataAvailable = sourceStatus.leads.ok;
+      } else {
+        sourceStatus.leads.ok = false;
+        sourceStatus.leads.reason = amoContext ? 'scope_unavailable' : 'amo_unavailable';
       }
 
       const [pendingNotifications, activeIntegrations, totalIncomeAggregate, newSalesIncomes, incomesForSellers, callsForSellers] = await Promise.all([
@@ -311,23 +414,44 @@ export const summaryProcedures = {
         .map((agent) => (agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId).trim() : ''))
         .filter(Boolean);
       const activityByManager = amoContext && activityManagerIds.length > 0
-        ? await getAmoCRMActivityMetrics({
-            tenantId: ctx.tenantId,
-            accessToken: amoContext.accessToken,
-            baseUrl: amoContext.baseUrl,
-            managerIds: activityManagerIds,
-            rangeStart,
-            rangeEnd,
-            rangeKind: input.range,
+        ? await runSummarySourceWithRetry({
+            key: 'activity',
+            status: sourceStatus,
+            logContext: sourceLogContext,
+            reasonFallback: 'activity_fetch_failed',
+            fallback: new Map(),
+            run: async () => getAmoCRMActivityMetrics({
+              tenantId: ctx.tenantId,
+              accessToken: amoContext.accessToken,
+              baseUrl: amoContext.baseUrl,
+              managerIds: activityManagerIds,
+              rangeStart,
+              rangeEnd,
+              rangeKind: input.range,
+            }),
           })
         : new Map();
+      if (!amoContext) {
+        sourceStatus.activity.ok = false;
+        sourceStatus.activity.reason = 'amo_unavailable';
+      } else if (activityManagerIds.length === 0) {
+        sourceStatus.activity.ok = false;
+        sourceStatus.activity.reason = 'no_activity_mapping';
+      }
       activityFetchMs = Date.now() - activityFetchStartedMs;
       const activityTotals = summarizeAmoCRMActivityMetrics(activityByManager);
-      const corporateDurationByUserId = await getCorporateCallDurationByManager({
-        tenantId: ctx.tenantId,
-        managerUserIds: agentUsers.map((agent) => agent.id),
-        rangeStart,
-        rangeEnd,
+      const corporateDurationByUserId = await runSummarySourceWithRetry({
+        key: 'corporateCalls',
+        status: sourceStatus,
+        logContext: sourceLogContext,
+        reasonFallback: 'corporate_calls_fetch_failed',
+        fallback: new Map<string, number>(),
+        run: async () => getCorporateCallDurationByManager({
+          tenantId: ctx.tenantId,
+          managerUserIds: agentUsers.map((agent) => agent.id),
+          rangeStart,
+          rangeEnd,
+        }),
       });
 
       const reasonCounts = new Map<string, number>();
@@ -581,6 +705,7 @@ export const summaryProcedures = {
         dateFrom: input.range === 'custom' ? input.dateFrom || null : null,
         dateTo: input.range === 'custom' ? input.dateTo || null : null,
         selectedPipelineIds: selectedPipelineIds || [],
+        sourceStatus,
         sellerPerformance,
         summary: {
           totalLeads,
