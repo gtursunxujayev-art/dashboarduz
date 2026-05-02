@@ -2279,12 +2279,20 @@ async function notifyRefundRequesterReviewResult(params: {
   }
 }
 
-async function assertManagerBelongsToTenant(tenantId: string, managerUserId: string) {
+function canSelectInactiveManagerForIncome(roles: string[]): boolean {
+  return roles.some((role) => role === 'Admin' || role === 'Finance' || role === 'TeamLeader');
+}
+
+async function assertManagerBelongsToTenantWithOptions(params: {
+  tenantId: string;
+  managerUserId: string;
+  includeInactive: boolean;
+}) {
   const manager = await prisma.user.findFirst({
     where: {
-      id: managerUserId,
-      tenantId,
-      isActive: true,
+      id: params.managerUserId,
+      tenantId: params.tenantId,
+      ...(params.includeInactive ? {} : { isActive: true }),
     },
     select: {
       id: true,
@@ -2863,6 +2871,7 @@ async function createIncomeEntry(params: {
   tenantId: string;
   userId: string;
   input: CreateIncomeInput;
+  requesterRoles?: string[];
   writeAuditLog?: boolean;
   allowHiddenCourseSelection?: boolean;
   skipTelegramNotification?: boolean;
@@ -2871,12 +2880,17 @@ async function createIncomeEntry(params: {
     tenantId,
     userId,
     input,
+    requesterRoles = [],
     writeAuditLog = true,
     allowHiddenCourseSelection = false,
     skipTelegramNotification = false,
   } = params;
 
-  await assertManagerBelongsToTenant(tenantId, input.managerUserId);
+  await assertManagerBelongsToTenantWithOptions({
+    tenantId,
+    managerUserId: input.managerUserId,
+    includeInactive: canSelectInactiveManagerForIncome(requesterRoles),
+  });
   const entryDate = parseDateInput(input.entryDate);
   if (entryDate > new Date()) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: "Kelajakdagi sana kiritish mumkin emas. Bugungi yoki o'tgan sanani tanlang." });
@@ -3554,12 +3568,13 @@ function shouldBackfillCustomerText(currentValue: string | null | undefined, fal
 export const customerIncomeRouter = router({
   formOptions: protectedProcedure.query(async ({ ctx }) => {
     const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
+    const includeInactiveManagers = canSelectInactiveManagerForIncome(ctx.user.roles);
 
     const [managersInitial, customers, outstandingDebts] = await Promise.all([
       prisma.user.findMany({
         where: {
           tenantId: ctx.tenantId,
-          isActive: true,
+          ...(includeInactiveManagers ? {} : { isActive: true }),
           ...(scopedManagerUserId
             ? {
                 id: scopedManagerUserId,
@@ -3572,6 +3587,7 @@ export const customerIncomeRouter = router({
           name: true,
           username: true,
           roles: true,
+          isActive: true,
         },
       }),
       prisma.customer.findMany({
@@ -3638,6 +3654,7 @@ export const customerIncomeRouter = router({
       managers = await prisma.user.findMany({
         where: {
           tenantId: ctx.tenantId,
+          ...(includeInactiveManagers ? {} : { isActive: true }),
           ...(scopedManagerUserId
             ? {
                 id: scopedManagerUserId,
@@ -3650,6 +3667,7 @@ export const customerIncomeRouter = router({
           name: true,
           username: true,
           roles: true,
+          isActive: true,
         },
       });
     }
@@ -3691,13 +3709,14 @@ export const customerIncomeRouter = router({
       name: string | null;
       username: string | null;
       roles: string[];
+      isActive: boolean;
     }>;
     const availableManagersFiltered = managerRows.filter((manager) => hasSalesManagerRole(manager.roles));
     const availableManagers = availableManagersFiltered.length > 0 ? availableManagersFiltered : managerRows;
 
     const managerOptions = availableManagers.map((manager) => ({
       id: manager.id,
-      label: manager.name || manager.username || manager.id,
+      label: `${manager.name || manager.username || manager.id}${manager.isActive === false ? ' (Nofaol)' : ''}`,
       roles: manager.roles,
     }));
     const managersForResponse = managerOptions.length > 0
@@ -4343,6 +4362,7 @@ export const customerIncomeRouter = router({
         tenantId: ctx.tenantId,
         userId: ctx.user.userId,
         input,
+        requesterRoles: ctx.user.roles,
         skipTelegramNotification,
       });
 
@@ -4438,7 +4458,11 @@ export const customerIncomeRouter = router({
         });
 
         const nextManagerUserId = input.managerUserId ?? income.managerUserId;
-        await assertManagerBelongsToTenant(ctx.tenantId, nextManagerUserId);
+        await assertManagerBelongsToTenantWithOptions({
+          tenantId: ctx.tenantId,
+          managerUserId: nextManagerUserId,
+          includeInactive: true,
+        });
 
         const nextCourseId = input.courseId ?? income.courseId;
         const nextTariffId = input.tariffId ?? income.tariffId;
@@ -4664,7 +4688,11 @@ export const customerIncomeRouter = router({
       }
 
       const nextManagerUserId = input.managerUserId ?? income.managerUserId;
-      await assertManagerBelongsToTenant(ctx.tenantId, nextManagerUserId);
+      await assertManagerBelongsToTenantWithOptions({
+        tenantId: ctx.tenantId,
+        managerUserId: nextManagerUserId,
+        includeInactive: true,
+      });
 
       const nextPaymentAmount = input.paymentAmount ?? income.paymentAmount;
       if (nextPaymentAmount <= 0) {
