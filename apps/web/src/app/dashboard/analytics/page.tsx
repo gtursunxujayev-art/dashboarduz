@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import AnalyticsCharts from '@/components/dashboard/analytics-charts';
+import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 type AiFocus = 'sales' | 'lead_quality' | 'meta_targeting' | 'agents' | 'courses';
@@ -68,6 +69,7 @@ export default function AnalyticsPage() {
   const generateAi = trpc.analyticsAi.generateSuggestions.useMutation({
     onSuccess: (data) => setAiResult(data),
   });
+  const summary = summaryQuery.data?.summary;
 
   const runAi = () => {
     generateAi.mutate({
@@ -100,6 +102,50 @@ export default function AnalyticsPage() {
     ? Number((metaTotalSpend / metaTotalLeads).toFixed(2))
     : null;
   const metaWeakCampaigns = metaCampaigns.filter((row) => Number(row.spend || 0) > 0 && Number(row.leads || 0) === 0);
+
+  const aiPageContext = useMemo(() => ({
+    pageKey: '/dashboard/analytics',
+    rangeMode: range,
+    dateFrom: range === 'custom' ? dateFrom : undefined,
+    dateTo: range === 'custom' ? dateTo : undefined,
+    filters: {
+      aiFocus,
+    },
+    metrics: {
+      totalLeads: summary?.totalLeads ?? 0,
+      qualifiedLeads: summary?.qualifiedLeads ?? 0,
+      nonQualifiedLeads: summary?.nonQualifiedLeads ?? 0,
+      newSalesCount: summary?.newSalesCount ?? 0,
+      conversionPercent: summary?.conversionPercent ?? 0,
+      newSalesAgreementAmount: summary?.newSalesAgreementAmount ?? 0,
+      totalIncomeAmount: summary?.totalIncomeAmount ?? 0,
+      followUpCount: summary?.followUpCount ?? 0,
+      stageChangeCount: summary?.stageChangeCount ?? 0,
+      metaCampaignCount: metaCampaigns.length,
+      metaSpend: metaTotalSpend,
+      metaLeads: metaTotalLeads,
+      metaWeightedCtr: metaWeightedCtr,
+    },
+  }), [
+    range,
+    dateFrom,
+    dateTo,
+    aiFocus,
+    summary?.totalLeads,
+    summary?.qualifiedLeads,
+    summary?.nonQualifiedLeads,
+    summary?.newSalesCount,
+    summary?.conversionPercent,
+    summary?.newSalesAgreementAmount,
+    summary?.totalIncomeAmount,
+    summary?.followUpCount,
+    summary?.stageChangeCount,
+    metaCampaigns.length,
+    metaTotalSpend,
+    metaTotalLeads,
+    metaWeightedCtr,
+  ]);
+  useDashboardAiPageContext(aiPageContext);
 
   return (
     <div className="space-y-6">
