@@ -577,57 +577,152 @@ async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params
   tenantId: string;
   saleId: string;
 }): Promise<void> {
-  const sale = await tx.income.findFirst({
-    where: {
-      id: params.saleId,
-      tenantId: params.tenantId,
-      type: 'new_sale',
-      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-    },
-    select: {
-      id: true,
-      coursePriceAmount: true,
-      debtAmount: true,
-      paymentAmount: true,
-    },
-  });
-  if (!sale) {
+  const recomputeSaleChainDebtFields = async (saleId: string) => {
+    const sourceSale = await tx.income.findFirst({
+      where: {
+        id: saleId,
+        tenantId: params.tenantId,
+        type: 'new_sale',
+        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      },
+      select: {
+        id: true,
+        paymentAmount: true,
+        coursePriceAmount: true,
+        debtAmount: true,
+        deadline: true,
+      },
+    });
+    if (!sourceSale) {
+      return false;
+    }
+
+    const repayments = await tx.income.findMany({
+      where: {
+        tenantId: params.tenantId,
+        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+        type: 'repayment',
+        relatedDebtIncomeId: sourceSale.id,
+      },
+      orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        id: true,
+        paymentAmount: true,
+      },
+    });
+
+    const agreementAmount = getSaleAgreementAmount(sourceSale);
+    let rollingDebt = Math.max(agreementAmount - Math.max(Number(sourceSale.paymentAmount || 0), 0), 0);
+
+    for (const repayment of repayments) {
+      const debtAmount = rollingDebt;
+      rollingDebt = Math.max(debtAmount - Math.max(Number(repayment.paymentAmount || 0), 0), 0);
+      await tx.income.update({
+        where: { id: repayment.id },
+        data: {
+          debtAmount,
+          remainingDebtAmount: rollingDebt,
+          relatedDebtIncomeId: sourceSale.id,
+        },
+      });
+    }
+
+    await tx.income.update({
+      where: { id: sourceSale.id },
+      data: {
+        debtAmount: agreementAmount,
+        remainingDebtAmount: rollingDebt,
+        deadline: rollingDebt > 0 ? sourceSale.deadline : null,
+      },
+    });
+
+    return true;
+  };
+
+  const loadConsistency = async (saleId: string) => {
+    const sale = await tx.income.findFirst({
+      where: {
+        id: saleId,
+        tenantId: params.tenantId,
+        type: 'new_sale',
+        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      },
+      select: {
+        id: true,
+        coursePriceAmount: true,
+        debtAmount: true,
+        paymentAmount: true,
+      },
+    });
+    if (!sale) {
+      return null;
+    }
+
+    const chainRows = await tx.income.findMany({
+      where: {
+        tenantId: params.tenantId,
+        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+        OR: [
+          { id: sale.id },
+          { relatedDebtIncomeId: sale.id },
+        ],
+      },
+      select: {
+        id: true,
+        type: true,
+        relatedDebtIncomeId: true,
+        paymentAmount: true,
+        entryDate: true,
+        createdAt: true,
+        debtAmount: true,
+        remainingDebtAmount: true,
+      },
+    });
+    const agreementAmount = getSaleAgreementAmount(sale);
+    const consistency = evaluateSaleChainConsistency({
+      saleId: sale.id,
+      agreementAmount,
+      chainRows,
+    });
+    return { sale, consistency };
+  };
+
+  let loaded = await loadConsistency(params.saleId);
+  if (!loaded) {
     return;
   }
-
-  const chainRows = await tx.income.findMany({
-    where: {
-      tenantId: params.tenantId,
-      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-      OR: [
-        { id: sale.id },
-        { relatedDebtIncomeId: sale.id },
-      ],
-    },
-    select: {
-      id: true,
-      type: true,
-      relatedDebtIncomeId: true,
-      paymentAmount: true,
-      entryDate: true,
-      createdAt: true,
-      debtAmount: true,
-      remainingDebtAmount: true,
-    },
-  });
-  const agreementAmount = getSaleAgreementAmount(sale);
-  const consistency = evaluateSaleChainConsistency({
-    saleId: sale.id,
-    agreementAmount,
-    chainRows,
-  });
+  let { sale, consistency } = loaded;
 
   if (!consistency.ok) {
+    const shouldAutoRepair = consistency.issues.some((issue) => (
+      issue === 'sale_debt_amount_mismatch'
+      || issue === 'sale_remaining_mismatch'
+      || issue === 'repayment_debt_amount_mismatch'
+      || issue === 'repayment_remaining_mismatch'
+    ));
+
+    let repaired = false;
+    if (shouldAutoRepair) {
+      repaired = await recomputeSaleChainDebtFields(sale.id);
+      if (repaired) {
+        loaded = await loadConsistency(sale.id);
+        if (loaded) {
+          sale = loaded.sale;
+          consistency = loaded.consistency;
+        }
+      }
+    }
+
+    if (consistency.ok) {
+      return;
+    }
+
     const invariantDebug = {
       saleId: sale.id,
       expectedDebt: consistency.expectedCurrentDebtAmount,
       storedSaleDebt: consistency.actualSaleRemainingDebtAmount,
       chainRows: consistency.chainLength,
+      repaired,
     };
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
