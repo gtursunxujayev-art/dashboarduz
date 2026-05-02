@@ -1,12 +1,13 @@
 import crypto from 'crypto';
 import { adminProcedure, router } from '../trpc';
 import { z } from 'zod';
-import { amocrmConnectSchema, faceIdConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
+import { amocrmConnectSchema, faceIdConnectSchema, metaAdsConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { encryptIntegrationTokens } from '../../services/security/encryption';
 import { amocrmService } from '../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
+import { normalizeMetaAdAccountId, syncMetaAdInsightsForTenant, validateMetaAdAccount } from '../../services/integrations/meta-ads';
 import {
   parseTelegramRecipients,
   updateTelegramReportSelection,
@@ -126,7 +127,7 @@ export const integrationsRouter = router({
   }),
 
   getByType: adminProcedure
-    .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel', 'faceid_attendance']) }))
+    .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel', 'faceid_attendance', 'meta_ads']) }))
     .query(async ({ input, ctx }) => {
       return prisma.integration.findUnique({
         where: {
@@ -575,6 +576,184 @@ export const integrationsRouter = router({
       message: 'Google Sheets integration is disabled in MVP',
     });
   }),
+
+  connectMetaAds: adminProcedure
+    .input(metaAdsConnectSchema)
+    .mutation(async ({ input, ctx }) => {
+      const accessToken = input.accessToken.trim();
+      const adAccountId = normalizeMetaAdAccountId(input.adAccountId);
+      const account = await validateMetaAdAccount(accessToken, adAccountId);
+      if (!account?.id) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Meta Ad Account was not returned.' });
+      }
+
+      const validatedAt = new Date();
+      const integration = await prisma.integration.upsert({
+        where: {
+          tenantId_type: {
+            tenantId: ctx.tenantId,
+            type: 'meta_ads',
+          },
+        },
+        update: {
+          status: 'active',
+          tokensEncrypted: encryptIntegrationTokens({ accessToken }),
+          config: {
+            adAccountId,
+            accountId: String(account.id),
+            accountName: account.name || null,
+            accountStatus: account.account_status ?? null,
+            currency: account.currency || null,
+            pixelId: input.pixelId?.trim() || null,
+            connectionMode: 'system_user_token',
+            connectedAt: validatedAt.toISOString(),
+            lastValidatedAt: validatedAt.toISOString(),
+          },
+          lastSyncAt: validatedAt,
+          errorMessage: null,
+        },
+        create: {
+          tenantId: ctx.tenantId,
+          type: 'meta_ads',
+          status: 'active',
+          tokensEncrypted: encryptIntegrationTokens({ accessToken }),
+          config: {
+            adAccountId,
+            accountId: String(account.id),
+            accountName: account.name || null,
+            accountStatus: account.account_status ?? null,
+            currency: account.currency || null,
+            pixelId: input.pixelId?.trim() || null,
+            connectionMode: 'system_user_token',
+            connectedAt: validatedAt.toISOString(),
+            lastValidatedAt: validatedAt.toISOString(),
+          },
+          lastSyncAt: validatedAt,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'integration_connect',
+          resource: 'integration',
+          resourceId: integration.id,
+          metadata: { type: 'meta_ads', adAccountId },
+        },
+      });
+
+      return {
+        integration,
+        connection: {
+          verified: true,
+          validatedAt: validatedAt.toISOString(),
+          adAccountId,
+          accountName: account.name || null,
+          currency: account.currency || null,
+        },
+      };
+    }),
+
+  getMetaAdsStatus: adminProcedure.query(async ({ ctx }) => {
+    const integration = await prisma.integration.findUnique({
+      where: {
+        tenantId_type: {
+          tenantId: ctx.tenantId,
+          type: 'meta_ads',
+        },
+      },
+      select: {
+        status: true,
+        config: true,
+        lastSyncAt: true,
+        errorMessage: true,
+        tokensEncrypted: true,
+      },
+    });
+
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const rowsLast30d = await prisma.metaAdInsight.count({
+      where: {
+        tenantId: ctx.tenantId,
+        date: { gte: since },
+      },
+    });
+
+    if (!integration || integration.status !== 'active') {
+      return {
+        connected: false,
+        hasToken: false,
+        accountName: null as string | null,
+        adAccountId: null as string | null,
+        pixelId: null as string | null,
+        lastSyncAt: null as string | null,
+        errorMessage: null as string | null,
+        rowsLast30d,
+      };
+    }
+
+    const config = asObject(integration.config);
+    return {
+      connected: true,
+      hasToken: Boolean(integration.tokensEncrypted),
+      accountName: typeof config.accountName === 'string' ? config.accountName : null,
+      adAccountId: typeof config.adAccountId === 'string' ? config.adAccountId : null,
+      pixelId: typeof config.pixelId === 'string' ? config.pixelId : null,
+      lastSyncAt: integration.lastSyncAt ? integration.lastSyncAt.toISOString() : null,
+      errorMessage: integration.errorMessage,
+      rowsLast30d,
+    };
+  }),
+
+  syncMetaAds: adminProcedure
+    .input(
+      z.object({
+        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const now = new Date();
+      const dateTo = input.dateTo ? new Date(`${input.dateTo}T00:00:00.000Z`) : now;
+      const dateFrom = input.dateFrom
+        ? new Date(`${input.dateFrom}T00:00:00.000Z`)
+        : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      try {
+        const result = await syncMetaAdInsightsForTenant(ctx.tenantId, dateFrom, dateTo);
+        await prisma.auditLog.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.user.userId,
+            action: 'integration_sync',
+            resource: 'integration',
+            metadata: {
+              type: 'meta_ads',
+              dateFrom: dateFrom.toISOString(),
+              dateTo: dateTo.toISOString(),
+              imported: result.imported,
+            },
+          },
+        });
+        return { success: true, ...result };
+      } catch (error: any) {
+        await prisma.integration.updateMany({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'meta_ads',
+          },
+          data: {
+            status: 'error',
+            errorMessage: error?.message || 'Meta Ads sync failed',
+          },
+        });
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error?.message || 'Meta Ads sync failed',
+        });
+      }
+    }),
 
   connectVoIP: adminProcedure
     .input(voipConnectSchema)
@@ -1211,7 +1390,7 @@ export const integrationsRouter = router({
   }),
 
   disconnect: adminProcedure
-    .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel', 'faceid_attendance']) }))
+    .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel', 'faceid_attendance', 'meta_ads']) }))
     .mutation(async ({ input, ctx }) => {
       await prisma.integration.updateMany({
         where: {
