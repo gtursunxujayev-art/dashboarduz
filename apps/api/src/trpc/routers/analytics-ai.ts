@@ -563,6 +563,10 @@ async function generateWithAiProvider(inputSummary: Awaited<ReturnType<typeof co
 }
 
 export const analyticsAiRouter = router({
+  // Tahlil source map:
+  // - dashboard.summary => main KPI/team cards
+  // - analyticsAi.metaInsights => Meta Ads section
+  // - analyticsAi.generateSuggestions => AI helper section
   metaInsights: protectedProcedure
     .input(analyticsAiInputSchema.omit({ focus: true }))
     .query(async ({ input, ctx }) => {
