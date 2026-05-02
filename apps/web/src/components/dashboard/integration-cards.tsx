@@ -461,6 +461,7 @@ export default function IntegrationCards() {
           const webhookUrl = String(integrationConfig.webhookUrl || '');
           const loading = actionLoading === integration.id;
           const pipelines = (amoPipelinesQuery.data?.pipelines || []) as AmoPipeline[];
+          const pipelinesErrorMessage = amoPipelinesQuery.error?.message || null;
           const isAmoActive = integration.id === 'amocrm' && integration.status === 'active';
           const isTelegramActive = integration.id === 'telegram' && integration.status === 'active';
           const isFaceIdActive = integration.id === 'faceid_attendance' && integration.status === 'active';
@@ -514,6 +515,18 @@ export default function IntegrationCards() {
 
                   {amoPipelinesQuery.isLoading ? (
                     <p className="mt-3 text-sm text-gray-500">Pipeline'lar yuklanmoqda...</p>
+                  ) : pipelinesErrorMessage ? (
+                    <div className="mt-3 space-y-2 rounded-md border border-red-200 bg-red-50 p-3">
+                      <p className="text-sm text-red-700">{pipelinesErrorMessage}</p>
+                      <button
+                        type="button"
+                        onClick={() => amoPipelinesQuery.refetch()}
+                        disabled={amoPipelinesQuery.isFetching}
+                        className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {amoPipelinesQuery.isFetching ? 'Qayta urinilmoqda...' : 'Qayta urinish'}
+                      </button>
+                    </div>
                   ) : pipelines.length === 0 ? (
                     <p className="mt-3 text-sm text-gray-500">AmoCRM dan pipeline ma'lumoti kelmadi.</p>
                   ) : (
@@ -550,7 +563,7 @@ export default function IntegrationCards() {
                     <button
                       type="button"
                       onClick={handleSavePipelines}
-                      disabled={loading || amoPipelinesQuery.isLoading}
+                      disabled={loading || amoPipelinesQuery.isLoading || !!pipelinesErrorMessage}
                       className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {loading ? 'Saqlanmoqda...' : "Pipeline tanlovini saqlash"}
