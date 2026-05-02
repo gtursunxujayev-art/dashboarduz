@@ -21,10 +21,12 @@ import {
   type SalaryCategory,
   type PlanBonusPeriodMode,
   type KpiThreshold,
+  type KpiMetricKey,
   type KpiSettings,
+  KPI_METRIC_KEYS,
   isMissingUserMappingColumnError,
 } from './helpers';
-import { amocrmService } from '../../../services/integrations/amocrm';
+import { amocrmService, type AmoCRMLead } from '../../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
@@ -80,6 +82,12 @@ function scoreKpi(value: number, threshold: KpiThreshold, higherIsBetter: boolea
   if (value <= threshold.half) return 0.5;
   return 0;
 }
+
+type KpiBreakdownEntry = {
+  value: number;
+  score: number;
+  amount: number;
+};
 
 function toLocalDateKey(date: Date): string {
   const shifted = shiftToReportTimezone(date);
@@ -202,6 +210,7 @@ export const salaryProcedures = {
         bonusPercentages: salarySettings.bonusPercentages,
         kpiSettings: salarySettings.kpiSettings.enabled ? {
           monthlyBudget: salarySettings.kpiSettings.monthlyBudget,
+          selectedMetrics: salarySettings.kpiSettings.selectedMetrics,
           thresholds: salarySettings.kpiSettings.thresholds,
         } : null,
         attendancePenaltySettings: salarySettings.attendancePenaltySettings,
@@ -229,12 +238,7 @@ export const salaryProcedures = {
           salaryAfterAttendance: number;
           totalSalary: number;
           bonusBreakdown: SalaryBreakdown;
-          kpiBreakdown: {
-            conversionRate: { value: number; score: number; amount: number };
-            dailyTalkTime: { value: number; score: number; amount: number };
-            debtCollectionRate: { value: number; score: number; amount: number };
-            followUpCount: { value: number; score: number; amount: number };
-          } | null;
+          kpiBreakdown: Record<KpiMetricKey, KpiBreakdownEntry> | null;
           planProgress: Array<{
             planId: string;
             name: string;
@@ -264,12 +268,7 @@ export const salaryProcedures = {
         attendancePenaltyTotal: number;
         salaryAfterAttendance: number;
         bonusBreakdown: SalaryBreakdown;
-        kpiBreakdown: {
-          conversionRate: { value: number; score: number; amount: number };
-          dailyTalkTime: { value: number; score: number; amount: number };
-          debtCollectionRate: { value: number; score: number; amount: number };
-          followUpCount: { value: number; score: number; amount: number };
-        } | null;
+        kpiBreakdown: Record<KpiMetricKey, KpiBreakdownEntry> | null;
         planProgress: Array<{
           planId: string;
           name: string;
@@ -769,6 +768,7 @@ export const salaryProcedures = {
         }
       }
       const callDurationByAgent = new Map<string, number>();
+      const callCountByAgent = new Map<string, number>();
       const callDaysByAgent = new Map<string, Set<string>>();
       for (const call of calls) {
         const fromExt = (call.from || '').replace(/[^\d]/g, '');
@@ -776,6 +776,7 @@ export const salaryProcedures = {
         const agentId = extensionToAgent.get(fromExt) || extensionToAgent.get(toExt);
         if (!agentId) continue;
         callDurationByAgent.set(agentId, (callDurationByAgent.get(agentId) || 0) + (call.duration || 0));
+        callCountByAgent.set(agentId, (callCountByAgent.get(agentId) || 0) + 1);
         if (call.startedAt) {
           const dayKey = call.startedAt.toISOString().slice(0, 10);
           const days = callDaysByAgent.get(agentId) || new Set<string>();
@@ -798,47 +799,67 @@ export const salaryProcedures = {
       }
 
       // Score each agent
-      const perKpiBudget = Math.round(kpi.monthlyBudget / 4);
+      const selectedKpiMetrics = kpi.selectedMetrics.filter((metric): metric is KpiMetricKey => KPI_METRIC_KEYS.includes(metric));
+      const metricCount = selectedKpiMetrics.length;
+      if (metricCount === 0) {
+        for (const salaryRow of salaryByAgent.values()) {
+          salaryRow.kpiAmount = 0;
+          salaryRow.kpiBreakdown = null;
+        }
+      }
+      const perKpiBudget = metricCount > 0 ? kpi.monthlyBudget / metricCount : 0;
       for (const salaryRow of salaryByAgent.values()) {
         const agentId = salaryRow.userId;
         const amoId = agentAmoIdMap.get(agentId);
 
-        // 1. Conversion Rate = sales / new leads * 100
         const salesCount = salesCountByAgent.get(agentId) || 0;
         const newLeadCount = newLeadCountByAgent.get(agentId) || 0;
         const conversionRate = newLeadCount > 0 ? (salesCount / newLeadCount) * 100 : 0;
-        const conversionScore = scoreKpi(conversionRate, kpi.thresholds.conversionRate, true);
-
-        // 2. Daily Talk Time (seconds) = total duration / active call days
         const totalDuration = callDurationByAgent.get(agentId) || 0;
         const activeDays = (callDaysByAgent.get(agentId) || new Set()).size;
         const dailyTalkTime = activeDays > 0 ? totalDuration / activeDays : 0;
-        const talkTimeScore = scoreKpi(dailyTalkTime, kpi.thresholds.dailyTalkTime, true);
-
-        // 3. Debt Collection Rate = paid / agreement * 100
         const totalPaid = paidByAgent.get(agentId) || 0;
         const totalAgreement = agreementByAgent.get(agentId) || 0;
         const debtCollectionRate = totalAgreement > 0 ? (totalPaid / totalAgreement) * 100 : 0;
-        const debtScore = scoreKpi(debtCollectionRate, kpi.thresholds.debtCollectionRate, true);
-
-        // 4. Follow-up Count
         const activity = amoId ? activityByManager.get(amoId) : null;
         const followUpCount = activity?.followUpCount ?? 0;
-        const followUpScore = scoreKpi(followUpCount, kpi.thresholds.followUpCount, true);
+        const callCount = callCountByAgent.get(agentId) || 0;
+        const overdueFollowUpCount = activity?.overdueFollowUpCount ?? 0;
+        const stageChangeCount = activity?.stageChangeCount ?? 0;
+        const followUpDonePercent = (followUpCount + overdueFollowUpCount) > 0
+          ? (followUpCount / (followUpCount + overdueFollowUpCount)) * 100
+          : 0;
 
-        salaryRow.kpiAmount = Math.round(
-          conversionScore * perKpiBudget
-          + talkTimeScore * perKpiBudget
-          + debtScore * perKpiBudget
-          + followUpScore * perKpiBudget,
-        );
-
-        salaryRow.kpiBreakdown = {
-          conversionRate: { value: Number(conversionRate.toFixed(2)), score: conversionScore, amount: Math.round(conversionScore * perKpiBudget) },
-          dailyTalkTime: { value: Math.round(dailyTalkTime), score: talkTimeScore, amount: Math.round(talkTimeScore * perKpiBudget) },
-          debtCollectionRate: { value: Number(debtCollectionRate.toFixed(2)), score: debtScore, amount: Math.round(debtScore * perKpiBudget) },
-          followUpCount: { value: followUpCount, score: followUpScore, amount: Math.round(followUpScore * perKpiBudget) },
+        const metricValues: Record<KpiMetricKey, number> = {
+          conversion: Number(conversionRate.toFixed(2)),
+          avgDailyTalkTime: Math.round(dailyTalkTime),
+          debtCollectPercent: Number(debtCollectionRate.toFixed(2)),
+          avgLeadResponseTime: 0,
+          callCount: callCount,
+          followUpCount: followUpCount,
+          followUpDonePercent: Number(followUpDonePercent.toFixed(2)),
+          stageChangeCount: stageChangeCount,
         };
+
+        const kpiBreakdown = {} as Record<KpiMetricKey, KpiBreakdownEntry>;
+        let kpiAmount = 0;
+
+        for (const metric of selectedKpiMetrics) {
+          const threshold = kpi.thresholds[metric];
+          const value = metricValues[metric] ?? 0;
+          const higherIsBetter = metric !== 'avgLeadResponseTime';
+          const score = scoreKpi(value, threshold, higherIsBetter);
+          const amount = Math.round(score * perKpiBudget);
+          kpiBreakdown[metric] = {
+            value,
+            score,
+            amount,
+          };
+          kpiAmount += amount;
+        }
+
+        salaryRow.kpiAmount = Math.round(kpiAmount);
+        salaryRow.kpiBreakdown = selectedKpiMetrics.length > 0 ? kpiBreakdown : null;
       }
     }
 
@@ -1000,6 +1021,7 @@ export const salaryProcedures = {
       attendancePenaltySettings: salarySettings.attendancePenaltySettings,
       kpiSettings: kpi.enabled ? {
         monthlyBudget: kpi.monthlyBudget,
+        selectedMetrics: kpi.selectedMetrics,
         thresholds: kpi.thresholds,
       } : null,
       totals,
