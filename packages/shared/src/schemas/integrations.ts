@@ -36,6 +36,13 @@ export const faceIdConnectSchema = z.object({
   unmatchedUserPolicy: z.enum(['store', 'ignore']).optional(),
 });
 
+// Meta Ads integration
+export const metaAdsConnectSchema = z.object({
+  adAccountId: z.string().min(1, 'Meta Ad Account ID is required'),
+  accessToken: z.string().min(1, 'Meta access token is required'),
+  pixelId: z.string().optional(),
+});
+
 // Generic integration update
 export const integrationUpdateSchema = z.object({
   status: z.enum(['pending', 'active', 'error', 'disconnected']).optional(),
@@ -48,4 +55,5 @@ export type TelegramBotConnect = z.infer<typeof telegramBotConnectSchema>;
 export type GoogleSheetsConnect = z.infer<typeof googleSheetsConnectSchema>;
 export type VoIPConnect = z.infer<typeof voipConnectSchema>;
 export type FaceIdConnect = z.infer<typeof faceIdConnectSchema>;
+export type MetaAdsConnect = z.infer<typeof metaAdsConnectSchema>;
 export type IntegrationUpdate = z.infer<typeof integrationUpdateSchema>;
