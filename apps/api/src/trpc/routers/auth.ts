@@ -149,11 +149,15 @@ export const authRouter = router({
           phone: true,
           email: true,
           passwordHash: true,
+          isActive: true,
         },
       });
 
       if (!user || !user.passwordHash) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid credentials' });
+      }
+      if (!user.isActive) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'User is deactivated' });
       }
 
       const passwordOk = await verifyPassword(input.password, user.passwordHash);
@@ -275,6 +279,7 @@ export const authRouter = router({
             tenantId: true,
             roles: true,
             phone: true,
+            isActive: true,
           },
         });
 
@@ -301,12 +306,26 @@ export const authRouter = router({
               tenantId: true,
               roles: true,
               phone: true,
+              isActive: true,
             },
           });
           
           tenantId = tenant.id;
         } else {
           tenantId = user.tenantId;
+          if (!user.isActive) {
+            throw new TRPCError({
+              code: 'UNAUTHORIZED',
+              message: 'User is deactivated',
+            });
+          }
+        }
+
+        if (!user) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to resolve user for OTP login',
+          });
         }
 
         // Update last login
