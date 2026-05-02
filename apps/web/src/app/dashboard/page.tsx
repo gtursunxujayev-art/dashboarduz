@@ -106,7 +106,7 @@ export default function DashboardPage() {
   const [dateFrom, setDateFrom] = useState(getTashkentToday());
   const [dateTo, setDateTo] = useState(getTashkentToday());
   const [pipelineIds, setPipelineIds] = useState<string[]>([]);
-  const { isAdmin, isAgentOnly, hasFinanceRole, showSalarySection, isFinanceOnly, isTashkiliyOnly } = useMemo(() => {
+  const { isAdmin, isAgentOnly, isTeamLeaderOnly, hasFinanceRole, showSalarySection, isFinanceOnly, isTashkiliyOnly } = useMemo(() => {
     const isAdmin = Boolean(roles.includes('Admin'));
     const isAgentOnly = Boolean(
       roles.includes('Agent')
@@ -116,7 +116,14 @@ export default function DashboardPage() {
         && !roles.includes('Finance'),
     );
     const hasFinanceRole = Boolean(roles.includes('Finance'));
-    const showSalarySection = isAgentOnly || hasFinanceRole;
+    const isTeamLeaderOnly = Boolean(
+      roles.includes('TeamLeader')
+        && !roles.includes('Admin')
+        && !roles.includes('Manager')
+        && !roles.includes('Agent')
+        && !roles.includes('Finance'),
+    );
+    const showSalarySection = isAgentOnly || isTeamLeaderOnly || hasFinanceRole;
     const isFinanceOnly = Boolean(
       hasFinanceRole
         && !roles.includes('Admin')
@@ -132,7 +139,7 @@ export default function DashboardPage() {
         && !roles.includes('Agent')
         && !roles.includes('Finance'),
     );
-    return { isAdmin, isAgentOnly, hasFinanceRole, showSalarySection, isFinanceOnly, isTashkiliyOnly };
+    return { isAdmin, isAgentOnly, isTeamLeaderOnly, hasFinanceRole, showSalarySection, isFinanceOnly, isTashkiliyOnly };
   }, [roles]);
   const [isEditMode, setIsEditMode] = useState(false);
   const [layoutInitialized, setLayoutInitialized] = useState(false);
@@ -704,6 +711,7 @@ export default function DashboardPage() {
       isLoading={salarySummaryQuery.isLoading}
       error={salarySummaryQuery.error}
       isAgentOnly={isAgentOnly}
+      isTeamLeaderView={isTeamLeaderOnly}
       salaryCurrentUser={salaryCurrentUser}
       salaryByAgent={salaryByAgent}
       salaryTotals={salaryTotals}
