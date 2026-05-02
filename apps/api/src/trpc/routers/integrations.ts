@@ -21,6 +21,32 @@ function normalizeBaseUrl(url?: string): string | null {
   return url.replace(/\/+$/, '');
 }
 
+type AmoFailureReason = 'decrypt_failed' | 'token_invalid' | 'network_timeout' | 'amo_unavailable';
+
+function detectAmoFailureReason(error: unknown): AmoFailureReason {
+  const message = String((error as any)?.message || '').toLowerCase();
+  if (message.includes('failed to decrypt integration tokens')) {
+    return 'decrypt_failed';
+  }
+  if (message.includes('timeout') || message.includes('abort')) {
+    return 'network_timeout';
+  }
+  if (
+    message.includes('failed to validate amocrm long-lived token')
+    || message.includes(' 401')
+    || message.includes(' 403')
+    || message.includes('unauthorized')
+    || message.includes('forbidden')
+  ) {
+    return 'token_invalid';
+  }
+  return 'amo_unavailable';
+}
+
+function amoFailureMessage(prefix: string, reason: AmoFailureReason): string {
+  return `${prefix} (${reason})`;
+}
+
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -105,17 +131,35 @@ function toTashkentDateKey(date: Date): string {
 }
 
 async function fetchAmoCRMAccountByToken(accessToken: string, baseUrl: string) {
-  const response = await fetch(`${baseUrl}/api/v4/account`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.AMOCRM_REQUEST_TIMEOUT_MS || 10000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/api/v4/account`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    });
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new TRPCError({
+        code: 'TIMEOUT',
+        message: amoFailureMessage('Failed to validate AmoCRM long-lived token', 'network_timeout'),
+      });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: `Failed to validate AmoCRM long-lived token (${response.status})`,
+      message: amoFailureMessage(`Failed to validate AmoCRM long-lived token (${response.status})`, 'token_invalid'),
     });
   }
 
@@ -156,7 +200,19 @@ export const integrationsRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid AmoCRM base URL' });
       }
 
-      const accountInfo = await fetchAmoCRMAccountByToken(input.longLivedToken.trim(), resolvedBaseUrl);
+      let accountInfo: Awaited<ReturnType<typeof fetchAmoCRMAccountByToken>>;
+      try {
+        accountInfo = await fetchAmoCRMAccountByToken(input.longLivedToken.trim(), resolvedBaseUrl);
+      } catch (error: any) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+        const reason = detectAmoFailureReason(error);
+        throw new TRPCError({
+          code: reason === 'network_timeout' ? 'TIMEOUT' : 'BAD_REQUEST',
+          message: amoFailureMessage('AmoCRM ulanishini tekshirib bo‘lmadi', reason),
+        });
+      }
       const accountId = accountInfo.id ? String(accountInfo.id) : null;
       if (!accountId) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'AmoCRM account id was not returned' });
@@ -241,7 +297,22 @@ export const integrationsRouter = router({
     }),
 
   getAmoCRMPipelines: adminProcedure.query(async ({ ctx }) => {
-    const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+    let amoContext: Awaited<ReturnType<typeof getTenantAmoCRMContext>> = null;
+    try {
+      amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+    } catch (error: any) {
+      const reason = detectAmoFailureReason(error);
+      console.warn('[AmoCRM][Pipelines] Context load failed', {
+        tenantId: ctx.tenantId,
+        reason,
+        retried: false,
+        error: String(error?.message || error),
+      });
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: amoFailureMessage('AmoCRM context yuklanmadi', reason),
+      });
+    }
     if (!amoContext) {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
@@ -249,7 +320,26 @@ export const integrationsRouter = router({
       });
     }
 
-    const pipelinesResponse = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+    let pipelinesResponse: Awaited<ReturnType<typeof amocrmService.fetchPipelines>>;
+    try {
+      pipelinesResponse = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+    } catch (firstError: any) {
+      try {
+        pipelinesResponse = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+      } catch (secondError: any) {
+        const reason = detectAmoFailureReason(secondError || firstError);
+        console.warn('[AmoCRM][Pipelines] Fetch failed', {
+          tenantId: ctx.tenantId,
+          reason,
+          retried: true,
+          error: String((secondError as any)?.message || (firstError as any)?.message || secondError || firstError),
+        });
+        throw new TRPCError({
+          code: reason === 'network_timeout' ? 'TIMEOUT' : 'BAD_REQUEST',
+          message: amoFailureMessage("AmoCRM pipeline'larini yuklab bo'lmadi", reason),
+        });
+      }
+    }
     const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
 
     return {
