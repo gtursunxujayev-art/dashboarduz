@@ -230,7 +230,9 @@ export default function AnalyticsPage() {
             </div>
           ) : (metaInsightsQuery.data?.campaigns || []).length === 0 ? (
             <p className="text-sm text-gray-500">
-              Bu davr uchun Meta Ads ma&apos;lumotlari topilmadi. Integratsiyani ulang va sync qiling.
+              {(metaInsightsQuery.data as any)?.tableMissing
+                ? 'Meta Ads DB migratsiyasi hali production database ga qo‘llanmagan. db:migrate:deploy qiling.'
+                : 'Bu davr uchun Meta Ads ma&apos;lumotlari topilmadi. Integratsiyani ulang va sync qiling.'}
             </p>
           ) : (
             <table className="min-w-full divide-y divide-gray-200 text-sm">
