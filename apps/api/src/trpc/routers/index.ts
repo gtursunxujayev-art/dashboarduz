@@ -16,6 +16,7 @@ import { incomeProblemsRouter } from './income-problems';
 import { incomeDebugRouter } from './income-debug';
 import { corporateCallsRouter } from './corporate-calls';
 import { attendanceRouter } from './attendance';
+import { analyticsAiRouter } from './analytics-ai';
 
 export const appRouter = router({
   auth: authRouter,
@@ -35,6 +36,7 @@ export const appRouter = router({
   incomeDebug: incomeDebugRouter,
   corporateCalls: corporateCallsRouter,
   attendance: attendanceRouter,
+  analyticsAi: analyticsAiRouter,
 });
 
 export type AppRouter = typeof appRouter;
