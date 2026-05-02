@@ -90,15 +90,24 @@ export type KpiThreshold = {
   half: number;
 };
 
+export const KPI_METRIC_KEYS = [
+  'conversion',
+  'avgDailyTalkTime',
+  'debtCollectPercent',
+  'avgLeadResponseTime',
+  'callCount',
+  'followUpCount',
+  'followUpDonePercent',
+  'stageChangeCount',
+] as const;
+
+export type KpiMetricKey = (typeof KPI_METRIC_KEYS)[number];
+
 export type KpiSettings = {
   enabled: boolean;
   monthlyBudget: number;
-  thresholds: {
-    conversionRate: KpiThreshold;
-    dailyTalkTime: KpiThreshold;
-    debtCollectionRate: KpiThreshold;
-    followUpCount: KpiThreshold;
-  };
+  selectedMetrics: KpiMetricKey[];
+  thresholds: Record<KpiMetricKey, KpiThreshold>;
 };
 
 export type AttendancePenaltySettings = {
@@ -777,15 +786,36 @@ export function extractSalarySettings(settings: unknown): SalarySettingsSnapshot
       half: toFiniteNumber(obj?.half, 0),
     };
   };
+  const rawSelectedMetrics = Array.isArray(rawKpi?.selectedMetrics)
+    ? rawKpi.selectedMetrics
+    : [];
+  const selectedMetrics = Array.from(
+    new Set(
+      rawSelectedMetrics
+        .map((item) => String(item || '').trim())
+        .filter((item): item is KpiMetricKey => KPI_METRIC_KEYS.includes(item as KpiMetricKey)),
+    ),
+  );
+  const fallbackSelectedMetrics: KpiMetricKey[] = ['conversion', 'avgDailyTalkTime', 'debtCollectPercent', 'followUpCount'];
+  const thresholds = KPI_METRIC_KEYS.reduce((acc, metric) => {
+    const rawThreshold = (() => {
+      if (metric === 'conversion') return rawKpiThresholds?.conversion ?? rawKpiThresholds?.conversionRate;
+      if (metric === 'avgDailyTalkTime') return rawKpiThresholds?.avgDailyTalkTime ?? rawKpiThresholds?.dailyTalkTime;
+      if (metric === 'debtCollectPercent') return rawKpiThresholds?.debtCollectPercent ?? rawKpiThresholds?.debtCollectionRate;
+      if (metric === 'avgLeadResponseTime') return rawKpiThresholds?.avgLeadResponseTime;
+      if (metric === 'callCount') return rawKpiThresholds?.callCount;
+      if (metric === 'followUpCount') return rawKpiThresholds?.followUpCount;
+      if (metric === 'followUpDonePercent') return rawKpiThresholds?.followUpDonePercent;
+      return rawKpiThresholds?.stageChangeCount;
+    })();
+    acc[metric] = parseThreshold(rawThreshold);
+    return acc;
+  }, {} as Record<KpiMetricKey, KpiThreshold>);
   const kpiSettings: KpiSettings = {
     enabled: rawKpi?.enabled === true,
     monthlyBudget: Math.max(0, Math.round(toFiniteNumber(rawKpi?.monthlyBudget, 0))),
-    thresholds: {
-      conversionRate: parseThreshold(rawKpiThresholds?.conversionRate),
-      dailyTalkTime: parseThreshold(rawKpiThresholds?.dailyTalkTime),
-      debtCollectionRate: parseThreshold(rawKpiThresholds?.debtCollectionRate),
-      followUpCount: parseThreshold(rawKpiThresholds?.followUpCount),
-    },
+    selectedMetrics: selectedMetrics.length > 0 ? selectedMetrics : fallbackSelectedMetrics,
+    thresholds,
   };
 
   const rawAttendancePenalty = asObject(salarySettings?.attendancePenaltySettings);
