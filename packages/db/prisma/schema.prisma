@@ -45,6 +45,8 @@ model Tenant {
   attendanceDaySummaries AttendanceDaySummary[]
   attendanceAdjustments AttendanceAdjustment[]
   attendanceAdjustmentAudits AttendanceAdjustmentAudit[]
+  metaAdInsights MetaAdInsight[]
+  analyticsAiReports AnalyticsAiReport[]
 
   @@index([subdomain])
   @@map("tenants")
@@ -120,7 +122,7 @@ model UserAuthLink {
 model Integration {
   id              String   @id @default(uuid())
   tenantId        String
-  type            String   // amocrm, telegram, google_sheets, voip_utel, faceid_attendance
+  type            String   // amocrm, telegram, google_sheets, voip_utel, faceid_attendance, meta_ads
   status          String   @default("pending") // pending, active, error, disconnected
   config          Json?    // integration-specific config
   tokensEncrypted String?  // encrypted tokens (access_token, refresh_token)
@@ -137,6 +139,61 @@ model Integration {
   @@index([tenantId])
   @@index([type, status])
   @@map("integrations")
+}
+
+model MetaAdInsight {
+  id           String   @id @default(uuid())
+  tenantId     String
+  date         DateTime
+  accountId    String
+  campaignId   String?
+  campaignName String?
+  adSetId      String?
+  adSetName    String?
+  adId         String?
+  adName       String?
+  impressions  Int      @default(0)
+  clicks       Int      @default(0)
+  spend        Float    @default(0)
+  ctr          Float    @default(0)
+  cpc          Float    @default(0)
+  cpm          Float    @default(0)
+  leads        Int      @default(0)
+  raw          Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date, accountId, campaignId, adSetId, adId])
+  @@index([tenantId])
+  @@index([date])
+  @@index([accountId])
+  @@index([campaignId])
+  @@map("meta_ad_insights")
+}
+
+model AnalyticsAiReport {
+  id            String   @id @default(uuid())
+  tenantId      String
+  userId        String?
+  range         String
+  dateFrom      DateTime
+  dateTo        DateTime
+  focus         String
+  promptVersion String   @default("sales-intelligence-v1")
+  model         String?
+  inputSummary  Json?
+  result        Json?
+  createdAt     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([dateFrom, dateTo])
+  @@map("analytics_ai_reports")
 }
 
 // ============================================
