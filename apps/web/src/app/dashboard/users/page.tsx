@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/contexts/auth-context';
 
 const availableRoles = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy'] as const;
 const roleLabels: Record<(typeof availableRoles)[number], string> = {
@@ -20,6 +21,8 @@ function roleNeedsManagerMapping(role: UserRole) {
 }
 
 export default function UsersPage() {
+  const { user: currentUser } = useAuth();
+  const isAdmin = Boolean(currentUser?.roles?.includes('Admin'));
   const usersQuery = trpc.users.list.useQuery();
   const amocrmManagersQuery = trpc.users.amocrmManagers.useQuery(undefined, {
     retry: false,
@@ -34,6 +37,7 @@ export default function UsersPage() {
   const updateName = trpc.users.updateName.useMutation();
   const updateRole = trpc.users.updateRole.useMutation();
   const updateCredentials = trpc.users.updateCredentials.useMutation();
+  const setActiveMutation = trpc.users.setActive.useMutation();
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -199,6 +203,23 @@ export default function UsersPage() {
     }
   };
 
+  const handleToggleActive = async (userId: string, nextIsActive: boolean) => {
+    setError(null);
+    setSuccess(null);
+    setGeneratedResetPassword(null);
+
+    try {
+      await setActiveMutation.mutateAsync({
+        userId,
+        isActive: nextIsActive,
+      });
+      setSuccess(nextIsActive ? "Foydalanuvchi faollashtirildi." : "Foydalanuvchi nofaol qilindi.");
+      await usersQuery.refetch();
+    } catch (mutationError: any) {
+      setError(mutationError?.message || "Foydalanuvchi holatini yangilashda xatolik");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="rounded-lg bg-white shadow">
@@ -321,6 +342,7 @@ export default function UsersPage() {
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Foydalanuvchi</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Rol + CRM/UTeL/Telegram</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Login/Parol</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Holat</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Oxirgi kirish</th>
                   </tr>
                 </thead>
@@ -478,6 +500,27 @@ export default function UsersPage() {
                             Yangi yaratilgan parol: <strong>{generatedPasswordForRow}</strong>
                           </p>
                         )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        <div className="flex flex-col gap-2">
+                          <span className={`inline-flex w-fit rounded-full px-2 py-1 text-xs font-medium ${user.isActive ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {user.isActive ? 'Faol' : 'Nofaol'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(user.id, !user.isActive)}
+                            disabled={!isAdmin || setActiveMutation.isLoading}
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            {!isAdmin
+                              ? "Faqat admin"
+                              : setActiveMutation.isLoading
+                              ? 'Saqlanmoqda...'
+                              : user.isActive
+                                ? 'Nofaol qilish'
+                                : 'Faollashtirish'}
+                          </button>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">
                         {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Hech qachon'}
