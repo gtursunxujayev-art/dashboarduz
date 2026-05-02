@@ -69,6 +69,21 @@ export const protectedProcedure = baseProcedure.use(async (opts) => {
     });
   }
 
+  const activeUser = await prisma.user.findFirst({
+    where: {
+      id: ctx.user.userId,
+      tenantId: ctx.tenantId,
+      isActive: true,
+    },
+    select: { id: true },
+  });
+  if (!activeUser) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'User is deactivated',
+    });
+  }
+
   try {
     await prisma.$executeRaw`SELECT app.set_tenant_context(${ctx.tenantId}::uuid, ${ctx.user.userId}::uuid)`;
   } catch (error: any) {
