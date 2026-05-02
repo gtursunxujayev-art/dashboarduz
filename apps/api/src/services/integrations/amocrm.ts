@@ -149,10 +149,12 @@ export interface AmoCRMEventListResponse {
 export class AmoCRMService {
   private defaultBaseUrl: string;
   private webhookSecret: string;
+  private readonly requestTimeoutMs: number;
 
   constructor() {
     this.defaultBaseUrl = process.env.AMOCRM_BASE_URL || 'https://www.amocrm.ru';
     this.webhookSecret = process.env.AMOCRM_WEBHOOK_SECRET || '';
+    this.requestTimeoutMs = Number(process.env.AMOCRM_REQUEST_TIMEOUT_MS || 10000);
 
     if (!this.webhookSecret && process.env.NODE_ENV === 'production') {
       logger.warn('AMOCRM_WEBHOOK_SECRET not set in production');
@@ -161,6 +163,25 @@ export class AmoCRMService {
 
   private resolveBaseUrl(baseUrl?: string): string {
     return (baseUrl || this.defaultBaseUrl).replace(/\/+$/, '');
+  }
+
+  private async fetchWithTimeout(input: string, init: RequestInit = {}): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+
+    try {
+      return await fetch(input, {
+        ...init,
+        signal: controller.signal,
+      });
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        throw new Error(`AmoCRM request timeout after ${this.requestTimeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   // Verify webhook signature using HMAC-SHA256.
@@ -216,7 +237,7 @@ export class AmoCRMService {
 
   async fetchAccountInfo(accessToken: string, baseUrl?: string): Promise<AmoCRMAccountInfo> {
     const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-    const response = await fetch(`${resolvedBaseUrl}/api/v4/account`, {
+    const response = await this.fetchWithTimeout(`${resolvedBaseUrl}/api/v4/account`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
@@ -361,21 +382,26 @@ export class AmoCRMService {
   }
 
   async fetchPipelines(accessToken: string, baseUrl?: string): Promise<AmoCRMLeadPipelinesResponse> {
-    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-    const response = await fetch(`${resolvedBaseUrl}/api/v4/leads/pipelines`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    try {
+      const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
+      const response = await this.fetchWithTimeout(`${resolvedBaseUrl}/api/v4/leads/pipelines`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error({ error: errorText, status: response.status }, 'AmoCRM pipelines fetch error');
-      throw new Error(`Failed to fetch AmoCRM pipelines: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error({ error: errorText, status: response.status }, 'AmoCRM pipelines fetch error');
+        throw new Error(`Failed to fetch AmoCRM pipelines: ${response.status} ${response.statusText}`);
+      }
+
+      return (await response.json()) as AmoCRMLeadPipelinesResponse;
+    } catch (error: any) {
+      logger.error({ error: error?.message || String(error) }, 'AmoCRM pipelines fetch exception');
+      throw new Error(`Failed to fetch AmoCRM pipelines: ${error?.message || 'unknown_error'}`);
     }
-
-    return (await response.json()) as AmoCRMLeadPipelinesResponse;
   }
 
   async fetchLeadById(accessToken: string, leadId: string, params?: {
