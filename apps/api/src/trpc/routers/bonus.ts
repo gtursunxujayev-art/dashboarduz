@@ -8,6 +8,16 @@ const BONUS_PLAN_PERIODS = ['monthly', 'all_time'] as const;
 const BONUS_RULE_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 const BONUS_RULE_MODES = ['simple', 'tiered'] as const;
 const BONUS_BASE_MODES = ['on_income', 'on_debt_closed'] as const;
+const KPI_METRIC_KEYS = [
+  'conversion',
+  'avgDailyTalkTime',
+  'debtCollectPercent',
+  'avgLeadResponseTime',
+  'callCount',
+  'followUpCount',
+  'followUpDonePercent',
+  'stageChangeCount',
+] as const;
 const BONUS_READ_ROLES = new Set(['Admin', 'Manager', 'TeamLeader']);
 
 type BonusPlanCategory = (typeof BONUS_PLAN_CATEGORIES)[number];
@@ -15,6 +25,7 @@ type BonusPlanPeriodMode = (typeof BONUS_PLAN_PERIODS)[number];
 type BonusRuleCategory = (typeof BONUS_RULE_CATEGORIES)[number];
 type BonusRuleMode = (typeof BONUS_RULE_MODES)[number];
 type BonusBaseMode = (typeof BONUS_BASE_MODES)[number];
+type KpiMetricKey = (typeof KPI_METRIC_KEYS)[number];
 
 type BonusRuleTier = {
   minSales: number;
@@ -61,6 +72,18 @@ type AttendancePenaltySettings = {
   missingHourPenaltyTarget: 'fixed' | 'kpi';
   absenceDayPenaltyTarget: 'fixed' | 'kpi';
   monthlyPenaltyCapUZS: number;
+};
+
+type KpiThreshold = {
+  full: number;
+  half: number;
+};
+
+type KpiSettings = {
+  enabled: boolean;
+  monthlyBudget: number;
+  selectedMetrics: KpiMetricKey[];
+  thresholds: Record<KpiMetricKey, KpiThreshold>;
 };
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -259,6 +282,57 @@ function parseAttendancePenaltySettings(settings: unknown): AttendancePenaltySet
     missingHourPenaltyTarget: parseTarget(raw.missingHourPenaltyTarget, fallbackTarget),
     absenceDayPenaltyTarget: 'fixed',
     monthlyPenaltyCapUZS: Math.max(0, Math.round(toFiniteNumber(raw.monthlyPenaltyCapUZS, 0))),
+  };
+}
+
+function parseThreshold(raw: unknown): KpiThreshold {
+  const row = asObject(raw);
+  return {
+    full: Math.max(0, toFiniteNumber(row.full, 0)),
+    half: Math.max(0, toFiniteNumber(row.half, 0)),
+  };
+}
+
+function parseKpiSettings(settings: unknown): KpiSettings {
+  const settingsObject = asObject(settings);
+  const salarySettings = asObject(settingsObject.salary);
+  const rawKpi = asObject(salarySettings.kpiSettings);
+  const rawThresholds = asObject(rawKpi.thresholds);
+
+  const legacyMetricMap: Record<KpiMetricKey, unknown> = {
+    conversion: rawThresholds.conversion ?? rawThresholds.conversionRate,
+    avgDailyTalkTime: rawThresholds.avgDailyTalkTime ?? rawThresholds.dailyTalkTime,
+    debtCollectPercent: rawThresholds.debtCollectPercent ?? rawThresholds.debtCollectionRate,
+    avgLeadResponseTime: rawThresholds.avgLeadResponseTime,
+    callCount: rawThresholds.callCount,
+    followUpCount: rawThresholds.followUpCount,
+    followUpDonePercent: rawThresholds.followUpDonePercent,
+    stageChangeCount: rawThresholds.stageChangeCount,
+  };
+
+  const rawSelectedMetrics = Array.isArray(rawKpi.selectedMetrics)
+    ? rawKpi.selectedMetrics
+    : [];
+  const selectedMetrics = Array.from(
+    new Set(
+      rawSelectedMetrics
+        .map((item) => String(item || '').trim())
+        .filter((item): item is KpiMetricKey => KPI_METRIC_KEYS.includes(item as KpiMetricKey)),
+    ),
+  );
+
+  const fallbackSelectedMetrics: KpiMetricKey[] = ['conversion', 'avgDailyTalkTime', 'debtCollectPercent', 'followUpCount'];
+
+  const thresholds = KPI_METRIC_KEYS.reduce((acc, metric) => {
+    acc[metric] = parseThreshold(legacyMetricMap[metric]);
+    return acc;
+  }, {} as Record<KpiMetricKey, KpiThreshold>);
+
+  return {
+    enabled: rawKpi.enabled === true,
+    monthlyBudget: Math.max(0, Math.round(toFiniteNumber(rawKpi.monthlyBudget, 0))),
+    selectedMetrics: selectedMetrics.length > 0 ? selectedMetrics : fallbackSelectedMetrics,
+    thresholds,
   };
 }
 
@@ -522,6 +596,17 @@ const updateAttendancePenaltySettingsInput = z.object({
   monthlyPenaltyCapUZS: z.number().int().nonnegative(),
 });
 
+const kpiThresholdInput = z.object({
+  full: z.number().nonnegative(),
+  half: z.number().nonnegative(),
+});
+
+const updateKpiSettingsInput = z.object({
+  monthlyKpiAmount: z.number().int().nonnegative(),
+  selectedMetrics: z.array(z.enum(KPI_METRIC_KEYS)).max(4),
+  thresholds: z.record(z.enum(KPI_METRIC_KEYS), kpiThresholdInput),
+});
+
 export const bonusRouter = router({
   getSalaryConfig: protectedProcedure.query(async ({ ctx }) => {
     if (!canReadBonusPlans(ctx.user.roles)) {
@@ -542,6 +627,7 @@ export const bonusRouter = router({
       bonusRules: parsed.bonusRules,
       fixedSalaries: parseFixedSalaries(tenant.settings),
       attendancePenaltySettings: parseAttendancePenaltySettings(tenant.settings),
+      kpiSettings: parseKpiSettings(tenant.settings),
     };
   }),
 
@@ -645,7 +731,7 @@ export const bonusRouter = router({
           tenantId: ctx.tenantId,
           id: { in: requestedUserIds },
           isActive: true,
-          roles: { has: 'Agent' },
+          roles: { hasSome: ['Agent', 'TeamLeader'] },
         },
         select: { id: true },
       })
@@ -687,6 +773,79 @@ export const bonusRouter = router({
 
     return { success: true };
   }),
+
+  updateKpiSettings: adminProcedure
+    .input(updateKpiSettingsInput)
+    .mutation(async ({ ctx, input }) => {
+      const selectedMetrics = Array.from(new Set(input.selectedMetrics));
+      if (!selectedMetrics.length) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: "Kamida bitta KPI ko'rsatkichini tanlang." });
+      }
+      if (selectedMetrics.length > 4) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: "KPI uchun ko'pi bilan 4 ta ko'rsatkich tanlanadi." });
+      }
+
+      const normalizedThresholds = KPI_METRIC_KEYS.reduce((acc, metric) => {
+        const raw = input.thresholds[metric];
+        acc[metric] = {
+          full: Math.max(0, Number(raw?.full ?? 0)),
+          half: Math.max(0, Number(raw?.half ?? 0)),
+        };
+        return acc;
+      }, {} as Record<KpiMetricKey, KpiThreshold>);
+
+      for (const metric of selectedMetrics) {
+        const threshold = normalizedThresholds[metric];
+        if (!threshold || threshold.full <= 0 || threshold.half <= 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Tanlangan KPI (${metric}) uchun full/half threshold 0 dan katta bo'lishi kerak.`,
+          });
+        }
+      }
+
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: ctx.tenantId },
+        select: { settings: true },
+      });
+      if (!tenant) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
+      }
+
+      const settingsObject = asObject(tenant.settings);
+      const salarySettings = asObject(settingsObject.salary);
+      const nextSettings = {
+        ...settingsObject,
+        salary: {
+          ...salarySettings,
+          kpiSettings: {
+            enabled: input.monthlyKpiAmount > 0 && selectedMetrics.length > 0,
+            monthlyBudget: Math.max(0, Math.round(input.monthlyKpiAmount)),
+            selectedMetrics,
+            thresholds: normalizedThresholds,
+          },
+        },
+      };
+
+      await prisma.tenant.update({
+        where: { id: ctx.tenantId },
+        data: {
+          settings: JSON.parse(JSON.stringify(nextSettings)),
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'kpi_settings_update',
+          resource: 'tenant_settings',
+          resourceId: ctx.tenantId,
+        },
+      });
+
+      return { success: true };
+    }),
 
   updateAttendancePenaltySettings: adminProcedure
     .input(updateAttendancePenaltySettingsInput)
