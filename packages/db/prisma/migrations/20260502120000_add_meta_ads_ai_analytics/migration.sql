@@ -1,4 +1,4 @@
-﻿CREATE TABLE IF NOT EXISTS "meta_ad_insights" (
+CREATE TABLE IF NOT EXISTS "meta_ad_insights" (
   "id" TEXT NOT NULL,
   "tenantId" TEXT NOT NULL,
   "date" TIMESTAMP(3) NOT NULL,
