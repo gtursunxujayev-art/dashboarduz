@@ -2,6 +2,7 @@ import ProtectedRoute from '@/components/auth/protected-route';
 import DashboardAccessGuard from '@/components/auth/dashboard-access-guard';
 import Sidebar from '@/components/dashboard/sidebar';
 import Header from '@/components/dashboard/header';
+import DashboardAiShell from '@/components/dashboard/dashboard-ai-shell';
 
 export default function DashboardLayout({
   children,
@@ -18,7 +19,9 @@ export default function DashboardLayout({
             <main className="relative flex-1 overflow-y-auto focus:outline-none">
               <div className="py-6">
                 <div className="w-full px-4 sm:px-6 md:px-8">
-                  {children}
+                  <DashboardAiShell>
+                    {children}
+                  </DashboardAiShell>
                 </div>
               </div>
             </main>
