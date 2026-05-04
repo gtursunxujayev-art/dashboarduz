@@ -199,6 +199,9 @@ export default function IncomePage() {
   const isAdmin = Boolean(
     (user?.roles || []).some((role) => String(role).trim().toLowerCase() === 'admin'),
   );
+  const isTeamLeader = Boolean(
+    (user?.roles || []).some((role) => String(role).trim().toLowerCase() === 'teamleader'),
+  );
   const [entryDate, setEntryDate] = useState(getTashkentToday());
   const [managerUserId, setManagerUserId] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
@@ -426,10 +429,20 @@ export default function IncomePage() {
       : 0;
 
   useEffect(() => {
-    if (!managerUserId && managers.length > 0) {
-      setManagerUserId(managers[0].id);
+    if (managerUserId || managers.length === 0) {
+      return;
     }
-  }, [managerUserId, managers]);
+
+    if (isTeamLeader && user?.userId) {
+      const selfManager = managers.find((manager: any) => manager.id === user.userId);
+      if (selfManager?.id) {
+        setManagerUserId(selfManager.id);
+        return;
+      }
+    }
+
+    setManagerUserId(managers[0].id);
+  }, [isTeamLeader, managerUserId, managers, user?.userId]);
 
   useEffect(() => {
     if (!selectedCustomer) {
