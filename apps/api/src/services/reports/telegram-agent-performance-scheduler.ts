@@ -424,7 +424,15 @@ async function collectAgentMetricsForTenant(params: {
   }
 
   const followUpsByAgentId = new Map<string, number>();
-  const amocrmContext = await getTenantAmoCRMContext(params.tenantId);
+  let amocrmContext: Awaited<ReturnType<typeof getTenantAmoCRMContext>> = null;
+  try {
+    amocrmContext = await getTenantAmoCRMContext(params.tenantId);
+  } catch (error: any) {
+    log(LogLevel.WARN, 'Noon agent performance: failed to load AmoCRM context', {
+      tenantId: params.tenantId,
+      error: String(error?.message || error),
+    });
+  }
   const managerIds = normalizedAgents
     .map((agent) => ({ agentId: agent.id, amoId: agent.amocrmResponsibleUserId }))
     .filter((entry): entry is { agentId: string; amoId: string } => Boolean(entry.amoId));
