@@ -777,7 +777,16 @@ async function collectMetrics(params: {
   const managerLeadsByAmoId = new Map<string, { leads: number; qualified: number }>();
 
   let usedLiveAmoLeads = false;
-  const amoContext = await getTenantAmoCRMContext(params.tenantId);
+  let amoContext: Awaited<ReturnType<typeof getTenantAmoCRMContext>> = null;
+  try {
+    amoContext = await getTenantAmoCRMContext(params.tenantId);
+  } catch (error: any) {
+    usedLiveAmoLeads = false;
+    log(LogLevel.WARN, 'Report generation: failed to load AmoCRM context, falling back to local lead metrics', {
+      tenantId: params.tenantId,
+      error: error?.message || 'Unknown error',
+    });
+  }
   if (amoContext) {
     try {
       const liveLeads = await amocrmService.fetchAllLeads(
