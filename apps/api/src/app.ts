@@ -9,6 +9,8 @@ import { applyObservabilityMiddleware } from './middleware/observability';
 import { prisma } from '@dashboarduz/db';
 import { decryptIntegrationTokens } from './services/security/encryption';
 import { telegramService } from './services/integrations/telegram';
+import { startTelegramReportScheduler, stopTelegramReportScheduler } from './services/reports/telegram-report-scheduler';
+import { startTelegramAgentPerformanceScheduler, stopTelegramAgentPerformanceScheduler } from './services/reports/telegram-agent-performance-scheduler';
 
 dotenv.config();
 
@@ -26,7 +28,37 @@ if (process.env.SKIP_ENV_VALIDATION !== 'true') {
 }
 
 initSentry();
-log(LogLevel.INFO, 'Queue workers are disabled in API process. Start worker service separately.');
+const parseBooleanEnv = (value: string | undefined, fallback: boolean): boolean => {
+  if (value === undefined) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+};
+
+const schedulerEnabledInApi = parseBooleanEnv(
+  process.env.ENABLE_SCHEDULERS_IN_API,
+  process.env.NODE_ENV === 'production',
+);
+
+if (schedulerEnabledInApi) {
+  startTelegramReportScheduler();
+  startTelegramAgentPerformanceScheduler();
+  log(LogLevel.INFO, 'Report schedulers are enabled in API process', {
+    mode: 'api',
+    env: process.env.NODE_ENV || 'unknown',
+  });
+} else {
+  log(LogLevel.INFO, 'Queue workers are disabled in API process. Start worker service separately.', {
+    mode: 'worker_only',
+  });
+}
 
 const app = express();
 
@@ -97,6 +129,7 @@ app.get('/health', async (_req, res) => {
         api: 'healthy',
         redis: redisHealth,
         db: dbHealth ? 'healthy' : 'unhealthy',
+        schedulers: schedulerEnabledInApi ? 'enabled_in_api' : 'worker_only',
       },
     };
 
@@ -156,6 +189,15 @@ app.get('/health/queues', async (_req, res) => {
       timestamp: new Date().toISOString(),
     });
   }
+});
+
+app.get('/health/schedulers', async (_req, res) => {
+  return res.json({
+    status: 'ok',
+    schedulersEnabledInApi: schedulerEnabledInApi,
+    mode: schedulerEnabledInApi ? 'api' : 'worker_only',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 function parseTelegramGroupIds(rawValue: string | undefined): string[] {
@@ -369,5 +411,16 @@ app.use('/api/trpc', trpcMiddleware);
 app.get('/api', (_req, res) => {
   res.json({ message: 'Dashboarduz API v1', trpc: '/api/trpc', webhooks: '/webhooks' });
 });
+
+function stopSchedulersInApi(): void {
+  if (!schedulerEnabledInApi) {
+    return;
+  }
+  stopTelegramAgentPerformanceScheduler();
+  stopTelegramReportScheduler();
+}
+
+process.on('SIGTERM', stopSchedulersInApi);
+process.on('SIGINT', stopSchedulersInApi);
 
 export default app;
