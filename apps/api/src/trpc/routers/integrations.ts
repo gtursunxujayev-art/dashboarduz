@@ -47,6 +47,19 @@ function amoFailureMessage(prefix: string, reason: AmoFailureReason): string {
   return `${prefix} (${reason})`;
 }
 
+function amoFailureHelp(reason: AmoFailureReason): string | null {
+  if (reason === 'decrypt_failed') {
+    return "Tokenni qayta ulash kerak (AmoCRM'ni uzib, qayta ulang).";
+  }
+  if (reason === 'token_invalid') {
+    return "Token eskirgan yoki noto'g'ri. Yangi token bilan qayta ulang.";
+  }
+  if (reason === 'network_timeout') {
+    return "Tarmoq kechikishi kuzatildi. Qayta urining.";
+  }
+  return null;
+}
+
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -298,19 +311,31 @@ export const integrationsRouter = router({
 
   getAmoCRMPipelines: adminProcedure.query(async ({ ctx }) => {
     let amoContext: Awaited<ReturnType<typeof getTenantAmoCRMContext>> = null;
-    try {
-      amoContext = await getTenantAmoCRMContext(ctx.tenantId);
-    } catch (error: any) {
-      const reason = detectAmoFailureReason(error);
+    let contextError: unknown = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+        contextError = null;
+        break;
+      } catch (error: any) {
+        contextError = error;
+        if (attempt < 2) {
+          continue;
+        }
+      }
+    }
+    if (contextError) {
+      const reason = detectAmoFailureReason(contextError);
+      const help = amoFailureHelp(reason);
       console.warn('[AmoCRM][Pipelines] Context load failed', {
         tenantId: ctx.tenantId,
         reason,
-        retried: false,
-        error: String(error?.message || error),
+        retried: true,
+        error: String((contextError as any)?.message || contextError),
       });
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
-        message: amoFailureMessage('AmoCRM context yuklanmadi', reason),
+        message: [amoFailureMessage('AmoCRM context yuklanmadi', reason), help].filter(Boolean).join('. '),
       });
     }
     if (!amoContext) {
@@ -334,9 +359,10 @@ export const integrationsRouter = router({
           retried: true,
           error: String((secondError as any)?.message || (firstError as any)?.message || secondError || firstError),
         });
+        const help = amoFailureHelp(reason);
         throw new TRPCError({
           code: reason === 'network_timeout' ? 'TIMEOUT' : 'BAD_REQUEST',
-          message: amoFailureMessage("AmoCRM pipeline'larini yuklab bo'lmadi", reason),
+          message: [amoFailureMessage("AmoCRM pipeline'larini yuklab bo'lmadi", reason), help].filter(Boolean).join('. '),
         });
       }
     }
