@@ -3173,6 +3173,10 @@ async function createIncomeEntry(params: {
       });
 
       return createdSale;
+    }, {
+      // Keep transaction alive for chain normalization/invariant checks on busy tenants.
+      maxWait: 10_000,
+      timeout: 30_000,
     });
   } else {
     let debtSourceId = input.debtSourceIncomeId;
@@ -3311,6 +3315,10 @@ async function createIncomeEntry(params: {
         where: { id: repayment.id },
       });
       return refreshedRepayment ?? repayment;
+    }, {
+      // Repayment flow can touch long chains; avoid premature interactive transaction close.
+      maxWait: 10_000,
+      timeout: 30_000,
     });
   }
 
@@ -5406,7 +5414,6 @@ export const customerIncomeRouter = router({
           tenantId: ctx.tenantId,
           customerId: customer.id,
           type: 'new_sale',
-          paymentAmount: { gt: 0 },
           ...(scopedManagerUserId
             ? {
                 managerUserId: scopedManagerUserId,
