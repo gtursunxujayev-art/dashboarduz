@@ -124,7 +124,10 @@ export default function CustomersPage() {
   const customers = useMemo(() => customersQuery.data?.customers || [], [customersQuery.data]);
   const courseOptions = useMemo(() => customersQuery.data?.courseOptions || [], [customersQuery.data]);
   const catalogOptions = useMemo(() => customersQuery.data?.catalogOptions || [], [customersQuery.data]);
-  const withDebtCount = customers.filter((customer: any) => customer.hasDebt).length;
+  const summaryCounts = useMemo(() => customersQuery.data?.summaryCounts || null, [customersQuery.data]);
+  const withDebtCount = summaryCounts?.withDebtCustomers ?? customers.filter((customer: any) => customer.hasDebt).length;
+  const totalCustomersCount = summaryCounts?.totalCustomers ?? customers.length;
+  const withoutDebtCount = summaryCounts?.withoutDebtCustomers ?? Math.max(customers.length - withDebtCount, 0);
   const courseEditorCustomer = useMemo(
     () => customers.find((customer: any) => customer.id === courseEditorCustomerId) || null,
     [customers, courseEditorCustomerId],
@@ -857,7 +860,7 @@ export default function CustomersPage() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
               <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Jami mijozlar</p>
-              <p className="text-lg font-semibold text-gray-900 dark:text-slate-100">{customers.length}</p>
+              <p className="text-lg font-semibold text-gray-900 dark:text-slate-100">{totalCustomersCount}</p>
             </div>
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
               <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Qarzdor mijozlar</p>
@@ -865,7 +868,7 @@ export default function CustomersPage() {
             </div>
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
               <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Qarzsiz mijozlar</p>
-              <p className="text-lg font-semibold text-green-700 dark:text-green-300">{Math.max(customers.length - withDebtCount, 0)}</p>
+              <p className="text-lg font-semibold text-green-700 dark:text-green-300">{withoutDebtCount}</p>
             </div>
           </div>
 
