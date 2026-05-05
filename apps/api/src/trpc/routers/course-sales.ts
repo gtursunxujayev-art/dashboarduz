@@ -1010,6 +1010,9 @@ export const courseSalesRouter = router({
         courseId: z.string().uuid(),
         tariffId: z.string().uuid().optional(),
         subTariffId: z.string().uuid().optional(),
+        range: courseSalesRangeSchema.default('month'),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
         query: z.string().trim().max(120).optional(),
         page: z.number().int().min(1).default(1),
         limit: z.number().int().min(1).max(200).default(50),
@@ -1019,6 +1022,8 @@ export const courseSalesRouter = router({
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
       const query = input.query?.trim();
       const skip = (input.page - 1) * input.limit;
+      const now = new Date();
+      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const scopedFilters: Record<string, unknown>[] = [];
       if (input.courseId) {
         scopedFilters.push({ courseId: input.courseId });
@@ -1036,6 +1041,10 @@ export const courseSalesRouter = router({
         tenantId: ctx.tenantId,
         type: 'new_sale',
         lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+        entryDate: {
+          gte: rangeStart,
+          lte: rangeEnd,
+        },
         ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
         ...(scopedFilters.length ? { AND: scopedFilters } : {}),
         ...(query
