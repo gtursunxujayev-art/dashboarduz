@@ -73,7 +73,8 @@ Qoidalar:
 - Siz faqat read-only tahlilchisiz: hech qanday ma'lumotni o'zgartirmaysiz.
 
 Kontekst ishlatish:
-- Avval current page date filter va page context ni ustuvor ishlating.
+- Standart holatda butun loyiha ma'lumotlari bilan javob bering (tanlangan sana oralig'ida).
+- Agar foydalanuvchi "shu sahifa" yoki "faqat shu filter" desa, current page kontekstini cheklov sifatida qo'llang.
 - Agar foydalanuvchi boshqa sana oralig'ini so'rasa, o'sha oralig' bo'yicha tahlil qiling.
 
 Format:
@@ -191,6 +192,18 @@ function resolveDateWindow(
       dateTo: pageContext.dateTo,
       reason: 'page_context',
     };
+  }
+
+  const rangeMode = String(pageContext?.rangeMode || '').trim().toLowerCase();
+  if (rangeMode === 'today') {
+    const today = toDateOnly(startOfTashkentDay(now));
+    return { dateFrom: today, dateTo: today, reason: 'page_context' };
+  }
+  if (rangeMode === 'week') {
+    return { ...getCurrentWeekWindow(now), reason: 'page_context' };
+  }
+  if (rangeMode === 'month') {
+    return { ...getCurrentMonthWindow(now), reason: 'page_context' };
   }
 
   return {
@@ -337,6 +350,45 @@ function extractLikelyCourseToken(message: string): string | null {
     return text.trim().slice(0, 64);
   }
   return null;
+}
+
+function shouldPreferCourseDirectAnswer(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes('kurs')
+    || text.includes('coching')
+    || text.includes('couching')
+    || text.includes('sotuv')
+    || text.includes('tarif')
+  );
+}
+
+function formatMoneyUz(value: number): string {
+  return `${new Intl.NumberFormat('ru-RU').format(Math.round(value || 0))} so'm`;
+}
+
+function buildCourseDirectAnswer(courseHint: CourseHintSummary): string {
+  const tariffParts = courseHint.tariffBreakdown
+    .filter((item) => item.salesCount > 0)
+    .map((item) => `${item.tariff} - ${item.salesCount} ta`);
+  const tariffLine = tariffParts.length > 0
+    ? tariffParts.join(', ')
+    : "tariflar bo'yicha sotuv topilmadi";
+
+  return [
+    `${courseHint.matchedCourseName}ga ${courseHint.salesCount} ta sotuv bo'lgan.`,
+    `Tariflar: ${tariffLine}.`,
+    `Kelishuv summasi: ${formatMoneyUz(courseHint.agreementAmount)}.`,
+    `To'langan summasi: ${formatMoneyUz(courseHint.incomeAmount)}.`,
+    `Qarzdorlik summasi: ${formatMoneyUz(courseHint.debtAmount)}.`,
+  ].join(' ');
+}
+
+function buildCourseSuggestionAnswer(courseHint: CourseHintSummary): string | null {
+  if (!courseHint.matchedCourseName || courseHint.similarity < 0.45) {
+    return null;
+  }
+  return `Savolda yozuv xatolik bo'lishi mumkin. Balki "${courseHint.matchedCourseName}" ni nazarda tutdingizmi?`;
 }
 
 async function buildCourseHintSummary(
@@ -547,8 +599,30 @@ export const aiHelperRouter = router({
       const rangeStart = parseCustomDate(resolved.dateFrom, false);
       const rangeEnd = parseCustomDate(resolved.dateTo, true);
       const focus = chooseFocus(input.message);
-      const analyticsInput = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, focus);
       const courseHint = await buildCourseHintSummary(ctx.tenantId, rangeStart, rangeEnd, input.message);
+      if (courseHint && shouldPreferCourseDirectAnswer(input.message)) {
+        if (courseHint.matchedCourseName && courseHint.similarity >= 0.55) {
+          return {
+            answer: buildCourseDirectAnswer(courseHint),
+            provider: 'rule-based',
+            model: 'local-course-resolver',
+            resolvedDateWindow: resolved,
+            focus,
+          };
+        }
+
+        const suggestion = buildCourseSuggestionAnswer(courseHint);
+        if (suggestion) {
+          return {
+            answer: suggestion,
+            provider: 'rule-based',
+            model: 'local-course-resolver',
+            resolvedDateWindow: resolved,
+            focus,
+          };
+        }
+      }
+      const analyticsInput = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, focus);
       const prompt = await loadHelperPrompt();
       const provider = resolveAiProvider();
 
