@@ -699,6 +699,12 @@ async function collectMetrics(params: {
   const qualifiedStageIds = Array.isArray(dashboardSettings.qualifiedStageIds)
     ? dashboardSettings.qualifiedStageIds.map((value) => String(value))
     : [];
+  const qualifiedValues = Array.isArray(dashboardSettings.qualifiedValues)
+    ? dashboardSettings.qualifiedValues.map((value) => String(value))
+    : [];
+  const nonQualifiedValues = Array.isArray(dashboardSettings.nonQualifiedValues)
+    ? dashboardSettings.nonQualifiedValues.map((value) => String(value))
+    : [];
   const reasonFieldKey = typeof dashboardSettings.reasonFieldKey === 'string'
     ? dashboardSettings.reasonFieldKey
     : null;
@@ -772,6 +778,32 @@ async function collectMetrics(params: {
 
   let newLeads = 0;
   let qualifiedLeads = 0;
+
+  const isMappedValue = (raw: string | null | undefined, mappedValues: string[]): boolean => {
+    const normalized = String(raw || '').trim().toLowerCase();
+    if (!normalized || mappedValues.length === 0) {
+      return false;
+    }
+    return mappedValues.some((item) => String(item || '').trim().toLowerCase() === normalized);
+  };
+
+  const classifyLeadOutcome = (statusIdRaw: string | null | undefined, reasonValueRaw: string | null | undefined): {
+    isQualified: boolean;
+    isNonQualified: boolean;
+  } => {
+    const statusId = String(statusIdRaw || '').trim();
+    const reasonValue = String(reasonValueRaw || '').trim();
+    const isQualifiedByStage = statusId ? qualifiedStageIds.includes(statusId) : false;
+    const isQualified = qualifiedStageIds.length > 0
+      ? isQualifiedByStage
+      : isMappedValue(reasonValue, qualifiedValues);
+    const isNonQualified = nonQualifiedValues.length > 0
+      ? isMappedValue(reasonValue, nonQualifiedValues)
+      : !isQualified;
+
+    return { isQualified, isNonQualified };
+  };
+
   const reasonMap = new Map<string, number>();
   const sourceMap = new Map<string, number>();
   const managerLeadsByAmoId = new Map<string, { leads: number; qualified: number }>();
@@ -804,13 +836,15 @@ async function collectMetrics(params: {
       newLeads = liveLeads.length;
       for (const lead of liveLeads) {
         const statusId = String((lead as Record<string, unknown>).status_id || '').trim();
-        if (qualifiedStageIds.length > 0 && statusId && qualifiedStageIds.includes(statusId)) {
+        const reasonValue = extractLeadValue(lead, reasonFieldKey);
+        const { isQualified, isNonQualified } = classifyLeadOutcome(statusId, reasonValue);
+        if (isQualified) {
           qualifiedLeads += 1;
         }
 
-        const reasonValue = extractLeadValue(lead, reasonFieldKey);
-        if (reasonValue) {
-          reasonMap.set(reasonValue, (reasonMap.get(reasonValue) || 0) + 1);
+        if (isNonQualified) {
+          const reasonBucket = reasonValue || "Sabab ko'rsatilmagan";
+          reasonMap.set(reasonBucket, (reasonMap.get(reasonBucket) || 0) + 1);
         }
 
         const sourceValue = extractLeadValue(lead, sourceFieldKey);
@@ -825,7 +859,7 @@ async function collectMetrics(params: {
 
         const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0 };
         current.leads += 1;
-        if (qualifiedStageIds.length > 0 && statusId && qualifiedStageIds.includes(statusId)) {
+        if (isQualified) {
           current.qualified += 1;
         }
         managerLeadsByAmoId.set(responsibleUserId, current);
@@ -866,8 +900,11 @@ async function collectMetrics(params: {
 
     for (const lead of leadsDetailed) {
       const reasonValue = extractLeadValue(lead.metadata, reasonFieldKey);
-      if (reasonValue) {
-        reasonMap.set(reasonValue, (reasonMap.get(reasonValue) || 0) + 1);
+      const statusId = lead.status ? String(lead.status) : '';
+      const { isQualified, isNonQualified } = classifyLeadOutcome(statusId, reasonValue);
+      if (isNonQualified) {
+        const reasonBucket = reasonValue || "Sabab ko'rsatilmagan";
+        reasonMap.set(reasonBucket, (reasonMap.get(reasonBucket) || 0) + 1);
       }
 
       const sourceValue = extractLeadValue(lead.metadata, sourceFieldKey);
@@ -881,7 +918,7 @@ async function collectMetrics(params: {
       }
       const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0 };
       current.leads += 1;
-      if (qualifiedStageIds.length > 0 && lead.status && qualifiedStageIds.includes(String(lead.status))) {
+      if (isQualified) {
         current.qualified += 1;
       }
       managerLeadsByAmoId.set(responsibleUserId, current);
