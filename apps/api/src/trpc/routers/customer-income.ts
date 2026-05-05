@@ -7518,7 +7518,17 @@ export const customerIncomeRouter = router({
         ...(andConditions.length ? { AND: andConditions } : {}),
       };
 
-      const [customers, courseOptions, catalogCourses] = await Promise.all([
+      const [allMatchedCustomersLite, customers, courseOptions, catalogCourses] = await Promise.all([
+        prisma.customer.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            profileCourseId: true,
+            profileTariffId: true,
+            profileSubTariffId: true,
+          },
+        }),
         prisma.customer.findMany({
           where,
           orderBy: { createdAt: 'desc' },
@@ -7542,9 +7552,14 @@ export const customerIncomeRouter = router({
         }),
       ]);
 
-      if (!customers.length) {
+      if (!allMatchedCustomersLite.length) {
         return {
           customers: [],
+          summaryCounts: {
+            totalCustomers: 0,
+            withDebtCustomers: 0,
+            withoutDebtCustomers: 0,
+          },
           courseOptions,
           catalogOptions: (catalogCourses as Array<{
             id: string;
@@ -7571,10 +7586,10 @@ export const customerIncomeRouter = router({
         };
       }
 
-      const customerIds = customers.map((customer) => customer.id);
-      const profileCourseIds = Array.from(new Set(customers.map((customer) => customer.profileCourseId).filter(Boolean))) as string[];
-      const profileTariffIds = Array.from(new Set(customers.map((customer) => customer.profileTariffId).filter(Boolean))) as string[];
-      const profileSubTariffIds = Array.from(new Set(customers.map((customer) => customer.profileSubTariffId).filter(Boolean))) as string[];
+      const customerIds = allMatchedCustomersLite.map((customer) => customer.id);
+      const profileCourseIds = Array.from(new Set(allMatchedCustomersLite.map((customer) => customer.profileCourseId).filter(Boolean))) as string[];
+      const profileTariffIds = Array.from(new Set(allMatchedCustomersLite.map((customer) => customer.profileTariffId).filter(Boolean))) as string[];
+      const profileSubTariffIds = Array.from(new Set(allMatchedCustomersLite.map((customer) => customer.profileSubTariffId).filter(Boolean))) as string[];
       const [profileCourses, profileTariffs, profileSubTariffs] = await Promise.all([
         profileCourseIds.length > 0
           ? prisma.course.findMany({
@@ -7599,7 +7614,7 @@ export const customerIncomeRouter = router({
       const profileTariffNameById = new Map(profileTariffs.map((tariff) => [tariff.id, tariff.name]));
       const profileSubTariffNameById = new Map(profileSubTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
       const customerProfileById = new Map(
-        customers.map((customer) => [
+        allMatchedCustomersLite.map((customer) => [
           customer.id,
           {
             profileCourseId: customer.profileCourseId || null,
@@ -7830,6 +7845,35 @@ export const customerIncomeRouter = router({
         aggregatesByCustomer.set(income.customerId, current);
       }
 
+      const allMatchedCustomerIds = new Set(customerIds);
+      const customersAfterSubTariffFilterIds = input?.subTariffId
+        ? new Set(
+            customerIds.filter((customerId) => {
+              const entries = courseEntriesByCustomer.get(customerId) || [];
+              return entries.some((entry) =>
+                entry.subTariffId === input.subTariffId
+                && (!input.courseId || entry.courseId === input.courseId)
+                && (!input.tariffId || entry.tariffId === input.tariffId));
+            }),
+          )
+        : allMatchedCustomerIds;
+      const customersAfterDebtFilterIds = new Set(
+        Array.from(customersAfterSubTariffFilterIds).filter((customerId) => {
+          if (!input?.debtFilter) {
+            return true;
+          }
+          const aggregate = aggregatesByCustomer.get(customerId);
+          const hasDebt = Boolean(aggregate?.hasDebt);
+          if (input.debtFilter === 'with_debt') {
+            return hasDebt;
+          }
+          if (input.debtFilter === 'without_debt') {
+            return !hasDebt;
+          }
+          return true;
+        }),
+      );
+
       const customersAfterSubTariffFilter = input?.subTariffId
         ? customers.filter((customer) => {
             const entries = courseEntriesByCustomer.get(customer.id) || [];
@@ -7884,6 +7928,15 @@ export const customerIncomeRouter = router({
             profileSubTariffName,
           };
         }),
+        summaryCounts: {
+          totalCustomers: customersAfterDebtFilterIds.size,
+          withDebtCustomers: Array.from(customersAfterDebtFilterIds).reduce((count, customerId) => {
+            return count + (aggregatesByCustomer.get(customerId)?.hasDebt ? 1 : 0);
+          }, 0),
+          withoutDebtCustomers: Array.from(customersAfterDebtFilterIds).reduce((count, customerId) => {
+            return count + (aggregatesByCustomer.get(customerId)?.hasDebt ? 0 : 1);
+          }, 0),
+        },
         courseOptions,
         catalogOptions: (catalogCourses as Array<{
           id: string;
