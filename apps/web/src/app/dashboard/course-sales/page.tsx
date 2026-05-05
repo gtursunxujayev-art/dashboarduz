@@ -51,7 +51,7 @@ export default function CourseSalesPage() {
       && !roles.includes('Finance'),
   );
 
-  const [range, setRange] = useState<DashboardRange>('today');
+  const [range, setRange] = useState<DashboardRange>('month');
   const [dateFrom, setDateFrom] = useState(getTashkentToday());
   const [dateTo, setDateTo] = useState(getTashkentToday());
   const [courseId, setCourseId] = useState('');
@@ -168,6 +168,9 @@ export default function CourseSalesPage() {
       courseId: courseId || '00000000-0000-0000-0000-000000000000',
       tariffId: tariffId || undefined,
       subTariffId: subTariffId || undefined,
+      range,
+      dateFrom: range === 'custom' ? dateFrom : undefined,
+      dateTo: range === 'custom' ? dateTo : undefined,
       query: searchQuery || undefined,
       page,
       limit,
@@ -300,6 +303,9 @@ export default function CourseSalesPage() {
             courseId: courseId || '00000000-0000-0000-0000-000000000000',
             tariffId: tariffId || undefined,
             subTariffId: subTariffId || undefined,
+            range,
+            dateFrom: range === 'custom' ? dateFrom : undefined,
+            dateTo: range === 'custom' ? dateTo : undefined,
             query: searchQuery || undefined,
             page: currentPage,
             limit: pageSize,
