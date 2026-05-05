@@ -5,6 +5,8 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { collectAnalyticsInput } from './analytics-ai';
 import { parseCustomDate } from './dashboard/helpers';
+import { prisma } from '@dashboarduz/db';
+import { INCOME_LIFECYCLE_ACTIVE } from './dashboard/helpers';
 
 const aiHelperMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -33,6 +35,23 @@ type DateWindow = {
   dateFrom: string;
   dateTo: string;
   reason: 'message_explicit' | 'page_context' | 'default_current_month';
+};
+
+type CourseHintSummary = {
+  requestedToken: string;
+  matchedCourseName: string | null;
+  similarity: number;
+  salesCount: number;
+  agreementAmount: number;
+  incomeAmount: number;
+  debtAmount: number;
+  tariffBreakdown: Array<{
+    tariff: string;
+    salesCount: number;
+    agreementAmount: number;
+    incomeAmount: number;
+    debtAmount: number;
+  }>;
 };
 
 let promptCache: { value: string; loadedAt: number } | null = null;
@@ -262,6 +281,174 @@ function chooseFocus(message: string): 'sales' | 'lead_quality' | 'meta_targetin
   return 'sales';
 }
 
+function normalizeLooseText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/['`"]/g, '')
+    .replace(/o‘|o'/g, 'o')
+    .replace(/g‘|g'/g, 'g')
+    .replace(/sh/g, 's_h')
+    .replace(/ch/g, 'c_h')
+    .replace(/[^a-z0-9]+/g, '')
+    .replace(/s_h/g, 'sh')
+    .replace(/c_h/g, 'ch')
+    .trim();
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+
+  const v0 = new Array(b.length + 1).fill(0);
+  const v1 = new Array(b.length + 1).fill(0);
+  for (let i = 0; i <= b.length; i += 1) v0[i] = i;
+  for (let i = 0; i < a.length; i += 1) {
+    v1[0] = i + 1;
+    for (let j = 0; j < b.length; j += 1) {
+      const cost = a[i] === b[j] ? 0 : 1;
+      v1[j + 1] = Math.min(
+        v1[j] + 1,
+        v0[j + 1] + 1,
+        v0[j] + cost,
+      );
+    }
+    for (let j = 0; j <= b.length; j += 1) v0[j] = v1[j];
+  }
+  return v1[b.length];
+}
+
+function similarityScore(a: string, b: string): number {
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+  const dist = levenshteinDistance(a, b);
+  return Math.max(0, 1 - dist / maxLen);
+}
+
+function extractLikelyCourseToken(message: string): string | null {
+  const text = message.toLowerCase();
+  const courseRegex = /(\d+\s*-?\s*[a-zа-яo'g`'‘]+(?:\s*[a-zа-яo'g`'‘]+)?)/i;
+  const match = text.match(courseRegex);
+  const token = (match?.[1] || '').trim();
+  if (token.length >= 3) {
+    return token;
+  }
+  if (text.includes('kurs') || text.includes('tarif') || text.includes('coching') || text.includes('couching')) {
+    return text.trim().slice(0, 64);
+  }
+  return null;
+}
+
+async function buildCourseHintSummary(
+  tenantId: string,
+  rangeStart: Date,
+  rangeEnd: Date,
+  message: string,
+): Promise<CourseHintSummary | null> {
+  const requestedToken = extractLikelyCourseToken(message);
+  if (!requestedToken) {
+    return null;
+  }
+
+  const courses = await prisma.course.findMany({
+    where: { tenantId, isActive: true },
+    select: { id: true, name: true },
+  });
+  if (!courses.length) {
+    return null;
+  }
+
+  const normalizedRequested = normalizeLooseText(requestedToken);
+  let best: { id: string; name: string; score: number } | null = null;
+  for (const course of courses) {
+    const normalizedCourse = normalizeLooseText(course.name || '');
+    if (!normalizedCourse) continue;
+    const score = similarityScore(normalizedRequested, normalizedCourse);
+    if (!best || score > best.score) {
+      best = { id: course.id, name: course.name, score };
+    }
+  }
+
+  if (!best || best.score < 0.55) {
+    return {
+      requestedToken,
+      matchedCourseName: null,
+      similarity: best?.score || 0,
+      salesCount: 0,
+      agreementAmount: 0,
+      incomeAmount: 0,
+      debtAmount: 0,
+      tariffBreakdown: [],
+    };
+  }
+
+  const sales = await prisma.income.findMany({
+    where: {
+      tenantId,
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      type: 'new_sale',
+      courseId: best.id,
+      entryDate: { gte: rangeStart, lte: rangeEnd },
+    },
+    select: {
+      id: true,
+      paymentAmount: true,
+      coursePriceAmount: true,
+      remainingDebtAmount: true,
+      tariff: { select: { name: true } },
+    },
+  });
+
+  const repayments = await prisma.income.findMany({
+    where: {
+      tenantId,
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      type: 'repayment',
+      courseId: best.id,
+      entryDate: { gte: rangeStart, lte: rangeEnd },
+    },
+    select: {
+      paymentAmount: true,
+      tariff: { select: { name: true } },
+    },
+  });
+
+  const tariffMap = new Map<string, { salesCount: number; agreementAmount: number; incomeAmount: number; debtAmount: number }>();
+  for (const sale of sales) {
+    const key = sale.tariff?.name || 'Tarifsiz';
+    const row = tariffMap.get(key) || { salesCount: 0, agreementAmount: 0, incomeAmount: 0, debtAmount: 0 };
+    row.salesCount += 1;
+    row.agreementAmount += Number(sale.coursePriceAmount || 0);
+    row.incomeAmount += Number(sale.paymentAmount || 0);
+    row.debtAmount += Math.max(0, Number(sale.remainingDebtAmount || 0));
+    tariffMap.set(key, row);
+  }
+  for (const repayment of repayments) {
+    const key = repayment.tariff?.name || 'Tarifsiz';
+    const row = tariffMap.get(key) || { salesCount: 0, agreementAmount: 0, incomeAmount: 0, debtAmount: 0 };
+    row.incomeAmount += Number(repayment.paymentAmount || 0);
+    tariffMap.set(key, row);
+  }
+
+  const agreementAmount = sales.reduce((sum, row) => sum + Number(row.coursePriceAmount || 0), 0);
+  const incomeAmount = sales.reduce((sum, row) => sum + Number(row.paymentAmount || 0), 0)
+    + repayments.reduce((sum, row) => sum + Number(row.paymentAmount || 0), 0);
+  const debtAmount = sales.reduce((sum, row) => sum + Math.max(0, Number(row.remainingDebtAmount || 0)), 0);
+
+  return {
+    requestedToken,
+    matchedCourseName: best.name,
+    similarity: Number(best.score.toFixed(3)),
+    salesCount: sales.length,
+    agreementAmount,
+    incomeAmount,
+    debtAmount,
+    tariffBreakdown: Array.from(tariffMap.entries())
+      .map(([tariff, metrics]) => ({ tariff, ...metrics }))
+      .sort((a, b) => b.salesCount - a.salesCount),
+  };
+}
+
 async function generateAssistantText(
   provider: AiProviderConfig,
   prompt: string,
@@ -361,6 +548,7 @@ export const aiHelperRouter = router({
       const rangeEnd = parseCustomDate(resolved.dateTo, true);
       const focus = chooseFocus(input.message);
       const analyticsInput = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, focus);
+      const courseHint = await buildCourseHintSummary(ctx.tenantId, rangeStart, rangeEnd, input.message);
       const prompt = await loadHelperPrompt();
       const provider = resolveAiProvider();
 
@@ -373,6 +561,7 @@ export const aiHelperRouter = router({
         pageContext: input.pageContext || null,
         resolvedDateWindow: resolved,
         analyticsInput,
+        courseHint,
         readonlyPolicy: {
           dbAccess: 'read-only',
           projectMutationsAllowed: false,
