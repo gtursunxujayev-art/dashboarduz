@@ -350,6 +350,11 @@ export const courseSalesRouter = router({
             remainingDebtAmount: 0,
             customerCount: 0,
           },
+          tariffCustomerBreakdown: {
+            vip: 0,
+            premium: 0,
+            standart: 0,
+          },
           updatedAt: new Date().toISOString(),
         };
       }
@@ -380,15 +385,48 @@ export const courseSalesRouter = router({
           id: true,
           entryDate: true,
           customerId: true,
+          courseId: true,
+          tariffId: true,
           coursePriceAmount: true,
           debtAmount: true,
           paymentAmount: true,
           remainingDebtAmount: true,
+          legacyImportMeta: true,
+          customer: {
+            select: {
+              profileCourseId: true,
+              profileTariffId: true,
+              profileSubTariffId: true,
+            },
+          },
+          tariff: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
         },
       });
+      const salesWithResolvedSubTariff = matchedSales.map((sale) => {
+        const saleSubTariffId = extractSaleSubTariffId(sale.legacyImportMeta);
+        const profileMatchedSubTariffId = (
+          sale.customer.profileCourseId === sale.courseId
+          && sale.customer.profileTariffId
+          && sale.customer.profileTariffId === sale.tariffId
+        )
+          ? sale.customer.profileSubTariffId || null
+          : null;
+        return {
+          ...sale,
+          resolvedSubTariffId: saleSubTariffId || profileMatchedSubTariffId || null,
+        };
+      });
+      const filteredSales = input.subTariffId
+        ? salesWithResolvedSubTariff.filter((sale) => sale.resolvedSubTariffId === input.subTariffId)
+        : salesWithResolvedSubTariff;
       const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
-        sales: matchedSales,
+        sales: filteredSales as SaleChainSaleRow[],
       });
 
       let agreementAmount = 0;
@@ -396,7 +434,10 @@ export const courseSalesRouter = router({
       let paidAmount = 0;
       let fullyPaidCount = 0;
       let debtorsCount = 0;
-      for (const sale of matchedSales) {
+      const vipCustomerIds = new Set<string>();
+      const premiumCustomerIds = new Set<string>();
+      const standartCustomerIds = new Set<string>();
+      for (const sale of filteredSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
         const agreement = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.debtAmount ?? sale.paymentAmount ?? 0);
         const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
@@ -409,6 +450,14 @@ export const courseSalesRouter = router({
         } else {
           debtorsCount += 1;
         }
+        const tariffName = String(sale.tariff?.name || '').trim().toLowerCase();
+        if (tariffName.includes('vip')) {
+          vipCustomerIds.add(sale.customerId);
+        } else if (tariffName.includes('premium')) {
+          premiumCustomerIds.add(sale.customerId);
+        } else if (tariffName.includes('standart') || tariffName.includes('standard')) {
+          standartCustomerIds.add(sale.customerId);
+        }
       }
 
       return {
@@ -418,13 +467,18 @@ export const courseSalesRouter = router({
         selectedTariffId: input.tariffId || null,
         selectedSubTariffId: input.subTariffId || null,
         totals: {
-          soldCount: matchedSales.length,
+          soldCount: filteredSales.length,
           fullyPaidCount,
           debtorsCount,
           agreementAmount,
           paidAmount,
           remainingDebtAmount,
-          customerCount: new Set(matchedSales.map((sale) => sale.customerId)).size,
+          customerCount: new Set(filteredSales.map((sale) => sale.customerId)).size,
+        },
+        tariffCustomerBreakdown: {
+          vip: vipCustomerIds.size,
+          premium: premiumCustomerIds.size,
+          standart: standartCustomerIds.size,
         },
         updatedAt: new Date().toISOString(),
       };
