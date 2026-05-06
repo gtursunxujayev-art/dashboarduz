@@ -192,6 +192,7 @@ export default function CourseTypeSalesView({
   );
 
   const summary = summaryQuery.data?.totals;
+  const tariffCustomerBreakdown = summaryQuery.data?.tariffCustomerBreakdown;
   const customers = useMemo(
     () => customersQuery.data?.rows ?? [],
     [customersQuery.data?.rows],
@@ -581,6 +582,15 @@ export default function CourseTypeSalesView({
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-500">Qolgan qarz</p>
           <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summary?.remainingDebtAmount)}</p>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-gray-500">Tariflar</p>
+          <div className="mt-2 space-y-1 text-sm text-gray-700">
+            <p><span className="font-medium">VIP</span> - {tariffCustomerBreakdown?.vip ?? 0}</p>
+            <p><span className="font-medium">Premium</span> - {tariffCustomerBreakdown?.premium ?? 0}</p>
+            <p><span className="font-medium">Standart</span> - {tariffCustomerBreakdown?.standart ?? 0}</p>
+          </div>
         </div>
       </div>
 
