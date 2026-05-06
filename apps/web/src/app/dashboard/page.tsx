@@ -511,6 +511,13 @@ export default function DashboardPage() {
           extra: null,
         },
         {
+          id: 'leads-summary',
+          title: 'Lidlar',
+          value: `Yangi lidlar - ${String(stats?.totalLeads ?? 0)}`,
+          subtitle: `Sifatli lid - ${String(stats?.qualifiedLeads ?? 0)}`,
+          extra: `Sifatsiz lid - ${String(stats?.nonQualifiedLeads ?? 0)}`,
+        },
+        {
           id: 'notes',
           title: 'Yozuvlar',
           value: String(stats?.noteCount ?? 0),
