@@ -381,7 +381,7 @@ function createStyledReportPdf(params: {
   c.rect(276, 44, 503, 116, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
   c.text(288, 54, `Sifatsiz lidlar: ${params.metrics.nonQualifiedLeads}`, { font: 'F2', size: size(12), color: textDark });
   c.text(306, 54, `Yangi sotuvlar: ${params.metrics.newSalesCount}`, { font: 'F2', size: size(12), color: textDark });
-  c.text(324, 54, `Coversion (sotuv -> lid): ${params.metrics.conversionPercent.toFixed(2)}%`, { font: 'F2', size: size(12), color: textDark });
+  c.text(324, 54, `Konversiya (sotuv -> lid): ${params.metrics.conversionPercent.toFixed(2)}%`, { font: 'F2', size: size(12), color: textDark });
   c.text(342, 54, `Qo'ng'iroqlar: ${params.metrics.totalCalls}`, { size: size(11), color: textDark });
   c.text(358, 54, `Suhbat davomiyligi: ${formatDuration(params.metrics.talkDurationSeconds)}`, { size: size(11), color: textDark });
   c.text(374, 54, `Online/Offline/Intensiv sotuvlar: ${params.metrics.onlineSalesCount}/${params.metrics.offlineSalesCount}/${params.metrics.intensiveSalesCount}`, { size: size(10), color: textDark });
@@ -429,9 +429,11 @@ function createStyledReportPdf(params: {
     { key: 'name', title: 'Menejer', width: 110 },
     { key: 'leads', title: 'Lidlar', width: 55 },
     { key: 'qualified', title: 'Sifatli', width: 60 },
+    { key: 'nonQualified', title: 'Sifatsiz', width: 60 },
     { key: 'sales', title: 'Sotuv', width: 55 },
-    { key: 'conversion', title: 'Coversion', width: 70 },
-    { key: 'amount', title: 'Summasi', width: 85 },
+    { key: 'conversion', title: 'Konversiya', width: 70 },
+    { key: 'agreementAmount', title: 'Kelishuv', width: 85 },
+    { key: 'incomeAmount', title: 'Tushum', width: 85 },
     { key: 'duration', title: 'Suhbat', width: 68 },
   ] as const;
   const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
@@ -445,7 +447,17 @@ function createStyledReportPdf(params: {
 
   const rows = params.metrics.managerRows.length > 0
     ? params.metrics.managerRows
-    : [{ name: "Menejer ma'lumoti yo'q", leads: 0, qualified: 0, sales: 0, conversion: 0, amount: 0, callDurationSeconds: 0 }];
+    : [{
+      name: "Menejer ma'lumoti yo'q",
+      leads: 0,
+      qualified: 0,
+      nonQualified: 0,
+      sales: 0,
+      conversion: 0,
+      agreementAmount: 0,
+      incomeAmount: 0,
+      callDurationSeconds: 0,
+    }];
   const shownRows = rows.slice(0, 9);
   for (const [index, row] of shownRows.entries()) {
     const rowTop = tableTop + 20 + index * 18;
@@ -459,9 +471,11 @@ function createStyledReportPdf(params: {
       row.name,
       String(row.leads),
       String(row.qualified),
+      String(row.nonQualified),
       String(row.sales),
       `${row.conversion.toFixed(1)}%`,
-      formatCurrency(row.amount),
+      formatCurrency(row.agreementAmount),
+      formatCurrency(row.incomeAmount),
       formatDuration(row.callDurationSeconds),
     ];
 
@@ -803,16 +817,17 @@ async function collectMetrics(params: {
     const isQualified = qualifiedStageIds.length > 0
       ? isQualifiedByStage
       : isMappedValue(reasonValue, qualifiedValues);
-    const isNonQualified = nonQualifiedValues.length > 0
+    const isNonQualifiedByReason = nonQualifiedValues.length > 0
       ? isMappedValue(reasonValue, nonQualifiedValues)
-      : !isQualified;
+      : false;
+    const isNonQualified = isLostLeadStatus(statusId) && isNonQualifiedByReason;
 
     return { isQualified, isNonQualified };
   };
 
   const reasonMap = new Map<string, number>();
   const sourceMap = new Map<string, number>();
-  const managerLeadsByAmoId = new Map<string, { leads: number; qualified: number }>();
+  const managerLeadsByAmoId = new Map<string, { leads: number; qualified: number; nonQualified: number }>();
 
   let usedLiveAmoLeads = false;
   let amoContext: Awaited<ReturnType<typeof getTenantAmoCRMContext>> = null;
@@ -863,10 +878,13 @@ async function collectMetrics(params: {
           continue;
         }
 
-        const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0 };
+        const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0, nonQualified: 0 };
         current.leads += 1;
         if (isQualified) {
           current.qualified += 1;
+        }
+        if (isNonQualified) {
+          current.nonQualified += 1;
         }
         managerLeadsByAmoId.set(responsibleUserId, current);
       }
@@ -922,10 +940,13 @@ async function collectMetrics(params: {
       if (!responsibleUserId) {
         continue;
       }
-      const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0 };
+      const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0, nonQualified: 0 };
       current.leads += 1;
       if (isQualified) {
         current.qualified += 1;
+      }
+      if (isNonQualified) {
+        current.nonQualified += 1;
       }
       managerLeadsByAmoId.set(responsibleUserId, current);
     }
@@ -943,7 +964,7 @@ async function collectMetrics(params: {
   let onlineAgreementTotal = 0;
   let offlineAgreementTotal = 0;
   let intensiveAgreementTotal = 0;
-  const managerSalesByUserId = new Map<string, { sales: number; amount: number }>();
+  const managerSalesByUserId = new Map<string, { sales: number; agreementAmount: number; incomeAmount: number }>();
 
   const repaymentRelatedIds = [...new Set(
     incomes
@@ -1028,16 +1049,19 @@ async function collectMetrics(params: {
       debtRepaymentIncomeTotal += paymentAmount;
     }
 
+    const managerStats = managerSalesByUserId.get(income.managerUserId) || { sales: 0, agreementAmount: 0, incomeAmount: 0 };
+    managerStats.incomeAmount += paymentAmount;
+
     if (income.type !== 'new_sale') {
+      managerSalesByUserId.set(income.managerUserId, managerStats);
       continue;
     }
 
     newSalesCount += 1;
     const agreementAmount = Number(income.coursePriceAmount || 0);
     agreementTotal += agreementAmount;
-    const managerStats = managerSalesByUserId.get(income.managerUserId) || { sales: 0, amount: 0 };
     managerStats.sales += 1;
-    managerStats.amount += agreementAmount;
+    managerStats.agreementAmount += agreementAmount;
     managerSalesByUserId.set(income.managerUserId, managerStats);
 
     const category = classifyCourseCategory(income.course?.category || income.course?.name);
@@ -1120,8 +1144,10 @@ async function collectMetrics(params: {
     name: string;
     leads: number;
     qualified: number;
+    nonQualified: number;
     sales: number;
-    amount: number;
+    agreementAmount: number;
+    incomeAmount: number;
   }>();
 
   for (const [amoId, leadStats] of managerLeadsByAmoId.entries()) {
@@ -1134,11 +1160,14 @@ async function collectMetrics(params: {
       name: mappedUser.name,
       leads: 0,
       qualified: 0,
+      nonQualified: 0,
       sales: 0,
-      amount: 0,
+      agreementAmount: 0,
+      incomeAmount: 0,
     };
     existing.leads += leadStats.leads;
     existing.qualified += leadStats.qualified;
+    existing.nonQualified += leadStats.nonQualified;
     managerRowsByUserId.set(mappedUser.id, existing);
   }
 
@@ -1150,15 +1179,18 @@ async function collectMetrics(params: {
       name,
       leads: 0,
       qualified: 0,
+      nonQualified: 0,
       sales: 0,
-      amount: 0,
+      agreementAmount: 0,
+      incomeAmount: 0,
     };
     existing.sales += salesStats.sales;
-    existing.amount += salesStats.amount;
+    existing.agreementAmount += salesStats.agreementAmount;
+    existing.incomeAmount += salesStats.incomeAmount;
     managerRowsByUserId.set(userId, existing);
   }
 
-  const nonQualifiedLeads = Math.max(0, newLeads - qualifiedLeads);
+  const nonQualifiedLeads = Array.from(reasonMap.values()).reduce((sum, value) => sum + value, 0);
   const qualifiedShare = newLeads > 0 ? normalizePercentage((qualifiedLeads / newLeads) * 100) : 0;
   const nonQualifiedShare = newLeads > 0 ? normalizePercentage((nonQualifiedLeads / newLeads) * 100) : 0;
   const conversionPercent = newLeads > 0 ? normalizePercentage((newSalesCount / newLeads) * 100) : 0;
@@ -1178,12 +1210,14 @@ async function collectMetrics(params: {
       name: row.name,
       leads: row.leads,
       qualified: row.qualified,
+      nonQualified: row.nonQualified,
       sales: row.sales,
       conversion: row.leads > 0 ? normalizePercentage((row.sales / row.leads) * 100) : 0,
-      amount: row.amount,
+      agreementAmount: row.agreementAmount,
+      incomeAmount: row.incomeAmount,
       callDurationSeconds: (managerCallDurationByUserId.get(row.userId) || 0) + (corporateDurationByUserId.get(row.userId) || 0),
     }))
-    .filter((row) => row.leads > 0 || row.sales > 0 || row.amount > 0)
+    .filter((row) => row.leads > 0 || row.sales > 0 || row.agreementAmount > 0 || row.incomeAmount > 0)
     .sort((a, b) => {
       if (b.sales !== a.sales) return b.sales - a.sales;
       if (b.leads !== a.leads) return b.leads - a.leads;
