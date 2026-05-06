@@ -54,9 +54,11 @@ type ReportMetrics = {
     name: string;
     leads: number;
     qualified: number;
+    nonQualified: number;
     sales: number;
     conversion: number;
-    amount: number;
+    agreementAmount: number;
+    incomeAmount: number;
     callDurationSeconds: number;
   }>;
 };
@@ -489,6 +491,10 @@ function classifyCourseCategory(value: string | null | undefined): 'online' | 'o
     return 'intensive';
   }
   return 'other';
+}
+
+function isLostLeadStatus(value: unknown): boolean {
+  return String(value || '').trim() === '143';
 }
 
 function resolveReportWindows(nowUtc: Date): ReportWindow[] {
