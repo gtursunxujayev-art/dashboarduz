@@ -468,7 +468,7 @@ export const summaryProcedures = {
           : isMappedValue(reasonValue, qualifiedValues);
         const isNonQualified = nonQualifiedValues.length > 0
           ? isMappedValue(reasonValue, nonQualifiedValues)
-          : (!isQualified && Boolean(reasonValue));
+          : false;
 
         if (isQualified) {
           qualifiedLeads += 1;
