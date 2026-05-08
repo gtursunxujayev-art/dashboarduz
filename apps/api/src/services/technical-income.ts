@@ -4,11 +4,22 @@ type TechnicalSaleLike = {
   id: string;
   type?: string | null;
   coursePriceAmount?: number | null;
+  debtAmount?: number | null;
+  paymentAmount?: number | null;
 };
+
+export function resolveEffectiveAgreementAmount(sale: TechnicalSaleLike): number {
+  return Number(
+    sale.coursePriceAmount
+      ?? sale.debtAmount
+      ?? sale.paymentAmount
+      ?? 0,
+  );
+}
 
 export function isTechnicalNewSale(sale: TechnicalSaleLike): boolean {
   return sale.type === 'new_sale'
-    && Number(sale.coursePriceAmount ?? 0) === TECHNICAL_NEW_SALE_AGREEMENT_AMOUNT;
+    && resolveEffectiveAgreementAmount(sale) === TECHNICAL_NEW_SALE_AGREEMENT_AMOUNT;
 }
 
 export function buildTechnicalSaleIdSet<T extends TechnicalSaleLike>(sales: T[]): Set<string> {
