@@ -356,6 +356,11 @@ export const courseSalesRouter = router({
             premium: 0,
             standart: 0,
           },
+          salesBreakdown: {
+            newSalesCount: 0,
+            movedInCount: 0,
+            serviceExchangeCount: 0,
+          },
           updatedAt: new Date().toISOString(),
         };
       }
@@ -427,10 +432,48 @@ export const courseSalesRouter = router({
         : salesWithResolvedSubTariff;
       const technicalSaleIds = buildTechnicalSaleIdSet(filteredSales);
       const filteredNonTechnicalSales = filteredSales.filter((sale) => !technicalSaleIds.has(sale.id));
+      const nonTechnicalSaleIdSet = new Set(filteredNonTechnicalSales.map((sale) => sale.id));
       const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
         sales: filteredNonTechnicalSales as SaleChainSaleRow[],
       });
+      const technicalCustomerCount = new Set(
+        filteredSales
+          .filter((sale) => technicalSaleIds.has(sale.id))
+          .map((sale) => sale.customerId),
+      ).size;
+      let movedInCount = 0;
+      if (nonTechnicalSaleIdSet.size > 0) {
+        const relinkLogs = await prisma.auditLog.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            action: 'customer_course_relink',
+          },
+          select: {
+            metadata: true,
+          },
+        });
+        const movedCustomerIds = new Set<string>();
+        for (const log of relinkLogs) {
+          const metadata = (log.metadata && typeof log.metadata === 'object')
+            ? (log.metadata as Record<string, unknown>)
+            : null;
+          if (!metadata) {
+            continue;
+          }
+          const targetSaleIncomeId = typeof metadata.targetSaleIncomeId === 'string'
+            ? metadata.targetSaleIncomeId
+            : '';
+          if (!targetSaleIncomeId || !nonTechnicalSaleIdSet.has(targetSaleIncomeId)) {
+            continue;
+          }
+          const customerId = typeof metadata.customerId === 'string' ? metadata.customerId : '';
+          if (customerId) {
+            movedCustomerIds.add(customerId);
+          }
+        }
+        movedInCount = movedCustomerIds.size;
+      }
 
       let agreementAmount = 0;
       let remainingDebtAmount = 0;
@@ -482,6 +525,11 @@ export const courseSalesRouter = router({
           vip: vipCustomerIds.size,
           premium: premiumCustomerIds.size,
           standart: standartCustomerIds.size,
+        },
+        salesBreakdown: {
+          newSalesCount: filteredNonTechnicalSales.length,
+          movedInCount,
+          serviceExchangeCount: technicalCustomerCount,
         },
         updatedAt: new Date().toISOString(),
       };
@@ -906,12 +954,14 @@ export const courseSalesRouter = router({
       const filteredSales = input.subTariffId
         ? salesWithResolvedSubTariff.filter((sale) => sale.resolvedSubTariffId === input.subTariffId)
         : salesWithResolvedSubTariff;
+      const technicalSaleIds = buildTechnicalSaleIdSet(filteredSales);
+      const filteredNonTechnicalSales = filteredSales.filter((sale) => !technicalSaleIds.has(sale.id));
       const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
-        sales: filteredSales as SaleChainSaleRow[],
+        sales: filteredNonTechnicalSales as SaleChainSaleRow[],
       });
 
-      const saleIds = filteredSales.map((sale) => sale.id);
+      const saleIds = filteredNonTechnicalSales.map((sale) => sale.id);
       const saleIdSet = new Set(saleIds);
       const rangeIncomeBySaleId = new Map<string, number>();
       const currentIncomeBySaleId = new Map<string, number>();
@@ -973,7 +1023,7 @@ export const courseSalesRouter = router({
       let rangeAgreementAmount = 0;
       let currentAgreementAmount = 0;
       let currentDebtAmount = 0;
-      for (const sale of filteredSales) {
+      for (const sale of filteredNonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
         const agreement = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.paymentAmount ?? 0);
         const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
@@ -984,11 +1034,11 @@ export const courseSalesRouter = router({
         currentDebtAmount += debt;
       }
       const rangeIncomeAmount = Array.from(rangeIncomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
-      const currentIncomeAmount = filteredSales.reduce((sum, sale) => {
+      const currentIncomeAmount = filteredNonTechnicalSales.reduce((sum, sale) => {
         const metric = chainMetricsBySaleId.get(sale.id);
         return sum + (metric?.paidAmount ?? currentIncomeBySaleId.get(sale.id) ?? 0);
       }, 0);
-      const currentCustomerCount = new Set(filteredSales.map((sale) => sale.customerId)).size;
+      const currentCustomerCount = new Set(filteredNonTechnicalSales.map((sale) => sale.customerId)).size;
 
       const tariffCustomerSets = new Map<string, Set<string>>();
       for (const tariff of course.tariffs) {
@@ -1003,7 +1053,7 @@ export const courseSalesRouter = router({
           subTariffCustomerSets.set(subTariff.id, new Set());
         }
       }
-      for (const sale of filteredSales) {
+      for (const sale of filteredNonTechnicalSales) {
         const effectiveTariffId = sale.tariffId;
         if (!effectiveTariffId) {
           continue;
@@ -1434,7 +1484,9 @@ export const courseSalesRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Kurs topilmadi.' });
       }
 
-      const saleIds = sales.map((sale) => sale.id);
+      const technicalSaleIds = buildTechnicalSaleIdSet(sales);
+      const nonTechnicalSales = sales.filter((sale) => !technicalSaleIds.has(sale.id));
+      const saleIds = nonTechnicalSales.map((sale) => sale.id);
       const profileSubTariffIds = Array.from(
         new Set(
           sales
@@ -1499,7 +1551,7 @@ export const courseSalesRouter = router({
       const saleIdSet = new Set(saleIds);
       const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
-        sales: sales,
+        sales: nonTechnicalSales,
       });
       const incomeBySaleId = new Map<string, number>();
       const currentIncomeBySaleId = new Map<string, number>();
@@ -1525,7 +1577,7 @@ export const courseSalesRouter = router({
       let currentDebtAmount = 0;
       let vipCount = 0;
       let standartCount = 0;
-      for (const sale of sales) {
+      for (const sale of nonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
         const agreement = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.paymentAmount ?? 0);
         const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
@@ -1544,9 +1596,9 @@ export const courseSalesRouter = router({
           standartCount += 1;
         }
       }
-      const currentCustomerCount = new Set(sales.map((sale) => sale.customerId)).size;
+      const currentCustomerCount = new Set(nonTechnicalSales.map((sale) => sale.customerId)).size;
       const rangeIncomeAmount = Array.from(incomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
-      const currentIncomeAmount = sales.reduce((sum, sale) => {
+      const currentIncomeAmount = nonTechnicalSales.reduce((sum, sale) => {
         const metric = chainMetricsBySaleId.get(sale.id);
         return sum + (metric?.paidAmount ?? currentIncomeBySaleId.get(sale.id) ?? 0);
       }, 0);
@@ -1591,7 +1643,7 @@ export const courseSalesRouter = router({
         }
       >();
 
-      for (const sale of sales) {
+      for (const sale of nonTechnicalSales) {
         const effectiveTariffId = sale.tariffId;
         if (effectiveTariffId) {
           const row = tariffRowMap.get(effectiveTariffId);
@@ -1626,7 +1678,7 @@ export const courseSalesRouter = router({
         managerMap.set(sale.managerUserId, managerRow);
       }
 
-      const saleById = new Map(sales.map((sale) => [sale.id, sale]));
+      const saleById = new Map(nonTechnicalSales.map((sale) => [sale.id, sale]));
 
       for (const [saleId, amount] of incomeBySaleId.entries()) {
         const sale = saleById.get(saleId);
@@ -1693,7 +1745,7 @@ export const courseSalesRouter = router({
         selectedTariffId: input.tariffId || null,
         selectedSubTariffId: input.subTariffId || null,
         summary: {
-          factSalesCount: sales.length,
+          factSalesCount: nonTechnicalSales.length,
           currentCustomerCount,
           currentAgreementAmount,
           currentIncomeAmount,
