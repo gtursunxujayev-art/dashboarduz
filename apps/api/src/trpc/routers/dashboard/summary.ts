@@ -899,7 +899,6 @@ export const summaryProcedures = {
           tenantId: ctx.tenantId,
           type: 'new_sale',
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          coursePriceAmount: 1,
           ...(effectiveManagerUserId
             ? {
                 managerUserId: effectiveManagerUserId,
@@ -915,6 +914,8 @@ export const summaryProcedures = {
           id: true,
           type: true,
           coursePriceAmount: true,
+          debtAmount: true,
+          paymentAmount: true,
         },
       });
       const technicalSaleIds = buildTechnicalSaleIdSet(technicalSales);
