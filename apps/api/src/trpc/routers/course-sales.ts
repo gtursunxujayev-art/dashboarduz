@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
+import { buildTechnicalSaleIdSet } from '../../services/technical-income';
 
 const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
@@ -424,9 +425,11 @@ export const courseSalesRouter = router({
       const filteredSales = input.subTariffId
         ? salesWithResolvedSubTariff.filter((sale) => sale.resolvedSubTariffId === input.subTariffId)
         : salesWithResolvedSubTariff;
+      const technicalSaleIds = buildTechnicalSaleIdSet(filteredSales);
+      const filteredNonTechnicalSales = filteredSales.filter((sale) => !technicalSaleIds.has(sale.id));
       const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
-        sales: filteredSales as SaleChainSaleRow[],
+        sales: filteredNonTechnicalSales as SaleChainSaleRow[],
       });
 
       let agreementAmount = 0;
@@ -437,7 +440,7 @@ export const courseSalesRouter = router({
       const vipCustomerIds = new Set<string>();
       const premiumCustomerIds = new Set<string>();
       const standartCustomerIds = new Set<string>();
-      for (const sale of filteredSales) {
+      for (const sale of filteredNonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
         const agreement = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.debtAmount ?? sale.paymentAmount ?? 0);
         const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
@@ -467,13 +470,13 @@ export const courseSalesRouter = router({
         selectedTariffId: input.tariffId || null,
         selectedSubTariffId: input.subTariffId || null,
         totals: {
-          soldCount: filteredSales.length,
+          soldCount: filteredNonTechnicalSales.length,
           fullyPaidCount,
           debtorsCount,
           agreementAmount,
           paidAmount,
           remainingDebtAmount,
-          customerCount: new Set(filteredSales.map((sale) => sale.customerId)).size,
+          customerCount: new Set(filteredNonTechnicalSales.map((sale) => sale.customerId)).size,
         },
         tariffCustomerBreakdown: {
           vip: vipCustomerIds.size,
