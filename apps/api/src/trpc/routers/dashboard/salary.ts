@@ -30,6 +30,7 @@ import { amocrmService, type AmoCRMLead } from '../../../services/integrations/a
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
+import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 
 function calculateProratedFixedSalary(
   monthlyFixedSalary: number,
@@ -359,10 +360,15 @@ export const salaryProcedures = {
         },
       }),
     ]);
+    const technicalSaleIdsForSalary = buildTechnicalSaleIdSet(fullyPaidNewSalesForBonus);
+    const filteredFullyPaidNewSalesForBonus = fullyPaidNewSalesForBonus.filter((sale) => !technicalSaleIdsForSalary.has(sale.id));
 
     const closeDateBySaleIdForBonus = new Map<string, Date>();
     for (const repayment of closingRepaymentsForBonus) {
       if (!repayment.relatedDebtIncomeId) {
+        continue;
+      }
+      if (technicalSaleIdsForSalary.has(repayment.relatedDebtIncomeId)) {
         continue;
       }
       if (!closeDateBySaleIdForBonus.has(repayment.relatedDebtIncomeId)) {
@@ -376,7 +382,7 @@ export const salaryProcedures = {
       return byAgent?.[category] ?? 0;
     };
 
-    for (const sale of fullyPaidNewSalesForBonus) {
+    for (const sale of filteredFullyPaidNewSalesForBonus) {
       const closeDate = closeDateBySaleIdForBonus.get(sale.id) ?? sale.entryDate;
       if (closeDate < rangeStart || closeDate > rangeEnd) {
         continue;
@@ -404,8 +410,12 @@ export const salaryProcedures = {
           },
         },
         select: {
+          id: true,
+          type: true,
+          relatedDebtIncomeId: true,
           managerUserId: true,
           paymentAmount: true,
+          coursePriceAmount: true,
           course: {
             select: {
               name: true,
@@ -414,6 +424,7 @@ export const salaryProcedures = {
           },
           relatedDebtIncome: {
             select: {
+              id: true,
               course: {
                 select: {
                   name: true,
@@ -424,8 +435,14 @@ export const salaryProcedures = {
           },
         },
       });
+      const filteredIncomes = incomes.filter((income) => !isRowLinkedToTechnicalSale({
+        rowType: income.type,
+        rowId: income.id,
+        relatedDebtIncomeId: income.relatedDebtIncomeId,
+        technicalSaleIds: technicalSaleIdsForSalary,
+      }));
 
-      for (const income of incomes) {
+      for (const income of filteredIncomes) {
         const courseCategory = income.course?.category ?? income.relatedDebtIncome?.course?.category;
         const courseName = income.course?.name ?? income.relatedDebtIncome?.course?.name;
         const category = classifyCourseCategoryFromField(courseCategory || courseName);
@@ -481,7 +498,7 @@ export const salaryProcedures = {
         salaryRow.bonusBreakdown[category] += bonusAmount;
       };
 
-      for (const sale of fullyPaidNewSalesForBonus) {
+      for (const sale of filteredFullyPaidNewSalesForBonus) {
         applyClosedSaleBonus(sale);
       }
     }
@@ -537,6 +554,8 @@ export const salaryProcedures = {
           },
         }),
       ]);
+      const technicalClosedSaleIds = buildTechnicalSaleIdSet(closedSales);
+      const filteredClosedSales = closedSales.filter((sale) => !technicalClosedSaleIds.has(sale.id));
 
       const profileSubTariffIds = Array.from(
         new Set(
@@ -567,6 +586,9 @@ export const salaryProcedures = {
         if (!repayment.relatedDebtIncomeId) {
           continue;
         }
+        if (technicalClosedSaleIds.has(repayment.relatedDebtIncomeId)) {
+          continue;
+        }
         if (!closeDateBySaleId.has(repayment.relatedDebtIncomeId)) {
           closeDateBySaleId.set(repayment.relatedDebtIncomeId, repayment.entryDate);
         }
@@ -581,7 +603,7 @@ export const salaryProcedures = {
         closedSalesFactsByAgentAndPlan.set(key, (closedSalesFactsByAgentAndPlan.get(key) ?? 0) + 1);
       };
 
-      for (const sale of closedSales) {
+      for (const sale of filteredClosedSales) {
         const closeDate = closeDateBySaleId.get(sale.id) ?? sale.entryDate;
         const closeTimestamp = closeDate.getTime();
         const saleCourseCategory = String(sale.course?.category || '').trim().toLowerCase();
@@ -1230,8 +1252,10 @@ export const salaryProcedures = {
           },
         },
       });
+      const technicalSaleIdsForBonusDetails = buildTechnicalSaleIdSet(activeSalesForBonus);
+      const filteredActiveSalesForBonus = activeSalesForBonus.filter((sale) => !technicalSaleIdsForBonusDetails.has(sale.id));
 
-      const saleIdsForBonus = activeSalesForBonus.map((sale) => sale.id);
+      const saleIdsForBonus = filteredActiveSalesForBonus.map((sale) => sale.id);
       const bonusChainRows = saleIdsForBonus.length > 0
         ? await prisma.income.findMany({
             where: {
@@ -1255,12 +1279,12 @@ export const salaryProcedures = {
         : [];
 
       const chainMetricsBySaleId = buildSaleChainMetricsBySaleId({
-        sales: activeSalesForBonus,
+        sales: filteredActiveSalesForBonus,
         chainRows: bonusChainRows,
       });
 
       const agreementAmountBySaleId = new Map<string, number>();
-      for (const sale of activeSalesForBonus) {
+      for (const sale of filteredActiveSalesForBonus) {
         agreementAmountBySaleId.set(
           sale.id,
           sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
@@ -1321,7 +1345,7 @@ export const salaryProcedures = {
       }
 
       const closeDateBySaleIdForBonus = new Map<string, Date>();
-      for (const sale of activeSalesForBonus) {
+      for (const sale of filteredActiveSalesForBonus) {
         const metric = chainMetricsBySaleId.get(sale.id);
         if (!metric || metric.currentDebtAmount > 0.0001) {
           continue;
@@ -1331,7 +1355,7 @@ export const salaryProcedures = {
       }
 
       const monthlyClosedCountsByAgent = new Map<string, SalaryBreakdown>();
-      for (const sale of activeSalesForBonus) {
+      for (const sale of filteredActiveSalesForBonus) {
         const closeDate = closeDateBySaleIdForBonus.get(sale.id);
         if (!closeDate || closeDate < rangeStart || closeDate > rangeEnd) {
           continue;
@@ -1353,11 +1377,11 @@ export const salaryProcedures = {
       };
 
       const fullyPaidSaleIds = new Set(
-        activeSalesForBonus
+        filteredActiveSalesForBonus
           .filter((sale) => (chainMetricsBySaleId.get(sale.id)?.currentDebtAmount ?? 0) <= 0.0001)
           .map((sale) => sale.id),
       );
-      const saleById = new Map(activeSalesForBonus.map((sale) => [sale.id, sale]));
+      const saleById = new Map(filteredActiveSalesForBonus.map((sale) => [sale.id, sale]));
       const managerUserIdByChainRowId = new Map<string, string>();
       for (const chainRow of bonusChainRows) {
         managerUserIdByChainRowId.set(chainRow.id, chainRow.managerUserId);
@@ -1366,7 +1390,14 @@ export const salaryProcedures = {
         visibleAgents.map((agent) => [agent.id, agent.name || agent.username || agent.id]),
       );
 
-      const rows = incomes.map((income) => {
+      const rows = incomes
+        .filter((income) => !isRowLinkedToTechnicalSale({
+          rowType: income.type,
+          rowId: income.id,
+          relatedDebtIncomeId: income.relatedDebtIncomeId,
+          technicalSaleIds: technicalSaleIdsForBonusDetails,
+        }))
+        .map((income) => {
         const saleId = income.type === 'new_sale' ? income.id : income.relatedDebtIncomeId;
         const last = saleId ? lastPaymentBySaleId.get(saleId) : undefined;
         const isLastPayment = Boolean(last && last.id === income.id);
