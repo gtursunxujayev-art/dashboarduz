@@ -319,6 +319,7 @@ export const salaryProcedures = {
           id: true,
           managerUserId: true,
           coursePriceAmount: true,
+          debtAmount: true,
           paymentAmount: true,
           entryDate: true,
           course: {
@@ -514,15 +515,18 @@ export const salaryProcedures = {
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
             remainingDebtAmount: 0,
           },
-          select: {
-            id: true,
-            managerUserId: true,
-            entryDate: true,
-            courseId: true,
-            tariffId: true,
-            customer: {
-              select: {
-                profileSubTariffId: true,
+        select: {
+          id: true,
+          managerUserId: true,
+          entryDate: true,
+          courseId: true,
+          tariffId: true,
+          coursePriceAmount: true,
+          debtAmount: true,
+          paymentAmount: true,
+          customer: {
+            select: {
+              profileSubTariffId: true,
               },
             },
             course: {
@@ -1242,6 +1246,7 @@ export const salaryProcedures = {
           courseId: true,
           managerUserId: true,
           coursePriceAmount: true,
+          debtAmount: true,
           paymentAmount: true,
           entryDate: true,
           course: {
