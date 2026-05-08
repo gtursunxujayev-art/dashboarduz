@@ -193,6 +193,7 @@ export default function CourseTypeSalesView({
 
   const summary = summaryQuery.data?.totals;
   const tariffCustomerBreakdown = summaryQuery.data?.tariffCustomerBreakdown;
+  const salesBreakdown = summaryQuery.data?.salesBreakdown;
   const customers = useMemo(
     () => customersQuery.data?.rows ?? [],
     [customersQuery.data?.rows],
@@ -552,7 +553,11 @@ export default function CourseTypeSalesView({
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-500">Sotilganlar soni</p>
           <p className="mt-1 text-2xl font-semibold text-gray-900">{summary?.soldCount ?? 0}</p>
-          <p className="mt-1 text-xs text-gray-500">Jami mijozlar: {summary?.customerCount ?? 0}</p>
+          <div className="mt-1 space-y-1 text-xs text-gray-500">
+            <p>Yangi sotuv - {salesBreakdown?.newSalesCount ?? 0}</p>
+            <p>Ko'chirgan - {salesBreakdown?.movedInCount ?? 0}</p>
+            <p>Xizmat almashinuvi - {salesBreakdown?.serviceExchangeCount ?? 0}</p>
+          </div>
         </div>
 
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
