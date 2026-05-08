@@ -44,6 +44,7 @@ import {
 import { getOrSet, buildCacheKey } from '../../../services/cache';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
+import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 
 type SummarySourceStatusKey = 'amoContext' | 'catalog' | 'leads' | 'activity' | 'corporateCalls';
 type SummarySourceStatusEntry = {
@@ -865,7 +866,7 @@ export const summaryProcedures = {
       );
 
       const sumActiveIncome = async (start: Date, end: Date): Promise<number> => {
-        const aggregate = await prisma.income.aggregate({
+        const rows = await prisma.income.findMany({
           where: {
             ...analyticsBaseWhere,
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -874,12 +875,49 @@ export const summaryProcedures = {
               lte: end,
             },
           },
-          _sum: {
+          select: {
+            id: true,
+            type: true,
+            relatedDebtIncomeId: true,
             paymentAmount: true,
           },
         });
-        return Number(aggregate._sum.paymentAmount || 0);
+        return rows.reduce((sum, row) => (
+          isRowLinkedToTechnicalSale({
+            rowType: row.type,
+            rowId: row.id,
+            relatedDebtIncomeId: row.relatedDebtIncomeId,
+            technicalSaleIds,
+          })
+            ? sum
+            : sum + Number(row.paymentAmount || 0)
+        ), 0);
       };
+
+      const technicalSales = await prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          coursePriceAmount: 1,
+          ...(effectiveManagerUserId
+            ? {
+                managerUserId: effectiveManagerUserId,
+              }
+            : {}),
+          ...(input.courseId
+            ? {
+                courseId: input.courseId,
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          type: true,
+          coursePriceAmount: true,
+        },
+      });
+      const technicalSaleIds = buildTechnicalSaleIdSet(technicalSales);
 
       const [
         incomes,
@@ -901,6 +939,7 @@ export const summaryProcedures = {
             id: true,
             type: true,
             lifecycleStatus: true,
+            relatedDebtIncomeId: true,
             paymentAmount: true,
             coursePriceAmount: true,
             remainingDebtAmount: true,
@@ -972,6 +1011,9 @@ export const summaryProcedures = {
             },
           },
           select: {
+            id: true,
+            type: true,
+            relatedDebtIncomeId: true,
             entryDate: true,
             paymentAmount: true,
           },
@@ -986,6 +1028,9 @@ export const summaryProcedures = {
             },
           },
           select: {
+            id: true,
+            type: true,
+            relatedDebtIncomeId: true,
             entryDate: true,
             paymentAmount: true,
           },
@@ -1013,7 +1058,11 @@ export const summaryProcedures = {
         coursePriceAmount: number | null;
         paymentAmount: number;
       }>)
-        .filter((income) => income.type === 'new_sale' && income.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE)
+        .filter((income) => (
+          income.type === 'new_sale'
+          && income.lifecycleStatus === INCOME_LIFECYCLE_ACTIVE
+          && !technicalSaleIds.has(income.id)
+        ))
         .map((sale) => ({
           id: sale.id,
           entryDate: sale.entryDate,
@@ -1057,12 +1106,19 @@ export const summaryProcedures = {
         course: { id: string; name: string } | null;
         tariff: { name: string } | null;
       }>) {
+        const technicalRow = isRowLinkedToTechnicalSale({
+          rowType: income.type,
+          rowId: income.id,
+          relatedDebtIncomeId: (income as { relatedDebtIncomeId?: string | null }).relatedDebtIncomeId,
+          technicalSaleIds,
+        });
+
         if (income.lifecycleStatus === INCOME_LIFECYCLE_REFUNDED) {
           totals.refundCount += 1;
           totals.refundAmount += income.paymentAmount || 0;
         }
 
-        if (income.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
+        if (income.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE || technicalRow) {
           continue;
         }
 
@@ -1109,7 +1165,21 @@ export const summaryProcedures = {
       const ytdTrend = buildTrend(currentYearToDateIncome, previousYearToDateIncome);
 
       const monthDailyMap = new Map<number, number>();
-      for (const income of monthActiveIncomes as Array<{ entryDate: Date; paymentAmount: number }>) {
+      for (const income of monthActiveIncomes as Array<{
+        id: string;
+        type: string;
+        relatedDebtIncomeId: string | null;
+        entryDate: Date;
+        paymentAmount: number;
+      }>) {
+        if (isRowLinkedToTechnicalSale({
+          rowType: income.type,
+          rowId: income.id,
+          relatedDebtIncomeId: income.relatedDebtIncomeId,
+          technicalSaleIds,
+        })) {
+          continue;
+        }
         const localDate = shiftToReportTimezone(income.entryDate);
         const day = localDate.getUTCDate();
         monthDailyMap.set(day, (monthDailyMap.get(day) || 0) + Number(income.paymentAmount || 0));
@@ -1135,7 +1205,21 @@ export const summaryProcedures = {
         : 0;
 
       const yearMonthlyMap = new Map<number, number>();
-      for (const income of yearActiveIncomes as Array<{ entryDate: Date; paymentAmount: number }>) {
+      for (const income of yearActiveIncomes as Array<{
+        id: string;
+        type: string;
+        relatedDebtIncomeId: string | null;
+        entryDate: Date;
+        paymentAmount: number;
+      }>) {
+        if (isRowLinkedToTechnicalSale({
+          rowType: income.type,
+          rowId: income.id,
+          relatedDebtIncomeId: income.relatedDebtIncomeId,
+          technicalSaleIds,
+        })) {
+          continue;
+        }
         const localDate = shiftToReportTimezone(income.entryDate);
         const monthIndex = localDate.getUTCMonth();
         yearMonthlyMap.set(monthIndex, (yearMonthlyMap.get(monthIndex) || 0) + Number(income.paymentAmount || 0));
@@ -1253,12 +1337,20 @@ export const summaryProcedures = {
           paymentAmount: number;
           coursePriceAmount: number | null;
           remainingDebtAmount: number;
+          relatedDebtIncomeId?: string | null;
           entryDate: Date;
           customer: { customerNumber: string; name: string };
           manager: { id: string; name: string | null; username: string | null };
           course: { id: string; name: string } | null;
           tariff: { name: string } | null;
-        }>).map((income) => ({
+        }>)
+          .filter((income) => !isRowLinkedToTechnicalSale({
+            rowType: income.type,
+            rowId: income.id,
+            relatedDebtIncomeId: income.relatedDebtIncomeId,
+            technicalSaleIds,
+          }))
+          .map((income) => ({
           id: income.id,
           type: income.type,
           lifecycleStatus: income.lifecycleStatus,
