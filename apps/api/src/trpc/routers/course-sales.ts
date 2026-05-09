@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
-import { buildTechnicalSaleIdSet } from '../../services/technical-income';
+import { resolveEffectiveAgreementAmount } from '../../services/technical-income';
 
 const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
@@ -207,6 +207,31 @@ async function buildActiveSaleChainMetrics(params: {
     sales: params.sales,
     chainRows,
   });
+}
+
+function buildTechnicalSaleIdSetByAgreement(params: {
+  sales: Array<{
+    id: string;
+    type?: string | null;
+    coursePriceAmount?: number | null;
+    debtAmount?: number | null;
+    paymentAmount?: number | null;
+  }>;
+  chainMetricsBySaleId: Map<string, { agreementAmount: number }>;
+}) {
+  const saleIds = new Set<string>();
+  for (const sale of params.sales) {
+    if (sale.type !== 'new_sale') {
+      continue;
+    }
+    const chainAgreement = params.chainMetricsBySaleId.get(sale.id)?.agreementAmount;
+    const fallbackAgreement = resolveEffectiveAgreementAmount(sale);
+    const effectiveAgreement = Number(chainAgreement ?? fallbackAgreement ?? 0);
+    if (effectiveAgreement === 1) {
+      saleIds.add(sale.id);
+    }
+  }
+  return saleIds;
 }
 
 export const courseSalesRouter = router({
@@ -430,13 +455,19 @@ export const courseSalesRouter = router({
       const filteredSales = input.subTariffId
         ? salesWithResolvedSubTariff.filter((sale) => sale.resolvedSubTariffId === input.subTariffId)
         : salesWithResolvedSubTariff;
-      const technicalSaleIds = buildTechnicalSaleIdSet(filteredSales);
+      const allChainMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: filteredSales as SaleChainSaleRow[],
+      });
+      const technicalSaleIds = buildTechnicalSaleIdSetByAgreement({
+        sales: filteredSales,
+        chainMetricsBySaleId: allChainMetricsBySaleId,
+      });
       const filteredNonTechnicalSales = filteredSales.filter((sale) => !technicalSaleIds.has(sale.id));
       const nonTechnicalSaleIdSet = new Set(filteredNonTechnicalSales.map((sale) => sale.id));
-      const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
-        tenantId: ctx.tenantId,
-        sales: filteredNonTechnicalSales as SaleChainSaleRow[],
-      });
+      const chainMetricsBySaleId = new Map(
+        Array.from(allChainMetricsBySaleId.entries()).filter(([saleId]) => nonTechnicalSaleIdSet.has(saleId)),
+      );
       const technicalCustomerCount = new Set(
         filteredSales
           .filter((sale) => technicalSaleIds.has(sale.id))
@@ -447,7 +478,7 @@ export const courseSalesRouter = router({
         const relinkLogs = await prisma.auditLog.findMany({
           where: {
             tenantId: ctx.tenantId,
-            action: 'customer_course_relink',
+            action: { in: ['customer_course_relink', 'income_debug_destructive_relink'] },
           },
           select: {
             metadata: true,
@@ -954,12 +985,19 @@ export const courseSalesRouter = router({
       const filteredSales = input.subTariffId
         ? salesWithResolvedSubTariff.filter((sale) => sale.resolvedSubTariffId === input.subTariffId)
         : salesWithResolvedSubTariff;
-      const technicalSaleIds = buildTechnicalSaleIdSet(filteredSales);
-      const filteredNonTechnicalSales = filteredSales.filter((sale) => !technicalSaleIds.has(sale.id));
-      const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
+      const allChainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
-        sales: filteredNonTechnicalSales as SaleChainSaleRow[],
+        sales: filteredSales as SaleChainSaleRow[],
       });
+      const technicalSaleIds = buildTechnicalSaleIdSetByAgreement({
+        sales: filteredSales,
+        chainMetricsBySaleId: allChainMetricsBySaleId,
+      });
+      const filteredNonTechnicalSales = filteredSales.filter((sale) => !technicalSaleIds.has(sale.id));
+      const nonTechnicalSaleIdSet = new Set(filteredNonTechnicalSales.map((sale) => sale.id));
+      const chainMetricsBySaleId = new Map(
+        Array.from(allChainMetricsBySaleId.entries()).filter(([saleId]) => nonTechnicalSaleIdSet.has(saleId)),
+      );
 
       const saleIds = filteredNonTechnicalSales.map((sale) => sale.id);
       const saleIdSet = new Set(saleIds);
@@ -1484,7 +1522,14 @@ export const courseSalesRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Kurs topilmadi.' });
       }
 
-      const technicalSaleIds = buildTechnicalSaleIdSet(sales);
+      const allChainMetricsBySaleId = await buildActiveSaleChainMetrics({
+        tenantId: ctx.tenantId,
+        sales: sales,
+      });
+      const technicalSaleIds = buildTechnicalSaleIdSetByAgreement({
+        sales,
+        chainMetricsBySaleId: allChainMetricsBySaleId,
+      });
       const nonTechnicalSales = sales.filter((sale) => !technicalSaleIds.has(sale.id));
       const saleIds = nonTechnicalSales.map((sale) => sale.id);
       const profileSubTariffIds = Array.from(
@@ -1549,10 +1594,10 @@ export const courseSalesRouter = router({
       ]);
 
       const saleIdSet = new Set(saleIds);
-      const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
-        tenantId: ctx.tenantId,
-        sales: nonTechnicalSales,
-      });
+      const nonTechnicalSaleIdSet = new Set(nonTechnicalSales.map((sale) => sale.id));
+      const chainMetricsBySaleId = new Map(
+        Array.from(allChainMetricsBySaleId.entries()).filter(([saleId]) => nonTechnicalSaleIdSet.has(saleId)),
+      );
       const incomeBySaleId = new Map<string, number>();
       const currentIncomeBySaleId = new Map<string, number>();
       for (const income of rangeIncomes) {
