@@ -555,6 +555,7 @@ model IncomeAdjustmentRequest {
   reason           String?
   reviewNote       String?
   requestedAmount  Int?
+  refundCardNumber String?
   newCourseId      String?
   newTariffId      String?
   newAgreementAmount Int?
