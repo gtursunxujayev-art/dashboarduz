@@ -45,6 +45,7 @@ const ADJUSTMENT_TYPE_TARIFF_CHANGE = 'tariff_change';
 const ADJUSTMENT_STATUS_PENDING = 'pending';
 const ADJUSTMENT_STATUS_APPROVED = 'approved';
 const ADJUSTMENT_STATUS_REJECTED = 'rejected';
+const REFUND_CARD_NUMBER_REGEX = /^\d{16}$/;
 const CUSTOMER_NUMBER_REGEX = /^\d+$/;
 const TELEGRAM_USERNAME_REGEX = /^@?[A-Za-z0-9_]+$/;
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
@@ -1885,6 +1886,7 @@ async function sendRefundApprovedTelegram(params: {
       id: true,
       reason: true,
       requestedAmount: true,
+      refundCardNumber: true,
       income: {
         select: {
           id: true,
@@ -1938,6 +1940,7 @@ async function sendRefundApprovedTelegram(params: {
     `${customer.name}`,
     `${customer.customerNumber}`,
     `Summa - ${formatAmountUz(request.requestedAmount ?? request.income.paymentAmount ?? 0)}`,
+    `Karta - ${request.refundCardNumber || '-'}`,
     '✅ Qaytarildi',
   ];
 
@@ -2000,6 +2003,7 @@ async function sendRefundRequestedTelegram(params: {
       id: true,
       reason: true,
       requestedAmount: true,
+      refundCardNumber: true,
       createdAt: true,
       income: {
         select: {
@@ -2063,6 +2067,7 @@ async function sendRefundRequestedTelegram(params: {
     `3.Tg: ${telegramUsername}`,
     '',
     `So'ralgan summa: ${formatAmountUz(request.requestedAmount ?? request.income.paymentAmount ?? 0)}`,
+    `Karta raqami: ${request.refundCardNumber || '-'}`,
     `Asl to'lov sanasi: ${formatDateGmt5(request.income.entryDate)}`,
     `So'rov yuborgan: ${requesterLabel}`,
     `So'rov vaqti: ${formatDateGmt5(request.createdAt)}`,
@@ -2117,6 +2122,7 @@ function buildRefundDetailsBlock(params: {
   reviewedAt?: Date | null;
   reason?: string | null;
   reviewNote?: string | null;
+  refundCardNumber?: string | null;
 }): string {
   const tg = params.telegramUsername
     ? (params.telegramUsername.startsWith('@') ? params.telegramUsername : `@${params.telegramUsername}`)
@@ -2127,6 +2133,7 @@ function buildRefundDetailsBlock(params: {
     `3.Tg: ${tg}`,
     '',
     `Summa: ${formatAmountUz(params.amount)}`,
+    `Karta raqami: ${params.refundCardNumber || '-'}`,
     `Kurs/Tarif: ${[params.courseName, params.tariffName].filter(Boolean).join(' / ') || '-'}`,
     ...(params.requesterLabel ? [`So'rov yuborgan: ${params.requesterLabel}`] : []),
     ...(params.reviewerLabel ? [`Ko'rib chiqqan: ${params.reviewerLabel}`] : []),
@@ -2184,6 +2191,7 @@ async function notifyFinanceUsersRefundRequested(params: {
       },
       select: {
         requestedAmount: true,
+        refundCardNumber: true,
         reason: true,
         createdAt: true,
         requestedBy: {
@@ -2244,6 +2252,7 @@ async function notifyFinanceUsersRefundRequested(params: {
     customerNumber: request.income.customer.customerNumber,
     telegramUsername: request.income.customer.telegramUsername || null,
     amount: request.requestedAmount ?? request.income.paymentAmount ?? 0,
+    refundCardNumber: request.refundCardNumber || null,
     courseName: request.income.course?.name || null,
     tariffName: request.income.tariff?.name || null,
     requesterLabel,
@@ -2290,6 +2299,7 @@ async function notifyRefundRequesterReviewResult(params: {
     },
     select: {
       requestedAmount: true,
+      refundCardNumber: true,
       reason: true,
       reviewNote: true,
       createdAt: true,
@@ -2345,6 +2355,7 @@ async function notifyRefundRequesterReviewResult(params: {
     customerNumber: request.income.customer.customerNumber,
     telegramUsername: request.income.customer.telegramUsername || null,
     amount: request.requestedAmount ?? request.income.paymentAmount ?? 0,
+    refundCardNumber: request.refundCardNumber || null,
     courseName: request.income.course?.name || null,
     tariffName: request.income.tariff?.name || null,
     requesterLabel,
@@ -5746,6 +5757,7 @@ export const customerIncomeRouter = router({
           reason: true,
           reviewNote: true,
           requestedAmount: true,
+          refundCardNumber: true,
           newAgreementAmount: true,
           createdAt: true,
           reviewedAt: true,
@@ -5908,6 +5920,7 @@ export const customerIncomeRouter = router({
         type: z.enum([ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE]),
         incomeId: z.string().uuid(),
         reason: z.string().max(500).optional(),
+        refundCardNumber: z.string().regex(REFUND_CARD_NUMBER_REGEX).optional(),
         newCourseId: z.string().uuid().optional(),
         newTariffId: z.string().uuid().optional(),
         newAgreementAmount: z.number().int().positive().optional(),
@@ -6051,6 +6064,12 @@ export const customerIncomeRouter = router({
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected course/tariff was not found.' });
         }
       }
+      if (input.type === ADJUSTMENT_TYPE_REFUND && !input.refundCardNumber) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "Pul qaytarish uchun 16 xonali karta raqami majburiy.",
+        });
+      }
 
       const createdRequest = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const request = await tx.incomeAdjustmentRequest.create({
@@ -6063,6 +6082,7 @@ export const customerIncomeRouter = router({
             requestedByUserId: ctx.user.userId,
             reason: input.reason?.trim() || null,
             requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? sourceIncome.paymentAmount : null,
+            refundCardNumber: input.type === ADJUSTMENT_TYPE_REFUND ? input.refundCardNumber || null : null,
             newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
             newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
             newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
@@ -7963,4 +7983,5 @@ export const customerIncomeRouter = router({
       };
     }),
 });
+
 
