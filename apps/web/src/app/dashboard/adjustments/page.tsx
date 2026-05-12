@@ -22,6 +22,11 @@ function parseAmount(value: string): number {
   return Number.parseInt(digits, 10);
 }
 
+function formatCardNumberInput(value: string): string {
+  const digits = toDigits(value).slice(0, 16);
+  return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+}
+
 function formatAmount(value: number | null | undefined): string {
   if (value === null || value === undefined) return '0';
   return formatDigits(String(Math.max(0, value)));
@@ -81,6 +86,7 @@ export default function AdjustmentsPage() {
   const [newCourseId, setNewCourseId] = useState('');
   const [newTariffId, setNewTariffId] = useState('');
   const [newAgreementInput, setNewAgreementInput] = useState('');
+  const [refundCardNumberInput, setRefundCardNumberInput] = useState('');
   const [reason, setReason] = useState('');
   const [reviewModal, setReviewModal] = useState<{ requestId: string; action: ReviewAction } | null>(null);
   const [reviewNote, setReviewNote] = useState('');
@@ -172,6 +178,9 @@ export default function AdjustmentsPage() {
       setNewTariffId('');
       setNewAgreementInput('');
     }
+    if (mode !== 'refund') {
+      setRefundCardNumberInput('');
+    }
   }, [mode]);
 
   useEffect(() => {
@@ -198,6 +207,14 @@ export default function AdjustmentsPage() {
       return;
     }
 
+    if (mode === 'refund') {
+      const refundCardDigits = toDigits(refundCardNumberInput);
+      if (refundCardDigits.length !== 16) {
+        setError("Pul qaytarish uchun karta raqami 16 ta raqam bo'lishi shart.");
+        return;
+      }
+    }
+
     if (mode === 'tariff_change') {
       const agreementAmount = parseAmount(newAgreementInput);
       if (!newCourseId || !newTariffId || agreementAmount <= 0) {
@@ -211,6 +228,7 @@ export default function AdjustmentsPage() {
         type: mode,
         incomeId: selectedIncomeId,
         reason: reason.trim() || undefined,
+        refundCardNumber: mode === 'refund' ? toDigits(refundCardNumberInput) : undefined,
         newCourseId: mode === 'tariff_change' ? newCourseId : undefined,
         newTariffId: mode === 'tariff_change' ? newTariffId : undefined,
         newAgreementAmount: mode === 'tariff_change' ? parseAmount(newAgreementInput) : undefined,
@@ -222,6 +240,9 @@ export default function AdjustmentsPage() {
         setNewCourseId('');
         setNewTariffId('');
         setNewAgreementInput('');
+      }
+      if (mode === 'refund') {
+        setRefundCardNumberInput('');
       }
       await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch(), adjustmentBadgeQuery.refetch()]);
     } catch (mutationError: any) {
@@ -426,6 +447,23 @@ export default function AdjustmentsPage() {
               </div>
             )}
 
+            {mode === 'refund' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Karta raqami</label>
+                <input
+                  value={refundCardNumberInput}
+                  onChange={(event) => setRefundCardNumberInput(formatCardNumberInput(event.target.value))}
+                  inputMode="numeric"
+                  maxLength={19}
+                  placeholder="8600 0000 0000 0000"
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                  16 ta raqam kiriting. Bo&apos;sh joylar avtomatik qo&apos;shiladi.
+                </p>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Izoh</label>
               <textarea
@@ -572,6 +610,18 @@ export default function AdjustmentsPage() {
                         <span className="font-medium">Kelishuv:</span>{' '}
                         {formatAmount(reviewRequest.newAgreementAmount ?? reviewRequest.income.coursePriceAmount)} UZS
                       </p>
+                      {reviewRequest.type === 'refund' && (
+                        <>
+                          <p>
+                            <span className="font-medium">Qaytariladigan summa:</span>{' '}
+                            {formatAmount(reviewRequest.requestedAmount ?? reviewRequest.income.paymentAmount)} UZS
+                          </p>
+                          <p>
+                            <span className="font-medium">Karta raqami:</span>{' '}
+                            {formatCardNumberInput(reviewRequest.refundCardNumber || '') || '-'}
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
