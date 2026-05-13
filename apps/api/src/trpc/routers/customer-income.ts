@@ -191,6 +191,16 @@ function isMissingSubTariffSchemaError(error: unknown): boolean {
   );
 }
 
+function isMissingRefundCardNumberColumnError(error: unknown): boolean {
+  const message = extractErrorText(error);
+  return (
+    (message.includes('incomeadjustmentrequest.refundcardnumber')
+      || message.includes('income_adjustment_requests.refundcardnumber')
+      || message.includes('refundcardnumber'))
+    && (message.includes('does not exist') || message.includes('unknown') || message.includes('column'))
+  );
+}
+
 function isMissingHistoricalImportSchemaError(error: unknown): boolean {
   const message = String((error as any)?.message || '').toLowerCase();
   return (
@@ -5746,53 +5756,71 @@ export const customerIncomeRouter = router({
           : {}),
       };
 
-      const requests = await prisma.incomeAdjustmentRequest.findMany({
-        where,
-        orderBy: [{ createdAt: 'desc' }],
-        take: input?.limit ?? 80,
-        select: {
-          id: true,
-          type: true,
-          status: true,
-          reason: true,
-          reviewNote: true,
-          requestedAmount: true,
-          refundCardNumber: true,
-          newAgreementAmount: true,
-          createdAt: true,
-          reviewedAt: true,
-          income: {
-            select: {
-              id: true,
-              type: true,
-              lifecycleStatus: true,
-              paymentAmount: true,
-              coursePriceAmount: true,
-              remainingDebtAmount: true,
-              course: { select: { name: true } },
-              tariff: { select: { name: true } },
-              customer: { select: { customerNumber: true, name: true, profileSubTariffId: true } },
-              manager: { select: { name: true, username: true } },
-            },
+      const requestSelectBase = {
+        id: true,
+        type: true,
+        status: true,
+        reason: true,
+        reviewNote: true,
+        requestedAmount: true,
+        newAgreementAmount: true,
+        createdAt: true,
+        reviewedAt: true,
+        income: {
+          select: {
+            id: true,
+            type: true,
+            lifecycleStatus: true,
+            paymentAmount: true,
+            coursePriceAmount: true,
+            remainingDebtAmount: true,
+            course: { select: { name: true } },
+            tariff: { select: { name: true } },
+            customer: { select: { customerNumber: true, name: true, profileSubTariffId: true } },
+            manager: { select: { name: true, username: true } },
           },
-          requestedBy: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-            },
-          },
-          reviewedBy: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-            },
-          },
-          newCourse: { select: { id: true, name: true } },
-          newTariff: { select: { id: true, name: true } },
         },
-      });
+        requestedBy: {
+          select: {
+            id: true,
+            name: true,
+            username: true,
+          },
+        },
+        reviewedBy: {
+          select: {
+            id: true,
+            name: true,
+            username: true,
+          },
+        },
+        newCourse: { select: { id: true, name: true } },
+        newTariff: { select: { id: true, name: true } },
+      } satisfies Prisma.IncomeAdjustmentRequestSelect;
+
+      let requests: Array<any> = [];
+      try {
+        requests = await prisma.incomeAdjustmentRequest.findMany({
+          where,
+          orderBy: [{ createdAt: 'desc' }],
+          take: input?.limit ?? 80,
+          select: {
+            ...requestSelectBase,
+            refundCardNumber: true,
+          },
+        });
+      } catch (error) {
+        if (!isMissingRefundCardNumberColumnError(error)) {
+          throw error;
+        }
+        requests = await prisma.incomeAdjustmentRequest.findMany({
+          where,
+          orderBy: [{ createdAt: 'desc' }],
+          take: input?.limit ?? 80,
+          select: requestSelectBase,
+        });
+        requests = requests.map((item) => ({ ...item, refundCardNumber: null }));
+      }
 
       const profileSubTariffIds = Array.from(
         new Set(
