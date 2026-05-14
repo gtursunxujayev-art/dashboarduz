@@ -6208,7 +6208,14 @@ export const customerIncomeRouter = router({
           id: input.requestId,
           tenantId: ctx.tenantId,
         },
-        include: {
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          incomeId: true,
+          newCourseId: true,
+          newTariffId: true,
+          newAgreementAmount: true,
           income: {
             select: {
               id: true,
@@ -6415,7 +6422,11 @@ export const customerIncomeRouter = router({
           id: input.requestId,
           tenantId: ctx.tenantId,
         },
-        include: {
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          incomeId: true,
           income: {
             select: {
               id: true,
