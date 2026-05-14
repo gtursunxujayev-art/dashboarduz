@@ -6359,6 +6359,7 @@ export const customerIncomeRouter = router({
             reviewNote: input.reviewNote?.trim() || null,
             reviewedAt: new Date(),
           },
+          select: { id: true },
         });
       });
 
@@ -6483,6 +6484,7 @@ export const customerIncomeRouter = router({
             reviewNote: input.reviewNote?.trim() || null,
             reviewedAt: new Date(),
           },
+          select: { id: true },
         });
       });
 
