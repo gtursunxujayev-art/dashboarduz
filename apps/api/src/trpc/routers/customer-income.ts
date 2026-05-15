@@ -6100,27 +6100,54 @@ export const customerIncomeRouter = router({
       }
 
       const createdRequest = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const request = await tx.incomeAdjustmentRequest.create({
-          data: {
-            tenantId: ctx.tenantId,
-            type: input.type,
-            status: ADJUSTMENT_STATUS_PENDING,
-            incomeId: sourceIncome.id,
-            customerId: sourceIncome.customerId,
-            requestedByUserId: ctx.user.userId,
-            reason: input.reason?.trim() || null,
-            requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? sourceIncome.paymentAmount : null,
-            refundCardNumber: input.type === ADJUSTMENT_TYPE_REFUND ? input.refundCardNumber || null : null,
-            newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
-            newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
-            newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
-          },
-          select: {
-            id: true,
-            type: true,
-            status: true,
-          },
-        });
+        let request: { id: string; type: string; status: string };
+        try {
+          request = await tx.incomeAdjustmentRequest.create({
+            data: {
+              tenantId: ctx.tenantId,
+              type: input.type,
+              status: ADJUSTMENT_STATUS_PENDING,
+              incomeId: sourceIncome.id,
+              customerId: sourceIncome.customerId,
+              requestedByUserId: ctx.user.userId,
+              reason: input.reason?.trim() || null,
+              requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? sourceIncome.paymentAmount : null,
+              refundCardNumber: input.type === ADJUSTMENT_TYPE_REFUND ? input.refundCardNumber || null : null,
+              newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
+              newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
+              newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
+            },
+            select: {
+              id: true,
+              type: true,
+              status: true,
+            },
+          });
+        } catch (error) {
+          if (!isMissingRefundCardNumberColumnError(error)) {
+            throw error;
+          }
+          request = await tx.incomeAdjustmentRequest.create({
+            data: {
+              tenantId: ctx.tenantId,
+              type: input.type,
+              status: ADJUSTMENT_STATUS_PENDING,
+              incomeId: sourceIncome.id,
+              customerId: sourceIncome.customerId,
+              requestedByUserId: ctx.user.userId,
+              reason: input.reason?.trim() || null,
+              requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? sourceIncome.paymentAmount : null,
+              newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
+              newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
+              newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
+            },
+            select: {
+              id: true,
+              type: true,
+              status: true,
+            },
+          });
+        }
 
         if (input.type === ADJUSTMENT_TYPE_REFUND) {
           await tx.income.update({
