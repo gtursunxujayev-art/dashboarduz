@@ -578,6 +578,7 @@ export default function AdjustmentsPage() {
                     <p>
                       <span className="font-medium">Mijoz:</span> {reviewRequest.income.customer.customerNumber} - {reviewRequest.income.customer.name}
                     </p>
+                    <p><span className="font-medium">Mas&apos;ul agent:</span> {reviewRequest.income.managerLabel || '-'}</p>
                   </div>
 
                   <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-slate-600 dark:bg-slate-900">
