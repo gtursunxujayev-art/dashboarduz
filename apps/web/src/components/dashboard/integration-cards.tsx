@@ -48,6 +48,13 @@ type TelegramReportRecipient = {
   lastSeenAt?: string | null;
 };
 
+type TelegramReportCourseOption = {
+  id: string;
+  name: string;
+  category: string;
+  isActive: boolean;
+};
+
 const integrationCatalog: Array<{
   id: IntegrationId;
   name: string;
@@ -126,6 +133,7 @@ export default function IntegrationCards() {
   const [faceIdMappedUserId, setFaceIdMappedUserId] = useState('');
   const [selectedPipelineIds, setSelectedPipelineIds] = useState<string[]>([]);
   const [selectedTelegramRecipientIds, setSelectedTelegramRecipientIds] = useState<string[]>([]);
+  const [selectedTelegramDailyCourseIds, setSelectedTelegramDailyCourseIds] = useState<string[]>([]);
   const [telegramSelectionSavedAt, setTelegramSelectionSavedAt] = useState<string | null>(null);
   const [telegramReportSentMessage, setTelegramReportSentMessage] = useState<string | null>(null);
 
@@ -190,6 +198,7 @@ export default function IntegrationCards() {
   useEffect(() => {
     if (!telegramRecipientsQuery.data?.connected) {
       setSelectedTelegramRecipientIds([]);
+      setSelectedTelegramDailyCourseIds([]);
       return;
     }
 
@@ -198,6 +207,11 @@ export default function IntegrationCards() {
       .map((recipient: TelegramReportRecipient) => recipient.chatId);
 
     setSelectedTelegramRecipientIds(selected);
+    setSelectedTelegramDailyCourseIds(
+      Array.isArray(telegramRecipientsQuery.data.selectedDailyReportCourseIds)
+        ? telegramRecipientsQuery.data.selectedDailyReportCourseIds.slice(0, 3)
+        : [],
+    );
   }, [telegramRecipientsQuery.data]);
 
   useEffect(() => {
@@ -321,6 +335,7 @@ export default function IntegrationCards() {
     try {
       await updateTelegramReportRecipients.mutateAsync({
         chatIds: selectedTelegramRecipientIds,
+        dailyReportCourseIds: selectedTelegramDailyCourseIds.filter(Boolean).slice(0, 3),
       });
       await telegramRecipientsQuery.refetch();
       setTelegramSelectionSavedAt(new Date().toISOString());
@@ -474,6 +489,7 @@ export default function IntegrationCards() {
             phone: string | null;
           }>;
           const telegramRecipients = (telegramRecipientsQuery.data?.recipients || []) as TelegramReportRecipient[];
+          const telegramCourseOptions = (telegramRecipientsQuery.data?.courseOptions || []) as TelegramReportCourseOption[];
 
           return (
             <div key={integration.id} className={`rounded-lg border p-4 ${integration.color}`}>
@@ -628,6 +644,53 @@ export default function IntegrationCards() {
                       ))}
                     </div>
                   )}
+
+                  <div className="mt-4 rounded-md border border-cyan-100 bg-cyan-50/60 p-3">
+                    <div className="flex flex-col gap-1">
+                      <p className="text-sm font-medium text-gray-900">Kunlik hisobotdagi kurslar</p>
+                      <p className="text-xs text-gray-500">
+                        PDF hisobotga sotuv va tarif kesimidagi ma'lumot qo'shish uchun 3 tagacha kurs tanlang.
+                      </p>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                      {[0, 1, 2].map((slot) => {
+                        const currentValue = selectedTelegramDailyCourseIds[slot] || '';
+                        const usedCourseIds = new Set(
+                          selectedTelegramDailyCourseIds.filter((courseId, index) => courseId && index !== slot),
+                        );
+                        return (
+                          <select
+                            key={slot}
+                            value={currentValue}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setSelectedTelegramDailyCourseIds((current) => {
+                                const next = [...current];
+                                next[slot] = nextValue;
+                                return next.filter((courseId, index) => courseId || index < 3).slice(0, 3);
+                              });
+                            }}
+                            disabled={telegramRecipientsQuery.isLoading || telegramCourseOptions.length === 0}
+                            className="w-full rounded-md border border-cyan-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <option value="">Kurs tanlang</option>
+                            {telegramCourseOptions.map((course) => (
+                              <option
+                                key={course.id}
+                                value={course.id}
+                                disabled={usedCourseIds.has(course.id)}
+                              >
+                                {course.name}{course.isActive ? '' : ' (nofaol)'}
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      })}
+                    </div>
+                    {telegramCourseOptions.length === 0 && (
+                      <p className="mt-2 text-xs text-gray-500">Kurslar topilmadi.</p>
+                    )}
+                  </div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <button
