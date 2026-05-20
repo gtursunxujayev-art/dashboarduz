@@ -67,6 +67,18 @@ function asObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function parseTelegramDailyReportCourseIds(config: unknown): string[] {
+  const raw = asObject(config).telegramDailyReportCourseIds;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return Array.from(new Set(
+    raw
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  )).slice(0, 3);
+}
+
 function getPublicApiBaseUrl(): string {
   const explicit = normalizeBaseUrl(process.env.PUBLIC_API_URL || process.env.API_URL);
   if (explicit) {
@@ -481,6 +493,7 @@ export const integrationsRouter = router({
         },
       });
       const existingRecipients = parseTelegramRecipients(existing?.config);
+      const existingDailyReportCourseIds = parseTelegramDailyReportCourseIds(existing?.config);
 
       const validatedAt = new Date();
       const integration = await prisma.integration.upsert({
@@ -503,6 +516,7 @@ export const integrationsRouter = router({
             reportRecipientChatIds: existingRecipients
               .filter((recipient) => recipient.started && recipient.selectedForReports)
               .map((recipient) => recipient.chatId),
+            telegramDailyReportCourseIds: existingDailyReportCourseIds,
             lastValidatedAt: validatedAt.toISOString(),
           },
           lastSyncAt: validatedAt,
@@ -522,6 +536,7 @@ export const integrationsRouter = router({
             reportRecipientChatIds: existingRecipients
               .filter((recipient) => recipient.started && recipient.selectedForReports)
               .map((recipient) => recipient.chatId),
+            telegramDailyReportCourseIds: existingDailyReportCourseIds,
             lastValidatedAt: validatedAt.toISOString(),
           },
           lastSyncAt: validatedAt,
@@ -582,8 +597,33 @@ export const integrationsRouter = router({
           startedAt: string | null;
           lastSeenAt: string | null;
         }>,
+        courseOptions: [] as Array<{
+          id: string;
+          name: string;
+          category: string;
+          isActive: boolean;
+        }>,
+        selectedDailyReportCourseIds: [] as string[],
       };
     }
+
+    const courseOptions = await prisma.course.findMany({
+      where: { tenantId: ctx.tenantId },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        isActive: true,
+      },
+      orderBy: [
+        { isActive: 'desc' },
+        { name: 'asc' },
+      ],
+    });
+
+    const availableCourseIds = new Set(courseOptions.map((course) => course.id));
+    const selectedDailyReportCourseIds = parseTelegramDailyReportCourseIds(integration.config)
+      .filter((courseId) => availableCourseIds.has(courseId));
 
     const recipients = parseTelegramRecipients(integration.config)
       .filter((recipient) => recipient.started)
@@ -601,11 +641,16 @@ export const integrationsRouter = router({
     return {
       connected: true,
       recipients,
+      courseOptions,
+      selectedDailyReportCourseIds,
     };
   }),
 
   updateTelegramReportRecipients: adminProcedure
-    .input(z.object({ chatIds: z.array(z.string()) }))
+    .input(z.object({
+      chatIds: z.array(z.string()),
+      dailyReportCourseIds: z.array(z.string().uuid()).max(3).optional(),
+    }))
     .mutation(async ({ input, ctx }) => {
       const integration = await prisma.integration.findUnique({
         where: {
@@ -636,9 +681,37 @@ export const integrationsRouter = router({
       }
 
       const { config: nextConfig, selectedChatIds } = updateTelegramReportSelection(integration.config, input.chatIds);
+      const selectedDailyReportCourseIds = Array.from(new Set(
+        (input.dailyReportCourseIds || [])
+          .map((courseId) => courseId.trim())
+          .filter(Boolean),
+      )).slice(0, 3);
+
+      if (selectedDailyReportCourseIds.length > 0) {
+        const availableCourses = await prisma.course.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: selectedDailyReportCourseIds },
+          },
+          select: { id: true },
+        });
+        const availableCourseIds = new Set(availableCourses.map((course) => course.id));
+        const unknownCourseId = selectedDailyReportCourseIds.find((courseId) => !availableCourseIds.has(courseId));
+        if (unknownCourseId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Unknown report course id: ${unknownCourseId}`,
+          });
+        }
+      }
+
+      const configWithCourseSelection = {
+        ...nextConfig,
+        telegramDailyReportCourseIds: selectedDailyReportCourseIds,
+      };
       await prisma.integration.update({
         where: { id: integration.id },
-        data: { config: nextConfig as any },
+        data: { config: configWithCourseSelection as any },
       });
 
       await prisma.auditLog.create({
@@ -651,6 +724,7 @@ export const integrationsRouter = router({
           metadata: {
             type: 'telegram',
             reportRecipientChatIds: selectedChatIds,
+            telegramDailyReportCourseIds: selectedDailyReportCourseIds,
           },
         },
       });
@@ -658,6 +732,7 @@ export const integrationsRouter = router({
       return {
         success: true,
         selectedChatIds,
+        selectedDailyReportCourseIds,
       };
     }),
 
