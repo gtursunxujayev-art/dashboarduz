@@ -116,12 +116,34 @@ function formatCurrency(value: number): string {
   return `${Math.round(value).toLocaleString('en-US')} UZS`;
 }
 
+function formatCompactCurrency(value: number): string {
+  const rounded = Math.round(value);
+  const abs = Math.abs(rounded);
+  if (abs >= 1_000_000_000) {
+    return `${(rounded / 1_000_000_000).toFixed(abs >= 10_000_000_000 ? 1 : 2)}B`;
+  }
+  if (abs >= 1_000_000) {
+    return `${(rounded / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
+  }
+  if (abs >= 1_000) {
+    return `${(rounded / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}K`;
+  }
+  return String(rounded);
+}
+
 function formatDuration(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds));
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   const seconds = safe % 60;
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatDurationHoursMinutes(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 function normalizePercentage(value: number): number {
@@ -426,22 +448,22 @@ function createStyledReportPdf(params: {
 
   const tableTop = 614;
   const columns = [
-    { key: 'name', title: 'Menejer', width: 110 },
-    { key: 'leads', title: 'Lidlar', width: 55 },
-    { key: 'qualified', title: 'Sifatli', width: 60 },
-    { key: 'nonQualified', title: 'Sifatsiz', width: 60 },
-    { key: 'sales', title: 'Sotuv', width: 55 },
-    { key: 'conversion', title: 'Konversiya', width: 70 },
-    { key: 'agreementAmount', title: 'Kelishuv', width: 85 },
-    { key: 'incomeAmount', title: 'Tushum', width: 85 },
-    { key: 'duration', title: 'Suhbat', width: 68 },
+    { key: 'name', title: 'Menejer', width: 74 },
+    { key: 'leads', title: 'Lid', width: 34 },
+    { key: 'qualified', title: 'Sifatli', width: 43 },
+    { key: 'nonQualified', title: 'Sifatsiz', width: 43 },
+    { key: 'sales', title: 'Sotuv', width: 38 },
+    { key: 'conversion', title: 'Konv.', width: 48 },
+    { key: 'agreementAmount', title: 'Kelishuv', width: 62 },
+    { key: 'incomeAmount', title: 'Tushum', width: 58 },
+    { key: 'duration', title: 'Suhbat soat', width: 65 },
   ] as const;
   const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
 
   c.rect(tableTop, 54, tableWidth, 20, { fill: [0.92, 0.94, 0.98], stroke: lightBorder, lineWidth: 0.8 });
   let x = 56;
   for (const column of columns) {
-    c.text(tableTop + 5, x, column.title, { font: 'F2', size: size(9), color: textDark });
+    c.text(tableTop + 5, x, column.title, { font: 'F2', size: size(7.4), color: textDark });
     x += column.width;
   }
 
@@ -474,14 +496,14 @@ function createStyledReportPdf(params: {
       String(row.nonQualified),
       String(row.sales),
       `${row.conversion.toFixed(1)}%`,
-      formatCurrency(row.agreementAmount),
-      formatCurrency(row.incomeAmount),
-      formatDuration(row.callDurationSeconds),
+      formatCompactCurrency(row.agreementAmount),
+      formatCompactCurrency(row.incomeAmount),
+      formatDurationHoursMinutes(row.callDurationSeconds),
     ];
 
     let currentX = 56;
     for (const [colIndex, column] of columns.entries()) {
-      c.text(rowTop + 4, currentX, values[colIndex] || '-', { size: size(8.5), color: textDark });
+      c.text(rowTop + 4, currentX, values[colIndex] || '-', { size: size(7.2), color: textDark });
       currentX += column.width;
     }
   }
