@@ -50,6 +50,12 @@ type ReportMetrics = {
   talkDurationSeconds: number;
   reasonBreakdown: Array<{ label: string; value: number }>;
   sourceBreakdown: Array<{ label: string; value: number }>;
+  selectedCourseRows: Array<{
+    courseId: string;
+    courseName: string;
+    salesCount: number;
+    tariffBreakdown: Array<{ label: string; value: number }>;
+  }>;
   managerRows: Array<{
     name: string;
     leads: number;
@@ -144,6 +150,30 @@ function formatDurationHoursMinutes(totalSeconds: number): string {
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function parseTelegramDailyReportCourseIds(config: unknown): string[] {
+  const raw = config && typeof config === 'object' && !Array.isArray(config)
+    ? (config as Record<string, unknown>).telegramDailyReportCourseIds
+    : null;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return Array.from(new Set(
+    raw
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  )).slice(0, 3);
+}
+
+function formatSelectedCourseLine(row: ReportMetrics['selectedCourseRows'][number]): string {
+  const tariffs = row.tariffBreakdown.length > 0
+    ? row.tariffBreakdown
+      .slice(0, 4)
+      .map((item) => `${item.label}: ${item.value}`)
+      .join(' | ')
+    : 'Tariflar: 0';
+  return `${row.courseName}: Sotuv - ${row.salesCount} | ${tariffs}`;
 }
 
 function normalizePercentage(value: number): number {
@@ -443,10 +473,23 @@ function createStyledReportPdf(params: {
     }
   }
 
-  c.rect(588, 44, 503, 22, { fill: dark });
-  c.text(592, 54, "Menejerlar bo'yicha sotuvlar", { font: 'F2', size: size(12), color: white });
+  const selectedCourseRows = params.metrics.selectedCourseRows || [];
+  const hasSelectedCourses = selectedCourseRows.length > 0;
+  const managerSectionTop = hasSelectedCourses ? 636 : 588;
+  const tableTop = hasSelectedCourses ? 662 : 614;
+  const maxManagerRows = hasSelectedCourses ? 7 : 9;
 
-  const tableTop = 614;
+  if (hasSelectedCourses) {
+    c.rect(568, 44, 503, 22, { fill: dark });
+    c.text(572, 54, 'Tanlangan kurslar sotuvi', { font: 'F2', size: size(12), color: white });
+    selectedCourseRows.slice(0, 3).forEach((row, index) => {
+      c.text(596 + index * 14, 54, formatSelectedCourseLine(row), { size: size(8.3), color: textDark });
+    });
+  }
+
+  c.rect(managerSectionTop, 44, 503, 22, { fill: dark });
+  c.text(managerSectionTop + 4, 54, "Menejerlar bo'yicha sotuvlar", { font: 'F2', size: size(12), color: white });
+
   const columns = [
     { key: 'name', title: 'Menejer', width: 74 },
     { key: 'leads', title: 'Lid', width: 34 },
@@ -480,7 +523,7 @@ function createStyledReportPdf(params: {
       incomeAmount: 0,
       callDurationSeconds: 0,
     }];
-  const shownRows = rows.slice(0, 9);
+  const shownRows = rows.slice(0, maxManagerRows);
   for (const [index, row] of shownRows.entries()) {
     const rowTop = tableTop + 20 + index * 18;
     c.rect(rowTop, 54, tableWidth, 18, {
@@ -727,6 +770,7 @@ async function collectMetrics(params: {
   periodStart: Date;
   periodEnd: Date;
   selectedPipelineIds: string[];
+  selectedReportCourseIds: string[];
 }): Promise<ReportMetrics> {
   const dashboardSettings = (
     params.tenantSettings
@@ -761,7 +805,9 @@ async function collectMetrics(params: {
     params.selectedPipelineIds,
   );
 
-  const [callAggregate, incomes, users, corporateDurationTotal] = await Promise.all([
+  const selectedCourseIds = Array.from(new Set(params.selectedReportCourseIds.map((id) => id.trim()).filter(Boolean))).slice(0, 3);
+
+  const [callAggregate, incomes, users, corporateDurationTotal, selectedReportCourses] = await Promise.all([
     prisma.call.aggregate({
       where: {
         tenantId: params.tenantId,
@@ -790,9 +836,15 @@ async function collectMetrics(params: {
         managerUserId: true,
         paymentAmount: true,
         coursePriceAmount: true,
+        courseId: true,
         course: {
           select: {
             category: true,
+            name: true,
+          },
+        },
+        tariff: {
+          select: {
             name: true,
           },
         },
@@ -816,6 +868,18 @@ async function collectMetrics(params: {
       rangeStart: params.periodStart,
       rangeEnd: params.periodEnd,
     }),
+    selectedCourseIds.length > 0
+      ? prisma.course.findMany({
+          where: {
+            tenantId: params.tenantId,
+            id: { in: selectedCourseIds },
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   let newLeads = 0;
@@ -987,6 +1051,11 @@ async function collectMetrics(params: {
   let offlineAgreementTotal = 0;
   let intensiveAgreementTotal = 0;
   const managerSalesByUserId = new Map<string, { sales: number; agreementAmount: number; incomeAmount: number }>();
+  const selectedCourseIdSet = new Set(selectedReportCourses.map((course) => course.id));
+  const selectedCourseStats = new Map<string, { salesCount: number; tariffCounts: Map<string, number> }>();
+  for (const course of selectedReportCourses) {
+    selectedCourseStats.set(course.id, { salesCount: 0, tariffCounts: new Map<string, number>() });
+  }
 
   const repaymentRelatedIds = [...new Set(
     incomes
@@ -1096,6 +1165,14 @@ async function collectMetrics(params: {
     } else if (category === 'intensive') {
       intensiveSalesCount += 1;
       intensiveAgreementTotal += agreementAmount;
+    }
+
+    if (income.courseId && selectedCourseIdSet.has(income.courseId)) {
+      const courseStats = selectedCourseStats.get(income.courseId) || { salesCount: 0, tariffCounts: new Map<string, number>() };
+      const tariffName = String(income.tariff?.name || "Tarif yo'q").trim() || "Tarif yo'q";
+      courseStats.salesCount += 1;
+      courseStats.tariffCounts.set(tariffName, (courseStats.tariffCounts.get(tariffName) || 0) + 1);
+      selectedCourseStats.set(income.courseId, courseStats);
     }
   }
 
@@ -1247,6 +1324,25 @@ async function collectMetrics(params: {
     })
     .slice(0, 10);
 
+  const coursesById = new Map(selectedReportCourses.map((course) => [course.id, course]));
+  const selectedCourseRows = selectedCourseIds
+    .map((courseId) => {
+      const course = coursesById.get(courseId);
+      if (!course) {
+        return null;
+      }
+      const stats = selectedCourseStats.get(courseId) || { salesCount: 0, tariffCounts: new Map<string, number>() };
+      return {
+        courseId,
+        courseName: course.name,
+        salesCount: stats.salesCount,
+        tariffBreakdown: Array.from(stats.tariffCounts.entries())
+          .map(([label, value]) => ({ label, value }))
+          .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label)),
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
   return {
     newLeads,
     qualifiedLeads,
@@ -1269,6 +1365,7 @@ async function collectMetrics(params: {
     talkDurationSeconds: Number(callAggregate._sum.duration || 0) + corporateDurationTotal,
     reasonBreakdown,
     sourceBreakdown,
+    selectedCourseRows,
     managerRows,
   };
 }
@@ -1305,12 +1402,16 @@ async function sendWindowToIntegration(
   }
 
   const selectedPipelineIds = await getSelectedPipelineIdsForTenant(integration.tenantId);
+  const selectedReportCourseIds = window.kind === 'daily'
+    ? parseTelegramDailyReportCourseIds(integration.config)
+    : [];
   const metrics = await collectMetrics({
     tenantId: integration.tenantId,
     tenantSettings: integration.tenant.settings,
     periodStart: window.periodStart,
     periodEnd: window.periodEnd,
     selectedPipelineIds,
+    selectedReportCourseIds,
   });
   const elapsed = Date.now() - reportStartedAt;
   const minWaitMs = window.kind === 'weekly'
