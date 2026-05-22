@@ -807,7 +807,7 @@ async function collectMetrics(params: {
 
   const selectedCourseIds = Array.from(new Set(params.selectedReportCourseIds.map((id) => id.trim()).filter(Boolean))).slice(0, 3);
 
-  const [callAggregate, incomes, users, corporateDurationTotal, selectedReportCourses] = await Promise.all([
+  const [callAggregate, incomes, users, corporateDurationTotal, selectedReportCourses, selectedCourseIncomes] = await Promise.all([
     prisma.call.aggregate({
       where: {
         tenantId: params.tenantId,
@@ -877,6 +877,24 @@ async function collectMetrics(params: {
           select: {
             id: true,
             name: true,
+          },
+        })
+      : Promise.resolve([]),
+    selectedCourseIds.length > 0
+      ? prisma.income.findMany({
+          where: {
+            tenantId: params.tenantId,
+            lifecycleStatus: 'active',
+            type: 'new_sale',
+            courseId: { in: selectedCourseIds },
+          },
+          select: {
+            courseId: true,
+            tariff: {
+              select: {
+                name: true,
+              },
+            },
           },
         })
       : Promise.resolve([]),
@@ -1056,6 +1074,16 @@ async function collectMetrics(params: {
   for (const course of selectedReportCourses) {
     selectedCourseStats.set(course.id, { salesCount: 0, tariffCounts: new Map<string, number>() });
   }
+  for (const income of selectedCourseIncomes) {
+    if (!income.courseId || !selectedCourseIdSet.has(income.courseId)) {
+      continue;
+    }
+    const courseStats = selectedCourseStats.get(income.courseId) || { salesCount: 0, tariffCounts: new Map<string, number>() };
+    const tariffName = String(income.tariff?.name || "Tarif yo'q").trim() || "Tarif yo'q";
+    courseStats.salesCount += 1;
+    courseStats.tariffCounts.set(tariffName, (courseStats.tariffCounts.get(tariffName) || 0) + 1);
+    selectedCourseStats.set(income.courseId, courseStats);
+  }
 
   const repaymentRelatedIds = [...new Set(
     incomes
@@ -1167,13 +1195,6 @@ async function collectMetrics(params: {
       intensiveAgreementTotal += agreementAmount;
     }
 
-    if (income.courseId && selectedCourseIdSet.has(income.courseId)) {
-      const courseStats = selectedCourseStats.get(income.courseId) || { salesCount: 0, tariffCounts: new Map<string, number>() };
-      const tariffName = String(income.tariff?.name || "Tarif yo'q").trim() || "Tarif yo'q";
-      courseStats.salesCount += 1;
-      courseStats.tariffCounts.set(tariffName, (courseStats.tariffCounts.get(tariffName) || 0) + 1);
-      selectedCourseStats.set(income.courseId, courseStats);
-    }
   }
 
   const usersByAmoId = new Map<string, { id: string; name: string }>();
