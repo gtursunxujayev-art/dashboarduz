@@ -14,13 +14,7 @@ const AGENT_ALLOWED_HREFS = new Set([
   '/dashboard/sotuvchilar',
   '/dashboard/calls',
   '/dashboard/corporate-calls',
-  '/dashboard/attendance',
   '/dashboard/customers',
-  '/dashboard/course-sales',
-  '/dashboard/course-sales/intensive',
-  '/dashboard/course-sales/online',
-  '/dashboard/course-sales/offline',
-  '/dashboard/analytics',
   '/dashboard/finance',
   '/dashboard/finance/bonus-details',
 ]);
