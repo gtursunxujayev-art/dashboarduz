@@ -10,13 +10,10 @@ const AGENT_ALLOWED_PATHS = [
   '/dashboard/leads',
   '/dashboard/calls',
   '/dashboard/corporate-calls',
-  '/dashboard/attendance',
   '/dashboard/income',
   '/dashboard/adjustments',
   '/dashboard/sotuvchilar',
   '/dashboard/customers',
-  '/dashboard/course-sales',
-  '/dashboard/analytics',
   '/dashboard/finance',
 ];
 const FINANCE_ALLOWED_PATHS = [
