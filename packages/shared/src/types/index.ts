@@ -2,7 +2,15 @@
 
 export type TenantPlan = 'free' | 'pro' | 'enterprise';
 
-export type UserRole = 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'Finance' | 'Tashkiliy';
+export const USER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'Finance', 'Tashkiliy'] as const;
+
+export type UserRole = (typeof USER_ROLES)[number];
+
+export const AGENT_ROLES = ['Agent', 'OnlineAgent', 'OfflineAgent'] as const;
+
+export function hasAgentRole(roles: readonly string[] | null | undefined): boolean {
+  return Array.isArray(roles) && roles.some((role) => (AGENT_ROLES as readonly string[]).includes(role));
+}
 
 export type AuthProvider = 'phone' | 'telegram' | 'email';
 
