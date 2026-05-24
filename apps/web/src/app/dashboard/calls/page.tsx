@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/auth-context';
 
 type CallsRange = 'today' | 'week' | 'month' | 'custom';
 const RANGE_OPTIONS: CallsRange[] = ['today', 'week', 'month', 'custom'];
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 function formatDuration(totalSeconds?: number | null): string {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
@@ -48,7 +49,7 @@ export default function CallsPage() {
   const [dateTo, setDateTo] = useState(getTashkentToday());
 
   const isAgentOnly = Boolean(
-    user?.roles?.includes('Agent')
+    user?.roles?.some((role) => AGENT_ROLES.has(role))
     && !user?.roles?.includes('Admin')
     && !user?.roles?.includes('Manager')
     && !user?.roles?.includes('TeamLeader')
