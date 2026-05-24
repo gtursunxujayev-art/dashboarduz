@@ -6,6 +6,7 @@ import {
   type LeadFieldOption,
 } from '../../../services/integrations/amocrm-live';
 import { prisma } from '@dashboarduz/db';
+import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { normalizeIdentifier, getSystemLeadFieldOptions } from '../../../services/integrations/amocrm-live';
 
@@ -242,7 +243,7 @@ export function resolveCallExtension(call: { from: string; to: string; direction
 }
 
 export async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
-  const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
   }
@@ -399,7 +400,12 @@ export function resolveDateRange(range: DashboardRange, now: Date, dateFrom?: st
 }
 
 export function isFinanceOnly(roles: string[]): boolean {
-  return roles.includes('Finance') && !roles.some((role) => role === 'Admin' || role === 'Manager' || role === 'TeamLeader' || role === 'Agent');
+  return roles.includes('Finance') && !roles.some((role) => (
+    role === 'Admin'
+    || role === 'Manager'
+    || role === 'TeamLeader'
+    || (AGENT_ROLES as readonly string[]).includes(role)
+  ));
 }
 
 export function isTashkiliyOnly(roles: string[]): boolean {
@@ -407,7 +413,7 @@ export function isTashkiliyOnly(roles: string[]): boolean {
     && !roles.includes('Admin')
     && !roles.includes('Manager')
     && !roles.includes('TeamLeader')
-    && !roles.includes('Agent')
+    && !hasAgentRole(roles)
     && !roles.includes('Finance');
 }
 
@@ -542,7 +548,7 @@ export function classifyCourseCategoryFromField(
 }
 
 export function isAgentOnly(roles: string[]): boolean {
-  return roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 }
 
 export function getCurrentMonthRange(now: Date) {
