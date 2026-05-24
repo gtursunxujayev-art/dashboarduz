@@ -1,6 +1,7 @@
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { hasAgentRole } from '@dashboarduz/shared';
 import { protectedProcedure, router } from '../trpc';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
 import { resolveEffectiveAgreementAmount } from '../../services/technical-income';
@@ -15,7 +16,7 @@ const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
 type CourseSalesRange = z.infer<typeof courseSalesRangeSchema>;
 
 function isAgentOnly(roles: string[]): boolean {
-  return roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 }
 
 function parseCustomDate(input: string, endOfDay: boolean): Date {
