@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
 
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 const AGENT_ALLOWED_HREFS = new Set([
   '/dashboard',
   '/dashboard/income',
@@ -113,20 +114,20 @@ export default function Sidebar() {
 
   const roles = user?.roles || [];
   const isAdmin = user?.roles.includes('Admin');
-  const isAgentOnly = Boolean(user?.roles.includes('Agent') && !user?.roles.some((role: string) => PRIVILEGED_ROLES.has(role)));
+  const isAgentOnly = Boolean(user?.roles.some((role: string) => AGENT_ROLES.has(role)) && !user?.roles.some((role: string) => PRIVILEGED_ROLES.has(role)));
   const isFinanceOnly = Boolean(
     user?.roles.includes('Finance')
       && !user?.roles.includes('Admin')
       && !user?.roles.includes('Manager')
       && !user?.roles.includes('TeamLeader')
-      && !user?.roles.includes('Agent'),
+      && !user?.roles.some((role: string) => AGENT_ROLES.has(role)),
   );
   const isTashkiliyOnly = Boolean(
     user?.roles.includes('Tashkiliy')
       && !user?.roles.includes('Admin')
       && !user?.roles.includes('Manager')
       && !user?.roles.includes('TeamLeader')
-      && !user?.roles.includes('Agent')
+      && !user?.roles.some((role: string) => AGENT_ROLES.has(role))
       && !user?.roles.includes('Finance'),
   );
   const visibleNavigation = (isAgentOnly
