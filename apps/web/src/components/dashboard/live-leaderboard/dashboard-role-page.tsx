@@ -88,7 +88,7 @@ function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: n
       </div>
       <div className="min-w-0">
         <div className="truncate text-xl font-extrabold text-white">{agent.name}</div>
-        <div className="mt-1.5 grid grid-cols-2 gap-2 text-2xl font-semibold text-slate-300 sm:grid-cols-4">
+        <div className="mt-1.5 grid grid-cols-2 gap-2 text-sm font-semibold text-slate-300 sm:grid-cols-4">
           <span>Sotuv: <b className="text-white">{agent.monthlySalesCount}</b></span>
           <span>Oy: <b className="text-emerald-300">{formatCompactMoney(agent.monthlyIncome)}</b></span>
           <span>Bugun: <b className="text-cyan-300">{formatCompactMoney(agent.todayIncome)}</b></span>
