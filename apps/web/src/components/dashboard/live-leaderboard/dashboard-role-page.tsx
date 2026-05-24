@@ -24,6 +24,14 @@ type LatestIncomeEvent = {
   amount: number;
 };
 
+type SelectedReportCourse = {
+  courseId: string;
+  name: string;
+  category: string;
+  group: AgentGroup;
+  salesCount: number;
+};
+
 function formatMoney(amount: number) {
   return `${Math.round(amount || 0).toLocaleString('uz-UZ')} so'm`;
 }
@@ -84,14 +92,34 @@ function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: n
   );
 }
 
-function AgentLeaderboard({ title, agents, tone, highlightedAgentId }: { title: string; agents: LeaderboardAgent[]; tone: string; highlightedAgentId: string | null }) {
+function AgentLeaderboard({
+  title,
+  agents,
+  courses,
+  tone,
+  highlightedAgentId,
+}: {
+  title: string;
+  agents: LeaderboardAgent[];
+  courses: SelectedReportCourse[];
+  tone: string;
+  highlightedAgentId: string | null;
+}) {
   return (
     <section className="min-h-[560px] rounded-[2rem] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-black/30">
       <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-black text-white">
+        <div className="min-w-0">
+          <h2 className="flex flex-wrap items-center gap-3 text-3xl font-black text-white">
             <span className={`mr-3 text-sm font-bold uppercase tracking-[0.28em] align-middle ${tone}`}>{title}</span>
-            Menejerlar
+            <span>Menejerlar</span>
+            {courses.map((course) => (
+              <span
+                key={course.courseId}
+                className="rounded-2xl border border-white/10 bg-white/10 px-3 py-1 text-sm font-black text-slate-100 shadow-lg shadow-black/20"
+              >
+                {course.name}: <span className={tone}>{course.salesCount}</span>
+              </span>
+            ))}
           </h2>
         </div>
         <div className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-200">{agents.length} ta</div>
@@ -144,6 +172,8 @@ export default function DashboardRolePage() {
   const data = query.data;
   const onlineAgents = useMemo(() => sortAgents(data?.agents || [], 'online'), [data?.agents]);
   const offlineAgents = useMemo(() => sortAgents(data?.agents || [], 'offline'), [data?.agents]);
+  const onlineCourses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === 'online'), [data?.selectedReportCourses]);
+  const offlineCourses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === 'offline'), [data?.selectedReportCourses]);
 
   useEffect(() => {
     const latest = data?.latestIncomeEvent;
@@ -181,8 +211,8 @@ export default function DashboardRolePage() {
         </section>
 
         <section className="grid gap-6 xl:grid-cols-2">
-          <AgentLeaderboard title="Onlayn" agents={onlineAgents} tone="text-cyan-300" highlightedAgentId={highlightedAgentId} />
-          <AgentLeaderboard title="Oflayn" agents={offlineAgents} tone="text-orange-300" highlightedAgentId={highlightedAgentId} />
+          <AgentLeaderboard title="Onlayn" agents={onlineAgents} courses={onlineCourses} tone="text-cyan-300" highlightedAgentId={highlightedAgentId} />
+          <AgentLeaderboard title="Oflayn" agents={offlineAgents} courses={offlineCourses} tone="text-orange-300" highlightedAgentId={highlightedAgentId} />
         </section>
       </div>
 
