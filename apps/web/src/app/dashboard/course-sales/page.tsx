@@ -7,6 +7,7 @@ import { trpc } from '@/lib/trpc';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -47,7 +48,7 @@ export default function CourseSalesPage() {
       && !roles.includes('Admin')
       && !roles.includes('Manager')
       && !roles.includes('TeamLeader')
-      && !roles.includes('Agent')
+      && !roles.some((role) => AGENT_ROLES.has(role))
       && !roles.includes('Finance'),
   );
 
