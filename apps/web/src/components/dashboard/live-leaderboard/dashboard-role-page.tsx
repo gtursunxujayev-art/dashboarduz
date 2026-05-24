@@ -64,12 +64,15 @@ function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: n
       <div className={`flex h-9 w-9 items-center justify-center rounded-xl text-lg font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
         {rank}
       </div>
-      <div className="min-w-0">
+      <div className="grid min-w-0 items-center gap-3 sm:grid-cols-[minmax(130px,1fr)_120px_120px_120px]">
         <div className="truncate text-lg font-extrabold text-white">{agent.name}</div>
-        <div className="mt-1 grid grid-cols-2 gap-2 text-sm font-semibold text-slate-300 sm:grid-cols-4">
+        <div className="text-sm font-semibold text-slate-300">
           <span>Sotuv: <b className="text-white">{agent.monthlySalesCount}</b></span>
-          <span>Oy: <b className="text-emerald-300">{formatCompactMoney(agent.monthlyIncome)}</b></span>
+        </div>
+        <div className="text-sm font-semibold text-slate-300">
           <span>Bugun: <b className="text-cyan-300">{formatCompactMoney(agent.todayIncome)}</b></span>
+        </div>
+        <div className="text-sm font-semibold text-slate-300">
           <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(agent.monthlyBonus)}</b></span>
         </div>
       </div>
