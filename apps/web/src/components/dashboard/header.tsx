@@ -13,6 +13,9 @@ const ROLE_LABELS: Record<string, string> = {
   Manager: 'Menejer',
   TeamLeader: 'Team lider',
   Agent: 'Agent',
+  OnlineAgent: 'Online agent',
+  OfflineAgent: 'Offline agent',
+  Dashboard: 'Dashboard',
   Finance: 'Moliya',
   Tashkiliy: 'Tashkiliy',
 };
