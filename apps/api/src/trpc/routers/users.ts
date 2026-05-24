@@ -1,7 +1,7 @@
 import { adminProcedure, managerProcedure, router } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { z } from 'zod';
-import type { UserRole } from '@dashboarduz/shared';
+import { AGENT_ROLES, USER_ROLES, type UserRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import crypto from 'crypto';
 import { hashPassword } from '../../services/auth/password';
@@ -9,8 +9,8 @@ import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live'
 import { amocrmService } from '../../services/integrations/amocrm';
 import { parseTelegramRecipients } from '../../services/integrations/telegram-recipients';
 
-const roleSchema = z.enum(['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy']);
-const MAPPING_ROLES: UserRole[] = ['Agent', 'TeamLeader'];
+const roleSchema = z.enum(USER_ROLES);
+const MAPPING_ROLES: UserRole[] = [...AGENT_ROLES, 'TeamLeader'];
 
 function roleNeedsManagerMapping(role: UserRole): boolean {
   return MAPPING_ROLES.includes(role);
@@ -335,7 +335,7 @@ export const usersRouter = router({
       if (roleNeedsManagerMapping(role) && !input.amocrmResponsibleUserId) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'AmoCRM manager mapping is required for Agent/TeamLeader users.',
+          message: 'AmoCRM manager mapping is required for Agent/OnlineAgent/OfflineAgent/TeamLeader users.',
         });
       }
 
