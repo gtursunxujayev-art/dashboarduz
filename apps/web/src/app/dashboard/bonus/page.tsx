@@ -41,6 +41,7 @@ type KpiMetricKey =
   | 'stageChangeCount';
 type KpiThresholdState = { full: string; half: string };
 type KpiThresholdStateMap = Record<KpiMetricKey, KpiThresholdState>;
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 type AgentUserOption = {
   id: string;
@@ -307,7 +308,7 @@ export default function BonusPage() {
   const agentUsers = useMemo<AgentUserOption[]>(() => {
     const users = usersQuery.data || [];
     return users
-      .filter((currentUser: any) => Array.isArray(currentUser.roles) && (currentUser.roles.includes('Agent') || currentUser.roles.includes('TeamLeader')))
+      .filter((currentUser: any) => Array.isArray(currentUser.roles) && (currentUser.roles.some((role: string) => AGENT_ROLES.has(role)) || currentUser.roles.includes('TeamLeader')))
       .filter((currentUser: any) => currentUser.isActive !== false)
       .map((currentUser: any) => ({
         id: currentUser.id as string,
