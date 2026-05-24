@@ -2,6 +2,7 @@ import { router, protectedProcedure } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { hasAgentRole } from '@dashboarduz/shared';
 import { amocrmService, type AmoCRMLead, type AmoCRMLeadPipeline, type AmoCRMUser } from '../../services/integrations/amocrm';
 import {
   getAmoCRMActivityMetrics,
@@ -431,7 +432,7 @@ function toManagerRole(user: AmoCRMUser): string[] {
 }
 
 async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
-  const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
   }
