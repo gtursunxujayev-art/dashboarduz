@@ -8,6 +8,7 @@ import {
   createIncomeSchema,
   createTariffSchema,
   customerSearchSchema,
+  hasAgentRole,
 } from '@dashboarduz/shared';
 import { z } from 'zod';
 import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
@@ -29,7 +30,7 @@ import {
   type SaleChainSaleRow,
 } from '../../services/income-chain';
 
-const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent'] as const;
+const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent'] as const;
 const SALES_MANAGER_ROLE_TOKENS = new Set(
   SALES_MANAGER_ROLES.map((role) => String(role).trim().toLowerCase()),
 );
@@ -952,7 +953,7 @@ async function fetchCourseOptionsSafe(tenantId: string): Promise<Array<{ id: str
 }
 
 function isAgentOnly(roles: string[]): boolean {
-  return roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 }
 
 function shouldSelfScopeManagerActions(roles: string[]): boolean {
