@@ -8,6 +8,7 @@ import { trpc } from '@/lib/trpc';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 type DetailTab = 'umumiy' | 'tariflar' | 'menejerlar' | 'mijozlar';
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -48,7 +49,7 @@ export default function CourseSalesDetailPage() {
       && !roles.includes('Admin')
       && !roles.includes('Manager')
       && !roles.includes('TeamLeader')
-      && !roles.includes('Agent')
+      && !roles.some((role) => AGENT_ROLES.has(role))
       && !roles.includes('Finance'),
   );
 
