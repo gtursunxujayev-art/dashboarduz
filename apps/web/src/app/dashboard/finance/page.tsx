@@ -16,6 +16,7 @@ import {
 } from 'recharts';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -152,7 +153,7 @@ export default function FinancePage() {
   const { user } = useAuth();
   const roles = user?.roles || [];
   const canSeeRefundAnalytics = roles.includes('Admin') || roles.includes('Finance');
-  const isAgentOnly = roles.includes('Agent')
+  const isAgentOnly = roles.some((role) => AGENT_ROLES.has(role))
     && !roles.includes('Admin')
     && !roles.includes('Manager')
     && !roles.includes('TeamLeader')
