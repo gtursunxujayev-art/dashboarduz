@@ -82,21 +82,21 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
 
 function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: number; highlight: boolean }) {
   return (
-    <div className={`leaderboard-row grid grid-cols-[64px_1fr_auto] items-center gap-4 rounded-3xl border p-4 transition-all duration-700 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
-      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
+    <div className={`leaderboard-row grid grid-cols-[56px_1fr_auto] items-center gap-4 rounded-3xl border px-4 py-3 transition-all duration-700 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
+      <div className={`flex h-11 w-11 items-center justify-center rounded-2xl text-xl font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
         {rank}
       </div>
       <div className="min-w-0">
         <div className="truncate text-xl font-extrabold text-white">{agent.name}</div>
-        <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-300 sm:grid-cols-4">
-          <span>Sales: <b className="text-white">{agent.monthlySalesCount}</b></span>
-          <span>Month: <b className="text-emerald-300">{formatCompactMoney(agent.monthlyIncome)}</b></span>
-          <span>Today: <b className="text-cyan-300">{formatCompactMoney(agent.todayIncome)}</b></span>
+        <div className="mt-1.5 grid grid-cols-2 gap-2 text-2xl font-semibold text-slate-300 sm:grid-cols-4">
+          <span>Sotuv: <b className="text-white">{agent.monthlySalesCount}</b></span>
+          <span>Oy: <b className="text-emerald-300">{formatCompactMoney(agent.monthlyIncome)}</b></span>
+          <span>Bugun: <b className="text-cyan-300">{formatCompactMoney(agent.todayIncome)}</b></span>
           <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(agent.monthlyBonus)}</b></span>
         </div>
       </div>
-      <div className="hidden rounded-2xl bg-slate-950/60 px-4 py-3 text-right sm:block">
-        <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Monthly</div>
+      <div className="hidden rounded-2xl bg-slate-950/60 px-4 py-2.5 text-right sm:block">
+        <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Oylik</div>
         <div className="text-lg font-black text-white">{formatCompactMoney(agent.monthlyIncome)}</div>
       </div>
     </div>
@@ -109,16 +109,16 @@ function AgentLeaderboard({ title, agents, tone, highlightedAgentId }: { title: 
       <div className="mb-6 flex items-center justify-between">
         <div>
           <p className={`text-sm font-bold uppercase tracking-[0.28em] ${tone}`}>{title}</p>
-          <h2 className="mt-1 text-3xl font-black text-white">Agents</h2>
+          <h2 className="mt-1 text-3xl font-black text-white">Agentlar</h2>
         </div>
-        <div className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-200">{agents.length} people</div>
+        <div className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-200">{agents.length} ta</div>
       </div>
       <div className="space-y-3">
         {agents.map((agent, index) => (
           <AgentRow key={agent.userId} agent={agent} rank={index + 1} highlight={highlightedAgentId === agent.userId} />
         ))}
         {!agents.length ? (
-          <div className="rounded-3xl border border-dashed border-white/15 p-10 text-center text-slate-400">No agents in this group yet.</div>
+          <div className="rounded-3xl border border-dashed border-white/15 p-10 text-center text-slate-400">Bu guruhda agentlar yo'q.</div>
         ) : null}
       </div>
     </section>
@@ -135,11 +135,11 @@ function IncomeCelebrationPopup({ event, onClose }: { event: LatestIncomeEvent; 
     <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 backdrop-blur-sm">
       <div className="celebration-card pointer-events-auto max-w-xl rounded-[2.5rem] border border-amber-200/40 bg-slate-950/95 p-10 text-center shadow-[0_0_100px_rgba(251,191,36,0.28)]">
         <div className="clap-hand mx-auto mb-5 text-8xl">👏</div>
-        <p className="text-sm font-bold uppercase tracking-[0.3em] text-amber-200">New income</p>
+        <p className="text-sm font-bold uppercase tracking-[0.3em] text-amber-200">Yangi tushum</p>
         <h3 className="mt-4 text-4xl font-black text-white">{event.managerName}</h3>
         <p className="mt-4 text-5xl font-black text-emerald-300">{formatMoney(event.amount)}</p>
         <button onClick={onClose} className="mt-8 rounded-2xl border border-white/15 px-5 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10">
-          Close
+          Yopish
         </button>
       </div>
     </div>
@@ -191,22 +191,17 @@ export default function DashboardRolePage() {
   return (
     <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#1e3a8a_0,#0f172a_36%,#020617_72%)] px-6 py-6 text-white md:px-10">
       <div className="mx-auto flex max-w-[1800px] flex-col gap-7">
-        <header className="flex flex-col gap-4 rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl shadow-black/30 backdrop-blur-xl md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-[0.35em] text-cyan-200">Dashboarduz Live</p>
-            <h1 className="mt-2 text-4xl font-black tracking-tight md:text-6xl">Sales Leaderboard</h1>
-            <p className="mt-2 text-slate-300">Online and offline agent ranking, refreshed every 2 seconds.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
+        <header className="flex justify-end">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setSoundEnabled((value) => !value)}
-              className={`rounded-2xl px-5 py-3 text-sm font-black transition ${soundEnabled ? 'bg-emerald-300 text-slate-950' : 'bg-white/10 text-white hover:bg-white/15'}`}
+              className={`rounded-xl px-3 py-2 text-xs font-black transition ${soundEnabled ? 'bg-emerald-300 text-slate-950' : 'bg-white/10 text-white hover:bg-white/15'}`}
             >
-              {soundEnabled ? 'Sound enabled' : 'Enable sound'}
+              {soundEnabled ? 'Ovoz yoqilgan' : 'Ovozni yoqish'}
             </button>
-            <div className="rounded-2xl bg-slate-950/50 px-5 py-3 text-sm text-slate-300">
-              Updated: <span className="font-bold text-white">{data?.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('uz-UZ') : '...'}</span>
+            <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
+              Yangilandi: <span className="font-bold text-white">{data?.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('uz-UZ') : '...'}</span>
             </div>
           </div>
         </header>
@@ -216,14 +211,14 @@ export default function DashboardRolePage() {
         ) : null}
 
         <section className="grid gap-5 md:grid-cols-3">
-          <KpiCard label="Today's income" value={data?.kpis.todayIncome || 0} accent="bg-cyan-400" />
-          <KpiCard label="This week's income" value={data?.kpis.weekIncome || 0} accent="bg-fuchsia-400" />
-          <KpiCard label="This month's income" value={data?.kpis.monthIncome || 0} accent="bg-emerald-400" />
+          <KpiCard label="Bugungi tushum" value={data?.kpis.todayIncome || 0} accent="bg-cyan-400" />
+          <KpiCard label="Haftalik tushum" value={data?.kpis.weekIncome || 0} accent="bg-fuchsia-400" />
+          <KpiCard label="Oylik tushum" value={data?.kpis.monthIncome || 0} accent="bg-emerald-400" />
         </section>
 
         <section className="grid gap-6 xl:grid-cols-2">
-          <AgentLeaderboard title="Online" agents={onlineAgents} tone="text-cyan-300" highlightedAgentId={highlightedAgentId} />
-          <AgentLeaderboard title="Offline" agents={offlineAgents} tone="text-orange-300" highlightedAgentId={highlightedAgentId} />
+          <AgentLeaderboard title="Onlayn" agents={onlineAgents} tone="text-cyan-300" highlightedAgentId={highlightedAgentId} />
+          <AgentLeaderboard title="Oflayn" agents={offlineAgents} tone="text-orange-300" highlightedAgentId={highlightedAgentId} />
         </section>
       </div>
 
