@@ -7,6 +7,7 @@ import {
   loginWithPasswordSchema,
   changeCredentialsSchema,
   telegramLoginSchema,
+  USER_ROLES,
   type UserRole,
 } from '@dashboarduz/shared';
 import { prisma } from '@dashboarduz/db';
@@ -103,7 +104,7 @@ export const authRouter = router({
       const jwtPayload = {
         userId,
         tenantId,
-        roles: roles.filter((role: string): role is UserRole => ['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy'].includes(role)),
+        roles: roles.filter((role: string): role is UserRole => (USER_ROLES as readonly string[]).includes(role)),
       };
 
       const token = signJWT(jwtPayload);
@@ -180,7 +181,7 @@ export const authRouter = router({
       const jwtPayload = {
         userId: updatedUser.id,
         tenantId: updatedUser.tenantId,
-        roles: updatedUser.roles.filter((role: string): role is UserRole => ['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy'].includes(role)),
+        roles: updatedUser.roles.filter((role: string): role is UserRole => (USER_ROLES as readonly string[]).includes(role)),
         ...(updatedUser.phone ? { phone: updatedUser.phone } : {}),
         ...(updatedUser.email ? { email: updatedUser.email } : {}),
       };
@@ -339,7 +340,7 @@ export const authRouter = router({
         const jwtPayload = {
           userId: user.id,
           tenantId,
-          roles: user.roles.filter((role: string): role is UserRole => ['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy'].includes(role)),
+          roles: user.roles.filter((role: string): role is UserRole => (USER_ROLES as readonly string[]).includes(role)),
           ...(user.phone ? { phone: user.phone } : {}),
         };
 
