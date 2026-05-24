@@ -41,6 +41,7 @@ import {
   getReportLocalDayOfYearForMonthEnd,
   buildTrend,
 } from './helpers';
+import { AGENT_ROLES } from '@dashboarduz/shared';
 import { getOrSet, buildCacheKey } from '../../../services/cache';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
@@ -360,7 +361,7 @@ export const summaryProcedures = {
             tenantId: ctx.tenantId,
             isActive: true,
             roles: {
-              hasSome: ['Agent', 'TeamLeader'],
+              hasSome: [...AGENT_ROLES, 'TeamLeader'],
             },
             ...(scope.isScoped
               ? {
@@ -386,7 +387,7 @@ export const summaryProcedures = {
             tenantId: ctx.tenantId,
             isActive: true,
             roles: {
-              hasSome: ['Agent', 'TeamLeader'],
+              hasSome: [...AGENT_ROLES, 'TeamLeader'],
             },
             ...(scope.isScoped
               ? {
@@ -986,7 +987,7 @@ export const summaryProcedures = {
             tenantId: ctx.tenantId,
             isActive: true,
             roles: {
-              hasSome: ['Admin', 'Manager', 'TeamLeader', 'Agent'],
+              hasSome: ['Admin', 'Manager', 'TeamLeader', ...AGENT_ROLES],
             },
           },
           orderBy: { name: 'asc' },
