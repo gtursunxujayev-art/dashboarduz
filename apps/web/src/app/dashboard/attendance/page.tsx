@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
+
 function getTodayTashkentDate(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Tashkent',
@@ -201,7 +203,7 @@ export default function AttendancePage() {
     () =>
       (usersQuery.data || []).filter((currentUser: any) => {
         if (!Array.isArray(currentUser.roles) || currentUser.isActive === false) return false;
-        return currentUser.roles.includes('Agent') || currentUser.roles.includes('TeamLeader');
+        return currentUser.roles.some((role: string) => AGENT_ROLES.has(role)) || currentUser.roles.includes('TeamLeader');
       }),
     [usersQuery.data],
   );
