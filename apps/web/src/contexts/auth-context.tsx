@@ -4,9 +4,9 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
 
-type UserRole = 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'Finance' | 'Tashkiliy';
+type UserRole = 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'OnlineAgent' | 'OfflineAgent' | 'Dashboard' | 'Finance' | 'Tashkiliy';
 
-const KNOWN_USER_ROLES: readonly UserRole[] = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy'];
+const KNOWN_USER_ROLES: readonly UserRole[] = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'Finance', 'Tashkiliy'];
 
 function narrowRoles(roles: readonly string[] | null | undefined): UserRole[] {
   if (!roles) return [];
