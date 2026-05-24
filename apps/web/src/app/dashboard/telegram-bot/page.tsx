@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 
-type RecipientRole = 'all' | 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'Finance' | 'Tashkiliy';
+type RecipientRole = 'all' | 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'OnlineAgent' | 'OfflineAgent' | 'Finance' | 'Tashkiliy';
 
 const roleOptions: Array<{ value: RecipientRole; label: string }> = [
   { value: 'all', label: 'Barcha rollar' },
@@ -11,6 +11,8 @@ const roleOptions: Array<{ value: RecipientRole; label: string }> = [
   { value: 'Manager', label: 'Menejer' },
   { value: 'TeamLeader', label: 'Team lider' },
   { value: 'Agent', label: 'Agent' },
+  { value: 'OnlineAgent', label: 'Online agent' },
+  { value: 'OfflineAgent', label: 'Offline agent' },
   { value: 'Finance', label: 'Moliya' },
   { value: 'Tashkiliy', label: 'Tashkiliy' },
 ];
