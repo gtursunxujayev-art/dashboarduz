@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
 
 type CourseTypeCategory = 'online' | 'offline' | 'intensive';
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 const CATEGORY_LABELS: Record<CourseTypeCategory, string> = {
   online: 'Online',
@@ -54,7 +55,7 @@ export default function CourseTypeSalesView({
       && !roles.includes('Admin')
       && !roles.includes('Manager')
       && !roles.includes('TeamLeader')
-      && !roles.includes('Agent')
+      && !roles.some((role) => AGENT_ROLES.has(role))
       && !roles.includes('Finance'),
   );
 
