@@ -1,6 +1,7 @@
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
 import { decryptIntegrationTokens } from '../../services/security/encryption';
 import { telegramService } from '../../services/integrations/telegram';
 import { protectedProcedure, router } from '../trpc';
@@ -12,7 +13,7 @@ import {
   parseReportDateInput,
 } from '../../services/corporate-call-durations';
 
-const MANAGER_LIKE_ROLES = ['Agent', 'Manager', 'TeamLeader'] as const;
+const MANAGER_LIKE_ROLES = [...AGENT_ROLES, 'Manager', 'TeamLeader'] as const;
 const CORPORATE_GROUP_ENV_KEYS = [
   'KORPORATIV_GROUP_ID',
   'KORPORATIV_GROUP_IDS',
@@ -30,7 +31,7 @@ function canUseCorporateCalls(roles: string[]): boolean {
   return isAdmin(roles)
     || roles.includes('Manager')
     || roles.includes('TeamLeader')
-    || roles.includes('Agent');
+    || hasAgentRole(roles);
 }
 
 function parseTelegramGroupIds(rawValue: string | undefined): string[] {
