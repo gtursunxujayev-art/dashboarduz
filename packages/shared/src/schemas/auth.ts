@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { USER_ROLES } from '../types';
 
 // Phone OTP schemas
 export const phoneOtpRequestSchema = z.object({
@@ -59,7 +60,7 @@ export const linkAccountSchema = z.object({
 export const jwtPayloadSchema = z.object({
   userId: z.string().uuid(),
   tenantId: z.string().uuid(),
-  roles: z.array(z.enum(['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy'])),
+  roles: z.array(z.enum(USER_ROLES)),
   email: z.string().email().optional(),
   phone: z.string().optional(),
 });
