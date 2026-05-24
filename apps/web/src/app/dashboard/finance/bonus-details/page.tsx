@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 function getTashkentToday(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -117,7 +118,7 @@ function formatAmount(value: number | null | undefined): string {
 export default function FinanceBonusDetailsPage() {
   const { user } = useAuth();
   const roles = user?.roles || [];
-  const isAgentOnly = roles.includes('Agent')
+  const isAgentOnly = roles.some((role) => AGENT_ROLES.has(role))
     && !roles.includes('Admin')
     && !roles.includes('Manager')
     && !roles.includes('TeamLeader')
