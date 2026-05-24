@@ -60,23 +60,23 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
 
 function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: number; highlight: boolean }) {
   return (
-    <div className={`leaderboard-row grid grid-cols-[50px_1fr_auto] items-center gap-3 rounded-3xl border px-3 py-2 transition-all duration-700 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
-      <div className={`flex h-9 w-9 items-center justify-center rounded-xl text-lg font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
+    <div className={`leaderboard-row grid grid-cols-[46px_1fr_auto] items-center gap-3 rounded-3xl border px-3 py-1.5 transition-all duration-700 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
+      <div className={`flex h-8 w-8 items-center justify-center rounded-xl text-base font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
         {rank}
       </div>
       <div className="grid min-w-0 items-center gap-3 sm:grid-cols-[minmax(130px,1fr)_120px_120px_120px]">
         <div className="truncate text-lg font-extrabold text-white">{agent.name}</div>
-        <div className="text-sm font-semibold text-slate-300">
+        <div className="text-base font-semibold text-slate-300">
           <span>Sotuv: <b className="text-white">{agent.monthlySalesCount}</b></span>
         </div>
-        <div className="text-sm font-semibold text-slate-300">
+        <div className="text-base font-semibold text-slate-300">
           <span>Bugun: <b className="text-cyan-300">{formatCompactMoney(agent.todayIncome)}</b></span>
         </div>
-        <div className="text-sm font-semibold text-slate-300">
+        <div className="text-base font-semibold text-slate-300">
           <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(agent.monthlyBonus)}</b></span>
         </div>
       </div>
-      <div className="hidden rounded-2xl bg-slate-950/60 px-3 py-2 text-right sm:block">
+      <div className="hidden rounded-2xl bg-slate-950/60 px-3 py-1.5 text-right sm:block">
         <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Oylik</div>
         <div className="text-base font-black text-white">{formatCompactMoney(agent.monthlyIncome)}</div>
       </div>
@@ -170,21 +170,6 @@ export default function DashboardRolePage() {
   return (
     <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#1e3a8a_0,#0f172a_36%,#020617_72%)] px-6 py-6 text-white md:px-10">
       <div className="mx-auto flex max-w-[1800px] flex-col gap-7">
-        <header className="flex justify-end">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setSoundEnabled((value) => !value)}
-              className={`rounded-xl px-3 py-2 text-xs font-black transition ${soundEnabled ? 'bg-emerald-300 text-slate-950' : 'bg-white/10 text-white hover:bg-white/15'}`}
-            >
-              {soundEnabled ? 'Ovoz: yoqilgan' : "Ovoz: o'chirilgan"}
-            </button>
-            <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
-              Yangilandi: <span className="font-bold text-white">{data?.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('uz-UZ') : '...'}</span>
-            </div>
-          </div>
-        </header>
-
         {query.error ? (
           <div className="rounded-3xl border border-red-400/30 bg-red-500/10 p-5 text-red-100">{query.error.message}</div>
         ) : null}
@@ -199,6 +184,19 @@ export default function DashboardRolePage() {
           <AgentLeaderboard title="Onlayn" agents={onlineAgents} tone="text-cyan-300" highlightedAgentId={highlightedAgentId} />
           <AgentLeaderboard title="Oflayn" agents={offlineAgents} tone="text-orange-300" highlightedAgentId={highlightedAgentId} />
         </section>
+      </div>
+
+      <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-slate-950/70 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
+        <button
+          type="button"
+          onClick={() => setSoundEnabled((value) => !value)}
+          className={`rounded-xl px-3 py-2 text-xs font-black transition ${soundEnabled ? 'bg-emerald-300 text-slate-950' : 'bg-white/10 text-white hover:bg-white/15'}`}
+        >
+          {soundEnabled ? 'Ovoz: yoqilgan' : "Ovoz: o'chirilgan"}
+        </button>
+        <div className="px-2 py-1 text-xs text-slate-300">
+          Yangilandi: <span className="font-bold text-white">{data?.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('uz-UZ') : '...'}</span>
+        </div>
       </div>
 
       {popupEvent ? <IncomeCelebrationPopup event={popupEvent} onClose={() => setPopupEvent(null)} /> : null}
