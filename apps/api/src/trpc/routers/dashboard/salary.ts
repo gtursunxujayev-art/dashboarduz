@@ -28,6 +28,7 @@ import {
 } from './helpers';
 import { amocrmService, type AmoCRMLead } from '../../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
+import { AGENT_ROLES } from '@dashboarduz/shared';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
@@ -180,7 +181,7 @@ export const salaryProcedures = {
           tenantId: ctx.tenantId,
           isActive: true,
           roles: {
-            hasSome: ['Agent', 'TeamLeader'],
+            hasSome: [...AGENT_ROLES, 'TeamLeader'],
           },
         },
         orderBy: [{ name: 'asc' }, { username: 'asc' }],
@@ -1086,7 +1087,7 @@ export const salaryProcedures = {
             tenantId: ctx.tenantId,
             isActive: true,
             roles: {
-              hasSome: ['Agent', 'TeamLeader'],
+              hasSome: [...AGENT_ROLES, 'TeamLeader'],
             },
           },
           orderBy: [{ name: 'asc' }, { username: 'asc' }],
