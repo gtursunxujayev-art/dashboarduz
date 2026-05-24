@@ -11,6 +11,7 @@ import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 const RANGE_OPTIONS: DashboardRange[] = ['today', 'week', 'month', 'custom'];
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 type DashboardCard = {
   id: string;
@@ -109,8 +110,9 @@ export default function DashboardPage() {
   const [pipelineIds, setPipelineIds] = useState<string[]>([]);
   const { isAdmin, isAgentOnly, isTeamLeaderOnly, hasFinanceRole, showSalarySection, isFinanceOnly, isTashkiliyOnly } = useMemo(() => {
     const isAdmin = Boolean(roles.includes('Admin'));
+    const hasAgentLikeRole = roles.some((role) => AGENT_ROLES.has(role));
     const isAgentOnly = Boolean(
-      roles.includes('Agent')
+      hasAgentLikeRole
         && !roles.includes('Admin')
         && !roles.includes('Manager')
         && !roles.includes('TeamLeader')
@@ -121,7 +123,7 @@ export default function DashboardPage() {
       roles.includes('TeamLeader')
         && !roles.includes('Admin')
         && !roles.includes('Manager')
-        && !roles.includes('Agent')
+        && !hasAgentLikeRole
         && !roles.includes('Finance'),
     );
     const showSalarySection = isAgentOnly || isTeamLeaderOnly || hasFinanceRole;
@@ -130,14 +132,14 @@ export default function DashboardPage() {
         && !roles.includes('Admin')
         && !roles.includes('Manager')
         && !roles.includes('TeamLeader')
-        && !roles.includes('Agent'),
+        && !hasAgentLikeRole,
     );
     const isTashkiliyOnly = Boolean(
       roles.includes('Tashkiliy')
         && !roles.includes('Admin')
         && !roles.includes('Manager')
         && !roles.includes('TeamLeader')
-        && !roles.includes('Agent')
+        && !hasAgentLikeRole
         && !roles.includes('Finance'),
     );
     return { isAdmin, isAgentOnly, isTeamLeaderOnly, hasFinanceRole, showSalarySection, isFinanceOnly, isTashkiliyOnly };
