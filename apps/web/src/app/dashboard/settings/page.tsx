@@ -10,6 +10,7 @@ type FieldOption = {
   label: string;
   source: 'catalog' | 'system';
 };
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -20,7 +21,7 @@ export default function SettingsPage() {
       && !roles.includes('Admin')
       && !roles.includes('Manager')
       && !roles.includes('TeamLeader')
-      && !roles.includes('Agent')
+      && !roles.some((role) => AGENT_ROLES.has(role))
       && !roles.includes('Finance'),
   );
   const showLeadSettings = false;
