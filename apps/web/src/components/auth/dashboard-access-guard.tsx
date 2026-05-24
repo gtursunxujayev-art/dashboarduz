@@ -5,6 +5,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
+const LIVE_LEADERBOARD_PATH = '/dashboard/live-leaderboard';
 const AGENT_ALLOWED_PATHS = [
   '/dashboard',
   '/dashboard/leads',
@@ -41,11 +43,16 @@ const MANAGER_BLOCKED_PATHS = [
 ];
 
 function isAgentOnly(roles: string[]): boolean {
-  return roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  return roles.some((role) => AGENT_ROLES.has(role)) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 }
 
 function isFinanceOnly(roles: string[]): boolean {
-  return roles.includes('Finance') && !roles.some((role) => role === 'Admin' || role === 'Manager' || role === 'TeamLeader' || role === 'Agent');
+  return roles.includes('Finance') && !roles.some((role) => (
+    role === 'Admin'
+    || role === 'Manager'
+    || role === 'TeamLeader'
+    || AGENT_ROLES.has(role)
+  ));
 }
 
 function isManagerOnly(roles: string[]): boolean {
@@ -57,7 +64,7 @@ function isTashkiliyOnly(roles: string[]): boolean {
     && !roles.includes('Admin')
     && !roles.includes('Manager')
     && !roles.includes('TeamLeader')
-    && !roles.includes('Agent')
+    && !roles.some((role) => AGENT_ROLES.has(role))
     && !roles.includes('Finance');
 }
 
@@ -69,6 +76,10 @@ function isPathBlocked(pathname: string, blockedPaths: string[]): boolean {
   return blockedPaths.some((blockedPath) => pathname === blockedPath || pathname.startsWith(`${blockedPath}/`));
 }
 
+function isDashboardOnly(roles: string[]): boolean {
+  return roles.includes('Dashboard') && roles.every((role) => role === 'Dashboard');
+}
+
 export default function DashboardAccessGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const pathname = usePathname();
@@ -76,15 +87,21 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
   const normalizedPath = pathname || '/dashboard';
   const isLeadPath = normalizedPath === '/dashboard/leads' || normalizedPath.startsWith('/dashboard/leads/');
   const canAccessLeads = Boolean(
-    user?.roles?.includes('Admin') || user?.roles?.includes('Manager') || user?.roles?.includes('TeamLeader') || user?.roles?.includes('Agent'),
+    user?.roles?.includes('Admin')
+    || user?.roles?.includes('Manager')
+    || user?.roles?.includes('TeamLeader')
+    || user?.roles?.some((role) => AGENT_ROLES.has(role)),
   );
 
   const isAgentRestriction = Boolean(user && isAgentOnly(user.roles));
   const isFinanceRestriction = Boolean(user && isFinanceOnly(user.roles));
   const isManagerRestriction = Boolean(user && isManagerOnly(user.roles));
   const isTashkiliyRestriction = Boolean(user && isTashkiliyOnly(user.roles));
+  const isDashboardRestriction = Boolean(user && isDashboardOnly(user.roles));
 
-  const isAllowed = isLeadPath
+  const isAllowed = isDashboardRestriction
+    ? normalizedPath === LIVE_LEADERBOARD_PATH
+    : isLeadPath
     ? canAccessLeads
     : isAgentRestriction
     ? isPathAllowed(normalizedPath, AGENT_ALLOWED_PATHS)
@@ -97,10 +114,18 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
         : true;
 
   useEffect(() => {
+    if (!isLoading && user && isDashboardRestriction && normalizedPath === '/dashboard') {
+      router.replace(LIVE_LEADERBOARD_PATH);
+      return;
+    }
     if (!isLoading && !isAllowed) {
+      if (isDashboardRestriction) {
+        router.replace(LIVE_LEADERBOARD_PATH);
+        return;
+      }
       router.replace('/dashboard');
     }
-  }, [isLoading, isAllowed, router]);
+  }, [isLoading, isAllowed, isDashboardRestriction, normalizedPath, router, user]);
 
   if (!isLoading && !isAllowed) {
     return null;
