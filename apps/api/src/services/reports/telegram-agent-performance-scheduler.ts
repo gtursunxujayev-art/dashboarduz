@@ -1,4 +1,5 @@
 import { prisma } from '@dashboarduz/db';
+import { AGENT_ROLES } from '@dashboarduz/shared';
 import { type AmoCRMTask, amocrmService } from '../integrations/amocrm';
 import { getTenantAmoCRMContext } from '../integrations/amocrm-live';
 import { telegramService } from '../integrations/telegram';
@@ -314,7 +315,7 @@ async function collectAgentMetricsForTenant(params: {
     where: {
       tenantId: params.tenantId,
       isActive: true,
-      roles: { has: 'Agent' },
+      roles: { hasSome: [...AGENT_ROLES] },
     },
     orderBy: { createdAt: 'asc' },
     select: {
