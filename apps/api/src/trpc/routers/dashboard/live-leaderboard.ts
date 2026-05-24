@@ -31,7 +31,7 @@ function canReadLiveLeaderboard(roles: readonly string[] | null | undefined): bo
 
 function resolveAgentGroup(roles: readonly string[]): AgentGroup | null {
   if (roles.includes('OnlineAgent')) return 'online';
-  if (roles.includes('OfflineAgent')) return 'offline';
+  if (roles.includes('OfflineAgent') || roles.includes('TeamLeader')) return 'offline';
   return null;
 }
 
@@ -225,7 +225,7 @@ export const liveLeaderboardProcedures = {
       where: {
         tenantId: ctx.tenantId,
         isActive: true,
-        roles: { hasSome: ['OnlineAgent', 'OfflineAgent'] },
+        roles: { hasSome: ['OnlineAgent', 'OfflineAgent', 'TeamLeader'] },
       },
       select: {
         id: true,
