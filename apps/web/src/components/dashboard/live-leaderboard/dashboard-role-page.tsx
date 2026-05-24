@@ -42,40 +42,18 @@ function sortAgents(agents: LeaderboardAgent[], group: AgentGroup) {
     .sort((a, b) => b.monthlyIncome - a.monthlyIncome || b.monthlySalesCount - a.monthlySalesCount || a.name.localeCompare(b.name));
 }
 
-function playClapSound() {
-  const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContextCtor) return;
-  const ctx = new AudioContextCtor();
-  const now = ctx.currentTime;
-
-  for (let i = 0; i < 4; i += 1) {
-    const bufferSize = ctx.sampleRate * 0.09;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const output = buffer.getChannelData(0);
-    for (let j = 0; j < bufferSize; j += 1) {
-      output[j] = (Math.random() * 2 - 1) * Math.pow(1 - j / bufferSize, 2.2);
-    }
-    const source = ctx.createBufferSource();
-    const gain = ctx.createGain();
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 1300 + i * 180;
-    gain.gain.setValueAtTime(0.22, now + i * 0.075);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.075 + 0.08);
-    source.buffer = buffer;
-    source.connect(filter).connect(gain).connect(ctx.destination);
-    source.start(now + i * 0.075);
-  }
-
-  window.setTimeout(() => void ctx.close().catch(() => undefined), 700);
+function playNewIncomeSound() {
+  const audio = new Audio('/sounds/new-income.m4a');
+  audio.volume = 1;
+  void audio.play().catch(() => undefined);
 }
 
 function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
-    <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.07] p-7 shadow-2xl shadow-black/30 backdrop-blur-xl">
+    <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.07] px-7 py-5 shadow-2xl shadow-black/30 backdrop-blur-xl">
       <div className={`absolute -right-14 -top-20 h-40 w-40 rounded-full ${accent} opacity-30 blur-3xl`} />
       <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-300">{label}</p>
-      <div className="mt-5 text-4xl font-black tracking-tight text-white md:text-5xl">{formatMoney(value)}</div>
+      <div className="mt-4 text-4xl font-black tracking-tight text-white md:text-5xl">{formatMoney(value)}</div>
     </div>
   );
 }
@@ -152,7 +130,7 @@ export default function DashboardRolePage() {
     refetchIntervalInBackground: true,
     retry: 1,
   });
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [highlightedAgentId, setHighlightedAgentId] = useState<string | null>(null);
   const [popupEvent, setPopupEvent] = useState<LatestIncomeEvent | null>(null);
   const lastSeenIncomeId = useRef<string | null>(null);
@@ -177,11 +155,7 @@ export default function DashboardRolePage() {
       setHighlightedAgentId(latest.managerUserId);
       setPopupEvent(latest);
       if (soundEnabled) {
-        try {
-          playClapSound();
-        } catch {
-          // Browsers can still block audio; the visual celebration is enough.
-        }
+        playNewIncomeSound();
       }
       const timer = window.setTimeout(() => setHighlightedAgentId(null), 4200);
       return () => window.clearTimeout(timer);
@@ -198,7 +172,7 @@ export default function DashboardRolePage() {
               onClick={() => setSoundEnabled((value) => !value)}
               className={`rounded-xl px-3 py-2 text-xs font-black transition ${soundEnabled ? 'bg-emerald-300 text-slate-950' : 'bg-white/10 text-white hover:bg-white/15'}`}
             >
-              {soundEnabled ? 'Ovoz yoqilgan' : 'Ovozni yoqish'}
+              {soundEnabled ? 'Ovoz: yoqilgan' : "Ovoz: o'chirilgan"}
             </button>
             <div className="rounded-xl bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
               Yangilandi: <span className="font-bold text-white">{data?.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('uz-UZ') : '...'}</span>
