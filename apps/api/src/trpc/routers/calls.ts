@@ -2,6 +2,7 @@ import { router, protectedProcedure } from '../trpc';
 import { prisma } from '@dashboarduz/db';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
+import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
 import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
 
 const callsListSchema = z.object({
@@ -244,7 +245,7 @@ function resolveDateRange(range: CallsRange, now: Date, dateFrom?: string, dateT
 }
 
 async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
-  const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
   }
@@ -391,14 +392,14 @@ export const callsRouter = router({
     const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
 
     const roles = ctx.user.roles || [];
-    const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+    const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 
     const [agentUsers, currentUser] = await Promise.all([
       prisma.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
-          roles: { hasSome: ['Agent', 'TeamLeader'] },
+          roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
         },
         orderBy: { createdAt: 'asc' },
         select: {
