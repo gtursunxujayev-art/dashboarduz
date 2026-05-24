@@ -50,10 +50,10 @@ function playNewIncomeSound() {
 
 function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
-    <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.07] px-7 py-5 shadow-2xl shadow-black/30 backdrop-blur-xl">
+    <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.07] px-7 py-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
       <div className={`absolute -right-14 -top-20 h-40 w-40 rounded-full ${accent} opacity-30 blur-3xl`} />
       <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-300">{label}</p>
-      <div className="mt-4 text-4xl font-black tracking-tight text-white md:text-5xl">{formatMoney(value)}</div>
+      <div className="mt-3 text-4xl font-black tracking-tight text-white md:text-5xl">{formatMoney(value)}</div>
     </div>
   );
 }
@@ -86,8 +86,10 @@ function AgentLeaderboard({ title, agents, tone, highlightedAgentId }: { title: 
     <section className="min-h-[560px] rounded-[2rem] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-black/30">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <p className={`text-sm font-bold uppercase tracking-[0.28em] ${tone}`}>{title}</p>
-          <h2 className="mt-1 text-3xl font-black text-white">Agentlar</h2>
+          <h2 className="text-3xl font-black text-white">
+            <span className={`mr-3 text-sm font-bold uppercase tracking-[0.28em] align-middle ${tone}`}>{title}</span>
+            Menejerlar
+          </h2>
         </div>
         <div className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-200">{agents.length} ta</div>
       </div>
