@@ -5,6 +5,7 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 
 type DebtFilter = 'all' | 'with_debt' | 'without_debt';
+const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 function formatAmount(value: number): string {
   return value.toLocaleString('en-US');
@@ -38,7 +39,7 @@ export default function CustomersPage() {
       && !roles.includes('Admin')
       && !roles.includes('Manager')
       && !roles.includes('TeamLeader')
-      && !roles.includes('Agent')
+      && !roles.some((role) => AGENT_ROLES.has(role))
       && !roles.includes('Finance'),
   );
 
