@@ -1,6 +1,7 @@
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { AGENT_ROLES } from '@dashboarduz/shared';
 import { adminProcedure, protectedProcedure, router } from '../trpc';
 
 const BONUS_PLAN_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
@@ -731,7 +732,7 @@ export const bonusRouter = router({
           tenantId: ctx.tenantId,
           id: { in: requestedUserIds },
           isActive: true,
-          roles: { hasSome: ['Agent', 'TeamLeader'] },
+          roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
         },
         select: { id: true },
       })
