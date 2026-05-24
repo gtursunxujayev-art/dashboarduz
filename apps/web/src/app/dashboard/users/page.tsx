@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 
-const availableRoles = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'Finance', 'Tashkiliy'] as const;
+const availableRoles = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'Finance', 'Tashkiliy'] as const;
 const roleLabels: Record<(typeof availableRoles)[number], string> = {
   Admin: 'Admin',
   Manager: 'Menejer',
   TeamLeader: 'Team lider',
   Agent: 'Agent',
+  OnlineAgent: 'Online agent',
+  OfflineAgent: 'Offline agent',
+  Dashboard: 'Dashboard',
   Finance: 'Moliya',
   Tashkiliy: 'Tashkiliy',
 };
@@ -17,7 +20,7 @@ const roleLabels: Record<(typeof availableRoles)[number], string> = {
 type UserRole = (typeof availableRoles)[number];
 
 function roleNeedsManagerMapping(role: UserRole) {
-  return role === 'Agent' || role === 'TeamLeader';
+  return role === 'Agent' || role === 'OnlineAgent' || role === 'OfflineAgent' || role === 'TeamLeader';
 }
 
 export default function UsersPage() {
