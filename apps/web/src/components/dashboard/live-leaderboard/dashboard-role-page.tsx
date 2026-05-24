@@ -82,22 +82,22 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
 
 function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: number; highlight: boolean }) {
   return (
-    <div className={`leaderboard-row grid grid-cols-[56px_1fr_auto] items-center gap-4 rounded-3xl border px-4 py-3 transition-all duration-700 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
-      <div className={`flex h-11 w-11 items-center justify-center rounded-2xl text-xl font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
+    <div className={`leaderboard-row grid grid-cols-[50px_1fr_auto] items-center gap-3 rounded-3xl border px-3 py-2 transition-all duration-700 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
+      <div className={`flex h-9 w-9 items-center justify-center rounded-xl text-lg font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
         {rank}
       </div>
       <div className="min-w-0">
-        <div className="truncate text-xl font-extrabold text-white">{agent.name}</div>
-        <div className="mt-1.5 grid grid-cols-2 gap-2 text-sm font-semibold text-slate-300 sm:grid-cols-4">
+        <div className="truncate text-lg font-extrabold text-white">{agent.name}</div>
+        <div className="mt-1 grid grid-cols-2 gap-2 text-sm font-semibold text-slate-300 sm:grid-cols-4">
           <span>Sotuv: <b className="text-white">{agent.monthlySalesCount}</b></span>
           <span>Oy: <b className="text-emerald-300">{formatCompactMoney(agent.monthlyIncome)}</b></span>
           <span>Bugun: <b className="text-cyan-300">{formatCompactMoney(agent.todayIncome)}</b></span>
           <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(agent.monthlyBonus)}</b></span>
         </div>
       </div>
-      <div className="hidden rounded-2xl bg-slate-950/60 px-4 py-2.5 text-right sm:block">
+      <div className="hidden rounded-2xl bg-slate-950/60 px-3 py-2 text-right sm:block">
         <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Oylik</div>
-        <div className="text-lg font-black text-white">{formatCompactMoney(agent.monthlyIncome)}</div>
+        <div className="text-base font-black text-white">{formatCompactMoney(agent.monthlyIncome)}</div>
       </div>
     </div>
   );
