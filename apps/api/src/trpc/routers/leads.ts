@@ -1,5 +1,5 @@
 import { router, protectedProcedure } from '../trpc';
-import { createLeadSchema, updateLeadSchema, leadQuerySchema } from '@dashboarduz/shared';
+import { createLeadSchema, updateLeadSchema, leadQuerySchema, hasAgentRole } from '@dashboarduz/shared';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -13,7 +13,7 @@ import {
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 
 async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
-  const isAgentOnly = roles.includes('Agent') && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
   }
