@@ -25,6 +25,20 @@ type LeaderboardAgent = {
   roles: string[];
 };
 
+function parseTelegramDailyReportCourseIds(config: unknown): string[] {
+  const raw = config && typeof config === 'object' && !Array.isArray(config)
+    ? (config as Record<string, unknown>).telegramDailyReportCourseIds
+    : null;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return Array.from(new Set(
+    raw
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  )).slice(0, 3);
+}
+
 function canReadLiveLeaderboard(roles: readonly string[] | null | undefined): boolean {
   return Array.isArray(roles) && roles.some((role) => LIVE_LEADERBOARD_ROLES.has(role));
 }
@@ -41,6 +55,10 @@ function getAgentLabel(agent: LeaderboardAgent): string {
 
 function sumPaymentAmount(rows: Array<{ paymentAmount: number }>): number {
   return rows.reduce((total, row) => total + (row.paymentAmount || 0), 0);
+}
+
+function resolveCoursePanelGroup(category: string | null | undefined): AgentGroup {
+  return String(category || '').trim().toLowerCase() === 'online' ? 'online' : 'offline';
 }
 
 function incrementBreakdown(map: Map<string, SalaryBreakdown>, agentId: string, category: SalaryCategory) {
@@ -241,15 +259,6 @@ export const liveLeaderboardProcedures = {
       .filter((agent): agent is LeaderboardAgent & { group: AgentGroup } => Boolean(agent.group));
     const agentIds = groupedAgents.map((agent) => agent.id);
 
-    if (!agentIds.length) {
-      return {
-        generatedAt: now.toISOString(),
-        kpis: { todayIncome: 0, weekIncome: 0, monthIncome: 0 },
-        agents: [],
-        latestIncomeEvent: null,
-      };
-    }
-
     const technicalSales = await prisma.income.findMany({
       where: {
         tenantId: ctx.tenantId,
@@ -265,6 +274,89 @@ export const liveLeaderboardProcedures = {
       },
     });
     const technicalSaleIds = buildTechnicalSaleIdSet(technicalSales);
+
+    const telegramIntegration = await prisma.integration.findUnique({
+      where: {
+        tenantId_type: {
+          tenantId: ctx.tenantId,
+          type: 'telegram',
+        },
+      },
+      select: {
+        status: true,
+        config: true,
+      },
+    });
+    const selectedCourseIds = telegramIntegration?.status === 'active'
+      ? parseTelegramDailyReportCourseIds(telegramIntegration.config)
+      : [];
+
+    const [selectedCourses, selectedCourseSalesRaw] = selectedCourseIds.length > 0
+      ? await Promise.all([
+          prisma.course.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              id: { in: selectedCourseIds },
+            },
+            select: {
+              id: true,
+              name: true,
+              category: true,
+            },
+          }),
+          prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              type: 'new_sale',
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              courseId: { in: selectedCourseIds },
+            },
+            select: {
+              id: true,
+              type: true,
+              relatedDebtIncomeId: true,
+              courseId: true,
+            },
+          }),
+        ])
+      : [[], []] as const;
+
+    const selectedCourseSales = selectedCourseSalesRaw.filter((row) => !isRowLinkedToTechnicalSale({
+      rowType: row.type,
+      rowId: row.id,
+      relatedDebtIncomeId: row.relatedDebtIncomeId,
+      technicalSaleIds,
+    }));
+    const selectedCourseSalesCountById = new Map<string, number>();
+    for (const sale of selectedCourseSales) {
+      if (!sale.courseId) continue;
+      selectedCourseSalesCountById.set(sale.courseId, (selectedCourseSalesCountById.get(sale.courseId) || 0) + 1);
+    }
+    const selectedCoursesById = new Map(selectedCourses.map((course) => [course.id, course]));
+    const selectedReportCourses = selectedCourseIds
+      .map((courseId) => {
+        const course = selectedCoursesById.get(courseId);
+        if (!course) return null;
+        const category = String(course.category || '').trim();
+        return {
+          courseId: course.id,
+          name: course.name,
+          category,
+          group: resolveCoursePanelGroup(category),
+          salesCount: selectedCourseSalesCountById.get(course.id) || 0,
+        };
+      })
+      .filter((course): course is NonNullable<typeof course> => Boolean(course));
+
+    if (!agentIds.length) {
+      return {
+        generatedAt: now.toISOString(),
+        kpis: { todayIncome: 0, weekIncome: 0, monthIncome: 0 },
+        agents: [],
+        selectedReportCourses,
+        latestIncomeEvent: null,
+      };
+    }
 
     const [monthRowsRaw, weekRowsRaw, monthlySalesRaw, latestRowsRaw] = await Promise.all([
       prisma.income.findMany({
@@ -386,6 +478,7 @@ export const liveLeaderboardProcedures = {
         todayIncome: todayIncomeByAgent.get(agent.id) || 0,
         monthlyBonus: monthlyBonusByAgent.get(agent.id) || 0,
       })),
+      selectedReportCourses,
       latestIncomeEvent: latestIncome
         ? {
             incomeId: latestIncome.id,
