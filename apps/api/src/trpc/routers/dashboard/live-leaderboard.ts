@@ -61,6 +61,11 @@ function resolveCoursePanelGroup(category: string | null | undefined): AgentGrou
   return String(category || '').trim().toLowerCase() === 'online' ? 'online' : 'offline';
 }
 
+function resolveSalePanelGroup(category: string | null | undefined, name: string | null | undefined): AgentGroup {
+  const classified = classifyCourseCategoryFromField(category || name);
+  return classified === 'online' ? 'online' : 'offline';
+}
+
 function incrementBreakdown(map: Map<string, SalaryBreakdown>, agentId: string, category: SalaryCategory) {
   const existing = map.get(agentId) ?? createZeroBreakdown();
   existing[category] += 1;
@@ -353,12 +358,16 @@ export const liveLeaderboardProcedures = {
         generatedAt: now.toISOString(),
         kpis: { todayIncome: 0, weekIncome: 0, monthIncome: 0 },
         agents: [],
+        groupStats: {
+          online: { todaySalesCount: 0 },
+          offline: { todaySalesCount: 0 },
+        },
         selectedReportCourses,
         latestIncomeEvent: null,
       };
     }
 
-    const [monthRowsRaw, weekRowsRaw, monthlySalesRaw, latestRowsRaw] = await Promise.all([
+    const [monthRowsRaw, weekRowsRaw, monthlySalesRaw, todaySalesRaw, latestRowsRaw] = await Promise.all([
       prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -404,6 +413,31 @@ export const liveLeaderboardProcedures = {
           type: true,
           relatedDebtIncomeId: true,
           managerUserId: true,
+          course: {
+            select: {
+              category: true,
+              name: true,
+            },
+          },
+        },
+      }),
+      prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          entryDate: { gte: todayStart, lte: now },
+        },
+        select: {
+          id: true,
+          type: true,
+          relatedDebtIncomeId: true,
+          course: {
+            select: {
+              category: true,
+              name: true,
+            },
+          },
         },
       }),
       prisma.income.findMany({
@@ -437,6 +471,7 @@ export const liveLeaderboardProcedures = {
     const monthRows = monthRowsRaw.filter(isNonTechnicalRow);
     const weekRows = weekRowsRaw.filter(isNonTechnicalRow);
     const monthlySales = monthlySalesRaw.filter(isNonTechnicalRow);
+    const todaySales = todaySalesRaw.filter(isNonTechnicalRow);
     const todayRows = monthRows.filter((row) => row.entryDate >= todayStart);
     const monthlyBonusByAgent = await calculateMonthlyBonusByAgent({
       tenantId: ctx.tenantId,
@@ -449,6 +484,11 @@ export const liveLeaderboardProcedures = {
     const monthIncomeByAgent = new Map<string, number>();
     const todayIncomeByAgent = new Map<string, number>();
     const monthlySalesByAgent = new Map<string, number>();
+    const agentGroupById = new Map(groupedAgents.map((agent) => [agent.id, agent.group]));
+    const groupTodaySalesCount = {
+      online: 0,
+      offline: 0,
+    };
 
     for (const row of monthRows) {
       monthIncomeByAgent.set(row.managerUserId, (monthIncomeByAgent.get(row.managerUserId) || 0) + row.paymentAmount);
@@ -457,7 +497,19 @@ export const liveLeaderboardProcedures = {
       }
     }
     for (const sale of monthlySales) {
+      const agentGroup = agentGroupById.get(sale.managerUserId);
+      if (!agentGroup) {
+        continue;
+      }
+      const saleGroup = resolveSalePanelGroup(sale.course?.category, sale.course?.name);
+      if (saleGroup !== agentGroup) {
+        continue;
+      }
       monthlySalesByAgent.set(sale.managerUserId, (monthlySalesByAgent.get(sale.managerUserId) || 0) + 1);
+    }
+    for (const sale of todaySales) {
+      const saleGroup = resolveSalePanelGroup(sale.course?.category, sale.course?.name);
+      groupTodaySalesCount[saleGroup] += 1;
     }
 
     const latestIncome = latestRowsRaw.find(isNonTechnicalRow) || null;
@@ -468,6 +520,10 @@ export const liveLeaderboardProcedures = {
         todayIncome: sumPaymentAmount(todayRows),
         weekIncome: sumPaymentAmount(weekRows),
         monthIncome: sumPaymentAmount(monthRows),
+      },
+      groupStats: {
+        online: { todaySalesCount: groupTodaySalesCount.online },
+        offline: { todaySalesCount: groupTodaySalesCount.offline },
       },
       agents: groupedAgents.map((agent) => ({
         userId: agent.id,
