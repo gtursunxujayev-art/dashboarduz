@@ -32,6 +32,11 @@ type SelectedReportCourse = {
   salesCount: number;
 };
 
+type GroupStats = {
+  online: { todaySalesCount: number };
+  offline: { todaySalesCount: number };
+};
+
 function formatMoney(amount: number) {
   return `${Math.round(amount || 0).toLocaleString('uz-UZ')} so'm`;
 }
@@ -52,8 +57,19 @@ function sortAgents(agents: LeaderboardAgent[], group: AgentGroup) {
 
 function playNewIncomeSound() {
   const audio = new Audio('/sounds/new-income.m4a');
-  audio.volume = 1;
+  audio.volume = 0.1;
   void audio.play().catch(() => undefined);
+  const startedAt = window.performance.now();
+  const durationMs = 3000;
+  const tick = () => {
+    const elapsed = window.performance.now() - startedAt;
+    const progress = Math.min(elapsed / durationMs, 1);
+    audio.volume = 0.1 + (0.9 * progress);
+    if (progress < 1) {
+      window.requestAnimationFrame(tick);
+    }
+  };
+  window.requestAnimationFrame(tick);
 }
 
 function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {
@@ -96,22 +112,27 @@ function AgentLeaderboard({
   title,
   agents,
   courses,
+  todaySalesCount,
   tone,
   highlightedAgentId,
 }: {
   title: string;
   agents: LeaderboardAgent[];
   courses: SelectedReportCourse[];
+  todaySalesCount: number;
   tone: string;
   highlightedAgentId: string | null;
 }) {
   return (
     <section className="min-h-[560px] rounded-[2rem] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-black/30">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6">
         <div className="min-w-0">
           <h2 className="flex flex-wrap items-center gap-3 text-3xl font-black text-white">
             <span className={`mr-3 text-sm font-bold uppercase tracking-[0.28em] align-middle ${tone}`}>{title}</span>
             <span>Menejerlar</span>
+            <span className="rounded-2xl border border-white/10 bg-white/10 px-3 py-1 text-sm font-black text-slate-100 shadow-lg shadow-black/20">
+              Bugun - <span className={tone}>{todaySalesCount}</span>
+            </span>
             {courses.map((course) => (
               <span
                 key={course.courseId}
@@ -122,7 +143,6 @@ function AgentLeaderboard({
             ))}
           </h2>
         </div>
-        <div className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-200">{agents.length} ta</div>
       </div>
       <div className="space-y-3">
         {agents.map((agent, index) => (
@@ -174,6 +194,10 @@ export default function DashboardRolePage() {
   const offlineAgents = useMemo(() => sortAgents(data?.agents || [], 'offline'), [data?.agents]);
   const onlineCourses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === 'online'), [data?.selectedReportCourses]);
   const offlineCourses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === 'offline'), [data?.selectedReportCourses]);
+  const groupStats: GroupStats = data?.groupStats || {
+    online: { todaySalesCount: 0 },
+    offline: { todaySalesCount: 0 },
+  };
 
   useEffect(() => {
     const latest = data?.latestIncomeEvent;
@@ -211,12 +235,12 @@ export default function DashboardRolePage() {
         </section>
 
         <section className="grid gap-6 xl:grid-cols-2">
-          <AgentLeaderboard title="Onlayn" agents={onlineAgents} courses={onlineCourses} tone="text-cyan-300" highlightedAgentId={highlightedAgentId} />
-          <AgentLeaderboard title="Oflayn" agents={offlineAgents} courses={offlineCourses} tone="text-orange-300" highlightedAgentId={highlightedAgentId} />
+          <AgentLeaderboard title="Onlayn" agents={onlineAgents} courses={onlineCourses} todaySalesCount={groupStats.online.todaySalesCount} tone="text-cyan-300" highlightedAgentId={highlightedAgentId} />
+          <AgentLeaderboard title="Oflayn" agents={offlineAgents} courses={offlineCourses} todaySalesCount={groupStats.offline.todaySalesCount} tone="text-orange-300" highlightedAgentId={highlightedAgentId} />
         </section>
       </div>
 
-      <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-slate-950/70 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
+      <div className="fixed bottom-4 left-4 z-40 flex items-center gap-3 rounded-2xl bg-slate-950/70 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
         <button
           type="button"
           onClick={() => setSoundEnabled((value) => !value)}
