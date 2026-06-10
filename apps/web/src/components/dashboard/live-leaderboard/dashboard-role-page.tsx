@@ -240,7 +240,7 @@ export default function DashboardRolePage() {
         </section>
       </div>
 
-      <div className="fixed bottom-4 left-4 z-40 flex items-center gap-3 rounded-2xl bg-slate-950/70 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
+      <div className="fixed bottom-4 right-4 z-40 flex items-center gap-3 rounded-2xl bg-slate-950/70 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
         <button
           type="button"
           onClick={() => setSoundEnabled((value) => !value)}
