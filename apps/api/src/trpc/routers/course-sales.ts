@@ -227,8 +227,7 @@ function buildTechnicalSaleIdSetByAgreement(params: {
     }
     const chainAgreement = params.chainMetricsBySaleId.get(sale.id)?.agreementAmount;
     const fallbackAgreement = resolveEffectiveAgreementAmount(sale);
-    const effectiveAgreement = Number(chainAgreement ?? fallbackAgreement ?? 0);
-    if (effectiveAgreement === 1) {
+    if (Number(chainAgreement ?? 0) === 1 || Number(fallbackAgreement ?? 0) === 1) {
       saleIds.add(sale.id);
     }
   }
@@ -466,6 +465,7 @@ export const courseSalesRouter = router({
       });
       const filteredNonTechnicalSales = filteredSales.filter((sale) => !technicalSaleIds.has(sale.id));
       const nonTechnicalSaleIdSet = new Set(filteredNonTechnicalSales.map((sale) => sale.id));
+      const nonTechnicalSaleCustomerById = new Map(filteredNonTechnicalSales.map((sale) => [sale.id, sale.customerId]));
       const chainMetricsBySaleId = new Map(
         Array.from(allChainMetricsBySaleId.entries()).filter(([saleId]) => nonTechnicalSaleIdSet.has(saleId)),
       );
@@ -475,6 +475,7 @@ export const courseSalesRouter = router({
           .map((sale) => sale.customerId),
       ).size;
       let movedInCount = 0;
+      const movedInSaleIdSet = new Set<string>();
       if (nonTechnicalSaleIdSet.size > 0) {
         const relinkLogs = await prisma.auditLog.findMany({
           where: {
@@ -499,13 +500,17 @@ export const courseSalesRouter = router({
           if (!targetSaleIncomeId || !nonTechnicalSaleIdSet.has(targetSaleIncomeId)) {
             continue;
           }
-          const customerId = typeof metadata.customerId === 'string' ? metadata.customerId : '';
+          movedInSaleIdSet.add(targetSaleIncomeId);
+          const customerId = typeof metadata.customerId === 'string'
+            ? metadata.customerId
+            : (nonTechnicalSaleCustomerById.get(targetSaleIncomeId) || '');
           if (customerId) {
             movedCustomerIds.add(customerId);
           }
         }
         movedInCount = movedCustomerIds.size;
       }
+      const directNewSalesCount = filteredNonTechnicalSales.filter((sale) => !movedInSaleIdSet.has(sale.id)).length;
 
       let agreementAmount = 0;
       let remainingDebtAmount = 0;
@@ -559,7 +564,7 @@ export const courseSalesRouter = router({
           standart: standartCustomerIds.size,
         },
         salesBreakdown: {
-          newSalesCount: filteredNonTechnicalSales.length,
+          newSalesCount: directNewSalesCount,
           movedInCount,
           serviceExchangeCount: technicalCustomerCount,
         },
