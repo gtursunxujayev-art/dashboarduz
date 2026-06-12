@@ -477,15 +477,42 @@ export const courseSalesRouter = router({
       let movedInCount = 0;
       const movedInSaleIdSet = new Set<string>();
       if (nonTechnicalSaleIdSet.size > 0) {
-        const relinkLogs = await prisma.auditLog.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            action: { in: ['customer_course_relink', 'income_debug_destructive_relink'] },
-          },
-          select: {
-            metadata: true,
-          },
-        });
+        const [relinkLogs, tariffChangeRequests, saleUpdateLogs] = await Promise.all([
+          prisma.auditLog.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              action: { in: ['customer_course_relink', 'income_debug_destructive_relink'] },
+            },
+            select: {
+              metadata: true,
+            },
+          }),
+          prisma.incomeAdjustmentRequest.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              type: 'tariff_change',
+              status: 'approved',
+              incomeId: { in: Array.from(nonTechnicalSaleIdSet) },
+              ...(input.courseId ? { newCourseId: input.courseId } : {}),
+              ...(input.tariffId ? { newTariffId: input.tariffId } : {}),
+            },
+            select: {
+              incomeId: true,
+              customerId: true,
+            },
+          }),
+          prisma.auditLog.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              action: 'customer_course_sale_update',
+              resourceId: { in: Array.from(nonTechnicalSaleIdSet) },
+            },
+            select: {
+              resourceId: true,
+              metadata: true,
+            },
+          }),
+        ]);
         const movedCustomerIds = new Set<string>();
         for (const log of relinkLogs) {
           const metadata = (log.metadata && typeof log.metadata === 'object')
@@ -504,6 +531,32 @@ export const courseSalesRouter = router({
           const customerId = typeof metadata.customerId === 'string'
             ? metadata.customerId
             : (nonTechnicalSaleCustomerById.get(targetSaleIncomeId) || '');
+          if (customerId) {
+            movedCustomerIds.add(customerId);
+          }
+        }
+        for (const request of tariffChangeRequests) {
+          movedInSaleIdSet.add(request.incomeId);
+          movedCustomerIds.add(request.customerId);
+        }
+        for (const log of saleUpdateLogs) {
+          const saleId = log.resourceId || '';
+          const metadata = (log.metadata && typeof log.metadata === 'object')
+            ? (log.metadata as Record<string, unknown>)
+            : null;
+          const newCourseId = typeof metadata?.newCourseId === 'string' ? metadata.newCourseId : '';
+          const newTariffId = typeof metadata?.newTariffId === 'string' ? metadata.newTariffId : '';
+          if (input.courseId && newCourseId && newCourseId !== input.courseId) {
+            continue;
+          }
+          if (input.tariffId && newTariffId && newTariffId !== input.tariffId) {
+            continue;
+          }
+          if (!saleId || !nonTechnicalSaleIdSet.has(saleId)) {
+            continue;
+          }
+          movedInSaleIdSet.add(saleId);
+          const customerId = nonTechnicalSaleCustomerById.get(saleId) || '';
           if (customerId) {
             movedCustomerIds.add(customerId);
           }
