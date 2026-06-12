@@ -222,7 +222,7 @@ function buildTechnicalSaleIdSetByAgreement(params: {
 }) {
   const saleIds = new Set<string>();
   for (const sale of params.sales) {
-    if (sale.type !== 'new_sale') {
+    if (sale.type && sale.type !== 'new_sale') {
       continue;
     }
     const chainAgreement = params.chainMetricsBySaleId.get(sale.id)?.agreementAmount;
