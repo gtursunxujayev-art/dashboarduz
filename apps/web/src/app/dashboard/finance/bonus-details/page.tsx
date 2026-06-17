@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
@@ -322,7 +323,7 @@ export default function FinanceBonusDetailsPage() {
           </p>
         </div>
         {bonusDetailsQuery.isLoading ? (
-          <p className="text-sm text-gray-600">Yuklanmoqda...</p>
+          <LoadingBlock message="Yuklanmoqda..." />
         ) : agentSummary.length ? (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -376,7 +377,7 @@ export default function FinanceBonusDetailsPage() {
           <h2 className="text-lg font-semibold text-gray-900">Bonus qatorlari tafsiloti</h2>
         </div>
         {bonusDetailsQuery.isLoading ? (
-          <p className="text-sm text-gray-600">Yuklanmoqda...</p>
+          <LoadingBlock message="Yuklanmoqda..." />
         ) : bonusRows.length ? (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
