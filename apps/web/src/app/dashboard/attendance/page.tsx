@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
@@ -87,8 +88,10 @@ export default function AttendancePage() {
   const [correctionError, setCorrectionError] = useState<string | null>(null);
 
   const usersQuery = trpc.users.list.useQuery(undefined, {
-    enabled: true,
+    enabled: isAdmin || dateFrom === dateTo,
     retry: false,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const summariesQuery = trpc.attendance.listDailySummaries.useQuery(
@@ -102,19 +105,23 @@ export default function AttendancePage() {
     },
     {
       keepPreviousData: true,
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: false,
     },
   );
 
   const eventsQuery = trpc.attendance.listEvents.useQuery(
     {
       page: 1,
-      limit: 50,
+      limit: 25,
       dateFrom,
       dateTo,
       query: query || undefined,
     },
     {
       keepPreviousData: true,
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: false,
     },
   );
 
@@ -125,8 +132,10 @@ export default function AttendancePage() {
       limit: 40,
     },
     {
-      enabled: canReadAnomalies,
+      enabled: canReadAnomalies && anomaliesOnly,
       retry: false,
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: false,
     },
   );
 
@@ -566,7 +575,7 @@ export default function AttendancePage() {
               </table>
             </div>
             {summariesQuery.isLoading ? (
-              <p className="px-3 py-3 text-sm text-gray-500 dark:text-slate-400">Yuklanmoqda...</p>
+              <LoadingBlock compact message="Yuklanmoqda..." />
             ) : summariesQuery.error ? (
               <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{summariesQuery.error.message}</p>
             ) : displayRows.length === 0 ? (
@@ -588,7 +597,7 @@ export default function AttendancePage() {
                       </p>
                     </div>
                   ))}
-                  {anomaliesQuery.isLoading && <p className="text-sm text-gray-500 dark:text-slate-400">Yuklanmoqda...</p>}
+                  {anomaliesQuery.isLoading && <LoadingBlock compact message="Yuklanmoqda..." />}
                   {!anomaliesQuery.isLoading && (anomaliesQuery.data?.summaryAnomalies || []).length === 0 && (
                     <p className="text-sm text-gray-500 dark:text-slate-400">Anomaliya topilmadi.</p>
                   )}
@@ -614,7 +623,7 @@ export default function AttendancePage() {
                       </p>
                     </div>
                   ))}
-                  {anomaliesQuery.isLoading && <p className="text-sm text-gray-500 dark:text-slate-400">Yuklanmoqda...</p>}
+                  {anomaliesQuery.isLoading && <LoadingBlock compact message="Yuklanmoqda..." />}
                   {!anomaliesQuery.isLoading && (anomaliesQuery.data?.unmatchedEvents || []).length === 0 && (
                     <p className="text-sm text-gray-500 dark:text-slate-400">Bog&apos;lanmagan event yo&apos;q.</p>
                   )}
@@ -648,7 +657,7 @@ export default function AttendancePage() {
               </table>
             </div>
             {eventsQuery.isLoading ? (
-              <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">Yuklanmoqda...</p>
+              <LoadingBlock className="mt-2" compact message="Yuklanmoqda..." />
             ) : eventsQuery.error ? (
               <p className="mt-2 text-sm text-red-600 dark:text-red-400">{eventsQuery.error.message}</p>
             ) : (eventsQuery.data?.rows || []).length === 0 ? (
