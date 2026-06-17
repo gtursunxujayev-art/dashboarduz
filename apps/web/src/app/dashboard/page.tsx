@@ -7,6 +7,7 @@ import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 import DashboardMetricCards from '@/components/dashboard/DashboardMetricCards';
 import DashboardSalarySection from '@/components/dashboard/DashboardSalarySection';
 import DashboardSellerTable from '@/components/dashboard/DashboardSellerTable';
+import LoadingBlock from '@/components/dashboard/loading-block';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
@@ -161,6 +162,7 @@ export default function DashboardPage() {
   const dashboardLayoutQuery = trpc.dashboard.getUserLayout.useQuery(undefined, {
     retry: 1,
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
   const saveDashboardLayoutMutation = trpc.dashboard.saveUserLayout.useMutation();
   const widgetCatalogQuery = trpc.dashboard.widgetCatalogOptions.useQuery(undefined, {
@@ -200,6 +202,8 @@ export default function DashboardPage() {
     {
       enabled: !isFinanceOnly,
       retry: 1,
+      staleTime: 60 * 1000,
+      refetchOnWindowFocus: false,
       refetchInterval: 5 * 60 * 1000,
     },
   );
@@ -213,6 +217,8 @@ export default function DashboardPage() {
     {
       enabled: isFinanceOnly,
       retry: 1,
+      staleTime: 60 * 1000,
+      refetchOnWindowFocus: false,
       refetchInterval: 5 * 60 * 1000,
     },
   );
@@ -229,14 +235,18 @@ export default function DashboardPage() {
       })),
     },
     {
-      enabled: customSalesWidgets.length > 0,
+      enabled: customSalesWidgets.length > 0 && summaryQuery.isSuccess,
       retry: 1,
+      staleTime: 60 * 1000,
+      refetchOnWindowFocus: false,
       refetchInterval: 5 * 60 * 1000,
     },
   );
   const salarySummaryQuery = trpc.dashboard.salarySummary.useQuery(undefined, {
-    enabled: showSalarySection,
+    enabled: showSalarySection && (isFinanceOnly ? financeSummaryQuery.isSuccess : summaryQuery.isSuccess),
     retry: 1,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
     refetchInterval: 5 * 60 * 1000,
   });
   const [rangeLoadProgress, setRangeLoadProgress] = useState(0);
@@ -1032,7 +1042,7 @@ export default function DashboardPage() {
             <div className="px-4 py-5 sm:p-6">
               <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Kurslar bo'yicha tushum</h3>
               {financeSummaryQuery.isLoading ? (
-                <p className="text-sm text-gray-600">Yuklanmoqda...</p>
+                <LoadingBlock message="Yuklanmoqda..." />
               ) : incomeByCourse.length ? (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
