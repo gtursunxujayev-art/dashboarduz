@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 type DetailTab = 'umumiy' | 'tariflar' | 'menejerlar' | 'mijozlar';
@@ -77,13 +78,14 @@ export default function CourseSalesDetailPage() {
 
   const optionsQuery = trpc.courseSales.options.useQuery(undefined, {
     retry: false,
-    staleTime: 60_000,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
   const editorOptionsQuery = trpc.customerIncome.customerEditorOptions.useQuery(undefined, {
     retry: false,
-    enabled: isAdmin,
+    enabled: isAdmin && isCourseEditorModalOpen,
     refetchOnWindowFocus: false,
-    staleTime: 60_000,
+    staleTime: 5 * 60 * 1000,
   });
   const deleteCustomerCourseMutation = trpc.customerIncome.deleteCustomerCourse.useMutation();
   const updateCustomerCourseSaleMutation = trpc.customerIncome.updateCustomerCourseSale.useMutation();
@@ -123,6 +125,8 @@ export default function CourseSalesDetailPage() {
     {
       enabled: Boolean(courseId),
       retry: 1,
+      staleTime: 60 * 1000,
+      refetchOnWindowFocus: false,
       refetchInterval: 3 * 60 * 1000,
     },
   );
@@ -140,6 +144,8 @@ export default function CourseSalesDetailPage() {
       enabled: Boolean(courseId),
       retry: 1,
       keepPreviousData: true,
+      staleTime: 60 * 1000,
+      refetchOnWindowFocus: false,
       refetchInterval: 3 * 60 * 1000,
     },
   );
@@ -316,7 +322,10 @@ export default function CourseSalesDetailPage() {
         action: actionPayload.action,
         targetSaleIncomeId: actionPayload.targetSaleIncomeId,
       });
-      await Promise.all([detailQuery.refetch(), customersQuery.refetch()]);
+      await Promise.all([
+        trpcUtils.courseSales.courseDetail.invalidate(),
+        trpcUtils.courseSales.customers.invalidate(),
+      ]);
       if (result.mode === 'refund') {
         setActionSuccess("Refund so'rovi yaratildi va moliya tasdig'iga yuborildi.");
       } else if (result.mode === 'relink') {
@@ -388,7 +397,10 @@ export default function CourseSalesDetailPage() {
         newTariffId: courseEditTariffId || undefined,
         newSubTariffId: courseEditSubTariffId || undefined,
       });
-      await Promise.all([detailQuery.refetch(), customersQuery.refetch()]);
+      await Promise.all([
+        trpcUtils.courseSales.courseDetail.invalidate(),
+        trpcUtils.courseSales.customers.invalidate(),
+      ]);
       setActionSuccess("Mijoz kursi muvaffaqiyatli yangilandi.");
       setEditingSaleIncomeId('');
       setCourseEditCourseId('');
@@ -664,7 +676,7 @@ export default function CourseSalesDetailPage() {
           </div>
 
           {customersQuery.isLoading ? (
-            <p className="text-sm text-gray-600">Mijozlar yuklanmoqda...</p>
+            <LoadingBlock message="Mijozlar yuklanmoqda..." />
           ) : customers.length === 0 ? (
             <p className="text-sm text-gray-600">Tanlangan filtr bo&apos;yicha mijoz topilmadi.</p>
           ) : (
