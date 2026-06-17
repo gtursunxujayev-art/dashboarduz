@@ -2,6 +2,7 @@
 
 import { trpc } from '@/lib/trpc';
 import { useMemo, useState } from 'react';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 type SellerRange = 'today' | 'week' | 'month' | 'last30days' | 'custom';
 
@@ -203,7 +204,7 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
   });
 
   if (sellerQuery.isLoading) {
-    return <p className="text-sm text-slate-300">Sotuvchi ma'lumotlari yuklanmoqda...</p>;
+    return <LoadingBlock message="Sotuvchi ma'lumotlari yuklanmoqda..." />;
   }
 
   if (!sellerQuery.data) {
