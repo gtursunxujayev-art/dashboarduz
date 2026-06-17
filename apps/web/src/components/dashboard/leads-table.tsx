@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import Link from 'next/link';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 interface LeadRow {
   id: string;
@@ -206,10 +207,7 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
 
       {/* Loading State */}
       {leadsQuery.isLoading && (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Lidlar yuklanmoqda...</p>
-        </div>
+        <LoadingBlock className="py-12" message="Lidlar yuklanmoqda..." />
       )}
     </div>
   );
