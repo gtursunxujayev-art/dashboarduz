@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
+import LoadingBlock from '@/components/dashboard/loading-block';
 import {
   CartesianGrid,
   Line,
@@ -196,6 +197,8 @@ export default function FinancePage() {
     financeQueryInput,
     {
       retry: 1,
+      staleTime: 60 * 1000,
+      refetchOnWindowFocus: false,
       refetchInterval: 5 * 60 * 1000,
     },
   );
@@ -209,7 +212,10 @@ export default function FinancePage() {
       prorateFixedSalary: true,
     },
     {
+      enabled: financeQuery.isSuccess,
       retry: 1,
+      staleTime: 60 * 1000,
+      refetchOnWindowFocus: false,
       refetchInterval: 5 * 60 * 1000,
     },
   );
@@ -412,7 +418,7 @@ export default function FinancePage() {
           </div>
         </div>
         {salaryQuery.isLoading ? (
-          <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
+          <LoadingBlock className="mt-3" />
         ) : salaryByAgent.length ? (
           <div className="mt-3 overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -570,7 +576,7 @@ export default function FinancePage() {
         <div className="rounded-lg bg-white p-6 shadow">
           <h2 className="text-lg font-semibold text-gray-900">Kurslar bo'yicha tushum</h2>
           {financeQuery.isLoading ? (
-            <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
+            <LoadingBlock className="mt-3" />
           ) : incomeByCourse.length ? (
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -602,7 +608,7 @@ export default function FinancePage() {
         <div className="rounded-lg bg-white p-6 shadow">
           <h2 className="text-lg font-semibold text-gray-900">Agentlar bo'yicha tushum</h2>
           {financeQuery.isLoading ? (
-            <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
+            <LoadingBlock className="mt-3" />
           ) : incomeByAgent.length ? (
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -633,7 +639,7 @@ export default function FinancePage() {
       <div className="rounded-lg bg-white p-6 shadow">
         <h2 className="text-lg font-semibold text-gray-900">So'nggi tushumlar</h2>
         {financeQuery.isLoading ? (
-          <p className="mt-3 text-sm text-gray-600">Yuklanmoqda...</p>
+          <LoadingBlock className="mt-3" />
         ) : recentIncomes.length ? (
           <div className="mt-3 overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
