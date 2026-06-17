@@ -83,7 +83,18 @@ export const widgetProcedures = {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
 
-      const incomes = await prisma.income.findMany({
+      const widgetCourseIds = Array.from(new Set(input.widgets.map((widget) => widget.courseId)));
+      const widgetTariffIds = Array.from(
+        new Set(
+          input.widgets
+            .map((widget) => widget.tariffId)
+            .filter((tariffId): tariffId is string => Boolean(tariffId)),
+        ),
+      );
+      const subTariffWidgets = input.widgets.filter((widget) => Boolean(widget.subTariffId));
+
+      const groupedIncomes = await prisma.income.groupBy({
+        by: ['courseId', 'tariffId'],
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
@@ -92,47 +103,92 @@ export const widgetProcedures = {
             gte: rangeStart,
             lte: rangeEnd,
           },
+          courseId: { in: widgetCourseIds },
+          ...(widgetTariffIds.length > 0 ? { tariffId: { in: widgetTariffIds } } : {}),
           ...(scope.isScoped
             ? {
                 managerUserId: ctx.user.userId,
               }
             : {}),
         },
-        select: {
-          courseId: true,
-          tariffId: true,
+        _count: {
+          _all: true,
+        },
+        _sum: {
           paymentAmount: true,
           coursePriceAmount: true,
-          customer: {
-            select: {
-              profileSubTariffId: true,
-            },
-          },
         },
       });
 
-      const widgets = input.widgets.map((widget) => {
-        let salesCount = 0;
-        let agreementAmount = 0;
-        for (const income of incomes) {
-          if (income.courseId !== widget.courseId) {
-            continue;
-          }
-          if (widget.tariffId && income.tariffId !== widget.tariffId) {
-            continue;
-          }
-          if (widget.subTariffId && income.customer?.profileSubTariffId !== widget.subTariffId) {
-            continue;
-          }
+      const subTariffIncomeRows = subTariffWidgets.length > 0
+        ? await prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              type: 'new_sale',
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              entryDate: {
+                gte: rangeStart,
+                lte: rangeEnd,
+              },
+              OR: subTariffWidgets.map((widget) => ({
+                courseId: widget.courseId,
+                ...(widget.tariffId ? { tariffId: widget.tariffId } : {}),
+              })),
+              ...(scope.isScoped
+                ? {
+                    managerUserId: ctx.user.userId,
+                  }
+                : {}),
+            },
+            select: {
+              courseId: true,
+              tariffId: true,
+              paymentAmount: true,
+              coursePriceAmount: true,
+              customer: {
+                select: {
+                  profileSubTariffId: true,
+                },
+              },
+            },
+          })
+        : [];
 
-          salesCount += 1;
-          agreementAmount += income.coursePriceAmount ?? income.paymentAmount ?? 0;
+      const groupedIncomeMap = new Map<string, { salesCount: number; agreementAmount: number }>();
+      for (const row of groupedIncomes) {
+        groupedIncomeMap.set(
+          `${row.courseId}::${row.tariffId || ''}`,
+          {
+            salesCount: row._count._all,
+            agreementAmount: Number(row._sum.coursePriceAmount ?? row._sum.paymentAmount ?? 0),
+          },
+        );
+      }
+
+      const subTariffIncomeMap = new Map<string, { salesCount: number; agreementAmount: number }>();
+      for (const income of subTariffIncomeRows) {
+        const subTariffId = income.customer?.profileSubTariffId || '';
+        if (!subTariffId) {
+          continue;
         }
+        const key = `${income.courseId}::${income.tariffId || ''}::${subTariffId}`;
+        const current = subTariffIncomeMap.get(key) || { salesCount: 0, agreementAmount: 0 };
+        current.salesCount += 1;
+        current.agreementAmount += Number(income.coursePriceAmount ?? income.paymentAmount ?? 0);
+        subTariffIncomeMap.set(key, current);
+      }
+
+      const widgets = input.widgets.map((widget) => {
+        const tariffKey = widget.tariffId || '';
+        const groupedKey = `${widget.courseId}::${tariffKey}`;
+        const subTariffKey = `${widget.courseId}::${tariffKey}::${widget.subTariffId || ''}`;
+        const baseAggregate = groupedIncomeMap.get(groupedKey) || { salesCount: 0, agreementAmount: 0 };
+        const subTariffAggregate = subTariffIncomeMap.get(subTariffKey);
 
         return {
           id: widget.id,
-          salesCount,
-          agreementAmount,
+          salesCount: widget.subTariffId ? (subTariffAggregate?.salesCount ?? 0) : baseAggregate.salesCount,
+          agreementAmount: widget.subTariffId ? (subTariffAggregate?.agreementAmount ?? 0) : baseAggregate.agreementAmount,
         };
       });
 
