@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { trpc } from '@/lib/trpc';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 export default function NotificationsPage() {
   const notificationsQuery = trpc.notifications.list.useQuery({
@@ -26,7 +27,7 @@ export default function NotificationsPage() {
       <div className="bg-white shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           {notificationsQuery.isLoading ? (
-            <p className="text-sm text-gray-600">Bildirishnomalar yuklanmoqda...</p>
+            <LoadingBlock message="Bildirishnomalar yuklanmoqda..." />
           ) : notificationsQuery.data?.data?.length ? (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
