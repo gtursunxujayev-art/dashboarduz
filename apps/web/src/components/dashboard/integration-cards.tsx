@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 type IntegrationId = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel' | 'faceid_attendance';
 
@@ -530,7 +531,7 @@ export default function IntegrationCards() {
                   </div>
 
                   {amoPipelinesQuery.isLoading ? (
-                    <p className="mt-3 text-sm text-gray-500">Pipeline'lar yuklanmoqda...</p>
+                    <LoadingBlock className="mt-3" compact message="Pipeline'lar yuklanmoqda..." />
                   ) : pipelinesErrorMessage ? (
                     <div className="mt-3 space-y-2 rounded-md border border-red-200 bg-red-50 p-3">
                       <p className="text-sm text-red-700">{pipelinesErrorMessage}</p>
@@ -603,7 +604,7 @@ export default function IntegrationCards() {
                   </div>
 
                   {telegramRecipientsQuery.isLoading ? (
-                    <p className="mt-3 text-sm text-gray-500">Telegram foydalanuvchilari yuklanmoqda...</p>
+                    <LoadingBlock className="mt-3" compact message="Telegram foydalanuvchilari yuklanmoqda..." />
                   ) : telegramRecipients.length === 0 ? (
                     <p className="mt-3 text-sm text-gray-500">
                       Hozircha foydalanuvchi yo'q. Foydalanuvchilardan botni ochib <span className="font-mono">/start</span> yuborishni so'rang.
