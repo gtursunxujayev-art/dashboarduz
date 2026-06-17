@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
@@ -75,10 +76,11 @@ export default function CourseSalesPage() {
   const optionsQuery = trpc.courseSales.options.useQuery(undefined, {
     retry: false,
     staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
   const editorOptionsQuery = trpc.customerIncome.customerEditorOptions.useQuery(undefined, {
     retry: false,
-    enabled: isAdmin,
+    enabled: isAdmin && isCourseEditorModalOpen,
     refetchOnWindowFocus: false,
     staleTime: 60_000,
   });
@@ -160,6 +162,8 @@ export default function CourseSalesPage() {
     {
       enabled: Boolean(courseId),
       retry: 1,
+      staleTime: 60 * 1000,
+      refetchOnWindowFocus: false,
       refetchInterval: 3 * 60 * 1000,
     },
   );
@@ -180,6 +184,8 @@ export default function CourseSalesPage() {
       enabled: Boolean(courseId),
       retry: 1,
       keepPreviousData: true,
+      staleTime: 60 * 1000,
+      refetchOnWindowFocus: false,
       refetchInterval: 3 * 60 * 1000,
     },
   );
@@ -401,7 +407,10 @@ export default function CourseSalesPage() {
         action: actionPayload.action,
         targetSaleIncomeId: actionPayload.targetSaleIncomeId,
       });
-      await Promise.all([summaryQuery.refetch(), customersQuery.refetch()]);
+      await Promise.all([
+        trpcUtils.courseSales.summary.invalidate(),
+        trpcUtils.courseSales.customers.invalidate(),
+      ]);
       if (result.mode === 'refund') {
         setActionSuccess("Refund so'rovi yaratildi va moliya tasdig'iga yuborildi.");
       } else if (result.mode === 'relink') {
@@ -473,7 +482,10 @@ export default function CourseSalesPage() {
         newTariffId: courseEditTariffId || undefined,
         newSubTariffId: courseEditSubTariffId || undefined,
       });
-      await Promise.all([summaryQuery.refetch(), customersQuery.refetch()]);
+      await Promise.all([
+        trpcUtils.courseSales.summary.invalidate(),
+        trpcUtils.courseSales.customers.invalidate(),
+      ]);
       setActionSuccess("Mijoz kursi muvaffaqiyatli yangilandi.");
       setEditingSaleIncomeId('');
       setCourseEditCourseId('');
@@ -740,7 +752,7 @@ export default function CourseSalesPage() {
             </div>
 
             {customersQuery.isLoading ? (
-              <p className="text-sm text-gray-600">Mijozlar yuklanmoqda...</p>
+              <LoadingBlock message="Mijozlar yuklanmoqda..." />
             ) : customers.length === 0 ? (
               <p className="text-sm text-gray-600">Tanlangan filtrlar bo&apos;yicha mijoz topilmadi.</p>
             ) : (
