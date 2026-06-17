@@ -1,5 +1,7 @@
 'use client';
 
+import LoadingBlock from '@/components/dashboard/loading-block';
+
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
 type SellerPerformanceRow = {
@@ -167,11 +169,7 @@ export default function AnalyticsCharts({
         </div>
       )}
 
-      {isLoading && (
-        <div className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm text-gray-600">
-          Tahlillar yuklanmoqda...
-        </div>
-      )}
+      {isLoading && <LoadingBlock message="Tahlillar yuklanmoqda..." />}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <KpiCard label="Jami lidlar" value={(data?.summary.totalLeads || 0).toLocaleString('uz-UZ')} />
