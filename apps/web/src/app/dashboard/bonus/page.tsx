@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 type BonusMode = 'on_income' | 'on_debt_closed';
 type CourseBonusMode = 'simple' | 'tiered';
@@ -1417,7 +1418,7 @@ export default function BonusPage() {
         </div>
         <div className="p-6">
           {plansQuery.isLoading ? (
-            <p className="text-sm text-gray-600">Plan bonuslar yuklanmoqda...</p>
+            <LoadingBlock message="Plan bonuslar yuklanmoqda..." />
           ) : plans.length ? (
             <div className="space-y-3">
               {plans.map((plan) => (
