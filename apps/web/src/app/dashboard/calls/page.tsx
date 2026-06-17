@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import LoadingBlock from '@/components/dashboard/loading-block';
 import { useAuth } from '@/contexts/auth-context';
 
 type CallsRange = 'today' | 'week' | 'month' | 'custom';
@@ -150,7 +151,7 @@ export default function CallsPage() {
           )}
 
           {callsQuery.isLoading ? (
-            <p className="text-sm text-gray-600">Qo&apos;ng&apos;iroqlar statistikasi yuklanmoqda...</p>
+            <LoadingBlock message="Qo'ng'iroqlar statistikasi yuklanmoqda..." />
           ) : callsQuery.error ? (
             <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {callsQuery.error.message || 'Statistikani yuklashda xatolik yuz berdi.'}
