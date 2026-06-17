@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
-import { trpc } from '@/lib/trpc';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -20,17 +19,18 @@ const ROLE_LABELS: Record<string, string> = {
   Tashkiliy: 'Tashkiliy',
 };
 
-export default function Header() {
+type HeaderProps = {
+  tenantName?: string;
+  tenantPlan?: string;
+  pendingAdjustmentCount?: number;
+};
+
+export default function Header({
+  tenantName = 'Ish maydoni',
+  tenantPlan = 'free',
+  pendingAdjustmentCount = 0,
+}: HeaderProps) {
   const { user } = useAuth();
-  const tenantQuery = trpc.tenant.get.useQuery(undefined, {
-    retry: 1,
-  });
-  const adjustmentBadgeQuery = trpc.customerIncome.adjustmentBadgeCount.useQuery(undefined, {
-    retry: false,
-    refetchInterval: 10000,
-    refetchOnWindowFocus: true,
-  });
-  const pendingAdjustmentCount = adjustmentBadgeQuery.data?.pendingTotal ?? 0;
   const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>('light');
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -79,8 +79,6 @@ export default function Header() {
     setMenuOpen(false);
   }, [pathname]);
 
-  const tenantName = tenantQuery.data?.name || 'Ish maydoni';
-  const tenantPlan = (tenantQuery.data?.plan || 'free').toString();
   const accountDisplayName = user?.name?.trim()
     || user?.username?.trim()
     || user?.email?.split('@')[0]
