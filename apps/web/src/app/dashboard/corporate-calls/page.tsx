@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 function getTashkentDate(offsetDays = 0): string {
   const now = new Date();
@@ -344,7 +345,7 @@ export default function CorporateCallsPage() {
             </div>
 
             {listQuery.isLoading ? (
-              <p className="px-3 py-3 text-sm text-gray-500 dark:text-slate-400">Yuklanmoqda...</p>
+              <LoadingBlock compact message="Yuklanmoqda..." />
             ) : listQuery.error ? (
               <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{listQuery.error.message}</p>
             ) : rows.length === 0 ? (
