@@ -1,6 +1,7 @@
 'use client';
 
 import VirtualTable from '@/components/ui/VirtualTable';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
@@ -31,7 +32,7 @@ export default function DashboardSellerTable({
         <div className="px-4 py-5 sm:p-6">
           <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Sotuvchilar</h3>
           {isLoading ? (
-            <p className="text-sm text-gray-600">Sotuvchilar ma'lumoti yuklanmoqda...</p>
+            <LoadingBlock message="Sotuvchilar ma'lumoti yuklanmoqda..." />
           ) : sellerPerformance.length ? (
             <VirtualTable
               rows={sellerPerformance}
