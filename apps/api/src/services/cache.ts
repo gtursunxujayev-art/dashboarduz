@@ -13,6 +13,12 @@ import Redis from 'ioredis';
 let cacheClient: Redis | null = null;
 let cacheDisabledUntil = 0;
 
+type CacheMetaResult<T> = {
+  value: T;
+  hit: boolean;
+  stale: boolean;
+};
+
 function isCacheDisabled(): boolean {
   return Date.now() < cacheDisabledUntil;
 }
@@ -64,30 +70,82 @@ export async function getOrSet<T>(
   ttlSeconds: number,
   fetchFn: () => Promise<T>,
 ): Promise<T> {
-  const client = getCacheClient();
+  const result = await getOrSetWithMeta(key, ttlSeconds, fetchFn);
+  return result.value;
+}
 
+/**
+ * Get a cached value with hit/miss metadata and basic stampede protection.
+ */
+export async function getOrSetWithMeta<T>(
+  key: string,
+  ttlSeconds: number,
+  fetchFn: () => Promise<T>,
+  options?: {
+    lockTtlMs?: number;
+    waitMs?: number;
+    staleTtlSeconds?: number;
+  },
+): Promise<CacheMetaResult<T>> {
+  const client = getCacheClient();
+  const staleKey = `${key}:stale`;
   if (client) {
     try {
       const cached = await client.get(key);
       if (cached !== null) {
-        return JSON.parse(cached) as T;
+        return { value: JSON.parse(cached) as T, hit: true, stale: false };
       }
     } catch {
       disableCache();
     }
   }
 
-  const result = await fetchFn();
-
-  if (client && !isCacheDisabled()) {
-    try {
-      await client.set(key, JSON.stringify(result), 'EX', ttlSeconds);
-    } catch {
-      disableCache();
-    }
+  if (!client || isCacheDisabled()) {
+    return { value: await fetchFn(), hit: false, stale: false };
   }
 
-  return result;
+  const lockKey = `${key}:lock`;
+  const lockTtlMs = options?.lockTtlMs ?? 10_000;
+  const waitMs = options?.waitMs ?? 150;
+  let hasLock = false;
+
+  try {
+    const lockResult = await client.set(lockKey, '1', 'PX', lockTtlMs, 'NX');
+    hasLock = lockResult === 'OK';
+
+    if (!hasLock) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      const cachedAfterWait = await client.get(key);
+      if (cachedAfterWait !== null) {
+        return { value: JSON.parse(cachedAfterWait) as T, hit: true, stale: false };
+      }
+
+      const stale = await client.get(staleKey);
+      if (stale !== null) {
+        return { value: JSON.parse(stale) as T, hit: true, stale: true };
+      }
+    }
+
+    const value = await fetchFn();
+    const serialized = JSON.stringify(value);
+    await client.set(key, serialized, 'EX', ttlSeconds);
+    const staleTtlSeconds = options?.staleTtlSeconds ?? 0;
+    if (staleTtlSeconds > ttlSeconds) {
+      await client.set(staleKey, serialized, 'EX', staleTtlSeconds);
+    }
+    return { value, hit: false, stale: false };
+  } catch {
+    disableCache();
+    return { value: await fetchFn(), hit: false, stale: false };
+  } finally {
+    if (hasLock) {
+      try {
+        await client.del(lockKey);
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 /**
@@ -101,6 +159,28 @@ export async function invalidateCache(key: string): Promise<void> {
   } catch {
     // ignore
   }
+}
+
+/**
+ * Invalidate cached keys by prefix (best-effort, bounded SCAN).
+ */
+export async function invalidateCachePrefix(prefix: string): Promise<number> {
+  const client = getCacheClient();
+  if (!client) return 0;
+  let cursor = '0';
+  let deleted = 0;
+  try {
+    do {
+      const [nextCursor, keys] = await client.scan(cursor, 'MATCH', `${prefix}*`, 'COUNT', 100);
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        deleted += await client.del(...keys);
+      }
+    } while (cursor !== '0');
+  } catch {
+    return deleted;
+  }
+  return deleted;
 }
 
 /**
