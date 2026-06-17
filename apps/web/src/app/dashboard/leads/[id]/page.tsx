@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 function formatDate(value: string | Date | null | undefined): string {
   if (!value) return '-';
@@ -44,7 +45,7 @@ export default function LeadDetailsPage() {
       <div className="rounded-lg bg-white shadow">
         <div className="px-4 py-5 sm:p-6">
           {leadQuery.isLoading ? (
-            <p className="text-sm text-gray-600">Lid ma&apos;lumotlari yuklanmoqda...</p>
+            <LoadingBlock message="Lid ma'lumotlari yuklanmoqda..." />
           ) : leadQuery.error ? (
             <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {leadQuery.error.message || "Lid ma'lumotini yuklab bo'lmadi."}
