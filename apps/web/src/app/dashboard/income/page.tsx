@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 type IncomeType = 'new_sale' | 'repayment';
 type IncomeTypeChoice = '' | IncomeType;
@@ -195,6 +196,7 @@ function getTelegramDispatchWarning(dispatch: any): string | null {
 }
 
 export default function IncomePage() {
+  const utils = trpc.useUtils();
   const { user } = useAuth();
   const isAdmin = Boolean(
     (user?.roles || []).some((role) => String(role).trim().toLowerCase() === 'admin'),
@@ -230,7 +232,7 @@ export default function IncomePage() {
 
   const formOptionsQuery = trpc.customerIncome.formOptions.useQuery(undefined, {
     retry: false,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
@@ -249,8 +251,10 @@ export default function IncomePage() {
   const searchCustomersQuery = trpc.customerIncome.searchCustomers.useQuery(
     { query: customerNumber.trim(), limit: 30 },
     {
-      enabled: customerNumber.trim().length > 0,
+      enabled: customerNumber.trim().length >= 2,
       retry: false,
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: false,
     },
   );
   const createIncomeMutation = trpc.customerIncome.createIncome.useMutation();
@@ -603,7 +607,10 @@ export default function IncomePage() {
     try {
       await deleteIncomeMutation.mutateAsync({ incomeId });
       setSuccess("Tushum yozuvi o'chirildi.");
-      await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
+      await Promise.all([
+        utils.customerIncome.formOptions.invalidate(),
+        utils.customerIncome.listIncomes.invalidate(),
+      ]);
     } catch (deleteError: any) {
       setError(deleteError?.message || "Tushum yozuvini o'chirib bo'lmadi.");
     } finally {
@@ -773,7 +780,10 @@ export default function IncomePage() {
       await updateIncomeMutation.mutateAsync(payload);
       setSuccess("Tushum yozuvi tahrirlandi.");
       closeEditIncome();
-      await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
+      await Promise.all([
+        utils.customerIncome.formOptions.invalidate(),
+        utils.customerIncome.listIncomes.invalidate(),
+      ]);
     } catch (mutationError: any) {
       setEditError(mutationError?.message || "Tushum yozuvini tahrirlab bo'lmadi.");
     }
@@ -863,7 +873,10 @@ export default function IncomePage() {
       setSkipTelegramNotification(false);
       setDeadline('');
       setFieldErrors({});
-      await Promise.all([formOptionsQuery.refetch(), incomesQuery.refetch()]);
+      await Promise.all([
+        utils.customerIncome.formOptions.invalidate(),
+        utils.customerIncome.listIncomes.invalidate(),
+      ]);
     } catch (mutationError: any) {
       setError(mutationError?.message || "Tushum yozuvini saqlab bo'lmadi.");
     }
@@ -1093,9 +1106,7 @@ export default function IncomePage() {
                   </option>
                 </select>
                 {isDebtLookupPending && (
-                  <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-                    Mijozning qarzlari yuklanmoqda...
-                  </p>
+                  <LoadingBlock className="mt-1" compact message="Mijozning qarzlari yuklanmoqda..." />
                 )}
                 {!canUseRepayment && (
                   <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
@@ -1346,7 +1357,7 @@ export default function IncomePage() {
           </div>
 
           {incomesQuery.isLoading ? (
-            <p className="text-sm text-gray-600 dark:text-slate-300">Tushumlar yuklanmoqda...</p>
+            <LoadingBlock message="Tushumlar yuklanmoqda..." />
           ) : incomesQuery.data?.length ? (
             <div className="space-y-4">
               <div className="overflow-x-auto">
