@@ -1,5 +1,7 @@
 'use client';
 
+import LoadingBlock from '@/components/dashboard/loading-block';
+
 type Props = {
   showSalarySection: boolean;
   isLoading: boolean;
@@ -46,7 +48,7 @@ export default function DashboardSalarySection({
         )}
 
         {isLoading ? (
-          <p className="text-sm text-gray-600">Maosh ma'lumotlari yuklanmoqda...</p>
+          <LoadingBlock message="Maosh ma'lumotlari yuklanmoqda..." />
         ) : isAgentOnly || isTeamLeaderView ? (
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
