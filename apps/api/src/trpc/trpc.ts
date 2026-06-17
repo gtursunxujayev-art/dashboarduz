@@ -3,6 +3,7 @@ import type { Context } from './context';
 import { prisma } from '@dashboarduz/db';
 import { Prisma } from '@prisma/client';
 import superjson from 'superjson';
+import { log, LogLevel } from '../services/observability';
 
 const t = initTRPC.context<Context>().create({
   transformer: superjson,
@@ -21,6 +22,14 @@ const t = initTRPC.context<Context>().create({
 
 export const router = t.router;
 
+function getApproxResponseSize(value: unknown): number | undefined {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
 function isPrismaSchemaMismatchError(error: unknown): boolean {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
     if (error.code === 'P2021' || error.code === 'P2022') {
@@ -37,7 +46,50 @@ function isPrismaSchemaMismatchError(error: unknown): boolean {
   );
 }
 
-const baseProcedure = t.procedure.use(async (opts) => {
+const performanceMiddleware = t.middleware(async (opts) => {
+  const startedAt = Date.now();
+  let ok = false;
+  try {
+    const result = await opts.next();
+    ok = result.ok;
+    const durationMs = Date.now() - startedAt;
+    const responseSize = result.ok ? getApproxResponseSize(result.data) : undefined;
+    if (durationMs >= Number(process.env.TRPC_SLOW_PROCEDURE_MS || 750)) {
+      log(LogLevel.WARN, 'Slow tRPC procedure', {
+        procedureName: opts.path,
+        procedureType: opts.type,
+        tenantId: opts.ctx.tenantId,
+        userId: opts.ctx.user?.userId,
+        durationMs,
+        responseSize,
+        ok,
+      });
+    } else if (process.env.TRPC_PERF_LOG_ALL === 'true') {
+      log(LogLevel.INFO, 'tRPC procedure completed', {
+        procedureName: opts.path,
+        procedureType: opts.type,
+        tenantId: opts.ctx.tenantId,
+        userId: opts.ctx.user?.userId,
+        durationMs,
+        responseSize,
+        ok,
+      });
+    }
+    return result;
+  } catch (error) {
+    log(LogLevel.WARN, 'tRPC procedure failed', {
+      procedureName: opts.path,
+      procedureType: opts.type,
+      tenantId: opts.ctx.tenantId,
+      userId: opts.ctx.user?.userId,
+      durationMs: Date.now() - startedAt,
+      errorName: (error as Error | undefined)?.name,
+    });
+    throw error;
+  }
+});
+
+const baseProcedure = t.procedure.use(performanceMiddleware).use(async (opts) => {
   try {
     return await opts.next();
   } catch (error) {
