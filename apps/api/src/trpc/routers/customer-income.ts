@@ -7547,7 +7547,7 @@ export const customerIncomeRouter = router({
           tariffId: z.string().uuid().optional(),
           subTariffId: z.string().uuid().optional(),
           debtFilter: z.enum(['all', 'with_debt', 'without_debt']).default('all'),
-          limit: z.number().int().positive().max(1000).default(300),
+          limit: z.number().int().positive().max(1000).default(150),
         })
         .optional(),
     )
