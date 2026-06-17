@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 type AdjustmentMode = '' | 'refund' | 'tariff_change';
 type ReviewAction = 'approve' | 'reject';
@@ -67,6 +68,7 @@ function formatCourseBundle(courseName?: string | null, tariffName?: string | nu
 }
 
 export default function AdjustmentsPage() {
+  const utils = trpc.useUtils();
   const { user } = useAuth();
   const roles = (user?.roles || []).map((role) => String(role));
 
@@ -95,18 +97,40 @@ export default function AdjustmentsPage() {
 
   const customerSearchQuery = trpc.customerIncome.searchCustomers.useQuery(
     { query: customerNumberInput.trim(), limit: 40 },
-    { enabled: customerNumberInput.trim().length > 0, retry: false },
+    {
+      enabled: customerNumberInput.trim().length >= 2,
+      retry: false,
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: false,
+    },
   );
-  const formOptionsQuery = trpc.customerIncome.formOptions.useQuery(undefined, { retry: false });
+  const formOptionsQuery = trpc.customerIncome.formOptions.useQuery(undefined, {
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
   const adjustableIncomesQuery = trpc.customerIncome.listAdjustableIncomes.useQuery(
     { customerId: selectedCustomerId },
-    { enabled: Boolean(selectedCustomerId), retry: false },
+    {
+      enabled: Boolean(selectedCustomerId),
+      retry: false,
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: false,
+    },
   );
-  const requestsQuery = trpc.customerIncome.listAdjustmentRequests.useQuery({ limit: 120 }, { retry: false });
+  const requestsQuery = trpc.customerIncome.listAdjustmentRequests.useQuery(
+    { limit: 120 },
+    {
+      retry: false,
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: false,
+    },
+  );
   const adjustmentBadgeQuery = trpc.customerIncome.adjustmentBadgeCount.useQuery(undefined, {
     retry: false,
-    refetchInterval: 10000,
-    refetchOnWindowFocus: true,
+    staleTime: 30 * 1000,
+    refetchInterval: 30 * 1000,
+    refetchOnWindowFocus: false,
   });
   const createRequestMutation = trpc.customerIncome.createAdjustmentRequest.useMutation();
   const approveRequestMutation = trpc.customerIncome.approveAdjustmentRequest.useMutation();
@@ -244,7 +268,11 @@ export default function AdjustmentsPage() {
       if (mode === 'refund') {
         setRefundCardNumberInput('');
       }
-      await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch(), adjustmentBadgeQuery.refetch()]);
+      await Promise.all([
+        utils.customerIncome.listAdjustableIncomes.invalidate(),
+        utils.customerIncome.listAdjustmentRequests.invalidate(),
+        utils.customerIncome.adjustmentBadgeCount.invalidate(),
+      ]);
     } catch (mutationError: any) {
       setError(mutationError?.message || "So'rov yuborishda xatolik yuz berdi.");
     }
@@ -269,7 +297,11 @@ export default function AdjustmentsPage() {
     try {
       await approveRequestMutation.mutateAsync({ requestId, reviewNote: note?.trim() || undefined });
       setSuccess("So'rov tasdiqlandi.");
-      await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch(), adjustmentBadgeQuery.refetch()]);
+      await Promise.all([
+        utils.customerIncome.listAdjustableIncomes.invalidate(),
+        utils.customerIncome.listAdjustmentRequests.invalidate(),
+        utils.customerIncome.adjustmentBadgeCount.invalidate(),
+      ]);
       return true;
     } catch (mutationError: any) {
       setError(mutationError?.message || "Tasdiqlashda xatolik yuz berdi.");
@@ -283,7 +315,11 @@ export default function AdjustmentsPage() {
     try {
       await rejectRequestMutation.mutateAsync({ requestId, reviewNote: note?.trim() || undefined });
       setSuccess("So'rov rad etildi.");
-      await Promise.all([adjustableIncomesQuery.refetch(), requestsQuery.refetch(), adjustmentBadgeQuery.refetch()]);
+      await Promise.all([
+        utils.customerIncome.listAdjustableIncomes.invalidate(),
+        utils.customerIncome.listAdjustmentRequests.invalidate(),
+        utils.customerIncome.adjustmentBadgeCount.invalidate(),
+      ]);
       return true;
     } catch (mutationError: any) {
       setError(mutationError?.message || 'Rad etishda xatolik yuz berdi.');
@@ -495,7 +531,7 @@ export default function AdjustmentsPage() {
         </div>
         <div className="p-6">
           {requestsQuery.isLoading ? (
-            <p className="text-sm text-gray-600 dark:text-slate-300">Yuklanmoqda...</p>
+            <LoadingBlock message="Yuklanmoqda..." />
           ) : requestsQuery.data?.length ? (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
