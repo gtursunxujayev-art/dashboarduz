@@ -44,7 +44,7 @@ const parseBooleanEnv = (value: string | undefined, fallback: boolean): boolean 
 
 const schedulerEnabledInApi = parseBooleanEnv(
   process.env.ENABLE_SCHEDULERS_IN_API,
-  process.env.NODE_ENV === 'production',
+  false,
 );
 
 if (schedulerEnabledInApi) {
