@@ -4,11 +4,23 @@ import { usePathname } from 'next/navigation';
 import Sidebar from '@/components/dashboard/sidebar';
 import Header from '@/components/dashboard/header';
 import DashboardAiShell from '@/components/dashboard/dashboard-ai-shell';
+import { trpc } from '@/lib/trpc';
 
 const LIVE_LEADERBOARD_PATH = '/dashboard/live-leaderboard';
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const tenantQuery = trpc.tenant.get.useQuery(undefined, {
+    retry: 1,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const adjustmentBadgeQuery = trpc.customerIncome.adjustmentBadgeCount.useQuery(undefined, {
+    retry: false,
+    staleTime: 30 * 1000,
+    refetchInterval: 30 * 1000,
+    refetchOnWindowFocus: false,
+  });
 
   if (pathname === LIVE_LEADERBOARD_PATH) {
     return (
@@ -20,9 +32,13 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
   return (
     <div className="min-h-screen flex bg-background text-foreground">
-      <Sidebar />
+      <Sidebar pendingAdjustmentCount={adjustmentBadgeQuery.data?.pendingTotal ?? 0} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header />
+        <Header
+          tenantName={tenantQuery.data?.name || 'Ish maydoni'}
+          tenantPlan={(tenantQuery.data?.plan || 'free').toString()}
+          pendingAdjustmentCount={adjustmentBadgeQuery.data?.pendingTotal ?? 0}
+        />
         <main className="relative flex-1 overflow-y-auto focus:outline-none">
           <div className="py-6">
             <div className="w-full px-4 sm:px-6 md:px-8">
