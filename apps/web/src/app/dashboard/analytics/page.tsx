@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import AnalyticsCharts from '@/components/dashboard/analytics-charts';
+import LoadingBlock from '@/components/dashboard/loading-block';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
@@ -324,7 +325,7 @@ export default function AnalyticsPage() {
             </div>
           )}
           {metaInsightsQuery.isLoading ? (
-            <p className="text-sm text-gray-500">Meta ma&apos;lumotlari yuklanmoqda...</p>
+            <LoadingBlock compact message="Meta ma'lumotlari yuklanmoqda..." />
           ) : metaInsightsQuery.error ? (
             <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
               Meta Ads ma&apos;lumotlarini yuklashda xatolik: {metaInsightsQuery.error.message}
