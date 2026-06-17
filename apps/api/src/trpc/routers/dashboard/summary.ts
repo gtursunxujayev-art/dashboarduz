@@ -79,6 +79,15 @@ function detectSummarySourceReason(error: unknown, fallback: string): string {
   return fallback;
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, reason: string): Promise<T> {
+  return await Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(reason)), timeoutMs);
+    }),
+  ]);
+}
+
 async function runSummarySourceWithRetry<T>(params: {
   key: SummarySourceStatusKey;
   status: SummarySourceStatus;
@@ -173,7 +182,7 @@ export const summaryProcedures = {
         logContext: sourceLogContext,
         reasonFallback: 'amo_context_failed',
         fallback: null as Awaited<ReturnType<typeof getTenantAmoCRMContext>>,
-        run: async () => getTenantAmoCRMContext(ctx.tenantId),
+        run: async () => withTimeout(getTenantAmoCRMContext(ctx.tenantId), 2500, 'amo_context_timeout'),
       });
       if (!amoContext) {
         sourceStatus.amoContext.ok = false;
@@ -187,7 +196,7 @@ export const summaryProcedures = {
             logContext: sourceLogContext,
             reasonFallback: 'catalog_fetch_failed',
             fallback: [] as Awaited<ReturnType<typeof collectCatalogFieldOptions>>,
-            run: async () => collectCatalogFieldOptions(ctx.tenantId),
+            run: async () => withTimeout(collectCatalogFieldOptions(ctx.tenantId), 2500, 'catalog_timeout'),
           })
         : [];
       if (!amoContext) {
@@ -209,16 +218,20 @@ export const summaryProcedures = {
           reasonFallback: 'amo_fetch_failed',
           fallback: [] as any[],
           run: async () => {
-            const fetched = await amocrmService.fetchAllLeads(
-              amoContext.accessToken,
-              {
-                pipelineIds: selectedPipelineIds,
-                responsibleUserIds: scope.isScoped ? [scope.responsibleUserId as string] : undefined,
-                createdAtFrom: rangeStart,
-                createdAtTo: rangeEnd,
-                limit: 250,
-              },
-              amoContext.baseUrl,
+            const fetched = await withTimeout(
+              amocrmService.fetchAllLeads(
+                amoContext.accessToken,
+                {
+                  pipelineIds: selectedPipelineIds,
+                  responsibleUserIds: scope.isScoped ? [scope.responsibleUserId as string] : undefined,
+                  createdAtFrom: rangeStart,
+                  createdAtTo: rangeEnd,
+                  limit: 250,
+                },
+                amoContext.baseUrl,
+              ),
+              3000,
+              'amo_leads_timeout',
             );
             return fetched as any[];
           },
@@ -422,15 +435,19 @@ export const summaryProcedures = {
             logContext: sourceLogContext,
             reasonFallback: 'activity_fetch_failed',
             fallback: new Map(),
-            run: async () => getAmoCRMActivityMetrics({
-              tenantId: ctx.tenantId,
-              accessToken: amoContext.accessToken,
-              baseUrl: amoContext.baseUrl,
-              managerIds: activityManagerIds,
-              rangeStart,
-              rangeEnd,
-              rangeKind: input.range,
-            }),
+            run: async () => withTimeout(
+              getAmoCRMActivityMetrics({
+                tenantId: ctx.tenantId,
+                accessToken: amoContext.accessToken,
+                baseUrl: amoContext.baseUrl,
+                managerIds: activityManagerIds,
+                rangeStart,
+                rangeEnd,
+                rangeKind: input.range,
+              }),
+              3000,
+              'amo_activity_timeout',
+            ),
           })
         : new Map();
       if (!amoContext) {
@@ -866,35 +883,6 @@ export const summaryProcedures = {
         currentMillisecond,
       );
 
-      const sumActiveIncome = async (start: Date, end: Date): Promise<number> => {
-        const rows = await prisma.income.findMany({
-          where: {
-            ...analyticsBaseWhere,
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            entryDate: {
-              gte: start,
-              lte: end,
-            },
-          },
-          select: {
-            id: true,
-            type: true,
-            relatedDebtIncomeId: true,
-            paymentAmount: true,
-          },
-        });
-        return rows.reduce((sum, row) => (
-          isRowLinkedToTechnicalSale({
-            rowType: row.type,
-            rowId: row.id,
-            relatedDebtIncomeId: row.relatedDebtIncomeId,
-            technicalSaleIds,
-          })
-            ? sum
-            : sum + Number(row.paymentAmount || 0)
-        ), 0);
-      };
-
       const technicalSales = await prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -925,13 +913,7 @@ export const summaryProcedures = {
         incomes,
         courses,
         managers,
-        currentMonthToDateIncome,
-        previousMonthToDateIncome,
-        lastYearSameMonthToDateIncome,
-        currentYearToDateIncome,
-        previousYearToDateIncome,
-        monthActiveIncomes,
-        yearActiveIncomes,
+        activeIncomeAnalyticsRows,
       ] = await Promise.all([
         prisma.income.findMany({
           where,
@@ -998,34 +980,12 @@ export const summaryProcedures = {
             roles: true,
           },
         }),
-        sumActiveIncome(currentMonthStart, now),
-        sumActiveIncome(previousMonthStart, previousMonthSameMoment),
-        sumActiveIncome(lastYearSameMonthStart, lastYearSameMonthMoment),
-        sumActiveIncome(currentYearStart, now),
-        sumActiveIncome(previousYearStart, previousYearYtdMoment),
         prisma.income.findMany({
           where: {
             ...analyticsBaseWhere,
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
             entryDate: {
-              gte: currentMonthStart,
-              lte: now,
-            },
-          },
-          select: {
-            id: true,
-            type: true,
-            relatedDebtIncomeId: true,
-            entryDate: true,
-            paymentAmount: true,
-          },
-        }),
-        prisma.income.findMany({
-          where: {
-            ...analyticsBaseWhere,
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            entryDate: {
-              gte: currentYearStart,
+              gte: previousYearStart,
               lte: now,
             },
           },
@@ -1052,6 +1012,13 @@ export const summaryProcedures = {
       const debtorCustomers = new Set<string>();
       const incomeByCourse = new Map<string, { count: number; amount: number; agreementAmount: number }>();
       const incomeByAgent = new Map<string, { count: number; amount: number }>();
+      let currentMonthToDateIncome = 0;
+      let previousMonthToDateIncome = 0;
+      let lastYearSameMonthToDateIncome = 0;
+      let currentYearToDateIncome = 0;
+      let previousYearToDateIncome = 0;
+      const monthDailyMap = new Map<number, number>();
+      const yearMonthlyMap = new Map<number, number>();
       const activeNewSales = (incomes as Array<{
         id: string;
         type: string;
@@ -1093,6 +1060,52 @@ export const summaryProcedures = {
             }),
           })
         : new Map<string, { currentDebtAmount: number }>();
+
+      for (const income of activeIncomeAnalyticsRows as Array<{
+        id: string;
+        type: string;
+        relatedDebtIncomeId: string | null;
+        entryDate: Date;
+        paymentAmount: number;
+      }>) {
+        if (isRowLinkedToTechnicalSale({
+          rowType: income.type,
+          rowId: income.id,
+          relatedDebtIncomeId: income.relatedDebtIncomeId,
+          technicalSaleIds,
+        })) {
+          continue;
+        }
+
+        const amount = Number(income.paymentAmount || 0);
+        const entryTime = income.entryDate.getTime();
+
+        if (entryTime >= currentMonthStart.getTime() && entryTime <= now.getTime()) {
+          currentMonthToDateIncome += amount;
+          const localDate = shiftToReportTimezone(income.entryDate);
+          const day = localDate.getUTCDate();
+          monthDailyMap.set(day, (monthDailyMap.get(day) || 0) + amount);
+        }
+
+        if (entryTime >= previousMonthStart.getTime() && entryTime <= previousMonthSameMoment.getTime()) {
+          previousMonthToDateIncome += amount;
+        }
+
+        if (entryTime >= lastYearSameMonthStart.getTime() && entryTime <= lastYearSameMonthMoment.getTime()) {
+          lastYearSameMonthToDateIncome += amount;
+        }
+
+        if (entryTime >= currentYearStart.getTime() && entryTime <= now.getTime()) {
+          currentYearToDateIncome += amount;
+          const localDate = shiftToReportTimezone(income.entryDate);
+          const monthIndex = localDate.getUTCMonth();
+          yearMonthlyMap.set(monthIndex, (yearMonthlyMap.get(monthIndex) || 0) + amount);
+        }
+
+        if (entryTime >= previousYearStart.getTime() && entryTime <= previousYearYtdMoment.getTime()) {
+          previousYearToDateIncome += amount;
+        }
+      }
 
       for (const income of incomes as Array<{
         id: string;
@@ -1166,27 +1179,6 @@ export const summaryProcedures = {
       const monthVsLastYearTrend = buildTrend(currentMonthToDateIncome, lastYearSameMonthToDateIncome);
       const ytdTrend = buildTrend(currentYearToDateIncome, previousYearToDateIncome);
 
-      const monthDailyMap = new Map<number, number>();
-      for (const income of monthActiveIncomes as Array<{
-        id: string;
-        type: string;
-        relatedDebtIncomeId: string | null;
-        entryDate: Date;
-        paymentAmount: number;
-      }>) {
-        if (isRowLinkedToTechnicalSale({
-          rowType: income.type,
-          rowId: income.id,
-          relatedDebtIncomeId: income.relatedDebtIncomeId,
-          technicalSaleIds,
-        })) {
-          continue;
-        }
-        const localDate = shiftToReportTimezone(income.entryDate);
-        const day = localDate.getUTCDate();
-        monthDailyMap.set(day, (monthDailyMap.get(day) || 0) + Number(income.paymentAmount || 0));
-      }
-
       let monthCumulativeActual = 0;
       const monthElapsedDays = Math.max(1, currentDay);
       const monthRunRatePerDay = currentMonthToDateIncome > 0 ? currentMonthToDateIncome / monthElapsedDays : 0;
@@ -1205,27 +1197,6 @@ export const summaryProcedures = {
       const monthProgressPercent = monthProjectedTotal > 0
         ? Number(((currentMonthToDateIncome / monthProjectedTotal) * 100).toFixed(2))
         : 0;
-
-      const yearMonthlyMap = new Map<number, number>();
-      for (const income of yearActiveIncomes as Array<{
-        id: string;
-        type: string;
-        relatedDebtIncomeId: string | null;
-        entryDate: Date;
-        paymentAmount: number;
-      }>) {
-        if (isRowLinkedToTechnicalSale({
-          rowType: income.type,
-          rowId: income.id,
-          relatedDebtIncomeId: income.relatedDebtIncomeId,
-          technicalSaleIds,
-        })) {
-          continue;
-        }
-        const localDate = shiftToReportTimezone(income.entryDate);
-        const monthIndex = localDate.getUTCMonth();
-        yearMonthlyMap.set(monthIndex, (yearMonthlyMap.get(monthIndex) || 0) + Number(income.paymentAmount || 0));
-      }
 
       const yearElapsedDays = Math.max(1, getReportLocalDayOfYear(now));
       const yearTotalDays = getReportLocalDaysInYear(currentYear);
