@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 type DebtFilter = 'all' | 'with_debt' | 'without_debt';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
@@ -89,7 +90,7 @@ export default function CustomersPage() {
       tariffId: tariffId || undefined,
       subTariffId: subTariffId || undefined,
       debtFilter,
-      limit: 500,
+      limit: 150,
     },
     {
       retry: false,
@@ -101,7 +102,7 @@ export default function CustomersPage() {
 
   const editorOptionsQuery = trpc.customerIncome.customerEditorOptions.useQuery(undefined, {
     retry: false,
-    enabled: isAdmin,
+    enabled: isAdmin && (editMode || isAddModalOpen || isIdentityModalOpen || isCourseEditorModalOpen),
     refetchOnWindowFocus: false,
     staleTime: 60_000,
   });
@@ -948,7 +949,7 @@ export default function CustomersPage() {
       <div className="rounded-lg bg-white shadow dark:bg-slate-900">
         <div className="px-6 py-5">
           {customersQuery.isLoading ? (
-            <p className="text-sm text-gray-600 dark:text-slate-300">Mijozlar yuklanmoqda...</p>
+            <LoadingBlock message="Mijozlar yuklanmoqda..." />
           ) : customersQuery.error ? (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
               {customersQuery.error.message || "Mijozlarni yuklab bo'lmadi."}
@@ -1408,7 +1409,7 @@ export default function CustomersPage() {
 
             <div className="max-h-[75vh] space-y-5 overflow-auto px-6 py-5">
               {customerHistoryQuery.isLoading ? (
-                <p className="text-sm text-gray-600 dark:text-slate-300">Tarix yuklanmoqda...</p>
+                <LoadingBlock compact message="Tarix yuklanmoqda..." />
               ) : customerHistoryQuery.error ? (
                 <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
                   {customerHistoryQuery.error.message || "Mijoz tarixini yuklab bo'lmadi."}
