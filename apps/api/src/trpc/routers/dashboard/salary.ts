@@ -32,6 +32,7 @@ import { AGENT_ROLES } from '@dashboarduz/shared';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
+import { buildCacheKey, getOrSet } from '../../../services/cache';
 
 function calculateProratedFixedSalary(
   monthlyFixedSalary: number,
@@ -161,6 +162,16 @@ export const salaryProcedures = {
       }).optional(),
     )
     .query(async ({ ctx, input }) => {
+    const cacheKey = buildCacheKey('salarySummary', {
+      t: ctx.tenantId,
+      u: ctx.user.userId,
+      r: input?.range || 'month',
+      df: input?.dateFrom,
+      dt: input?.dateTo,
+      m: input?.managerUserId,
+      p: input?.prorateFixedSalary ? '1' : '0',
+    });
+    return getOrSet(cacheKey, 120, async () => {
     const now = new Date();
     const hasExplicitRange = Boolean(input);
     const resolvedRange = hasExplicitRange
@@ -1055,6 +1066,7 @@ export const salaryProcedures = {
       byAgent,
       currentUser: byAgent.find((row) => row.userId === ctx.user.userId) || null,
     };
+    });
     }),
 
   bonusIncomeDetails: protectedProcedure
