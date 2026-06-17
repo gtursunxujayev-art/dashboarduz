@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 const MODE_OPTIONS = [
   { value: 'suspicious', label: 'Shubhali qatorlar' },
@@ -343,8 +344,8 @@ export default function IncomeDebugPage() {
                 <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-800 dark:bg-slate-900">
                   {debugQuery.isLoading ? (
                     <tr>
-                      <td colSpan={12} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-slate-400">
-                        Yuklanmoqda...
+                      <td colSpan={12} className="px-4 py-6">
+                        <LoadingBlock compact message="Yuklanmoqda..." />
                       </td>
                     </tr>
                   ) : rows.length === 0 ? (
