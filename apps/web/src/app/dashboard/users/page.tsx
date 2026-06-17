@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import LoadingBlock from '@/components/dashboard/loading-block';
 
 const availableRoles = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'Finance', 'Tashkiliy'] as const;
 const roleLabels: Record<(typeof availableRoles)[number], string> = {
@@ -336,7 +337,7 @@ export default function UsersPage() {
 
         <div className="p-6">
           {usersQuery.isLoading ? (
-            <p className="text-sm text-gray-600">Foydalanuvchilar yuklanmoqda...</p>
+            <LoadingBlock message="Foydalanuvchilar yuklanmoqda..." />
           ) : usersQuery.data?.length ? (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
