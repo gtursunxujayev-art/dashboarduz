@@ -4,9 +4,19 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
 
-type UserRole = 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'OnlineAgent' | 'OfflineAgent' | 'Dashboard' | 'Finance' | 'Tashkiliy';
+type UserRole = 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'OnlineAgent' | 'OfflineAgent' | 'Dashboard' | 'OfflineDashboard' | 'Finance' | 'Tashkiliy';
 
-const KNOWN_USER_ROLES: readonly UserRole[] = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'Finance', 'Tashkiliy'];
+const KNOWN_USER_ROLES: readonly UserRole[] = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'OfflineDashboard', 'Finance', 'Tashkiliy'];
+
+export function getPostLoginPath(roles: readonly string[] | null | undefined): string {
+  if (roles?.length === 1 && roles[0] === 'Dashboard') {
+    return '/dashboard/live-leaderboard';
+  }
+  if (roles?.length === 1 && roles[0] === 'OfflineDashboard') {
+    return '/dashboard/offline-leaderboard';
+  }
+  return '/dashboard';
+}
 
 function narrowRoles(roles: readonly string[] | null | undefined): UserRole[] {
   if (!roles) return [];
@@ -109,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
     setUser(userData);
     void refreshUser();
-    router.push('/dashboard');
+    router.push(getPostLoginPath(userData.roles));
   };
 
   const logout = () => {
