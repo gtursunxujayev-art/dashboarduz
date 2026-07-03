@@ -5,14 +5,19 @@ import {
   getBonusAmount,
   getRangeStart,
   INCOME_LIFECYCLE_ACTIVE,
+  isAllowedUtelManagerExtension,
+  normalizeDigits,
   prisma,
   protectedProcedure,
   resolveBonusPercent,
+  resolveCallDuration,
+  resolveCallExtension,
   TRPCError,
   type SalaryBreakdown,
   type SalaryCategory,
   z,
 } from './helpers';
+import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 
 const LIVE_LEADERBOARD_MANAGER_ROLES = new Set(['Admin', 'Manager']);
@@ -240,6 +245,101 @@ async function calculateMonthlyBonusByAgent(params: {
 }
 
 export const liveLeaderboardProcedures = {
+  liveLeaderboardCallStats: protectedProcedure
+    .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
+    .query(async ({ ctx, input }) => {
+      const requestedGroup: AgentGroup = input?.group || 'online';
+      if (!canReadLiveLeaderboard(ctx.user.roles, requestedGroup)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'This leaderboard is not available for the current user role.',
+        });
+      }
+
+      const now = new Date();
+      const todayStart = getRangeStart('today', now);
+      const agents = await prisma.user.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          isActive: true,
+          roles: {
+            hasSome: requestedGroup === 'online'
+              ? ['OnlineAgent']
+              : ['OfflineAgent', 'TeamLeader'],
+          },
+        },
+        select: {
+          id: true,
+          roles: true,
+          utelManagerExternalId: true,
+        },
+      });
+      const groupedAgents = agents.filter((agent) => resolveAgentGroup(agent.roles) === requestedGroup);
+      const agentIds = groupedAgents.map((agent) => agent.id);
+      const extensionToAgentId = new Map<string, string>();
+      for (const agent of groupedAgents) {
+        const extension = normalizeDigits(agent.utelManagerExternalId);
+        if (isAllowedUtelManagerExtension(extension) && !extensionToAgentId.has(extension)) {
+          extensionToAgentId.set(extension, agent.id);
+        }
+      }
+      const extensions = Array.from(extensionToAgentId.keys());
+
+      const [calls, corporateDurationByAgentId] = await Promise.all([
+        extensions.length > 0
+          ? prisma.call.findMany({
+              where: {
+                tenantId: ctx.tenantId,
+                provider: 'utel',
+                startedAt: { gte: todayStart, lte: now },
+                OR: [
+                  { from: { in: extensions } },
+                  { to: { in: extensions } },
+                ],
+              },
+              select: {
+                from: true,
+                to: true,
+                direction: true,
+                duration: true,
+                metadata: true,
+              },
+            })
+          : Promise.resolve([]),
+        getCorporateCallDurationByManager({
+          tenantId: ctx.tenantId,
+          managerUserIds: agentIds,
+          rangeStart: todayStart,
+          rangeEnd: now,
+        }),
+      ]);
+
+      const callCountByAgentId = new Map<string, number>();
+      const callDurationByAgentId = new Map<string, number>();
+      for (const call of calls) {
+        const extension = resolveCallExtension(call);
+        const agentId = extension ? extensionToAgentId.get(extension) : null;
+        if (!agentId) {
+          continue;
+        }
+        callCountByAgentId.set(agentId, (callCountByAgentId.get(agentId) || 0) + 1);
+        callDurationByAgentId.set(
+          agentId,
+          (callDurationByAgentId.get(agentId) || 0) + resolveCallDuration(call.duration, call.metadata),
+        );
+      }
+
+      return {
+        generatedAt: now.toISOString(),
+        agents: groupedAgents.map((agent) => ({
+          userId: agent.id,
+          todayCallsCount: callCountByAgentId.get(agent.id) || 0,
+          todayCallDurationSeconds: (callDurationByAgentId.get(agent.id) || 0)
+            + (corporateDurationByAgentId.get(agent.id) || 0),
+        })),
+      };
+    }),
+
   liveLeaderboard: protectedProcedure
     .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
     .query(async ({ ctx, input }) => {
