@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
-import { useAuth } from '@/contexts/auth-context';
+import { getPostLoginPath, useAuth } from '@/contexts/auth-context';
 
 type LoginMode = 'otp' | 'password';
 
@@ -75,7 +75,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isAuthLoading && user) {
-      router.replace('/dashboard');
+      router.replace(getPostLoginPath(user.roles));
     }
   }, [isAuthLoading, router, user]);
 
