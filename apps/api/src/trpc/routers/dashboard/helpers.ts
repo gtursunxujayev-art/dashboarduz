@@ -242,6 +242,54 @@ export function resolveCallExtension(call: { from: string; to: string; direction
   return null;
 }
 
+function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): unknown {
+  if (key in source) {
+    return source[key];
+  }
+  const normalizedKey = key.toLowerCase();
+  const matchingEntry = Object.entries(source).find(([entryKey]) => entryKey.toLowerCase() === normalizedKey);
+  return matchingEntry?.[1];
+}
+
+function parseCallDuration(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseInt(value.trim(), 10);
+    return Number.isNaN(parsed) ? null : Math.max(0, parsed);
+  }
+  return null;
+}
+
+export function resolveCallDuration(duration: number | null, metadata: unknown): number {
+  if (duration !== null && duration !== undefined) {
+    return Math.max(0, duration);
+  }
+
+  const metadataObject = asObject(metadata);
+  if (!metadataObject) {
+    return 0;
+  }
+
+  const candidates = [metadataObject];
+  const rawHistory = asObject(metadataObject.raw_call_history);
+  if (rawHistory) {
+    candidates.push(rawHistory);
+  }
+
+  for (const candidate of candidates) {
+    for (const key of ['normalized_duration', 'duration', 'billsec', 'conversation', 'talk_duration']) {
+      const parsed = parseCallDuration(getCaseInsensitiveValue(candidate, key));
+      if (parsed !== null) {
+        return parsed;
+      }
+    }
+  }
+
+  return 0;
+}
+
 export async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
   const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
   if (!isAgentOnly) {
