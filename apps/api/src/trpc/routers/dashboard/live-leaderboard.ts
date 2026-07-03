@@ -11,10 +11,11 @@ import {
   TRPCError,
   type SalaryBreakdown,
   type SalaryCategory,
+  z,
 } from './helpers';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 
-const LIVE_LEADERBOARD_ROLES = new Set(['Admin', 'Manager', 'Dashboard']);
+const LIVE_LEADERBOARD_MANAGER_ROLES = new Set(['Admin', 'Manager']);
 
 type AgentGroup = 'online' | 'offline';
 
@@ -39,8 +40,15 @@ function parseTelegramDailyReportCourseIds(config: unknown): string[] {
   )).slice(0, 3);
 }
 
-function canReadLiveLeaderboard(roles: readonly string[] | null | undefined): boolean {
-  return Array.isArray(roles) && roles.some((role) => LIVE_LEADERBOARD_ROLES.has(role));
+function canReadLiveLeaderboard(
+  roles: readonly string[] | null | undefined,
+  group: AgentGroup,
+): boolean {
+  if (!Array.isArray(roles)) return false;
+  if (roles.some((role) => LIVE_LEADERBOARD_MANAGER_ROLES.has(role))) return true;
+  return group === 'online'
+    ? roles.length === 1 && roles[0] === 'Dashboard'
+    : roles.length === 1 && roles[0] === 'OfflineDashboard';
 }
 
 function resolveAgentGroup(roles: readonly string[]): AgentGroup | null {
@@ -78,8 +86,9 @@ async function calculateMonthlyBonusByAgent(params: {
   monthStart: Date;
   monthEnd: Date;
   technicalSaleIds: Set<string>;
+  group: AgentGroup;
 }): Promise<Map<string, number>> {
-  const { tenantId, agentIds, monthStart, monthEnd, technicalSaleIds } = params;
+  const { tenantId, agentIds, monthStart, monthEnd, technicalSaleIds, group } = params;
   const result = new Map<string, number>(agentIds.map((agentId) => [agentId, 0]));
   if (!agentIds.length) return result;
 
@@ -200,7 +209,7 @@ async function calculateMonthlyBonusByAgent(params: {
           || income.course?.name
           || income.relatedDebtIncome?.course?.name,
       );
-      if (category === 'other') continue;
+      if (category === 'other' || resolveCoursePanelGroup(category) !== group) continue;
       const percentage = resolveBonusPercent(salarySettings.bonusRules[category], getClosedCount(income.managerUserId, category));
       result.set(income.managerUserId, (result.get(income.managerUserId) || 0) + getBonusAmount(income.paymentAmount || 0, percentage));
     }
@@ -219,7 +228,7 @@ async function calculateMonthlyBonusByAgent(params: {
     const category = sale.course?.category
       ? classifyCourseCategoryFromField(sale.course.category)
       : classifyCourseCategoryFromField(sale.course?.name);
-    if (category === 'other') {
+    if (category === 'other' || resolveCoursePanelGroup(category) !== group) {
       continue;
     }
     const percentage = resolveBonusPercent(salarySettings.bonusRules[category], getClosedCount(sale.managerUserId, category));
@@ -231,15 +240,18 @@ async function calculateMonthlyBonusByAgent(params: {
 }
 
 export const liveLeaderboardProcedures = {
-  liveLeaderboard: protectedProcedure.query(async ({ ctx }) => {
-    if (!canReadLiveLeaderboard(ctx.user.roles)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Live leaderboard is available only for Admin, Manager and Dashboard users.',
-      });
-    }
+  liveLeaderboard: protectedProcedure
+    .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
+    .query(async ({ ctx, input }) => {
+      const requestedGroup: AgentGroup = input?.group || 'online';
+      if (!canReadLiveLeaderboard(ctx.user.roles, requestedGroup)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'This leaderboard is not available for the current user role.',
+        });
+      }
 
-    const now = new Date();
+      const now = new Date();
     const todayStart = getRangeStart('today', now);
     const weekStart = getRangeStart('week', now);
     const monthStart = getRangeStart('month', now);
@@ -248,7 +260,11 @@ export const liveLeaderboardProcedures = {
       where: {
         tenantId: ctx.tenantId,
         isActive: true,
-        roles: { hasSome: ['OnlineAgent', 'OfflineAgent', 'TeamLeader'] },
+        roles: {
+          hasSome: requestedGroup === 'online'
+            ? ['OnlineAgent']
+            : ['OfflineAgent', 'TeamLeader'],
+        },
       },
       select: {
         id: true,
@@ -261,7 +277,7 @@ export const liveLeaderboardProcedures = {
 
     const groupedAgents = agents
       .map((agent) => ({ ...agent, group: resolveAgentGroup(agent.roles) }))
-      .filter((agent): agent is LeaderboardAgent & { group: AgentGroup } => Boolean(agent.group));
+      .filter((agent): agent is LeaderboardAgent & { group: AgentGroup } => agent.group === requestedGroup);
     const agentIds = groupedAgents.map((agent) => agent.id);
 
     const technicalSales = await prisma.income.findMany({
@@ -307,6 +323,10 @@ export const liveLeaderboardProcedures = {
               id: true,
               name: true,
               category: true,
+              tariffs: {
+                orderBy: { name: 'asc' },
+                select: { id: true, name: true },
+              },
             },
           }),
           prisma.income.findMany({
@@ -321,6 +341,7 @@ export const liveLeaderboardProcedures = {
               type: true,
               relatedDebtIncomeId: true,
               courseId: true,
+              tariffId: true,
             },
           }),
         ])
@@ -333,9 +354,12 @@ export const liveLeaderboardProcedures = {
       technicalSaleIds,
     }));
     const selectedCourseSalesCountById = new Map<string, number>();
+    const tariffSalesCountByKey = new Map<string, number>();
     for (const sale of selectedCourseSales) {
       if (!sale.courseId) continue;
       selectedCourseSalesCountById.set(sale.courseId, (selectedCourseSalesCountById.get(sale.courseId) || 0) + 1);
+      const tariffKey = `${sale.courseId}:${sale.tariffId || 'none'}`;
+      tariffSalesCountByKey.set(tariffKey, (tariffSalesCountByKey.get(tariffKey) || 0) + 1);
     }
     const selectedCoursesById = new Map(selectedCourses.map((course) => [course.id, course]));
     const selectedReportCourses = selectedCourseIds
@@ -349,9 +373,23 @@ export const liveLeaderboardProcedures = {
           category,
           group: resolveCoursePanelGroup(category),
           salesCount: selectedCourseSalesCountById.get(course.id) || 0,
+          tariffs: [
+            ...course.tariffs.map((tariff) => ({
+              tariffId: tariff.id,
+              name: tariff.name,
+              salesCount: tariffSalesCountByKey.get(`${course.id}:${tariff.id}`) || 0,
+            })),
+            ...(tariffSalesCountByKey.get(`${course.id}:none`)
+              ? [{
+                  tariffId: null,
+                  name: 'Tarifsiz',
+                  salesCount: tariffSalesCountByKey.get(`${course.id}:none`) || 0,
+                }]
+              : []),
+          ],
         };
       })
-      .filter((course): course is NonNullable<typeof course> => Boolean(course));
+      .filter((course): course is NonNullable<typeof course> => course !== null && course.group === requestedGroup);
 
     if (!agentIds.length) {
       return {
@@ -382,6 +420,10 @@ export const liveLeaderboardProcedures = {
           managerUserId: true,
           paymentAmount: true,
           entryDate: true,
+          course: { select: { category: true, name: true } },
+          relatedDebtIncome: {
+            select: { course: { select: { category: true, name: true } } },
+          },
         },
       }),
       prisma.income.findMany({
@@ -398,6 +440,10 @@ export const liveLeaderboardProcedures = {
           managerUserId: true,
           paymentAmount: true,
           entryDate: true,
+          course: { select: { category: true, name: true } },
+          relatedDebtIncome: {
+            select: { course: { select: { category: true, name: true } } },
+          },
         },
       }),
       prisma.income.findMany({
@@ -425,6 +471,7 @@ export const liveLeaderboardProcedures = {
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
+          managerUserId: { in: agentIds },
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           entryDate: { gte: todayStart, lte: now },
         },
@@ -456,6 +503,10 @@ export const liveLeaderboardProcedures = {
           paymentAmount: true,
           entryDate: true,
           createdAt: true,
+          course: { select: { category: true, name: true } },
+          relatedDebtIncome: {
+            select: { course: { select: { category: true, name: true } } },
+          },
           manager: { select: { name: true, username: true } },
         },
       }),
@@ -468,10 +519,18 @@ export const liveLeaderboardProcedures = {
       technicalSaleIds,
     });
 
-    const monthRows = monthRowsRaw.filter(isNonTechnicalRow);
-    const weekRows = weekRowsRaw.filter(isNonTechnicalRow);
-    const monthlySales = monthlySalesRaw.filter(isNonTechnicalRow);
-    const todaySales = todaySalesRaw.filter(isNonTechnicalRow);
+    const isRequestedGroupIncome = (row: {
+      course?: { category: string; name: string } | null;
+      relatedDebtIncome?: { course: { category: string; name: string } | null } | null;
+    }) => resolveSalePanelGroup(
+      row.course?.category || row.relatedDebtIncome?.course?.category,
+      row.course?.name || row.relatedDebtIncome?.course?.name,
+    ) === requestedGroup;
+
+    const monthRows = monthRowsRaw.filter((row) => isNonTechnicalRow(row) && isRequestedGroupIncome(row));
+    const weekRows = weekRowsRaw.filter((row) => isNonTechnicalRow(row) && isRequestedGroupIncome(row));
+    const monthlySales = monthlySalesRaw.filter((row) => isNonTechnicalRow(row) && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup);
+    const todaySales = todaySalesRaw.filter((row) => isNonTechnicalRow(row) && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup);
     const todayRows = monthRows.filter((row) => row.entryDate >= todayStart);
     const monthlyBonusByAgent = await calculateMonthlyBonusByAgent({
       tenantId: ctx.tenantId,
@@ -479,6 +538,7 @@ export const liveLeaderboardProcedures = {
       monthStart,
       monthEnd: now,
       technicalSaleIds,
+      group: requestedGroup,
     });
 
     const monthIncomeByAgent = new Map<string, number>();
@@ -512,7 +572,7 @@ export const liveLeaderboardProcedures = {
       groupTodaySalesCount[saleGroup] += 1;
     }
 
-    const latestIncome = latestRowsRaw.find(isNonTechnicalRow) || null;
+    const latestIncome = latestRowsRaw.find((row) => isNonTechnicalRow(row) && isRequestedGroupIncome(row)) || null;
 
     return {
       generatedAt: now.toISOString(),
