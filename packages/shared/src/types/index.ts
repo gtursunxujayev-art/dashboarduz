@@ -2,7 +2,7 @@
 
 export type TenantPlan = 'free' | 'pro' | 'enterprise';
 
-export const USER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'Finance', 'Tashkiliy'] as const;
+export const USER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'OfflineDashboard', 'Finance', 'Tashkiliy'] as const;
 
 export type UserRole = (typeof USER_ROLES)[number];
 
