@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/auth-context';
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 const LIVE_LEADERBOARD_PATH = '/dashboard/live-leaderboard';
+const OFFLINE_LEADERBOARD_PATH = '/dashboard/offline-leaderboard';
 const AGENT_ALLOWED_PATHS = [
   '/dashboard',
   '/dashboard/leads',
@@ -76,8 +77,12 @@ function isPathBlocked(pathname: string, blockedPaths: string[]): boolean {
   return blockedPaths.some((blockedPath) => pathname === blockedPath || pathname.startsWith(`${blockedPath}/`));
 }
 
-function isDashboardOnly(roles: string[]): boolean {
+function isOnlineDashboardOnly(roles: string[]): boolean {
   return roles.includes('Dashboard') && roles.every((role) => role === 'Dashboard');
+}
+
+function isOfflineDashboardOnly(roles: string[]): boolean {
+  return roles.includes('OfflineDashboard') && roles.every((role) => role === 'OfflineDashboard');
 }
 
 export default function DashboardAccessGuard({ children }: { children: React.ReactNode }) {
@@ -97,10 +102,14 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
   const isFinanceRestriction = Boolean(user && isFinanceOnly(user.roles));
   const isManagerRestriction = Boolean(user && isManagerOnly(user.roles));
   const isTashkiliyRestriction = Boolean(user && isTashkiliyOnly(user.roles));
-  const isDashboardRestriction = Boolean(user && isDashboardOnly(user.roles));
+  const isOnlineDashboardRestriction = Boolean(user && isOnlineDashboardOnly(user.roles));
+  const isOfflineDashboardRestriction = Boolean(user && isOfflineDashboardOnly(user.roles));
+  const restrictedDashboardPath = isOfflineDashboardRestriction
+    ? OFFLINE_LEADERBOARD_PATH
+    : LIVE_LEADERBOARD_PATH;
 
-  const isAllowed = isDashboardRestriction
-    ? normalizedPath === LIVE_LEADERBOARD_PATH
+  const isAllowed = isOnlineDashboardRestriction || isOfflineDashboardRestriction
+    ? normalizedPath === restrictedDashboardPath
     : isLeadPath
     ? canAccessLeads
     : isAgentRestriction
@@ -114,18 +123,18 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
         : true;
 
   useEffect(() => {
-    if (!isLoading && user && isDashboardRestriction && normalizedPath === '/dashboard') {
-      router.replace(LIVE_LEADERBOARD_PATH);
+    if (!isLoading && user && (isOnlineDashboardRestriction || isOfflineDashboardRestriction) && normalizedPath === '/dashboard') {
+      router.replace(restrictedDashboardPath);
       return;
     }
     if (!isLoading && !isAllowed) {
-      if (isDashboardRestriction) {
-        router.replace(LIVE_LEADERBOARD_PATH);
+      if (isOnlineDashboardRestriction || isOfflineDashboardRestriction) {
+        router.replace(restrictedDashboardPath);
         return;
       }
       router.replace('/dashboard');
     }
-  }, [isLoading, isAllowed, isDashboardRestriction, normalizedPath, router, user]);
+  }, [isLoading, isAllowed, isOfflineDashboardRestriction, isOnlineDashboardRestriction, normalizedPath, restrictedDashboardPath, router, user]);
 
   if (!isLoading && !isAllowed) {
     return null;
