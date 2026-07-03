@@ -30,6 +30,11 @@ type SelectedReportCourse = {
   category: string;
   group: AgentGroup;
   salesCount: number;
+  tariffs: Array<{
+    tariffId: string | null;
+    name: string;
+    salesCount: number;
+  }>;
 };
 
 type GroupStats = {
@@ -113,6 +118,7 @@ function AgentLeaderboard({
   agents,
   courses,
   todaySalesCount,
+  showStats,
   tone,
   highlightedAgentId,
 }: {
@@ -120,6 +126,7 @@ function AgentLeaderboard({
   agents: LeaderboardAgent[];
   courses: SelectedReportCourse[];
   todaySalesCount: number;
+  showStats: boolean;
   tone: string;
   highlightedAgentId: string | null;
 }) {
@@ -130,17 +137,28 @@ function AgentLeaderboard({
           <h2 className="flex flex-wrap items-center gap-3 text-3xl font-black text-white">
             <span className={`mr-3 text-sm font-bold uppercase tracking-[0.28em] align-middle ${tone}`}>{title}</span>
             <span>Menejerlar</span>
-            <span className="rounded-2xl border border-white/10 bg-white/10 px-3 py-1 text-sm font-black text-slate-100 shadow-lg shadow-black/20">
-              Bugun - <span className={tone}>{todaySalesCount}</span>
-            </span>
-            {courses.map((course) => (
-              <span
-                key={course.courseId}
-                className="rounded-2xl border border-white/10 bg-white/10 px-3 py-1 text-sm font-black text-slate-100 shadow-lg shadow-black/20"
-              >
-                {course.name}: <span className={tone}>{course.salesCount}</span>
-              </span>
-            ))}
+            {showStats ? (
+              <>
+                <span className="rounded-2xl border border-white/10 bg-white/10 px-3 py-1 text-sm font-black text-slate-100 shadow-lg shadow-black/20">
+                  Bugun - <span className={tone}>{todaySalesCount}</span>
+                </span>
+                {courses.map((course) => (
+                  <span key={course.courseId} className="contents">
+                    <span className="rounded-2xl border border-white/10 bg-white/10 px-3 py-1 text-sm font-black text-slate-100 shadow-lg shadow-black/20">
+                      {course.name}: <span className={tone}>{course.salesCount}</span>
+                    </span>
+                    {course.tariffs.map((tariff) => (
+                      <span
+                        key={`${course.courseId}:${tariff.tariffId || 'none'}`}
+                        className="rounded-2xl border border-orange-300/20 bg-orange-300/10 px-3 py-1 text-sm font-black text-slate-100 shadow-lg shadow-black/20"
+                      >
+                        {tariff.name} - <span className={tone}>{tariff.salesCount}</span>
+                      </span>
+                    ))}
+                  </span>
+                ))}
+              </>
+            ) : null}
           </h2>
         </div>
       </div>
@@ -177,8 +195,8 @@ function IncomeCelebrationPopup({ event, onClose }: { event: LatestIncomeEvent; 
   );
 }
 
-export default function DashboardRolePage() {
-  const query = trpc.dashboard.liveLeaderboard.useQuery(undefined, {
+export default function DashboardRolePage({ group }: { group: AgentGroup }) {
+  const query = trpc.dashboard.liveLeaderboard.useQuery({ group }, {
     refetchInterval: 2000,
     refetchIntervalInBackground: true,
     retry: 1,
@@ -190,10 +208,8 @@ export default function DashboardRolePage() {
   const hasBootstrapped = useRef(false);
 
   const data = query.data;
-  const onlineAgents = useMemo(() => sortAgents(data?.agents || [], 'online'), [data?.agents]);
-  const offlineAgents = useMemo(() => sortAgents(data?.agents || [], 'offline'), [data?.agents]);
-  const onlineCourses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === 'online'), [data?.selectedReportCourses]);
-  const offlineCourses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === 'offline'), [data?.selectedReportCourses]);
+  const agents = useMemo(() => sortAgents(data?.agents || [], group), [data?.agents, group]);
+  const courses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === group), [data?.selectedReportCourses, group]);
   const groupStats: GroupStats = data?.groupStats || {
     online: { todaySalesCount: 0 },
     offline: { todaySalesCount: 0 },
@@ -234,10 +250,15 @@ export default function DashboardRolePage() {
           <KpiCard label="Oylik tushum" value={data?.kpis.monthIncome || 0} accent="bg-emerald-400" />
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-2">
-          <AgentLeaderboard title="Onlayn" agents={onlineAgents} courses={onlineCourses} todaySalesCount={groupStats.online.todaySalesCount} tone="text-cyan-300" highlightedAgentId={highlightedAgentId} />
-          <AgentLeaderboard title="Oflayn" agents={offlineAgents} courses={offlineCourses} todaySalesCount={groupStats.offline.todaySalesCount} tone="text-orange-300" highlightedAgentId={highlightedAgentId} />
-        </section>
+        <AgentLeaderboard
+          title={group === 'online' ? 'Onlayn' : 'Oflayn'}
+          agents={agents}
+          courses={courses}
+          todaySalesCount={groupStats[group].todaySalesCount}
+          showStats={group === 'offline'}
+          tone={group === 'online' ? 'text-cyan-300' : 'text-orange-300'}
+          highlightedAgentId={highlightedAgentId}
+        />
       </div>
 
       <div className="fixed bottom-4 right-4 z-40 flex items-center gap-3 rounded-2xl bg-slate-950/70 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
