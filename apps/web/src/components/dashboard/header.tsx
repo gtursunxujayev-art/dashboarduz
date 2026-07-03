@@ -15,6 +15,7 @@ const ROLE_LABELS: Record<string, string> = {
   OnlineAgent: 'Online agent',
   OfflineAgent: 'Offline agent',
   Dashboard: 'Dashboard',
+  OfflineDashboard: 'Offline dashboard',
   Finance: 'Moliya',
   Tashkiliy: 'Tashkiliy',
 };
