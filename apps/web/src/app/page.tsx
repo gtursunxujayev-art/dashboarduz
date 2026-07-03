@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/contexts/auth-context';
+import { getPostLoginPath, useAuth } from '@/contexts/auth-context';
 
 export default function Home() {
   const { user, isLoading } = useAuth();
@@ -13,7 +13,7 @@ export default function Home() {
       return;
     }
 
-    router.replace(user ? '/dashboard' : '/auth/login');
+    router.replace(user ? getPostLoginPath(user.roles) : '/auth/login');
   }, [isLoading, router, user]);
 
   return (
