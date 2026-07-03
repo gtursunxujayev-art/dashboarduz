@@ -7,22 +7,26 @@ import DashboardAiShell from '@/components/dashboard/dashboard-ai-shell';
 import { trpc } from '@/lib/trpc';
 
 const LIVE_LEADERBOARD_PATH = '/dashboard/live-leaderboard';
+const OFFLINE_LEADERBOARD_PATH = '/dashboard/offline-leaderboard';
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isLeaderboardRoute = pathname === LIVE_LEADERBOARD_PATH || pathname === OFFLINE_LEADERBOARD_PATH;
   const tenantQuery = trpc.tenant.get.useQuery(undefined, {
+    enabled: !isLeaderboardRoute,
     retry: 1,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
   const adjustmentBadgeQuery = trpc.customerIncome.adjustmentBadgeCount.useQuery(undefined, {
+    enabled: !isLeaderboardRoute,
     retry: false,
     staleTime: 30 * 1000,
     refetchInterval: 30 * 1000,
     refetchOnWindowFocus: false,
   });
 
-  if (pathname === LIVE_LEADERBOARD_PATH) {
+  if (isLeaderboardRoute) {
     return (
       <div className="min-h-screen bg-slate-950 text-white">
         {children}
