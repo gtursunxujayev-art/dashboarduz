@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/contexts/auth-context';
 
 type AgentGroup = 'online' | 'offline';
 
@@ -116,17 +117,11 @@ function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: n
 function AgentLeaderboard({
   title,
   agents,
-  courses,
-  todaySalesCount,
-  showStats,
   tone,
   highlightedAgentId,
 }: {
   title: string;
   agents: LeaderboardAgent[];
-  courses: SelectedReportCourse[];
-  todaySalesCount: number;
-  showStats: boolean;
   tone: string;
   highlightedAgentId: string | null;
 }) {
@@ -137,28 +132,6 @@ function AgentLeaderboard({
           <h2 className="flex flex-wrap items-center gap-3 text-3xl font-black text-white">
             <span className={`mr-3 text-sm font-bold uppercase tracking-[0.28em] align-middle ${tone}`}>{title}</span>
             <span>Menejerlar</span>
-            {showStats ? (
-              <>
-                <span className="rounded-2xl border border-white/10 bg-white/10 px-3 py-1 text-sm font-black text-slate-100 shadow-lg shadow-black/20">
-                  Bugun - <span className={tone}>{todaySalesCount}</span>
-                </span>
-                {courses.map((course) => (
-                  <span key={course.courseId} className="contents">
-                    <span className="rounded-2xl border border-white/10 bg-white/10 px-3 py-1 text-sm font-black text-slate-100 shadow-lg shadow-black/20">
-                      {course.name}: <span className={tone}>{course.salesCount}</span>
-                    </span>
-                    {course.tariffs.map((tariff) => (
-                      <span
-                        key={`${course.courseId}:${tariff.tariffId || 'none'}`}
-                        className="rounded-2xl border border-orange-300/20 bg-orange-300/10 px-3 py-1 text-sm font-black text-slate-100 shadow-lg shadow-black/20"
-                      >
-                        {tariff.name} - <span className={tone}>{tariff.salesCount}</span>
-                      </span>
-                    ))}
-                  </span>
-                ))}
-              </>
-            ) : null}
           </h2>
         </div>
       </div>
@@ -171,6 +144,64 @@ function AgentLeaderboard({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function SalesStatsPanel({
+  courses,
+  todaySalesCount,
+  tone,
+}: {
+  courses: SelectedReportCourse[];
+  todaySalesCount: number;
+  tone: string;
+}) {
+  return (
+    <aside className="min-h-[560px] rounded-[2rem] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-black/30">
+      <div className="mb-6">
+        <p className={`text-sm font-bold uppercase tracking-[0.28em] ${tone}`}>Sotuvlar</p>
+        <h2 className="mt-2 text-3xl font-black text-white">Statistika</h2>
+      </div>
+
+      <div className="rounded-3xl border border-white/10 bg-white/[0.055] p-5">
+        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Bugungi sotuvlar</p>
+        <p className="mt-2 text-3xl font-black text-white">
+          Bugun - <span className={tone}>{todaySalesCount}</span>
+        </p>
+      </div>
+
+      <div className="mt-5 space-y-4">
+        {courses.map((course) => (
+          <div key={course.courseId} className="rounded-3xl border border-white/10 bg-white/[0.055] p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Tanlangan kurs</p>
+                <h3 className="mt-1 text-xl font-black text-white">
+                  {course.name} - <span className={tone}>{course.salesCount}</span>
+                </h3>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-3">
+              {course.tariffs.map((tariff) => (
+                <div
+                  key={`${course.courseId}:${tariff.tariffId || 'none'}`}
+                  className="rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-3 text-sm font-black text-slate-200"
+                >
+                  {tariff.name} - <span className={tone}>{tariff.salesCount}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {!courses.length ? (
+          <div className="rounded-3xl border border-dashed border-white/15 p-8 text-center text-slate-400">
+            Tanlangan kurs topilmadi.
+          </div>
+        ) : null}
+      </div>
+    </aside>
   );
 }
 
@@ -196,6 +227,7 @@ function IncomeCelebrationPopup({ event, onClose }: { event: LatestIncomeEvent; 
 }
 
 export default function DashboardRolePage({ group }: { group: AgentGroup }) {
+  const { logout } = useAuth();
   const query = trpc.dashboard.liveLeaderboard.useQuery({ group }, {
     refetchInterval: 2000,
     refetchIntervalInBackground: true,
@@ -250,15 +282,19 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
           <KpiCard label="Oylik tushum" value={data?.kpis.monthIncome || 0} accent="bg-emerald-400" />
         </section>
 
-        <AgentLeaderboard
-          title={group === 'online' ? 'Onlayn' : 'Oflayn'}
-          agents={agents}
-          courses={courses}
-          todaySalesCount={groupStats[group].todaySalesCount}
-          showStats={group === 'offline'}
-          tone={group === 'online' ? 'text-cyan-300' : 'text-orange-300'}
-          highlightedAgentId={highlightedAgentId}
-        />
+        <section className="grid gap-7 lg:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.45fr)]">
+          <AgentLeaderboard
+            title={group === 'online' ? 'Onlayn' : 'Oflayn'}
+            agents={agents}
+            tone={group === 'online' ? 'text-cyan-300' : 'text-orange-300'}
+            highlightedAgentId={highlightedAgentId}
+          />
+          <SalesStatsPanel
+            courses={courses}
+            todaySalesCount={groupStats[group].todaySalesCount}
+            tone={group === 'online' ? 'text-cyan-300' : 'text-orange-300'}
+          />
+        </section>
       </div>
 
       <div className="fixed bottom-4 right-4 z-40 flex items-center gap-3 rounded-2xl bg-slate-950/70 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
@@ -272,6 +308,13 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
         <div className="px-2 py-1 text-xs text-slate-300">
           Yangilandi: <span className="font-bold text-white">{data?.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('uz-UZ') : '...'}</span>
         </div>
+        <button
+          type="button"
+          onClick={logout}
+          className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold text-slate-400 transition hover:border-red-300/30 hover:bg-red-400/10 hover:text-red-200"
+        >
+          Chiqish
+        </button>
       </div>
 
       {popupEvent ? <IncomeCelebrationPopup event={popupEvent} onClose={() => setPopupEvent(null)} /> : null}
