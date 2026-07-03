@@ -5,7 +5,7 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
 
-const availableRoles = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'Finance', 'Tashkiliy'] as const;
+const availableRoles = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'OfflineDashboard', 'Finance', 'Tashkiliy'] as const;
 const roleLabels: Record<(typeof availableRoles)[number], string> = {
   Admin: 'Admin',
   Manager: 'Menejer',
@@ -14,6 +14,7 @@ const roleLabels: Record<(typeof availableRoles)[number], string> = {
   OnlineAgent: 'Online agent',
   OfflineAgent: 'Offline agent',
   Dashboard: 'Dashboard',
+  OfflineDashboard: 'Offline dashboard',
   Finance: 'Moliya',
   Tashkiliy: 'Tashkiliy',
 };
