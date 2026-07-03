@@ -10,6 +10,8 @@ type LeaderboardAgent = {
   userId: string;
   name: string;
   group: AgentGroup;
+  todayCallsCount: number;
+  todayCallDurationSeconds: number;
   monthlySalesCount: number;
   monthlyIncome: number;
   todayIncome: number;
@@ -55,6 +57,14 @@ function formatCompactMoney(amount: number) {
   return String(value);
 }
 
+function formatDuration(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
+}
+
 function sortAgents(agents: LeaderboardAgent[], group: AgentGroup) {
   return agents
     .filter((agent) => agent.group === group)
@@ -80,7 +90,7 @@ function playNewIncomeSound() {
 
 function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
-    <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.07] px-7 py-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
+    <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.07] px-7 py-2.5 shadow-2xl shadow-black/30 backdrop-blur-xl">
       <div className={`absolute -right-14 -top-20 h-40 w-40 rounded-full ${accent} opacity-30 blur-3xl`} />
       <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-300">{label}</p>
       <div className="mt-3 text-4xl font-black tracking-tight text-white md:text-5xl">{formatMoney(value)}</div>
@@ -90,19 +100,25 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
 
 function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: number; highlight: boolean }) {
   return (
-    <div className={`leaderboard-row grid grid-cols-[46px_1fr_auto] items-center gap-3 rounded-3xl border px-3 py-1.5 transition-all duration-700 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
+    <div className={`leaderboard-row grid grid-cols-[40px_minmax(0,1fr)] items-center gap-2 rounded-3xl border px-3 py-2 transition-all duration-700 sm:grid-cols-[46px_minmax(0,1fr)_auto] sm:gap-3 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
       <div className={`flex h-8 w-8 items-center justify-center rounded-xl text-base font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
         {rank}
       </div>
-      <div className="grid min-w-0 items-center gap-3 sm:grid-cols-[minmax(130px,1fr)_120px_120px_120px]">
-        <div className="truncate text-lg font-extrabold text-white">{agent.name}</div>
-        <div className="text-base font-semibold text-slate-300">
+      <div className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-1 sm:grid-cols-3 2xl:grid-cols-[minmax(120px,1fr)_110px_145px_80px_95px_90px]">
+        <div className="col-span-2 truncate text-lg font-extrabold text-white sm:col-span-3 2xl:col-span-1">{agent.name}</div>
+        <div className="text-sm font-semibold text-slate-300">
+          <span>Qo'ng'iroq: <b className="text-cyan-300">{agent.todayCallsCount}</b></span>
+        </div>
+        <div className="text-sm font-semibold text-slate-300">
+          <span>Vaqt: <b className="font-mono text-cyan-300">{formatDuration(agent.todayCallDurationSeconds)}</b></span>
+        </div>
+        <div className="text-sm font-semibold text-slate-300">
           <span>Sotuv: <b className="text-white">{agent.monthlySalesCount}</b></span>
         </div>
-        <div className="text-base font-semibold text-slate-300">
+        <div className="text-sm font-semibold text-slate-300">
           <span>Bugun: <b className="text-cyan-300">{formatCompactMoney(agent.todayIncome)}</b></span>
         </div>
-        <div className="text-base font-semibold text-slate-300">
+        <div className="text-sm font-semibold text-slate-300">
           <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(agent.monthlyBonus)}</b></span>
         </div>
       </div>
@@ -127,7 +143,7 @@ function AgentLeaderboard({
 }) {
   return (
     <section className="min-h-[560px] rounded-[2rem] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-black/30">
-      <div className="mb-6">
+      <div className="mb-3">
         <div className="min-w-0">
           <h2 className="flex flex-wrap items-center gap-3 text-3xl font-black text-white">
             <span className={`mr-3 text-sm font-bold uppercase tracking-[0.28em] align-middle ${tone}`}>{title}</span>
@@ -233,6 +249,13 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
     refetchIntervalInBackground: true,
     retry: 1,
   });
+  const callStatsQuery = trpc.dashboard.liveLeaderboardCallStats.useQuery({ group }, {
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: false,
+    staleTime: 10_000,
+    retry: 1,
+  });
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [highlightedAgentId, setHighlightedAgentId] = useState<string | null>(null);
   const [popupEvent, setPopupEvent] = useState<LatestIncomeEvent | null>(null);
@@ -240,7 +263,17 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
   const hasBootstrapped = useRef(false);
 
   const data = query.data;
-  const agents = useMemo(() => sortAgents(data?.agents || [], group), [data?.agents, group]);
+  const callStatsByAgentId = useMemo(() => new Map(
+    (callStatsQuery.data?.agents || []).map((agent) => [agent.userId, agent]),
+  ), [callStatsQuery.data?.agents]);
+  const agents = useMemo(() => sortAgents(
+    (data?.agents || []).map((agent) => ({
+      ...agent,
+      todayCallsCount: callStatsByAgentId.get(agent.userId)?.todayCallsCount || 0,
+      todayCallDurationSeconds: callStatsByAgentId.get(agent.userId)?.todayCallDurationSeconds || 0,
+    })),
+    group,
+  ), [callStatsByAgentId, data?.agents, group]);
   const courses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === group), [data?.selectedReportCourses, group]);
   const groupStats: GroupStats = data?.groupStats || {
     online: { todaySalesCount: 0 },
