@@ -45,6 +45,14 @@ type GroupStats = {
   offline: { todaySalesCount: number };
 };
 
+type PreviousMonthWinner = {
+  userId: string;
+  name: string;
+  salesCount: number;
+  income: number;
+  bonus: number;
+};
+
 function formatMoney(amount: number) {
   return `${Math.round(amount || 0).toLocaleString('uz-UZ')} so'm`;
 }
@@ -166,10 +174,14 @@ function AgentLeaderboard({
 function SalesStatsPanel({
   courses,
   todaySalesCount,
+  previousMonthWinner,
+  previousMonthWinnerError,
   tone,
 }: {
   courses: SelectedReportCourse[];
   todaySalesCount: number;
+  previousMonthWinner: PreviousMonthWinner | null | undefined;
+  previousMonthWinnerError: boolean;
   tone: string;
 }) {
   return (
@@ -217,6 +229,53 @@ function SalesStatsPanel({
           </div>
         ) : null}
       </div>
+
+      <div className="mt-5 overflow-hidden rounded-3xl border border-amber-300/25 bg-gradient-to-br from-amber-300/15 via-white/[0.055] to-orange-400/10 p-5 shadow-[0_0_45px_rgba(251,191,36,0.08)]">
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-300 text-2xl shadow-lg shadow-amber-400/20"
+          >
+            👑
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-200">O'tgan oy</p>
+            <h3 className="mt-1 text-lg font-black leading-tight text-white">Eng yaxshi sotuvchisi</h3>
+          </div>
+        </div>
+
+        {previousMonthWinnerError ? (
+          <div className="mt-5 rounded-2xl border border-red-300/15 bg-red-400/5 px-4 py-5 text-center text-sm font-semibold text-red-200/80">
+            Ma'lumotni yuklab bo'lmadi.
+          </div>
+        ) : previousMonthWinner === undefined ? (
+          <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/35 px-4 py-5 text-center text-sm font-semibold text-slate-400">
+            Hisoblanmoqda...
+          </div>
+        ) : previousMonthWinner ? (
+          <>
+            <p className="mt-5 truncate text-2xl font-black text-white">{previousMonthWinner.name}</p>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <div className="rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-3 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Sotuv</p>
+                <p className="mt-1 text-lg font-black text-amber-200">{previousMonthWinner.salesCount}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-3 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Tushum</p>
+                <p className="mt-1 text-lg font-black text-emerald-300">{formatCompactMoney(previousMonthWinner.income)}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-3 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Bonus</p>
+                <p className="mt-1 text-lg font-black text-fuchsia-300">{formatCompactMoney(previousMonthWinner.bonus)}</p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/35 px-4 py-5 text-center text-sm font-semibold text-slate-400">
+            O'tgan oy sotuv topilmadi.
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
@@ -254,6 +313,12 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: false,
     staleTime: 10_000,
+    retry: 1,
+  });
+  const previousMonthWinnerQuery = trpc.dashboard.liveLeaderboardPreviousMonthWinner.useQuery({ group }, {
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000,
     retry: 1,
   });
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -325,6 +390,8 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
           <SalesStatsPanel
             courses={courses}
             todaySalesCount={groupStats[group].todaySalesCount}
+            previousMonthWinner={previousMonthWinnerQuery.data?.winner}
+            previousMonthWinnerError={previousMonthWinnerQuery.isError}
             tone={group === 'online' ? 'text-cyan-300' : 'text-orange-300'}
           />
         </section>
