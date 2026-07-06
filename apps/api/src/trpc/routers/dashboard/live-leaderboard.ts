@@ -245,6 +245,168 @@ async function calculateMonthlyBonusByAgent(params: {
 }
 
 export const liveLeaderboardProcedures = {
+  liveLeaderboardPreviousMonthWinner: protectedProcedure
+    .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
+    .query(async ({ ctx, input }) => {
+      const requestedGroup: AgentGroup = input?.group || 'online';
+      if (!canReadLiveLeaderboard(ctx.user.roles, requestedGroup)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'This leaderboard is not available for the current user role.',
+        });
+      }
+
+      const now = new Date();
+      const currentMonthStart = getRangeStart('month', now);
+      const previousMonthEnd = new Date(currentMonthStart.getTime() - 1);
+      const previousMonthStart = getRangeStart('month', previousMonthEnd);
+      const agents = await prisma.user.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          isActive: true,
+          roles: {
+            hasSome: requestedGroup === 'online'
+              ? ['OnlineAgent']
+              : ['OfflineAgent', 'TeamLeader'],
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          roles: true,
+        },
+      });
+      const groupedAgents = agents
+        .map((agent) => ({ ...agent, group: resolveAgentGroup(agent.roles) }))
+        .filter((agent): agent is LeaderboardAgent & { group: AgentGroup } => agent.group === requestedGroup);
+      const agentIds = groupedAgents.map((agent) => agent.id);
+
+      if (!agentIds.length) {
+        return {
+          generatedAt: now.toISOString(),
+          period: {
+            start: previousMonthStart.toISOString(),
+            end: previousMonthEnd.toISOString(),
+          },
+          winner: null,
+        };
+      }
+
+      const [technicalSales, incomeRowsRaw, salesRowsRaw] = await Promise.all([
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'new_sale',
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          },
+          select: {
+            id: true,
+            type: true,
+            coursePriceAmount: true,
+            debtAmount: true,
+            paymentAmount: true,
+          },
+        }),
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            managerUserId: { in: agentIds },
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            entryDate: { gte: previousMonthStart, lte: previousMonthEnd },
+          },
+          select: {
+            id: true,
+            type: true,
+            relatedDebtIncomeId: true,
+            managerUserId: true,
+            paymentAmount: true,
+            course: { select: { category: true, name: true } },
+            relatedDebtIncome: {
+              select: { course: { select: { category: true, name: true } } },
+            },
+          },
+        }),
+        prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'new_sale',
+            managerUserId: { in: agentIds },
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            entryDate: { gte: previousMonthStart, lte: previousMonthEnd },
+          },
+          select: {
+            id: true,
+            type: true,
+            relatedDebtIncomeId: true,
+            managerUserId: true,
+            course: { select: { category: true, name: true } },
+          },
+        }),
+      ]);
+      const technicalSaleIds = buildTechnicalSaleIdSet(technicalSales);
+      const isNonTechnicalRow = (row: { id: string; type: string; relatedDebtIncomeId: string | null }) => !isRowLinkedToTechnicalSale({
+        rowType: row.type,
+        rowId: row.id,
+        relatedDebtIncomeId: row.relatedDebtIncomeId,
+        technicalSaleIds,
+      });
+      const isRequestedGroupIncome = (row: {
+        course?: { category: string; name: string } | null;
+        relatedDebtIncome?: { course: { category: string; name: string } | null } | null;
+      }) => resolveSalePanelGroup(
+        row.course?.category || row.relatedDebtIncome?.course?.category,
+        row.course?.name || row.relatedDebtIncome?.course?.name,
+      ) === requestedGroup;
+
+      const incomeByAgentId = new Map<string, number>();
+      for (const row of incomeRowsRaw) {
+        if (!isNonTechnicalRow(row) || !isRequestedGroupIncome(row)) {
+          continue;
+        }
+        incomeByAgentId.set(row.managerUserId, (incomeByAgentId.get(row.managerUserId) || 0) + row.paymentAmount);
+      }
+
+      const salesByAgentId = new Map<string, number>();
+      for (const sale of salesRowsRaw) {
+        if (
+          !isNonTechnicalRow(sale)
+          || resolveSalePanelGroup(sale.course?.category, sale.course?.name) !== requestedGroup
+        ) {
+          continue;
+        }
+        salesByAgentId.set(sale.managerUserId, (salesByAgentId.get(sale.managerUserId) || 0) + 1);
+      }
+
+      const bonusByAgentId = await calculateMonthlyBonusByAgent({
+        tenantId: ctx.tenantId,
+        agentIds,
+        monthStart: previousMonthStart,
+        monthEnd: previousMonthEnd,
+        technicalSaleIds,
+        group: requestedGroup,
+      });
+      const rankedAgents = groupedAgents
+        .map((agent) => ({
+          userId: agent.id,
+          name: getAgentLabel(agent),
+          salesCount: salesByAgentId.get(agent.id) || 0,
+          income: incomeByAgentId.get(agent.id) || 0,
+          bonus: bonusByAgentId.get(agent.id) || 0,
+        }))
+        .filter((agent) => agent.income > 0 || agent.salesCount > 0)
+        .sort((a, b) => b.income - a.income || b.salesCount - a.salesCount || a.name.localeCompare(b.name));
+
+      return {
+        generatedAt: now.toISOString(),
+        period: {
+          start: previousMonthStart.toISOString(),
+          end: previousMonthEnd.toISOString(),
+        },
+        winner: rankedAgents[0] || null,
+      };
+    }),
+
   liveLeaderboardCallStats: protectedProcedure
     .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
     .query(async ({ ctx, input }) => {
