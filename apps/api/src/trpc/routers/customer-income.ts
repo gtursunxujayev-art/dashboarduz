@@ -1518,6 +1518,9 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
       : `@${saleIncome.customer.telegramUsername}`)
     : '-';
   const agreementAmount = saleIncome.coursePriceAmount ?? saleIncome.debtAmount ?? 0;
+  const salesTeamMention = isOnlineCategory(saleIncome.course.category)
+    ? '@najotnur_online'
+    : '@najotnur_oflayn';
 
   const paymentLines = payments.length
     ? payments.map((payment, index) => `${index + 1}) ${formatAmountUz(payment.paymentAmount)} - ${formatDateGmt5(payment.entryDate)}`)
@@ -1543,7 +1546,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     `Deadline: ${saleIncome.deadline ? formatDateGmt5(saleIncome.deadline) : '-'}`,
     '',
     '@Moliya_b0limi',
-    '@najotnur_oflayn',
+    salesTeamMention,
   ];
 
   const message = messageLines.join('\n');
