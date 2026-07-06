@@ -1,7 +1,79 @@
 // Telegram Bot integration service
 
+const TELEGRAM_REQUEST_TIMEOUT_MS = 6_000;
+const TELEGRAM_REQUEST_ATTEMPTS = 3;
+
+function sleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function describeNetworkError(error: unknown): string {
+  const requestError = error as Error & {
+    cause?: {
+      code?: string;
+      syscall?: string;
+      hostname?: string;
+      address?: string;
+      port?: number;
+      message?: string;
+    };
+  };
+  const cause = requestError?.cause;
+  const details = [
+    cause?.code,
+    cause?.syscall,
+    cause?.hostname || cause?.address,
+    cause?.port,
+  ].filter((value) => value !== undefined && value !== null && value !== '');
+  const baseMessage = cause?.message || requestError?.message || String(error);
+  return details.length > 0 ? `${baseMessage} (${details.join(' ')})` : baseMessage;
+}
+
 export class TelegramService {
   private apiUrl = 'https://api.telegram.org/bot';
+
+  private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+    let lastError: unknown = null;
+
+    for (let attempt = 1; attempt <= TELEGRAM_REQUEST_ATTEMPTS; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), TELEGRAM_REQUEST_TIMEOUT_MS);
+
+      try {
+        const response = await fetch(url, {
+          ...init,
+          signal: controller.signal,
+        });
+        const retryableStatus = response.status === 429 || response.status >= 500;
+        if (!retryableStatus || attempt === TELEGRAM_REQUEST_ATTEMPTS) {
+          return response;
+        }
+        lastError = new Error(`Telegram API temporarily unavailable: HTTP ${response.status}`);
+        console.warn('[Telegram] Transient API response; retrying request.', {
+          attempt,
+          maxAttempts: TELEGRAM_REQUEST_ATTEMPTS,
+          status: response.status,
+        });
+        await response.body?.cancel();
+      } catch (error) {
+        lastError = error;
+        if (attempt === TELEGRAM_REQUEST_ATTEMPTS) {
+          break;
+        }
+        console.warn('[Telegram] Network request failed; retrying request.', {
+          attempt,
+          maxAttempts: TELEGRAM_REQUEST_ATTEMPTS,
+          error: describeNetworkError(error),
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      await sleep(500 * (2 ** (attempt - 1)));
+    }
+
+    throw new Error(`Telegram network error after ${TELEGRAM_REQUEST_ATTEMPTS} attempts: ${describeNetworkError(lastError)}`);
+  }
 
   async getBotInfo(botToken: string): Promise<{ id: number; username?: string; first_name?: string }> {
     const response = await fetch(`${this.apiUrl}${botToken}/getMe`);
@@ -19,7 +91,7 @@ export class TelegramService {
 
   // Send message via bot
   async sendMessage(botToken: string, chatId: string, text: string, options?: any) {
-    const response = await fetch(`${this.apiUrl}${botToken}/sendMessage`, {
+    const response = await this.fetchWithRetry(`${this.apiUrl}${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
