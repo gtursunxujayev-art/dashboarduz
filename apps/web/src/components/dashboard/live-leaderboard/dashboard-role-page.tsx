@@ -196,10 +196,14 @@ function SalesStatsPanel({
 
       <div className="rounded-3xl border border-white/10 bg-white/[0.055] p-5">
         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Sotuvlar</p>
-        <p className="mt-2 text-3xl font-black text-white">
-          Bugun - <span className={tone}>{todaySalesCount}</span>
-          <span className="mx-2 text-slate-500">|</span>
-          Kecha - <span className={tone}>{yesterdaySalesCount}</span>
+        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[1.7rem] font-black leading-tight text-white">
+          <span className="whitespace-nowrap">
+            Bugun - <span className={tone}>{todaySalesCount}</span>
+          </span>
+          <span className="hidden text-slate-500 min-[420px]:inline">|</span>
+          <span className="whitespace-nowrap">
+            Kecha - <span className={tone}>{yesterdaySalesCount}</span>
+          </span>
         </p>
       </div>
 
