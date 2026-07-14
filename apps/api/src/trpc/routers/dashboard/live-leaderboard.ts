@@ -515,6 +515,7 @@ export const liveLeaderboardProcedures = {
 
       const now = new Date();
     const todayStart = getRangeStart('today', now);
+    const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
     const weekStart = getRangeStart('week', now);
     const monthStart = getRangeStart('month', now);
 
@@ -604,6 +605,8 @@ export const liveLeaderboardProcedures = {
               relatedDebtIncomeId: true,
               courseId: true,
               tariffId: true,
+              coursePriceAmount: true,
+              paymentAmount: true,
             },
           }),
         ])
@@ -616,10 +619,15 @@ export const liveLeaderboardProcedures = {
       technicalSaleIds,
     }));
     const selectedCourseSalesCountById = new Map<string, number>();
+    const selectedCourseAgreementAmountById = new Map<string, number>();
     const tariffSalesCountByKey = new Map<string, number>();
     for (const sale of selectedCourseSales) {
       if (!sale.courseId) continue;
       selectedCourseSalesCountById.set(sale.courseId, (selectedCourseSalesCountById.get(sale.courseId) || 0) + 1);
+      selectedCourseAgreementAmountById.set(
+        sale.courseId,
+        (selectedCourseAgreementAmountById.get(sale.courseId) || 0) + (sale.coursePriceAmount ?? sale.paymentAmount ?? 0),
+      );
       const tariffKey = `${sale.courseId}:${sale.tariffId || 'none'}`;
       tariffSalesCountByKey.set(tariffKey, (tariffSalesCountByKey.get(tariffKey) || 0) + 1);
     }
@@ -635,6 +643,7 @@ export const liveLeaderboardProcedures = {
           category,
           group: resolveCoursePanelGroup(category),
           salesCount: selectedCourseSalesCountById.get(course.id) || 0,
+          agreementAmount: selectedCourseAgreementAmountById.get(course.id) || 0,
           tariffs: [
             ...course.tariffs.map((tariff) => ({
               tariffId: tariff.id,
@@ -659,15 +668,15 @@ export const liveLeaderboardProcedures = {
         kpis: { todayIncome: 0, weekIncome: 0, monthIncome: 0 },
         agents: [],
         groupStats: {
-          online: { todaySalesCount: 0 },
-          offline: { todaySalesCount: 0 },
+          online: { todaySalesCount: 0, yesterdaySalesCount: 0 },
+          offline: { todaySalesCount: 0, yesterdaySalesCount: 0 },
         },
         selectedReportCourses,
         latestIncomeEvent: null,
       };
     }
 
-    const [monthRowsRaw, weekRowsRaw, monthlySalesRaw, todaySalesRaw, latestRowsRaw] = await Promise.all([
+    const [monthRowsRaw, weekRowsRaw, monthlySalesRaw, todaySalesRaw, yesterdaySalesRaw, latestRowsRaw] = await Promise.all([
       prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -721,6 +730,26 @@ export const liveLeaderboardProcedures = {
           type: true,
           relatedDebtIncomeId: true,
           managerUserId: true,
+          course: {
+            select: {
+              category: true,
+              name: true,
+            },
+          },
+        },
+      }),
+      prisma.income.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          type: 'new_sale',
+          managerUserId: { in: agentIds },
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          entryDate: { gte: yesterdayStart, lt: todayStart },
+        },
+        select: {
+          id: true,
+          type: true,
+          relatedDebtIncomeId: true,
           course: {
             select: {
               category: true,
@@ -793,6 +822,7 @@ export const liveLeaderboardProcedures = {
     const weekRows = weekRowsRaw.filter((row) => isNonTechnicalRow(row) && isRequestedGroupIncome(row));
     const monthlySales = monthlySalesRaw.filter((row) => isNonTechnicalRow(row) && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup);
     const todaySales = todaySalesRaw.filter((row) => isNonTechnicalRow(row) && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup);
+    const yesterdaySales = yesterdaySalesRaw.filter((row) => isNonTechnicalRow(row) && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup);
     const todayRows = monthRows.filter((row) => row.entryDate >= todayStart);
     const monthlyBonusByAgent = await calculateMonthlyBonusByAgent({
       tenantId: ctx.tenantId,
@@ -808,6 +838,10 @@ export const liveLeaderboardProcedures = {
     const monthlySalesByAgent = new Map<string, number>();
     const agentGroupById = new Map(groupedAgents.map((agent) => [agent.id, agent.group]));
     const groupTodaySalesCount = {
+      online: 0,
+      offline: 0,
+    };
+    const groupYesterdaySalesCount = {
       online: 0,
       offline: 0,
     };
@@ -833,6 +867,10 @@ export const liveLeaderboardProcedures = {
       const saleGroup = resolveSalePanelGroup(sale.course?.category, sale.course?.name);
       groupTodaySalesCount[saleGroup] += 1;
     }
+    for (const sale of yesterdaySales) {
+      const saleGroup = resolveSalePanelGroup(sale.course?.category, sale.course?.name);
+      groupYesterdaySalesCount[saleGroup] += 1;
+    }
 
     const latestIncome = latestRowsRaw.find((row) => isNonTechnicalRow(row) && isRequestedGroupIncome(row)) || null;
 
@@ -844,8 +882,14 @@ export const liveLeaderboardProcedures = {
         monthIncome: sumPaymentAmount(monthRows),
       },
       groupStats: {
-        online: { todaySalesCount: groupTodaySalesCount.online },
-        offline: { todaySalesCount: groupTodaySalesCount.offline },
+        online: {
+          todaySalesCount: groupTodaySalesCount.online,
+          yesterdaySalesCount: groupYesterdaySalesCount.online,
+        },
+        offline: {
+          todaySalesCount: groupTodaySalesCount.offline,
+          yesterdaySalesCount: groupYesterdaySalesCount.offline,
+        },
       },
       agents: groupedAgents.map((agent) => ({
         userId: agent.id,
