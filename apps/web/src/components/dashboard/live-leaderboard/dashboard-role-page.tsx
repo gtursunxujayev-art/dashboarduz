@@ -33,6 +33,7 @@ type SelectedReportCourse = {
   category: string;
   group: AgentGroup;
   salesCount: number;
+  agreementAmount: number;
   tariffs: Array<{
     tariffId: string | null;
     name: string;
@@ -41,8 +42,8 @@ type SelectedReportCourse = {
 };
 
 type GroupStats = {
-  online: { todaySalesCount: number };
-  offline: { todaySalesCount: number };
+  online: { todaySalesCount: number; yesterdaySalesCount: number };
+  offline: { todaySalesCount: number; yesterdaySalesCount: number };
 };
 
 type PreviousMonthWinner = {
@@ -174,12 +175,14 @@ function AgentLeaderboard({
 function SalesStatsPanel({
   courses,
   todaySalesCount,
+  yesterdaySalesCount,
   previousMonthWinner,
   previousMonthWinnerError,
   tone,
 }: {
   courses: SelectedReportCourse[];
   todaySalesCount: number;
+  yesterdaySalesCount: number;
   previousMonthWinner: PreviousMonthWinner | null | undefined;
   previousMonthWinnerError: boolean;
   tone: string;
@@ -192,9 +195,11 @@ function SalesStatsPanel({
       </div>
 
       <div className="rounded-3xl border border-white/10 bg-white/[0.055] p-5">
-        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Bugungi sotuvlar</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Sotuvlar</p>
         <p className="mt-2 text-3xl font-black text-white">
           Bugun - <span className={tone}>{todaySalesCount}</span>
+          <span className="mx-2 text-slate-500">|</span>
+          Kecha - <span className={tone}>{yesterdaySalesCount}</span>
         </p>
       </div>
 
@@ -207,6 +212,9 @@ function SalesStatsPanel({
                 <h3 className="mt-1 text-xl font-black text-white">
                   {course.name} - <span className={tone}>{course.salesCount}</span>
                 </h3>
+                <p className="mt-2 text-sm font-semibold text-slate-300">
+                  Kelishuv - <span className={tone}>{formatCompactMoney(course.agreementAmount)} so'm</span>
+                </p>
               </div>
             </div>
 
@@ -341,8 +349,8 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
   ), [callStatsByAgentId, data?.agents, group]);
   const courses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === group), [data?.selectedReportCourses, group]);
   const groupStats: GroupStats = data?.groupStats || {
-    online: { todaySalesCount: 0 },
-    offline: { todaySalesCount: 0 },
+    online: { todaySalesCount: 0, yesterdaySalesCount: 0 },
+    offline: { todaySalesCount: 0, yesterdaySalesCount: 0 },
   };
 
   useEffect(() => {
@@ -390,6 +398,7 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
           <SalesStatsPanel
             courses={courses}
             todaySalesCount={groupStats[group].todaySalesCount}
+            yesterdaySalesCount={groupStats[group].yesterdaySalesCount}
             previousMonthWinner={previousMonthWinnerQuery.data?.winner}
             previousMonthWinnerError={previousMonthWinnerQuery.isError}
             tone={group === 'online' ? 'text-cyan-300' : 'text-orange-300'}
