@@ -79,14 +79,6 @@ function resolveSalePanelGroup(category: string | null | undefined, name: string
   return classified === 'online' ? 'online' : 'offline';
 }
 
-function formatTashkentDateKey(date: Date): string {
-  const shifted = new Date(date.getTime() + 5 * 60 * 60 * 1000);
-  const year = shifted.getUTCFullYear();
-  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(shifted.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 function incrementBreakdown(map: Map<string, SalaryBreakdown>, agentId: string, category: SalaryCategory) {
   const existing = map.get(agentId) ?? createZeroBreakdown();
   existing[category] += 1;
@@ -521,11 +513,9 @@ export const liveLeaderboardProcedures = {
         });
       }
 
-      const now = new Date();
+    const now = new Date();
     const todayStart = getRangeStart('today', now);
     const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
-    const todayDateKey = formatTashkentDateKey(todayStart);
-    const yesterdayDateKey = formatTashkentDateKey(yesterdayStart);
     const weekStart = getRangeStart('week', now);
     const monthStart = getRangeStart('month', now);
 
@@ -754,13 +744,12 @@ export const liveLeaderboardProcedures = {
           type: 'new_sale',
           managerUserId: { in: agentIds },
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          entryDate: { gte: yesterdayStart, lt: todayStart },
+          createdAt: { gte: todayStart, lte: now },
         },
         select: {
           id: true,
           type: true,
           relatedDebtIncomeId: true,
-          entryDate: true,
           course: {
             select: {
               category: true,
@@ -775,13 +764,12 @@ export const liveLeaderboardProcedures = {
           type: 'new_sale',
           managerUserId: { in: agentIds },
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          entryDate: { gte: yesterdayStart, lte: now },
+          createdAt: { gte: yesterdayStart, lt: todayStart },
         },
         select: {
           id: true,
           type: true,
           relatedDebtIncomeId: true,
-          entryDate: true,
           course: {
             select: {
               category: true,
@@ -833,16 +821,8 @@ export const liveLeaderboardProcedures = {
     const monthRows = monthRowsRaw.filter((row) => isNonTechnicalRow(row) && isRequestedGroupIncome(row));
     const weekRows = weekRowsRaw.filter((row) => isNonTechnicalRow(row) && isRequestedGroupIncome(row));
     const monthlySales = monthlySalesRaw.filter((row) => isNonTechnicalRow(row) && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup);
-    const todaySales = todaySalesRaw.filter((row) => (
-      isNonTechnicalRow(row)
-      && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup
-      && formatTashkentDateKey(row.entryDate) === todayDateKey
-    ));
-    const yesterdaySales = yesterdaySalesRaw.filter((row) => (
-      isNonTechnicalRow(row)
-      && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup
-      && formatTashkentDateKey(row.entryDate) === yesterdayDateKey
-    ));
+    const todaySales = todaySalesRaw.filter((row) => isNonTechnicalRow(row) && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup);
+    const yesterdaySales = yesterdaySalesRaw.filter((row) => isNonTechnicalRow(row) && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup);
     const todayRows = monthRows.filter((row) => row.entryDate >= todayStart);
     const monthlyBonusByAgent = await calculateMonthlyBonusByAgent({
       tenantId: ctx.tenantId,
