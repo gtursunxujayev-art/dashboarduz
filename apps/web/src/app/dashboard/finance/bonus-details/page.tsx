@@ -124,12 +124,15 @@ export default function FinanceBonusDetailsPage() {
     && !roles.includes('Manager')
     && !roles.includes('TeamLeader')
     && !roles.includes('Finance');
+  const isAdmin = roles.includes('Admin');
 
   const [range, setRange] = useState<DashboardRange>('month');
   const [dateFrom, setDateFrom] = useState(getTashkentToday());
   const [dateTo, setDateTo] = useState(getTashkentToday());
   const [courseId, setCourseId] = useState('');
   const [managerUserId, setManagerUserId] = useState('');
+  const [operationMonth, setOperationMonth] = useState(() => getPreviousMonthRange().dateFrom.slice(0, 7));
+  const [operationMessage, setOperationMessage] = useState<string | null>(null);
 
   const effectiveDateRange = useMemo(() => {
     if (range === 'today') {
@@ -171,6 +174,14 @@ export default function FinanceBonusDetailsPage() {
     retry: 1,
     refetchInterval: 5 * 60 * 1000,
   });
+  const bonusOperationsQuery = trpc.bonus.getBonusOperations.useQuery(undefined, {
+    enabled: !isAgentOnly,
+    retry: false,
+  });
+  const previewMonth = trpc.bonus.previewBonusMonth.useMutation();
+  const finalizeMonth = trpc.bonus.finalizeBonusMonth.useMutation();
+  const reconcileMonth = trpc.bonus.reconcileBonusMonth.useMutation();
+  const reviewAdjustment = trpc.bonus.reviewBonusAdjustment.useMutation();
 
   const courseOptions = useMemo(() => financeOptionsQuery.data?.courseOptions || [], [financeOptionsQuery.data]);
   const managerOptions = useMemo(() => financeOptionsQuery.data?.managerOptions || [], [financeOptionsQuery.data]);
@@ -217,6 +228,36 @@ export default function FinanceBonusDetailsPage() {
   ]);
   useDashboardAiPageContext(aiPageContext);
 
+  const runMonthAction = async (action: 'preview' | 'finalize' | 'reconcile') => {
+    setOperationMessage(null);
+    try {
+      if (action === 'preview') {
+        const result = await previewMonth.mutateAsync({ month: operationMonth });
+        setOperationMessage(`${operationMonth}: ${formatAmount(result.totalBonusAmount)} hisoblandi.`);
+      } else if (action === 'finalize') {
+        const result = await finalizeMonth.mutateAsync({ month: operationMonth });
+        setOperationMessage(`${operationMonth} yakunlandi: ${formatAmount(result.totalBonusAmount)}.`);
+      } else {
+        const result = await reconcileMonth.mutateAsync({ month: operationMonth });
+        setOperationMessage(`${result.pendingCount} ta kutilayotgan tuzatish yangilandi.`);
+      }
+      await Promise.all([bonusOperationsQuery.refetch(), bonusDetailsQuery.refetch()]);
+    } catch (error: any) {
+      setOperationMessage(error?.message || 'Amal bajarilmadi.');
+    }
+  };
+
+  const handleReviewAdjustment = async (adjustmentId: string, action: 'approve' | 'reject') => {
+    const note = action === 'reject' ? window.prompt('Rad etish sababini kiriting:') : undefined;
+    if (action === 'reject' && !note?.trim()) return;
+    try {
+      await reviewAdjustment.mutateAsync({ adjustmentId, action, note: note || undefined });
+      await Promise.all([bonusOperationsQuery.refetch(), bonusDetailsQuery.refetch()]);
+    } catch (error: any) {
+      setOperationMessage(error?.message || 'Tuzatishni ko\'rib chiqishda xatolik.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -233,6 +274,72 @@ export default function FinanceBonusDetailsPage() {
           Moliya sahifasiga qaytish
         </Link>
       </div>
+
+      {!isAgentOnly ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Bonus oyini yakunlash</h2>
+              <p className="mt-1 text-sm text-gray-500">Yakunlangan oylar snapshot bo&apos;lib saqlanadi; keyingi o&apos;zgarishlar tuzatish yaratadi.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <input type="month" value={operationMonth} onChange={(event) => setOperationMonth(event.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
+              {isAdmin ? (
+                <>
+                  <button type="button" onClick={() => void runMonthAction('preview')} className="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700">Ko&apos;rib chiqish</button>
+                  <button type="button" onClick={() => void runMonthAction('finalize')} className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white">Yakunlash</button>
+                  <button type="button" onClick={() => void runMonthAction('reconcile')} className="rounded-md border border-amber-300 px-3 py-2 text-sm text-amber-700">Qayta solishtirish</button>
+                </>
+              ) : null}
+            </div>
+          </div>
+          {operationMessage ? <p className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700">{operationMessage}</p> : null}
+          <div className="mt-4 grid gap-2 md:grid-cols-3">
+            {(bonusOperationsQuery.data?.snapshots || []).slice(0, 6).map((snapshot) => (
+              <div key={snapshot.id} className="rounded-md border border-gray-200 p-3 text-sm">
+                <p className="font-medium text-gray-900">{snapshot.month}</p>
+                <p className="text-gray-600">{formatAmount(snapshot.totalBonusAmount)}</p>
+                <p className="text-xs text-emerald-700">Yakunlangan</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {!isAgentOnly && (bonusOperationsQuery.data?.adjustments.length || 0) > 0 ? (
+        <div className="rounded-lg bg-white p-6 shadow">
+          <h2 className="text-lg font-semibold text-gray-900">Bonus tuzatishlari</h2>
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50"><tr>
+                <th className="px-3 py-2 text-left text-xs uppercase text-gray-500">Manba oy</th>
+                <th className="px-3 py-2 text-left text-xs uppercase text-gray-500">Agent</th>
+                <th className="px-3 py-2 text-left text-xs uppercase text-gray-500">Farq</th>
+                <th className="px-3 py-2 text-left text-xs uppercase text-gray-500">Holat</th>
+                <th className="px-3 py-2 text-left text-xs uppercase text-gray-500">Amal</th>
+              </tr></thead>
+              <tbody className="divide-y divide-gray-100">
+                {bonusOperationsQuery.data?.adjustments.map((adjustment) => (
+                  <tr key={adjustment.id}>
+                    <td className="px-3 py-2 text-sm text-gray-700">{adjustment.sourceMonth}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700">{adjustment.agentUserId}</td>
+                    <td className={`px-3 py-2 text-sm font-medium ${adjustment.deltaAmount < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatAmount(adjustment.deltaAmount)}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700">{adjustment.status}</td>
+                    <td className="px-3 py-2 text-sm">
+                      {isAdmin && adjustment.status === 'pending' ? (
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => void handleReviewAdjustment(adjustment.id, 'approve')} className="text-emerald-700">Tasdiqlash</button>
+                          <button type="button" onClick={() => void handleReviewAdjustment(adjustment.id, 'reject')} className="text-red-700">Rad etish</button>
+                        </div>
+                      ) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-lg bg-white p-6 shadow">
         <div className={`grid grid-cols-1 gap-3 ${isAgentOnly ? 'md:grid-cols-[180px_180px_180px_1fr]' : 'md:grid-cols-[180px_180px_180px_1fr_1fr]'}`}>
