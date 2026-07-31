@@ -31,6 +31,11 @@ type CategoryBonusRuleState = {
   }>;
 };
 type BonusRulesState = Record<SalaryCategory, CategoryBonusRuleState>;
+type CourseOverrideState = {
+  enabled: boolean;
+  fallbackPercent: string;
+  tiers: Array<{ minAmount: string; maxAmount: string; percent: string }>;
+};
 type KpiMetricKey =
   | 'conversion'
   | 'avgDailyTalkTime'
@@ -199,6 +204,12 @@ export default function BonusPage() {
 
   const [salaryBonusMode, setSalaryBonusMode] = useState<BonusMode>('on_income');
   const [bonusRulesState, setBonusRulesState] = useState<BonusRulesState>(() => createDefaultBonusRulesState());
+  const [effectiveMonth, setEffectiveMonth] = useState(() => {
+    const now = new Date(Date.now() + 5 * 60 * 60 * 1000);
+    return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  });
+  const [courseSearch, setCourseSearch] = useState('');
+  const [courseOverrides, setCourseOverrides] = useState<Record<string, CourseOverrideState>>({});
   const [fixedSalaryByAgent, setFixedSalaryByAgent] = useState<Record<string, string>>({});
   const [attendancePenaltyLateMinute, setAttendancePenaltyLateMinute] = useState('0');
   const [attendancePenaltyMissingHour, setAttendancePenaltyMissingHour] = useState('0');
@@ -243,8 +254,9 @@ export default function BonusPage() {
     enabled: canView,
     retry: false,
   });
+  const policyEditorQuery = trpc.bonus.getPolicyEditor.useQuery({ effectiveMonth }, { enabled: canView, retry: false });
 
-  const updateBonusRulesMutation = trpc.bonus.updateBonusRules.useMutation();
+  const savePolicyVersionMutation = trpc.bonus.savePolicyVersion.useMutation();
   const updateFixedSalariesMutation = trpc.bonus.updateFixedSalaries.useMutation();
   const updateKpiSettingsMutation = trpc.bonus.updateKpiSettings.useMutation();
   const updateAttendancePenaltySettingsMutation = trpc.bonus.updateAttendancePenaltySettings.useMutation();
@@ -306,6 +318,36 @@ export default function BonusPage() {
     setKpiThresholds(thresholdState);
   }, [salaryConfigQuery.data]);
 
+  useEffect(() => {
+    if (!policyEditorQuery.data) return;
+    setSalaryBonusMode(policyEditorQuery.data.policy.bonusMode);
+    setBonusRulesState({
+      online: mapRuleToState(policyEditorQuery.data.policy.bonusRules.online as CategoryBonusRule),
+      offline: mapRuleToState(policyEditorQuery.data.policy.bonusRules.offline as CategoryBonusRule),
+      intensive: mapRuleToState(policyEditorQuery.data.policy.bonusRules.intensive as CategoryBonusRule),
+      additional_service: mapRuleToState(policyEditorQuery.data.policy.bonusRules.additional_service as CategoryBonusRule),
+    });
+    const rawOverrides = policyEditorQuery.data.policy.courseOverrides || {};
+    const next: Record<string, CourseOverrideState> = {};
+    for (const course of policyEditorQuery.data.courses) {
+      const override = rawOverrides[course.id];
+      next[course.id] = override ? {
+        enabled: true,
+        fallbackPercent: String(override.fallbackPercent),
+        tiers: override.tiers.map((tier) => ({
+          minAmount: String(tier.minAmount),
+          maxAmount: tier.maxAmount === null ? '' : String(tier.maxAmount),
+          percent: String(tier.percent),
+        })),
+      } : {
+        enabled: false,
+        fallbackPercent: '0',
+        tiers: [{ minAmount: '0', maxAmount: '', percent: '' }],
+      };
+    }
+    setCourseOverrides(next);
+  }, [policyEditorQuery.data]);
+
   const agentUsers = useMemo<AgentUserOption[]>(() => {
     const users = usersQuery.data || [];
     return users
@@ -336,6 +378,10 @@ export default function BonusPage() {
     () => (catalogQuery.data?.courses as CatalogCourse[] | undefined) || [],
     [catalogQuery.data?.courses],
   );
+  const policyCourses = useMemo(() => (
+    (policyEditorQuery.data?.courses || []).filter((course) => course.name.toLowerCase().includes(courseSearch.trim().toLowerCase()))
+  ), [policyEditorQuery.data?.courses, courseSearch]);
+  const isPastPolicyMonth = Boolean(policyEditorQuery.data?.currentMonth && effectiveMonth < policyEditorQuery.data.currentMonth);
 
   const courseNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -507,11 +553,33 @@ export default function BonusPage() {
     }
 
     try {
-      await updateBonusRulesMutation.mutateAsync({
+      const normalizedCourseOverrides: Record<string, {
+        mode: 'monthly_team_income_tiered';
+        fallbackPercent: number;
+        tiers: Array<{ minAmount: number; maxAmount: number | null; percent: number }>;
+      }> = {};
+      for (const [courseId, state] of Object.entries(courseOverrides)) {
+        if (!state.enabled) continue;
+        const tiers = state.tiers.map((tier) => ({
+          minAmount: parseAmountInput(tier.minAmount),
+          maxAmount: tier.maxAmount.trim() ? parseAmountInput(tier.maxAmount) : null,
+          percent: parsePercentInput(tier.percent),
+        })).sort((left, right) => left.minAmount - right.minAmount);
+        if (!tiers.length || tiers.some((tier) => tier.percent <= 0)) throw new Error('Kurs bonusi uchun kamida bitta to\'liq tier kiriting.');
+        if (tiers[tiers.length - 1]?.maxAmount !== null) throw new Error('Kurs bonusining oxirgi tieri ochiq bo\'lishi kerak.');
+        normalizedCourseOverrides[courseId] = {
+          mode: 'monthly_team_income_tiered',
+          fallbackPercent: parsePercentInput(state.fallbackPercent),
+          tiers,
+        };
+      }
+      await savePolicyVersionMutation.mutateAsync({
+        effectiveMonth,
         bonusMode: salaryBonusMode,
         bonusRules: prepared.bonusRules,
+        courseOverrides: normalizedCourseOverrides,
       });
-      await Promise.all([salaryConfigQuery.refetch(), plansQuery.refetch()]);
+      await Promise.all([salaryConfigQuery.refetch(), policyEditorQuery.refetch(), plansQuery.refetch()]);
       setSuccess("Bonus qoidalari muvaffaqiyatli saqlandi.");
     } catch (saveError: any) {
       setError(saveError?.message || "Bonus qoidalarini saqlashda xatolik.");
@@ -869,6 +937,7 @@ export default function BonusPage() {
         </div>
         <div className="p-6">
           <form onSubmit={handleSaveBonusRules} className="space-y-4">
+            {isPastPolicyMonth ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">Bu tarixiy versiya faqat ko&apos;rish uchun.</p> : null}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700">Bonus hisoblash bazasi</label>
@@ -881,6 +950,30 @@ export default function BonusPage() {
                   <option value="on_income">Tushum bo&apos;yicha - har bir to&apos;lovda</option>
                   <option value="on_debt_closed">Sotuv yopilganda - qarz 0 bo&apos;lganda</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Kuchga kirish oyi</label>
+                <input
+                  type="month"
+                  value={effectiveMonth}
+                  min={policyEditorQuery.data?.currentMonth}
+                  onChange={(event) => setEffectiveMonth(event.target.value)}
+                  disabled={!isAdmin}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:bg-gray-100"
+                />
+                <p className="mt-1 text-xs text-gray-500">Joriy yoki kelajak oy. O&apos;tgan versiyalar o&apos;zgarmaydi.</p>
+                {(policyEditorQuery.data?.versions.length || 0) > 0 ? (
+                  <select
+                    value={policyEditorQuery.data?.versions.some((version) => version.effectiveMonth === effectiveMonth) ? effectiveMonth : ''}
+                    onChange={(event) => event.target.value && setEffectiveMonth(event.target.value)}
+                    className="mt-2 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700"
+                  >
+                    <option value="">Saqlangan versiyalar</option>
+                    {policyEditorQuery.data?.versions.filter((version) => version.effectiveMonth !== '1970-01').map((version) => (
+                      <option key={version.id} value={version.effectiveMonth}>{version.effectiveMonth}</option>
+                    ))}
+                  </select>
+                ) : null}
               </div>
             </div>
 
@@ -990,12 +1083,98 @@ export default function BonusPage() {
               );
             })}
 
+            <div className="rounded-md border border-gray-200 bg-white p-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">Kurs bo&apos;yicha oylik jamoa bonusi</h3>
+                  <p className="mt-1 text-xs text-gray-500">Yoqilmagan kurslar kategoriya qoidasini meros oladi. Tier summalari UZS.</p>
+                </div>
+                <input
+                  value={courseSearch}
+                  onChange={(event) => setCourseSearch(event.target.value)}
+                  placeholder="Kurs qidirish"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm md:w-72"
+                />
+              </div>
+              <div className="mt-4 space-y-3">
+                {policyCourses.map((course) => {
+                  const state = courseOverrides[course.id] || { enabled: false, fallbackPercent: '0', tiers: [{ minAmount: '0', maxAmount: '', percent: '' }] };
+                  const updateState = (next: CourseOverrideState) => setCourseOverrides((current) => ({ ...current, [course.id]: next }));
+                  return (
+                    <div key={course.id} className={`rounded-md border p-4 ${course.isActive ? 'border-gray-200 bg-gray-50' : 'border-amber-200 bg-amber-50/40'}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-gray-900">{course.name}</p>
+                          <p className="text-xs text-gray-500">{getSalaryCategoryLabel(course.category as SalaryCategory)}{course.isActive ? '' : ' · Nofaol'}</p>
+                        </div>
+                        <select
+                          value={state.enabled ? 'monthly_team_income_tiered' : 'inherit'}
+                          onChange={(event) => updateState({ ...state, enabled: event.target.value !== 'inherit' })}
+                          disabled={!isAdmin}
+                          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                        >
+                          <option value="inherit">Kategoriya qoidasini meros olish</option>
+                          <option value="monthly_team_income_tiered">Oylik jamoa tushumi tierlari</option>
+                        </select>
+                      </div>
+                      {state.enabled ? (
+                        <div className="mt-4 space-y-2">
+                          <label className="block max-w-xs text-xs font-medium text-gray-600">
+                            Fallback foiz
+                            <input
+                              value={state.fallbackPercent}
+                              onChange={(event) => updateState({ ...state, fallbackPercent: event.target.value })}
+                              disabled={!isAdmin}
+                              inputMode="decimal"
+                              className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                            />
+                          </label>
+                          {state.tiers.map((tier, index) => (
+                            <div key={`${course.id}-amount-tier-${index}`} className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
+                              <input
+                                value={tier.minAmount}
+                                onChange={(event) => updateState({ ...state, tiers: state.tiers.map((row, rowIndex) => rowIndex === index ? { ...row, minAmount: event.target.value.replace(/[^\d]/g, '') } : row) })}
+                                placeholder="Min UZS"
+                                inputMode="numeric"
+                                disabled={!isAdmin}
+                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                              />
+                              <input
+                                value={tier.maxAmount}
+                                onChange={(event) => updateState({ ...state, tiers: state.tiers.map((row, rowIndex) => rowIndex === index ? { ...row, maxAmount: event.target.value.replace(/[^\d]/g, '') } : row) })}
+                                placeholder="Max UZS (oxirgisi bo'sh)"
+                                inputMode="numeric"
+                                disabled={!isAdmin}
+                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                              />
+                              <input
+                                value={tier.percent}
+                                onChange={(event) => updateState({ ...state, tiers: state.tiers.map((row, rowIndex) => rowIndex === index ? { ...row, percent: event.target.value } : row) })}
+                                placeholder="Foiz"
+                                inputMode="decimal"
+                                disabled={!isAdmin}
+                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                              />
+                              <div className="flex gap-2">
+                                <button type="button" onClick={() => updateState({ ...state, tiers: [...state.tiers, { minAmount: '', maxAmount: '', percent: '' }] })} disabled={!isAdmin} className="rounded-md border px-3 py-2">+</button>
+                                <button type="button" onClick={() => updateState({ ...state, tiers: state.tiers.length > 1 ? state.tiers.filter((_, rowIndex) => rowIndex !== index) : state.tiers })} disabled={!isAdmin} className="rounded-md border border-red-300 px-3 py-2 text-red-700">-</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             <button
               type="submit"
-              disabled={!isAdmin || updateBonusRulesMutation.isLoading || salaryConfigQuery.isLoading}
+              disabled={!isAdmin || isPastPolicyMonth || savePolicyVersionMutation.isLoading || salaryConfigQuery.isLoading}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {updateBonusRulesMutation.isLoading ? 'Saqlanmoqda...' : "Bonus qoidalarini saqlash"}
+              {savePolicyVersionMutation.isLoading ? 'Saqlanmoqda...' : "Bonus qoidalarini saqlash"}
             </button>
           </form>
         </div>
