@@ -33,6 +33,7 @@ import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 import { buildCacheKey, getOrSet } from '../../../services/cache';
+import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthStart } from '../../../services/bonus-engine';
 
 function calculateProratedFixedSalary(
   monthlyFixedSalary: number,
@@ -230,6 +231,7 @@ export const salaryProcedures = {
         totals: {
           fixedSalary: 0,
           bonus: 0,
+          approvedAdjustments: 0,
           planBonus: 0,
           kpi: 0,
           attendancePenaltyFixed: 0,
@@ -244,6 +246,8 @@ export const salaryProcedures = {
           fixedSalary: number;
           kpiAmount: number;
           bonusAmount: number;
+          approvedAdjustmentAmount: number;
+          outstandingAdjustmentBalance: number;
           planBonusAmount: number;
           attendancePenaltyFixed: number;
           attendancePenaltyKpi: number;
@@ -275,6 +279,8 @@ export const salaryProcedures = {
         fixedSalary: number;
         kpiAmount: number;
         bonusAmount: number;
+        approvedAdjustmentAmount: number;
+        outstandingAdjustmentBalance: number;
         planBonusAmount: number;
         attendancePenaltyFixed: number;
         attendancePenaltyKpi: number;
@@ -304,6 +310,8 @@ export const salaryProcedures = {
           : (salarySettings.fixedSalaries.get(agent.id) ?? 0),
         kpiAmount: 0,
         bonusAmount: 0,
+        approvedAdjustmentAmount: 0,
+        outstandingAdjustmentBalance: 0,
         planBonusAmount: 0,
         attendancePenaltyFixed: 0,
         attendancePenaltyKpi: 0,
@@ -411,109 +419,20 @@ export const salaryProcedures = {
       monthlyClosedCountsByAgent.set(sale.managerUserId, existing);
     }
 
-    if (salarySettings.bonusMode === 'on_income') {
-      const incomes = await prisma.income.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          managerUserId: { in: agentIds },
-          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          entryDate: {
-            gte: rangeStart,
-            lte: rangeEnd,
-          },
-        },
-        select: {
-          id: true,
-          type: true,
-          relatedDebtIncomeId: true,
-          managerUserId: true,
-          paymentAmount: true,
-          coursePriceAmount: true,
-          course: {
-            select: {
-              name: true,
-              category: true,
-            },
-          },
-          relatedDebtIncome: {
-            select: {
-              id: true,
-              course: {
-                select: {
-                  name: true,
-                  category: true,
-                },
-              },
-            },
-          },
-        },
-      });
-      const filteredIncomes = incomes.filter((income) => !isRowLinkedToTechnicalSale({
-        rowType: income.type,
-        rowId: income.id,
-        relatedDebtIncomeId: income.relatedDebtIncomeId,
-        technicalSaleIds: technicalSaleIdsForSalary,
-      }));
-
-      for (const income of filteredIncomes) {
-        const courseCategory = income.course?.category ?? income.relatedDebtIncome?.course?.category;
-        const courseName = income.course?.name ?? income.relatedDebtIncome?.course?.name;
-        const category = classifyCourseCategoryFromField(courseCategory || courseName);
-        if (category === 'other') {
-          continue;
-        }
-        const salaryRow = salaryByAgent.get(income.managerUserId);
-        if (!salaryRow) {
-          continue;
-        }
-        const closedCount = getMonthlyClosedCount(income.managerUserId, category);
-        const percentage = resolveBonusPercent(salarySettings.bonusRules[category], closedCount);
-        const bonusAmount = getBonusAmount(income.paymentAmount ?? 0, percentage);
-        salaryRow.bonusAmount += bonusAmount;
-        salaryRow.bonusBreakdown[category] += bonusAmount;
-      }
-    } else {
-      const processedSaleIds = new Set<string>();
-      const applyClosedSaleBonus = (sale: {
-        id: string;
-        managerUserId: string;
-        coursePriceAmount: number | null;
-        paymentAmount: number;
-        course: { name: string; category: string } | null;
-        entryDate: Date;
-      }) => {
-        if (processedSaleIds.has(sale.id)) {
-          return;
-        }
-        processedSaleIds.add(sale.id);
-        const closeDate = closeDateBySaleIdForBonus.get(sale.id) ?? sale.entryDate;
-        if (closeDate < rangeStart || closeDate > rangeEnd) {
-          return;
-        }
-
-        const category = sale.course?.category
-          ? classifyCourseCategoryFromField(sale.course.category)
-          : classifyCourseCategoryFromField(sale.course?.name);
-        if (category === 'other') {
-          return;
-        }
-
-        const salaryRow = salaryByAgent.get(sale.managerUserId);
-        if (!salaryRow) {
-          return;
-        }
-
-        const closedCount = getMonthlyClosedCount(sale.managerUserId, category);
-        const percentage = resolveBonusPercent(salarySettings.bonusRules[category], closedCount);
-        const agreementAmount = sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
-        const bonusAmount = getBonusAmount(agreementAmount, percentage);
-        salaryRow.bonusAmount += bonusAmount;
-        salaryRow.bonusBreakdown[category] += bonusAmount;
-      };
-
-      for (const sale of filteredFullyPaidNewSalesForBonus) {
-        applyClosedSaleBonus(sale);
-      }
+    const bonusRange = await calculateBonusRange({ tenantId: ctx.tenantId, rangeStart, rangeEnd });
+    for (const item of bonusRange.items) {
+      const salaryRow = salaryByAgent.get(item.agentUserId);
+      if (!salaryRow) continue;
+      salaryRow.bonusAmount += item.bonusAmount;
+      salaryRow.bonusBreakdown[item.category] += item.bonusAmount;
+    }
+    const approvedAdjustments = await getApprovedAdjustmentsForMonth(ctx.tenantId, rangeEnd);
+    const adjustmentRangeMonthStart = getTashkentMonthStart(rangeStart);
+    for (const adjustment of approvedAdjustments) {
+      const salaryRow = salaryByAgent.get(adjustment.agentUserId);
+      if (!salaryRow || !adjustment.payoutMonth || adjustment.payoutMonth < adjustmentRangeMonthStart) continue;
+      salaryRow.approvedAdjustmentAmount += adjustment.outstandingAmount;
+      salaryRow.outstandingAdjustmentBalance += adjustment.outstandingAmount;
     }
 
     const activePlanBonuses = salarySettings.planBonuses.filter((plan) => plan.isActive);
@@ -1015,20 +934,23 @@ export const salaryProcedures = {
     const byAgent = Array.from(salaryByAgent.values())
       .map((row) => ({
         ...row,
-        totalSalary: row.fixedSalary + row.kpiAmount + row.bonusAmount + row.planBonusAmount,
+        totalSalary: Math.max(0, row.fixedSalary + row.kpiAmount + row.bonusAmount + row.planBonusAmount + row.approvedAdjustmentAmount),
         salaryAfterAttendance:
           row.fixedSalary
           + row.kpiAmount
           + row.bonusAmount
           + row.planBonusAmount
+          + row.approvedAdjustmentAmount
           - row.attendancePenaltyTotal,
       }))
+      .map((row) => ({ ...row, salaryAfterAttendance: Math.max(0, row.salaryAfterAttendance) }))
       .sort((a, b) => b.salaryAfterAttendance - a.salaryAfterAttendance);
 
     const totals = byAgent.reduce(
       (acc, row) => ({
         fixedSalary: acc.fixedSalary + row.fixedSalary,
         bonus: acc.bonus + row.bonusAmount,
+        approvedAdjustments: acc.approvedAdjustments + row.approvedAdjustmentAmount,
         planBonus: acc.planBonus + row.planBonusAmount,
         kpi: acc.kpi + row.kpiAmount,
         attendancePenaltyFixed: acc.attendancePenaltyFixed + row.attendancePenaltyFixed,
@@ -1040,6 +962,7 @@ export const salaryProcedures = {
       {
         fixedSalary: 0,
         bonus: 0,
+        approvedAdjustments: 0,
         planBonus: 0,
         kpi: 0,
         attendancePenaltyFixed: 0,
@@ -1408,6 +1331,14 @@ export const salaryProcedures = {
         visibleAgents.map((agent) => [agent.id, agent.name || agent.username || agent.id]),
       );
 
+      const centralizedBonus = await calculateBonusRange({ tenantId: ctx.tenantId, rangeStart, rangeEnd });
+      const bonusItemByIncomeId = new Map(
+        centralizedBonus.items
+          .filter((item) => visibleAgentIds.includes(item.agentUserId))
+          .filter((item) => !input.courseId || item.courseId === input.courseId)
+          .map((item) => [item.sourceIncomeId, item]),
+      );
+
       const rows = incomes
         .filter((income) => !isRowLinkedToTechnicalSale({
           rowType: income.type,
@@ -1424,46 +1355,11 @@ export const salaryProcedures = {
         const courseName = income.course?.name ?? income.relatedDebtIncome?.course?.name;
         const category = classifyCourseCategoryFromField(courseCategory || courseName);
 
-        let calculatedBonus = 0;
-        let appliedPercent = 0;
-        let closedCount = 0;
-        let usedFallback = false;
-        if (isLastPayment && category !== 'other') {
-          closedCount = getMonthlyClosedCount(income.managerUserId, category);
-          const rule = salarySettings.bonusRules[category];
-          appliedPercent = resolveBonusPercent(rule, closedCount);
-          const tierMatched = rule.mode === 'tiered'
-            && rule.tiers.some((tier) => closedCount >= tier.minSales && (tier.maxSales === null || closedCount <= tier.maxSales));
-          usedFallback = rule.mode === 'tiered' && !tierMatched;
-
-          if (salarySettings.bonusMode === 'on_income') {
-            calculatedBonus = getBonusAmount(income.paymentAmount ?? 0, appliedPercent);
-          } else if (saleId && fullyPaidSaleIds.has(saleId)) {
-            const sale = saleById.get(saleId)
-              || (income.type === 'new_sale'
-                ? {
-                    id: income.id,
-                    managerUserId: income.managerUserId,
-                    coursePriceAmount: income.coursePriceAmount,
-                    paymentAmount: income.paymentAmount ?? 0,
-                    entryDate: income.entryDate,
-                    course: income.course
-                      ? {
-                          name: income.course.name,
-                          category: income.course.category,
-                        }
-                      : null,
-                  }
-                : null);
-            if (sale) {
-              const closeDate = closeDateBySaleIdForBonus.get(saleId) ?? sale.entryDate;
-              if (closeDate >= rangeStart && closeDate <= rangeEnd) {
-                const agreementAmount = sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
-                calculatedBonus = getBonusAmount(agreementAmount, appliedPercent);
-              }
-            }
-          }
-        }
+        const bonusItem = bonusItemByIncomeId.get(income.id);
+        const calculatedBonus = bonusItem?.bonusAmount || 0;
+        const appliedPercent = bonusItem?.appliedPercent || 0;
+        const closedCount = bonusItem?.closedCount || 0;
+        const usedFallback = bonusItem?.usedFallback || false;
 
         const agreementAmount = income.type === 'new_sale'
           ? (income.coursePriceAmount ?? income.paymentAmount ?? 0)
@@ -1491,12 +1387,14 @@ export const salaryProcedures = {
           paymentAmount: income.paymentAmount ?? 0,
           remainingDebtAmount: chainRemainingDebtAmount,
           calculatedBonus,
-          isLastPayment,
+          isLastPayment: Boolean(bonusItem) || isLastPayment,
           bonusDebug: {
-            category,
+            category: bonusItem?.category || category,
             closedCount,
             appliedPercent,
             usedFallback,
+            calculationMode: bonusItem?.calculationMode || null,
+            finalized: centralizedBonus.months.some((month) => month.finalized),
           },
         };
       });
