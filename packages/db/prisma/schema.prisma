@@ -47,6 +47,11 @@ model Tenant {
   attendanceAdjustmentAudits AttendanceAdjustmentAudit[]
   metaAdInsights MetaAdInsight[]
   analyticsAiReports AnalyticsAiReport[]
+  bonusPolicyVersions BonusPolicyVersion[]
+  bonusMonthSnapshots BonusMonthSnapshot[]
+  bonusAdjustments BonusAdjustment[]
+  bonusAdjustmentAudits BonusAdjustmentAudit[]
+  bonusAdjustmentApplications BonusAdjustmentApplication[]
 
   @@index([subdomain])
   @@map("tenants")
@@ -599,6 +604,160 @@ model IncomeAdjustmentRequest {
   @@index([reviewedByUserId])
   @@index([createdAt])
   @@map("income_adjustment_requests")
+}
+
+model BonusPolicyVersion {
+  id              String   @id @default(uuid())
+  tenantId        String
+  effectiveMonth  DateTime
+  policy          Json
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  snapshots BonusMonthSnapshot[]
+
+  @@unique([tenantId, effectiveMonth])
+  @@index([tenantId, effectiveMonth])
+  @@map("bonus_policy_versions")
+}
+
+model BonusMonthSnapshot {
+  id              String   @id @default(uuid())
+  tenantId        String
+  month            DateTime
+  policyVersionId String?
+  policy           Json
+  sourceDigest     String
+  totalBonusAmount Int      @default(0)
+  finalizedByUserId String
+  finalizedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant        Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  policyVersion BonusPolicyVersion?   @relation(fields: [policyVersionId], references: [id], onDelete: SetNull)
+  lines         BonusSnapshotLine[]
+  items         BonusSnapshotItem[]
+  adjustments   BonusAdjustment[]
+
+  @@unique([tenantId, month])
+  @@index([tenantId, finalizedAt])
+  @@map("bonus_month_snapshots")
+}
+
+model BonusSnapshotLine {
+  id               String   @id @default(uuid())
+  tenantId         String
+  snapshotId       String
+  groupKey         String
+  agentUserId      String
+  courseId         String?
+  category         String
+  calculationMode  String
+  qualifyingAmount Int
+  appliedPercent   Float
+  bonusAmount      Int
+  sourceCount      Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  snapshot BonusMonthSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@unique([snapshotId, groupKey])
+  @@index([tenantId, agentUserId])
+  @@index([tenantId, courseId])
+  @@map("bonus_snapshot_lines")
+}
+
+model BonusSnapshotItem {
+  id              String   @id @default(uuid())
+  tenantId        String
+  snapshotId      String
+  sourceKey       String
+  sourceIncomeId  String
+  sourceSaleId    String
+  agentUserId     String
+  courseId        String?
+  category        String
+  calculationMode String
+  eventDate       DateTime
+  baseAmount      Int
+  appliedPercent  Float
+  bonusAmount     Int
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  snapshot BonusMonthSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@unique([snapshotId, sourceKey])
+  @@index([tenantId, eventDate])
+  @@index([tenantId, agentUserId, eventDate])
+  @@index([tenantId, courseId, eventDate])
+  @@map("bonus_snapshot_items")
+}
+
+model BonusAdjustment {
+  id                String   @id @default(uuid())
+  tenantId          String
+  snapshotId        String
+  groupKey          String
+  agentUserId       String
+  courseId          String?
+  category          String
+  deltaAmount       Int
+  outstandingAmount Int
+  status            String   @default("pending")
+  sourceDigest      String
+  payoutMonth       DateTime?
+  reviewedByUserId  String?
+  reviewNote        String?
+  reviewedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant       Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  snapshot     BonusMonthSnapshot            @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  audits       BonusAdjustmentAudit[]
+  applications BonusAdjustmentApplication[]
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, agentUserId, payoutMonth])
+  @@index([snapshotId, groupKey])
+  @@map("bonus_adjustments")
+}
+
+model BonusAdjustmentAudit {
+  id          String   @id @default(uuid())
+  tenantId    String
+  adjustmentId String
+  action      String
+  actorUserId String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  adjustment BonusAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([adjustmentId, createdAt])
+  @@map("bonus_adjustment_audits")
+}
+
+model BonusAdjustmentApplication {
+  id           String   @id @default(uuid())
+  tenantId     String
+  adjustmentId String
+  payrollMonth DateTime
+  amount       Int
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  adjustment BonusAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+
+  @@unique([adjustmentId, payrollMonth])
+  @@index([tenantId, payrollMonth])
+  @@map("bonus_adjustment_applications")
 }
 
 model CorporateCallDuration {
