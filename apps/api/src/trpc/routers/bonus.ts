@@ -3,6 +3,18 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { AGENT_ROLES } from '@dashboarduz/shared';
 import { adminProcedure, protectedProcedure, router } from '../trpc';
+import {
+  buildLegacyBonusPolicy,
+  calculateBonusMonth,
+  finalizeBonusMonth,
+  getTashkentMonthKey,
+  getTashkentMonthStart,
+  normalizeBonusPolicy,
+  reconcileBonusMonth,
+  reconcileFinalizedBonusMonths,
+  resolveEffectiveBonusPolicy,
+  reviewBonusAdjustment,
+} from '../../services/bonus-engine';
 
 const BONUS_PLAN_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 const BONUS_PLAN_PERIODS = ['monthly', 'all_time'] as const;
@@ -576,6 +588,25 @@ const updateBonusRulesInput = z.object({
   }),
 });
 
+const courseIncomeTierInput = z.object({
+  minAmount: z.number().int().min(0),
+  maxAmount: z.number().int().min(0).nullable(),
+  percent: z.number().min(0).max(100),
+});
+
+const courseOverrideInput = z.object({
+  mode: z.literal('monthly_team_income_tiered'),
+  fallbackPercent: z.number().min(0).max(100),
+  tiers: z.array(courseIncomeTierInput).min(1),
+});
+
+const saveBonusPolicyInput = updateBonusRulesInput.extend({
+  effectiveMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  courseOverrides: z.record(z.string().uuid(), courseOverrideInput),
+});
+
+const bonusMonthInput = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) });
+
 const updateFixedSalariesInput = z.object({
   fixedSalaries: z.array(
     z.object({
@@ -630,6 +661,197 @@ export const bonusRouter = router({
       attendancePenaltySettings: parseAttendancePenaltySettings(tenant.settings),
       kpiSettings: parseKpiSettings(tenant.settings),
     };
+  }),
+
+  getPolicyEditor: protectedProcedure
+    .input(z.object({ effectiveMonth: z.string().regex(/^\d{4}-\d{2}$/).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    if (!canReadBonusPlans(ctx.user.roles)) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus settings are available for Admin/Manager/TeamLeader only.' });
+    }
+    const now = new Date();
+    const requestedMonth = input?.effectiveMonth ? getTashkentMonthStart(input.effectiveMonth) : now;
+    const [resolved, versions, courses] = await Promise.all([
+      resolveEffectiveBonusPolicy(ctx.tenantId, requestedMonth),
+      prisma.bonusPolicyVersion.findMany({
+        where: { tenantId: ctx.tenantId },
+        orderBy: { effectiveMonth: 'desc' },
+        select: { id: true, effectiveMonth: true, createdAt: true, updatedAt: true },
+      }),
+      prisma.course.findMany({
+        where: { tenantId: ctx.tenantId },
+        orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
+        select: { id: true, name: true, category: true, isActive: true },
+      }),
+    ]);
+    return {
+      currentMonth: getTashkentMonthKey(now),
+      selectedMonth: getTashkentMonthKey(requestedMonth),
+      policyVersionId: resolved.policyVersionId,
+      policy: resolved.policy,
+      versions: versions.map((version) => ({
+        ...version,
+        effectiveMonth: getTashkentMonthKey(version.effectiveMonth),
+      })),
+      courses,
+    };
+  }),
+
+  savePolicyVersion: adminProcedure.input(saveBonusPolicyInput).mutation(async ({ ctx, input }) => {
+    const effectiveMonth = getTashkentMonthStart(input.effectiveMonth);
+    const currentMonth = getTashkentMonthStart(new Date());
+    if (effectiveMonth < currentMonth) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: "O'tgan oy bonus siyosatini o'zgartirib bo'lmaydi." });
+    }
+    for (const category of BONUS_RULE_CATEGORIES) {
+      const rule = input.bonusRules[category];
+      if (rule.mode !== 'tiered') continue;
+      const tiers = rule.tiers.map((tier) => ({
+        minSales: Math.max(1, Math.floor(tier.minSales)),
+        maxSales: tier.maxSales === null ? null : Math.max(1, Math.floor(tier.maxSales)),
+        percent: normalizePercentage(tier.percent),
+      })).sort((left, right) => left.minSales - right.minSales);
+      const validationError = validateTierRules(tiers);
+      if (validationError) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `${getCategoryLabel(category)}: ${validationError}` });
+      }
+    }
+    for (const [courseId, override] of Object.entries(input.courseOverrides)) {
+      const sorted = [...override.tiers].sort((left, right) => left.minAmount - right.minAmount);
+      for (let index = 0; index < sorted.length; index += 1) {
+        const tier = sorted[index]!;
+        if (tier.maxAmount !== null && tier.maxAmount < tier.minAmount) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: `${courseId}: bonus diapazoni noto'g'ri.` });
+        }
+        if (tier.maxAmount === null && index !== sorted.length - 1) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: `${courseId}: ochiq diapazon faqat oxirgi tier bo'lishi mumkin.` });
+        }
+        if (index > 0) {
+          const previous = sorted[index - 1]!;
+          if (previous.maxAmount === null || tier.minAmount <= previous.maxAmount) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `${courseId}: tierlar kesishmasligi kerak.` });
+          }
+        }
+      }
+      if (sorted[sorted.length - 1]?.maxAmount !== null) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `${courseId}: oxirgi tier ochiq bo'lishi kerak.` });
+      }
+    }
+    const tenant = await prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } });
+    if (!tenant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
+    const normalizedRules: SalaryBonusRules = {
+      online: sanitizeCategoryRule(input.bonusRules.online, input.bonusRules.online.simplePercent),
+      offline: sanitizeCategoryRule(input.bonusRules.offline, input.bonusRules.offline.simplePercent),
+      intensive: sanitizeCategoryRule(input.bonusRules.intensive, input.bonusRules.intensive.simplePercent),
+      additional_service: sanitizeCategoryRule(input.bonusRules.additional_service, input.bonusRules.additional_service.simplePercent),
+    };
+    const policy = normalizeBonusPolicy({
+      schemaVersion: 2,
+      bonusMode: input.bonusMode,
+      bonusRules: normalizedRules,
+      courseOverrides: input.courseOverrides,
+    }, tenant.settings);
+    const settingsObject = asObject(tenant.settings);
+    const salarySettings = asObject(settingsObject.salary);
+    await prisma.$transaction(async (tx) => {
+      const count = await tx.bonusPolicyVersion.count({ where: { tenantId: ctx.tenantId } });
+      if (count === 0) {
+        await tx.bonusPolicyVersion.create({
+          data: {
+            tenantId: ctx.tenantId,
+            effectiveMonth: new Date('1970-01-01T00:00:00.000Z'),
+            policy: buildLegacyBonusPolicy(tenant.settings) as any,
+            createdByUserId: ctx.user.userId,
+          },
+        });
+      }
+      await tx.bonusPolicyVersion.upsert({
+        where: { tenantId_effectiveMonth: { tenantId: ctx.tenantId, effectiveMonth } },
+        create: {
+          tenantId: ctx.tenantId,
+          effectiveMonth,
+          policy: policy as any,
+          createdByUserId: ctx.user.userId,
+        },
+        update: { policy: policy as any, createdByUserId: ctx.user.userId },
+      });
+      await tx.tenant.update({
+        where: { id: ctx.tenantId },
+        data: {
+          settings: {
+            ...settingsObject,
+            salary: {
+              ...salarySettings,
+              bonusMode: policy.bonusMode,
+              bonusRules: policy.bonusRules,
+              courseBonusOverrides: policy.courseOverrides,
+            },
+          } as any,
+        },
+      });
+    });
+    return { success: true, effectiveMonth: input.effectiveMonth, policy };
+  }),
+
+  getBonusOperations: protectedProcedure.query(async ({ ctx }) => {
+    if (!ctx.user.roles.some((role) => ['Admin', 'Manager', 'TeamLeader', 'Finance'].includes(role))) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    if (ctx.user.roles.includes('Admin')) {
+      await reconcileFinalizedBonusMonths({ tenantId: ctx.tenantId, actorUserId: ctx.user.userId });
+    }
+    const [snapshots, adjustments] = await Promise.all([
+      prisma.bonusMonthSnapshot.findMany({
+        where: { tenantId: ctx.tenantId },
+        orderBy: { month: 'desc' },
+        take: 24,
+        select: { id: true, month: true, totalBonusAmount: true, sourceDigest: true, finalizedAt: true },
+      }),
+      prisma.bonusAdjustment.findMany({
+        where: { tenantId: ctx.tenantId },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+        include: { audits: { orderBy: { createdAt: 'desc' }, take: 5 }, snapshot: { select: { month: true } } },
+      }),
+    ]);
+    return {
+      snapshots: snapshots.map((snapshot) => ({ ...snapshot, month: getTashkentMonthKey(snapshot.month) })),
+      adjustments: adjustments.map((adjustment) => ({
+        ...adjustment,
+        sourceMonth: getTashkentMonthKey(adjustment.snapshot.month),
+        payoutMonth: adjustment.payoutMonth ? getTashkentMonthKey(adjustment.payoutMonth) : null,
+      })),
+    };
+  }),
+
+  previewBonusMonth: adminProcedure.input(bonusMonthInput).mutation(async ({ ctx, input }) => {
+    const result = await calculateBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month) });
+    return { ...result, month: getTashkentMonthKey(result.month) };
+  }),
+
+  finalizeBonusMonth: adminProcedure.input(bonusMonthInput).mutation(async ({ ctx, input }) => {
+    try {
+      const result = await finalizeBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month), userId: ctx.user.userId });
+      return { ...result, month: getTashkentMonthKey(result.month) };
+    } catch (error) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: error instanceof Error ? error.message : 'Bonus month could not be finalized.' });
+    }
+  }),
+
+  reconcileBonusMonth: adminProcedure.input(bonusMonthInput).mutation(async ({ ctx, input }) => ({
+    pendingCount: await reconcileBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month), actorUserId: ctx.user.userId }),
+  })),
+
+  reviewBonusAdjustment: adminProcedure.input(z.object({
+    adjustmentId: z.string().uuid(),
+    action: z.enum(['approve', 'reject']),
+    note: z.string().trim().max(1000).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    try {
+      return await reviewBonusAdjustment({ tenantId: ctx.tenantId, userId: ctx.user.userId, ...input });
+    } catch (error) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: error instanceof Error ? error.message : 'Adjustment review failed.' });
+    }
   }),
 
   updateBonusRules: adminProcedure.input(updateBonusRulesInput).mutation(async ({ ctx, input }) => {
