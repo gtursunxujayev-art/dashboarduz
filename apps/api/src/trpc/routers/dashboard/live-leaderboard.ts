@@ -19,6 +19,7 @@ import {
 } from './helpers';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
+import { getBonusMonth } from '../../../services/bonus-engine';
 
 const LIVE_LEADERBOARD_MANAGER_ROLES = new Set(['Admin', 'Manager']);
 
@@ -246,7 +247,7 @@ async function calculateMonthlyBonusByAgent(params: {
 
 export const liveLeaderboardProcedures = {
   liveLeaderboardPreviousMonthWinner: protectedProcedure
-    .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
+    .input(z.object({ group: z.enum(['online', 'offline']).default('online'), courseId: z.string().uuid().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const requestedGroup: AgentGroup = input?.group || 'online';
       if (!canReadLiveLeaderboard(ctx.user.roles, requestedGroup)) {
@@ -281,6 +282,46 @@ export const liveLeaderboardProcedures = {
         .map((agent) => ({ ...agent, group: resolveAgentGroup(agent.roles) }))
         .filter((agent): agent is LeaderboardAgent & { group: AgentGroup } => agent.group === requestedGroup);
       const agentIds = groupedAgents.map((agent) => agent.id);
+
+      if (input?.courseId && agentIds.length) {
+        const [bonusMonth, courseSales] = await Promise.all([
+          getBonusMonth({ tenantId: ctx.tenantId, month: previousMonthStart }),
+          prisma.income.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              type: 'new_sale',
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              managerUserId: { in: agentIds },
+              courseId: input.courseId,
+              entryDate: { gte: previousMonthStart, lte: previousMonthEnd },
+            },
+            select: { id: true, managerUserId: true, type: true, relatedDebtIncomeId: true },
+          }),
+        ]);
+        const salesByAgent = new Map<string, number>();
+        for (const sale of courseSales) salesByAgent.set(sale.managerUserId, (salesByAgent.get(sale.managerUserId) || 0) + 1);
+        const qualifyingByAgent = new Map<string, number>();
+        const bonusByAgent = new Map<string, number>();
+        const closuresByAgent = new Map<string, number>();
+        for (const item of bonusMonth.items.filter((candidate) => candidate.courseId === input.courseId)) {
+          qualifyingByAgent.set(item.agentUserId, (qualifyingByAgent.get(item.agentUserId) || 0) + item.baseAmount);
+          bonusByAgent.set(item.agentUserId, (bonusByAgent.get(item.agentUserId) || 0) + item.bonusAmount);
+          if (item.calculationMode !== 'legacy_income') closuresByAgent.set(item.agentUserId, (closuresByAgent.get(item.agentUserId) || 0) + 1);
+        }
+        const winner = groupedAgents.map((agent) => ({
+          userId: agent.id,
+          name: getAgentLabel(agent),
+          salesCount: salesByAgent.get(agent.id) || 0,
+          income: qualifyingByAgent.get(agent.id) || 0,
+          bonus: bonusByAgent.get(agent.id) || 0,
+          closureCount: closuresByAgent.get(agent.id) || 0,
+        })).sort((left, right) => right.income - left.income || right.closureCount - left.closureCount || left.name.localeCompare(right.name))[0] || null;
+        return {
+          generatedAt: now.toISOString(),
+          period: { start: previousMonthStart.toISOString(), end: previousMonthEnd.toISOString() },
+          winner,
+        };
+      }
 
       if (!agentIds.length) {
         return {
@@ -732,6 +773,7 @@ export const liveLeaderboardProcedures = {
           managerUserId: true,
           course: {
             select: {
+              id: true,
               category: true,
               name: true,
             },
@@ -824,14 +866,31 @@ export const liveLeaderboardProcedures = {
     const todaySales = todaySalesRaw.filter((row) => isNonTechnicalRow(row) && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup);
     const yesterdaySales = yesterdaySalesRaw.filter((row) => isNonTechnicalRow(row) && resolveSalePanelGroup(row.course?.category, row.course?.name) === requestedGroup);
     const todayRows = monthRows.filter((row) => row.entryDate >= todayStart);
-    const monthlyBonusByAgent = await calculateMonthlyBonusByAgent({
-      tenantId: ctx.tenantId,
-      agentIds,
-      monthStart,
-      monthEnd: now,
-      technicalSaleIds,
-      group: requestedGroup,
-    });
+    const currentBonusMonth = await getBonusMonth({ tenantId: ctx.tenantId, month: monthStart, preferSnapshot: false });
+    const monthlyBonusByAgent = new Map<string, number>();
+    const selectedCourseIdSet = new Set(selectedReportCourses.map((course) => course.courseId));
+    const courseMetricsByAgent = new Map<string, Map<string, {
+      courseId: string;
+      salesCount: number;
+      closureCount: number;
+      qualifyingIncome: number;
+      bonus: number;
+    }>>();
+    const getCourseMetric = (agentId: string, courseId: string) => {
+      const byCourse = courseMetricsByAgent.get(agentId) || new Map();
+      const metric = byCourse.get(courseId) || { courseId, salesCount: 0, closureCount: 0, qualifyingIncome: 0, bonus: 0 };
+      byCourse.set(courseId, metric);
+      courseMetricsByAgent.set(agentId, byCourse);
+      return metric;
+    };
+    for (const item of currentBonusMonth.items) {
+      monthlyBonusByAgent.set(item.agentUserId, (monthlyBonusByAgent.get(item.agentUserId) || 0) + item.bonusAmount);
+      if (!item.courseId || !selectedCourseIdSet.has(item.courseId)) continue;
+      const metric = getCourseMetric(item.agentUserId, item.courseId);
+      metric.qualifyingIncome += item.baseAmount;
+      metric.bonus += item.bonusAmount;
+      if (item.calculationMode !== 'legacy_income') metric.closureCount += 1;
+    }
 
     const monthIncomeByAgent = new Map<string, number>();
     const todayIncomeByAgent = new Map<string, number>();
@@ -862,6 +921,9 @@ export const liveLeaderboardProcedures = {
         continue;
       }
       monthlySalesByAgent.set(sale.managerUserId, (monthlySalesByAgent.get(sale.managerUserId) || 0) + 1);
+      if (sale.course?.id && selectedCourseIdSet.has(sale.course.id)) {
+        getCourseMetric(sale.managerUserId, sale.course.id).salesCount += 1;
+      }
     }
     for (const sale of todaySales) {
       const saleGroup = resolveSalePanelGroup(sale.course?.category, sale.course?.name);
@@ -899,6 +961,10 @@ export const liveLeaderboardProcedures = {
         monthlyIncome: monthIncomeByAgent.get(agent.id) || 0,
         todayIncome: todayIncomeByAgent.get(agent.id) || 0,
         monthlyBonus: monthlyBonusByAgent.get(agent.id) || 0,
+        courseMetrics: selectedReportCourses.map((course) => (
+          courseMetricsByAgent.get(agent.id)?.get(course.courseId)
+          || { courseId: course.courseId, salesCount: 0, closureCount: 0, qualifyingIncome: 0, bonus: 0 }
+        )),
       })),
       selectedReportCourses,
       latestIncomeEvent: latestIncome
