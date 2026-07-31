@@ -29,6 +29,7 @@ import {
   getSaleAgreementAmount,
   type SaleChainSaleRow,
 } from '../../services/income-chain';
+import { reconcileFinalizedBonusMonths } from '../../services/bonus-engine';
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent'] as const;
 const SALES_MANAGER_ROLE_TOKENS = new Set(
@@ -4494,6 +4495,16 @@ export const customerIncomeRouter = router({
         skipTelegramNotification,
       });
 
+      try {
+        await reconcileFinalizedBonusMonths({ tenantId: ctx.tenantId, actorUserId: ctx.user.userId });
+      } catch (error) {
+        console.error('[Bonus] Finalized month reconciliation failed after income creation', {
+          tenantId: ctx.tenantId,
+          incomeId: result.income.id,
+          error: String((error as any)?.message || error),
+        });
+      }
+
       return {
         income: result.income,
         telegramDispatch: result.telegramDispatch,
@@ -6393,6 +6404,16 @@ export const customerIncomeRouter = router({
           select: { id: true },
         });
       });
+
+      try {
+        await reconcileFinalizedBonusMonths({ tenantId: ctx.tenantId, actorUserId: ctx.user.userId });
+      } catch (error) {
+        console.error('[Bonus] Finalized month reconciliation failed after income adjustment', {
+          tenantId: ctx.tenantId,
+          requestId: request.id,
+          error: String((error as any)?.message || error),
+        });
+      }
 
       await prisma.auditLog.create({
         data: {
