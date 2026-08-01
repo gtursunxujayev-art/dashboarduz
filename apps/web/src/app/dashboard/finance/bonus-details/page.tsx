@@ -6,6 +6,11 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import {
+  BONUS_DETAIL_EXPORT_COLUMN_WIDTHS,
+  BONUS_DETAIL_EXPORT_HEADERS,
+  buildBonusDetailExportRows,
+} from './bonus-detail-export';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
@@ -133,6 +138,8 @@ export default function FinanceBonusDetailsPage() {
   const [managerUserId, setManagerUserId] = useState('');
   const [operationMonth, setOperationMonth] = useState(() => getPreviousMonthRange().dateFrom.slice(0, 7));
   const [operationMessage, setOperationMessage] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportSuccess, setExportSuccess] = useState<string | null>(null);
 
   const effectiveDateRange = useMemo(() => {
     if (range === 'today') {
@@ -174,6 +181,7 @@ export default function FinanceBonusDetailsPage() {
     retry: 1,
     refetchInterval: 5 * 60 * 1000,
   });
+  const exportBonusDetails = trpc.dashboard.exportBonusIncomeDetails.useMutation();
   const bonusOperationsQuery = trpc.bonus.getBonusOperations.useQuery(undefined, {
     enabled: !isAgentOnly,
     retry: false,
@@ -255,6 +263,42 @@ export default function FinanceBonusDetailsPage() {
       await Promise.all([bonusOperationsQuery.refetch(), bonusDetailsQuery.refetch()]);
     } catch (error: any) {
       setOperationMessage(error?.message || 'Tuzatishni ko\'rib chiqishda xatolik.');
+    }
+  };
+
+  const handleDownloadBonusDetails = async () => {
+    setExportError(null);
+    setExportSuccess(null);
+
+    try {
+      const result = await exportBonusDetails.mutateAsync(filters);
+      if (!result.rows.length) {
+        setExportError("Tanlangan filtr bo'yicha yuklab olish uchun bonus qatorlari topilmadi.");
+        return;
+      }
+
+      const XLSX = await import('xlsx');
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        [...BONUS_DETAIL_EXPORT_HEADERS],
+        ...buildBonusDetailExportRows(result.rows),
+      ]);
+      worksheet['!cols'] = BONUS_DETAIL_EXPORT_COLUMN_WIDTHS.map((width) => ({ wch: width }));
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Bonus tafsiloti');
+      const workbookBuffer = XLSX.write(workbook, { bookType: 'xls', type: 'array' });
+      const blob = new Blob([workbookBuffer], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `bonus-tafsiloti-${effectiveDateRange.dateFrom}-${effectiveDateRange.dateTo}.xls`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      setExportSuccess(`${result.totalCount} ta qator yuklab olindi.`);
+    } catch (error: any) {
+      setExportError(error?.message || "Bonus tafsilotlarini yuklab olishda xatolik yuz berdi.");
     }
   };
 
@@ -480,9 +524,19 @@ export default function FinanceBonusDetailsPage() {
       </div>
 
       <div className="rounded-lg bg-white p-6 shadow">
-        <div className="mb-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-gray-900">Bonus qatorlari tafsiloti</h2>
+          <button
+            type="button"
+            onClick={() => void handleDownloadBonusDetails()}
+            disabled={exportBonusDetails.isLoading}
+            className="inline-flex items-center rounded-md border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {exportBonusDetails.isLoading ? 'Tayyorlanmoqda...' : 'XLS yuklab olish'}
+          </button>
         </div>
+        {exportError ? <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{exportError}</p> : null}
+        {exportSuccess ? <p className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{exportSuccess}</p> : null}
         {bonusDetailsQuery.isLoading ? (
           <LoadingBlock message="Yuklanmoqda..." />
         ) : bonusRows.length ? (
