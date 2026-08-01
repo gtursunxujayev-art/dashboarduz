@@ -3,6 +3,17 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
 import { recomputeAttendanceDaySummary, recomputeAttendanceSummariesForRange } from '../../services/attendance/faceid';
+import { AGENT_ROLES } from '@dashboarduz/shared';
+import {
+  ATTENDANCE_REPORT_MAX_CALENDAR_DAYS,
+  buildAttendancePeriodReport,
+  countAttendanceReportCalendarDays,
+  enumerateAttendanceReportWorkdays,
+  isAttendanceReportCalendarRangeOverLimit,
+  isAttendanceReportDetailRowLimitExceeded,
+  parseAttendanceReportDateKey,
+  resolveAttendanceReportScopedUserId,
+} from '../../services/attendance/report';
 
 const privilegedReadRoles = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 
@@ -259,6 +270,114 @@ export const attendanceRouter = router({
         total,
         hasMore: skip + rows.length < total,
         rows,
+      };
+    }),
+
+  exportReport: protectedProcedure
+    .input(
+      z.object({
+        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const dateFrom = parseAttendanceReportDateKey(input.dateFrom);
+      const dateTo = parseAttendanceReportDateKey(input.dateTo);
+      if (!dateFrom || !dateTo) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "Davr sanalari YYYY-MM-DD formatda haqiqiy sana bo'lishi kerak.",
+        });
+      }
+      if (dateFrom > dateTo) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "Boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas.",
+        });
+      }
+
+      const calendarDayCount = countAttendanceReportCalendarDays(dateFrom, dateTo);
+      if (isAttendanceReportCalendarRangeOverLimit(calendarDayCount)) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: `Davomat hisoboti ko'pi bilan ${ATTENDANCE_REPORT_MAX_CALENDAR_DAYS} kalendar kunini qamrab olishi mumkin.`,
+        });
+      }
+
+      const workdayDateKeys = enumerateAttendanceReportWorkdays(dateFrom, dateTo);
+      if (workdayDateKeys.length === 0) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: "Tanlangan davrda dushanba-shanba ish kuni yo'q.",
+        });
+      }
+
+      const scopedUserId = resolveAttendanceReportScopedUserId(ctx.user.roles, ctx.user.userId);
+      const users = await prisma.user.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          isActive: true,
+          roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
+          ...(scopedUserId ? { id: scopedUserId } : {}),
+        },
+        orderBy: [{ name: 'asc' }, { username: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          roles: true,
+        },
+      });
+
+      if (isAttendanceReportDetailRowLimitExceeded(users.length, workdayDateKeys.length)) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: "Tanlangan davr uchun davomat qatorlari juda ko'p. Iltimos, qisqaroq davr tanlang.",
+        });
+      }
+
+      const summaries = users.length > 0
+        ? await prisma.attendanceDaySummary.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              userId: { in: users.map((user) => user.id) },
+              summaryDate: {
+                gte: input.dateFrom,
+                lte: input.dateTo,
+              },
+            },
+            select: {
+              userId: true,
+              summaryDate: true,
+              workedSeconds: true,
+              requiredSeconds: true,
+              missingSeconds: true,
+              lateMinutes: true,
+              lateCount: true,
+              absence: true,
+              unmatchedInCount: true,
+              unmatchedOutCount: true,
+              anomalyCount: true,
+              firstInAt: true,
+              lastOutAt: true,
+            },
+          })
+        : [];
+
+      const report = buildAttendancePeriodReport({
+        users,
+        summaries,
+        workdayDateKeys,
+      });
+
+      return {
+        dateFrom: input.dateFrom,
+        dateTo: input.dateTo,
+        employeeCount: report.employeeSummaries.length,
+        workdayCount: workdayDateKeys.length,
+        dailyRowCount: report.dailyRows.length,
+        employeeSummaries: report.employeeSummaries,
+        dailyRows: report.dailyRows,
       };
     }),
 
