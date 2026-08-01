@@ -4,6 +4,19 @@ import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import {
+  ATTENDANCE_DAILY_COLUMN_WIDTHS,
+  ATTENDANCE_DAILY_DURATION_COLUMNS,
+  ATTENDANCE_DAILY_HEADERS,
+  ATTENDANCE_DAILY_SHEET_NAME,
+  ATTENDANCE_SUMMARY_COLUMN_WIDTHS,
+  ATTENDANCE_SUMMARY_DURATION_COLUMNS,
+  ATTENDANCE_SUMMARY_HEADERS,
+  ATTENDANCE_SUMMARY_SHEET_NAME,
+  buildAttendanceDailyExportRows,
+  buildAttendanceSummaryExportRows,
+  getAttendanceReportFilename,
+} from './attendance-report-export';
 
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
@@ -86,6 +99,8 @@ export default function AttendancePage() {
   const [correctionReason, setCorrectionReason] = useState('');
   const [correctionSuccess, setCorrectionSuccess] = useState<string | null>(null);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
+  const [exportSuccess, setExportSuccess] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const usersQuery = trpc.users.list.useQuery(undefined, {
     enabled: isAdmin || dateFrom === dateTo,
@@ -148,6 +163,8 @@ export default function AttendancePage() {
       ]);
     },
   });
+
+  const exportReportMutation = trpc.attendance.exportReport.useMutation();
 
   const correctionMutation = trpc.attendance.applyCorrection.useMutation({
     onSuccess: async () => {
@@ -340,6 +357,72 @@ export default function AttendancePage() {
     }
   };
 
+  const handleExportReport = async () => {
+    setExportSuccess(null);
+    setExportError(null);
+
+    try {
+      // Search and anomaly-only are intentionally not part of the period report.
+      const report = await exportReportMutation.mutateAsync({ dateFrom, dateTo });
+      if (report.employeeCount === 0 || report.dailyRowCount === 0) {
+        setExportError("Tanlangan davr uchun eksport qilinadigan davomat ma'lumoti topilmadi.");
+        return;
+      }
+
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.utils.book_new();
+
+      const appendSheet = (
+        sheetName: string,
+        headers: readonly string[],
+        rows: Array<Array<string | number | null>>,
+        columnWidths: readonly number[],
+        durationColumns: readonly number[],
+      ) => {
+        const worksheet = XLSX.utils.aoa_to_sheet([Array.from(headers), ...rows]);
+        worksheet['!cols'] = columnWidths.map((wch) => ({ wch }));
+        worksheet['!autofilter'] = {
+          ref: XLSX.utils.encode_range({
+            s: { r: 0, c: 0 },
+            e: { r: rows.length, c: headers.length - 1 },
+          }),
+        };
+
+        for (let rowIndex = 1; rowIndex <= rows.length; rowIndex += 1) {
+          for (const columnIndex of durationColumns) {
+            const cell = worksheet[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })];
+            if (cell?.t === 'n') cell.z = '[h]:mm:ss';
+          }
+        }
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      };
+
+      appendSheet(
+        ATTENDANCE_SUMMARY_SHEET_NAME,
+        ATTENDANCE_SUMMARY_HEADERS,
+        buildAttendanceSummaryExportRows(report.employeeSummaries),
+        ATTENDANCE_SUMMARY_COLUMN_WIDTHS,
+        ATTENDANCE_SUMMARY_DURATION_COLUMNS,
+      );
+      appendSheet(
+        ATTENDANCE_DAILY_SHEET_NAME,
+        ATTENDANCE_DAILY_HEADERS,
+        buildAttendanceDailyExportRows(report.dailyRows),
+        ATTENDANCE_DAILY_COLUMN_WIDTHS,
+        ATTENDANCE_DAILY_DURATION_COLUMNS,
+      );
+
+      XLSX.writeFile(workbook, getAttendanceReportFilename(report.dateFrom, report.dateTo), {
+        bookType: 'xlsx',
+      });
+      setExportSuccess(
+        `${report.employeeCount} xodim va ${report.dailyRowCount} kunlik qator XLSX faylga yuklandi.`,
+      );
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "Davomat hisobotini yuklab olishda xatolik yuz berdi.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="rounded-lg bg-white shadow dark:bg-slate-900">
@@ -391,24 +474,40 @@ export default function AttendancePage() {
                   Faqat anomaliya
                 </label>
               </div>
-              {isAdmin ? (
-                <div className="flex items-end">
+              <div className="flex flex-col justify-end gap-2">
+                {isAdmin && (
                   <button
                     type="button"
                     onClick={() => recomputeMutation.mutate({ dateFrom, dateTo })}
                     disabled={recomputeMutation.isLoading}
-                    className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="min-w-0 flex-1 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {recomputeMutation.isLoading ? 'Qayta hisoblanmoqda...' : 'Davomatni qayta hisoblash'}
+                    {recomputeMutation.isLoading ? 'Hisoblanmoqda...' : 'Qayta hisoblash'}
                   </button>
-                </div>
-              ) : (
-                <div />
-              )}
+                )}
+                <button
+                  type="button"
+                  onClick={handleExportReport}
+                  disabled={exportReportMutation.isLoading}
+                  className="min-w-0 flex-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {exportReportMutation.isLoading ? 'Yuklanmoqda...' : 'Davr hisobotini yuklab olish'}
+                </button>
+              </div>
             </div>
             {recomputeMutation.error && (
               <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
                 {recomputeMutation.error.message}
+              </p>
+            )}
+            {exportError && (
+              <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+                {exportError}
+              </p>
+            )}
+            {exportSuccess && (
+              <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                {exportSuccess}
               </p>
             )}
           </div>
