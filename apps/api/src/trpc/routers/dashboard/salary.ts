@@ -28,12 +28,17 @@ import {
 } from './helpers';
 import { amocrmService, type AmoCRMLead } from '../../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
-import { AGENT_ROLES } from '@dashboarduz/shared';
+import { AGENT_ROLES, type UserRole } from '@dashboarduz/shared';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 import { buildCacheKey, getOrSet } from '../../../services/cache';
 import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthStart } from '../../../services/bonus-engine';
+import {
+  BONUS_DETAIL_EXPORT_LIMIT,
+  buildBonusDetailIncomeWhere,
+  isBonusDetailExportOverLimit,
+} from '../../../services/bonus-detail-export';
 
 function calculateProratedFixedSalary(
   monthlyFixedSalary: number,
@@ -72,6 +77,18 @@ function calculateProratedFixedSalary(
   }
 
   return Math.round(total);
+}
+
+function extractBonusDetailSubTariffId(meta: unknown): string | null {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return null;
+  }
+  const candidate = (meta as Record<string, unknown>).saleSubTariffId;
+  if (typeof candidate !== 'string') {
+    return null;
+  }
+  const normalized = candidate.trim();
+  return normalized || null;
 }
 
 function scoreKpi(value: number, threshold: KpiThreshold, higherIsBetter: boolean): number {
@@ -151,8 +168,7 @@ function buildRequiredWorkdaysByMonth(rangeStart: Date, rangeEnd: Date): Map<str
   return result;
 }
 
-export const salaryProcedures = {
-  salarySummary: protectedProcedure
+const salarySummary = protectedProcedure
     .input(
       z.object({
         range: dashboardRangeSchema.default('month').optional(),
@@ -990,19 +1006,40 @@ export const salaryProcedures = {
       currentUser: byAgent.find((row) => row.userId === ctx.user.userId) || null,
     };
     });
-    }),
+    });
 
-  bonusIncomeDetails: protectedProcedure
-    .input(
-      z.object({
-        range: dashboardRangeSchema.default('month'),
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
-        courseId: z.string().uuid().optional(),
-        managerUserId: z.string().uuid().optional(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
+const bonusIncomeDetailsInputSchema = z.object({
+  range: dashboardRangeSchema.default('month'),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  courseId: z.string().uuid().optional(),
+  managerUserId: z.string().uuid().optional(),
+});
+
+type BonusIncomeDetailsInput = z.infer<typeof bonusIncomeDetailsInputSchema>;
+
+type BonusIncomeDetailsContext = {
+  tenantId: string;
+  user: {
+    userId: string;
+    roles: UserRole[];
+  };
+};
+
+type BonusIncomeDetailsOptions = {
+  rowLimit?: number;
+  rejectAboveLimit?: number;
+};
+
+async function loadBonusIncomeDetails({
+  ctx,
+  input,
+  options = {},
+}: {
+  ctx: BonusIncomeDetailsContext;
+  input: BonusIncomeDetailsInput;
+  options?: BonusIncomeDetailsOptions;
+}) {
       if (isTashkiliyOnly(ctx.user.roles)) {
         throw new TRPCError({ code: 'FORBIDDEN', message: "Tashkiliy role cannot access bonus income details." });
       }
@@ -1081,6 +1118,7 @@ export const salaryProcedures = {
             managerLabel: string;
             courseName: string | null;
             tariffName: string | null;
+            subTariffName: string | null;
             agreementAmount: number;
             paymentAmount: number;
             remainingDebtAmount: number;
@@ -1095,76 +1133,6 @@ export const salaryProcedures = {
           }>,
         };
       }
-
-      const incomes = await prisma.income.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          managerUserId: { in: visibleAgentIds },
-          ...(input.courseId ? { courseId: input.courseId } : {}),
-          entryDate: {
-            gte: rangeStart,
-            lte: rangeEnd,
-          },
-        },
-        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
-        take: 3000,
-        select: {
-          id: true,
-          type: true,
-          entryDate: true,
-          createdAt: true,
-          paymentAmount: true,
-          remainingDebtAmount: true,
-          coursePriceAmount: true,
-          managerUserId: true,
-          relatedDebtIncomeId: true,
-          customer: {
-            select: {
-              customerNumber: true,
-              name: true,
-            },
-          },
-          manager: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-            },
-          },
-          course: {
-            select: {
-              name: true,
-              category: true,
-            },
-          },
-          tariff: {
-            select: {
-              name: true,
-            },
-          },
-          relatedDebtIncome: {
-            select: {
-              id: true,
-              managerUserId: true,
-              coursePriceAmount: true,
-              paymentAmount: true,
-              entryDate: true,
-              course: {
-                select: {
-                  name: true,
-                  category: true,
-                },
-              },
-              tariff: {
-                select: {
-                  name: true,
-                },
-              },
-            },
-          },
-        },
-      });
 
       const activeSalesForBonus = await prisma.income.findMany({
         where: {
@@ -1195,6 +1163,110 @@ export const salaryProcedures = {
       });
       const technicalSaleIdsForBonusDetails = buildTechnicalSaleIdSet(activeSalesForBonus);
       const filteredActiveSalesForBonus = activeSalesForBonus.filter((sale) => !technicalSaleIdsForBonusDetails.has(sale.id));
+
+      const incomeWhere = buildBonusDetailIncomeWhere({
+        tenantId: ctx.tenantId,
+        managerUserIds: visibleAgentIds,
+        rangeStart,
+        rangeEnd,
+        courseId: input.courseId,
+        technicalSaleIds: Array.from(technicalSaleIdsForBonusDetails),
+      });
+
+      if (options.rejectAboveLimit) {
+        const totalCount = await prisma.income.count({ where: incomeWhere });
+        if (isBonusDetailExportOverLimit(totalCount, options.rejectAboveLimit)) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: "Tanlangan filtr bo'yicha yozuvlar juda ko'p. Iltimos, qisqaroq davr tanlang.",
+          });
+        }
+      }
+
+      const incomes = await prisma.income.findMany({
+        where: incomeWhere,
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        take: options.rowLimit,
+        select: {
+          id: true,
+          type: true,
+          entryDate: true,
+          createdAt: true,
+          paymentAmount: true,
+          remainingDebtAmount: true,
+          coursePriceAmount: true,
+          managerUserId: true,
+          relatedDebtIncomeId: true,
+          legacyImportMeta: true,
+          customer: {
+            select: {
+              customerNumber: true,
+              name: true,
+              profileSubTariffId: true,
+            },
+          },
+          manager: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+            },
+          },
+          course: {
+            select: {
+              name: true,
+              category: true,
+            },
+          },
+          tariff: {
+            select: {
+              name: true,
+            },
+          },
+          relatedDebtIncome: {
+            select: {
+              id: true,
+              managerUserId: true,
+              coursePriceAmount: true,
+              paymentAmount: true,
+              entryDate: true,
+              legacyImportMeta: true,
+              course: {
+                select: {
+                  name: true,
+                  category: true,
+                },
+              },
+              tariff: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const subTariffIds = Array.from(new Set(
+        incomes
+          .map((income) => (
+            extractBonusDetailSubTariffId(income.legacyImportMeta)
+            || extractBonusDetailSubTariffId(income.relatedDebtIncome?.legacyImportMeta)
+            || income.customer.profileSubTariffId
+            || null
+          ))
+          .filter((id): id is string => Boolean(id)),
+      ));
+      const subTariffs = subTariffIds.length > 0
+        ? await prisma.subTariff.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              id: { in: subTariffIds },
+            },
+            select: { id: true, name: true },
+          })
+        : [];
+      const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
 
       const saleIdsForBonus = filteredActiveSalesForBonus.map((sale) => sale.id);
       const bonusChainRows = saleIdsForBonus.length > 0
@@ -1354,6 +1426,10 @@ export const salaryProcedures = {
         const courseCategory = income.course?.category ?? income.relatedDebtIncome?.course?.category;
         const courseName = income.course?.name ?? income.relatedDebtIncome?.course?.name;
         const category = classifyCourseCategoryFromField(courseCategory || courseName);
+        const subTariffId = extractBonusDetailSubTariffId(income.legacyImportMeta)
+          || extractBonusDetailSubTariffId(income.relatedDebtIncome?.legacyImportMeta)
+          || income.customer.profileSubTariffId
+          || null;
 
         const bonusItem = bonusItemByIncomeId.get(income.id);
         const calculatedBonus = bonusItem?.bonusAmount || 0;
@@ -1383,6 +1459,7 @@ export const salaryProcedures = {
           managerLabel: income.manager.name || income.manager.username || income.manager.id,
           courseName: income.course?.name ?? income.relatedDebtIncome?.course?.name ?? null,
           tariffName: income.tariff?.name ?? income.relatedDebtIncome?.tariff?.name ?? null,
+          subTariffName: subTariffId ? subTariffNameById.get(subTariffId) || null : null,
           agreementAmount,
           paymentAmount: income.paymentAmount ?? 0,
           remainingDebtAmount: chainRemainingDebtAmount,
@@ -1504,5 +1581,35 @@ export const salaryProcedures = {
         agentSummary,
         rows,
       };
-    }),
+}
+
+const bonusIncomeDetails = protectedProcedure
+  .input(bonusIncomeDetailsInputSchema)
+  .query(({ ctx, input }) => loadBonusIncomeDetails({
+    ctx,
+    input,
+    options: { rowLimit: 3000 },
+  }));
+
+const exportBonusIncomeDetails = protectedProcedure
+  .input(bonusIncomeDetailsInputSchema)
+  .mutation(async ({ ctx, input }) => {
+    const result = await loadBonusIncomeDetails({
+      ctx,
+      input,
+      options: { rowLimit: BONUS_DETAIL_EXPORT_LIMIT, rejectAboveLimit: BONUS_DETAIL_EXPORT_LIMIT },
+    });
+
+    return {
+      rangeStart: result.rangeStart,
+      rangeEnd: result.rangeEnd,
+      totalCount: result.rows.length,
+      rows: result.rows,
+    };
+  });
+
+export const salaryProcedures = {
+  salarySummary,
+  bonusIncomeDetails,
+  exportBonusIncomeDetails,
 };
