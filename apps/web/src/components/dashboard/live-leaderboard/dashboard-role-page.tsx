@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import { sortAgentsByOverallMonth } from './leaderboard-ranking';
 
 type AgentGroup = 'online' | 'offline';
 
@@ -16,13 +17,6 @@ type LeaderboardAgent = {
   monthlyIncome: number;
   todayIncome: number;
   monthlyBonus: number;
-  courseMetrics: Array<{
-    courseId: string;
-    salesCount: number;
-    closureCount: number;
-    qualifyingIncome: number;
-    bonus: number;
-  }>;
 };
 
 type LatestIncomeEvent = {
@@ -81,19 +75,6 @@ function formatDuration(totalSeconds: number) {
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
 }
 
-function sortAgents(agents: LeaderboardAgent[], group: AgentGroup, courseId: string) {
-  return agents
-    .filter((agent) => agent.group === group)
-    .sort((a, b) => {
-      if (!courseId) return b.monthlyIncome - a.monthlyIncome || b.monthlySalesCount - a.monthlySalesCount || a.name.localeCompare(b.name);
-      const left = a.courseMetrics.find((metric) => metric.courseId === courseId);
-      const right = b.courseMetrics.find((metric) => metric.courseId === courseId);
-      return (right?.qualifyingIncome || 0) - (left?.qualifyingIncome || 0)
-        || (right?.closureCount || 0) - (left?.closureCount || 0)
-        || a.name.localeCompare(b.name);
-    });
-}
-
 function playNewIncomeSound() {
   const audio = new Audio('/sounds/new-income.m4a');
   audio.volume = 0.1;
@@ -121,8 +102,7 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
   );
 }
 
-function AgentRow({ agent, rank, highlight, courseId }: { agent: LeaderboardAgent; rank: number; highlight: boolean; courseId: string }) {
-  const courseMetric = courseId ? agent.courseMetrics.find((metric) => metric.courseId === courseId) : null;
+function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: number; highlight: boolean }) {
   return (
     <div className={`leaderboard-row grid grid-cols-[40px_minmax(0,1fr)] items-center gap-2 rounded-3xl border px-3 py-2 transition-all duration-700 sm:grid-cols-[46px_minmax(0,1fr)_auto] sm:gap-3 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
       <div className={`flex h-8 w-8 items-center justify-center rounded-xl text-base font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
@@ -137,19 +117,18 @@ function AgentRow({ agent, rank, highlight, courseId }: { agent: LeaderboardAgen
           <span>Vaqt: <b className="font-mono text-cyan-300">{formatDuration(agent.todayCallDurationSeconds)}</b></span>
         </div>
         <div className="text-sm font-semibold text-slate-300">
-          <span>Sotuv: <b className="text-white">{courseMetric?.salesCount ?? agent.monthlySalesCount}</b></span>
+          <span>Sotuv: <b className="text-white">{agent.monthlySalesCount}</b></span>
         </div>
         <div className="text-sm font-semibold text-slate-300">
           <span>Bugun: <b className="text-cyan-300">{formatCompactMoney(agent.todayIncome)}</b></span>
         </div>
         <div className="text-sm font-semibold text-slate-300">
-          <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(courseMetric?.bonus ?? agent.monthlyBonus)}</b></span>
+          <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(agent.monthlyBonus)}</b></span>
         </div>
       </div>
       <div className="hidden rounded-2xl bg-slate-950/60 px-3 py-1.5 text-right sm:block">
-        <div className="text-xs uppercase tracking-[0.18em] text-slate-400">{courseMetric ? 'Kurs tushumi' : 'Oylik'}</div>
-        <div className="text-base font-black text-white">{formatCompactMoney(courseMetric?.qualifyingIncome ?? agent.monthlyIncome)}</div>
-        {courseMetric ? <div className="text-[10px] text-slate-400">Jami bonus: {formatCompactMoney(agent.monthlyBonus)}</div> : null}
+        <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Oylik</div>
+        <div className="text-base font-black text-white">{formatCompactMoney(agent.monthlyIncome)}</div>
       </div>
     </div>
   );
@@ -160,13 +139,11 @@ function AgentLeaderboard({
   agents,
   tone,
   highlightedAgentId,
-  courseId,
 }: {
   title: string;
   agents: LeaderboardAgent[];
   tone: string;
   highlightedAgentId: string | null;
-  courseId: string;
 }) {
   return (
     <section className="min-h-[560px] rounded-[2rem] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-black/30">
@@ -180,7 +157,7 @@ function AgentLeaderboard({
       </div>
       <div className="space-y-3">
         {agents.map((agent, index) => (
-          <AgentRow key={agent.userId} agent={agent} rank={index + 1} highlight={highlightedAgentId === agent.userId} courseId={courseId} />
+          <AgentRow key={agent.userId} agent={agent} rank={index + 1} highlight={highlightedAgentId === agent.userId} />
         ))}
         {!agents.length ? (
           <div className="rounded-3xl border border-dashed border-white/15 p-10 text-center text-slate-400">Bu guruhda agentlar yo'q.</div>
@@ -333,7 +310,6 @@ function IncomeCelebrationPopup({ event, onClose }: { event: LatestIncomeEvent; 
 
 export default function DashboardRolePage({ group }: { group: AgentGroup }) {
   const { logout } = useAuth();
-  const [selectedCourseId, setSelectedCourseId] = useState('');
   const query = trpc.dashboard.liveLeaderboard.useQuery({ group }, {
     refetchInterval: 2000,
     refetchIntervalInBackground: true,
@@ -346,7 +322,7 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
     staleTime: 10_000,
     retry: 1,
   });
-  const previousMonthWinnerQuery = trpc.dashboard.liveLeaderboardPreviousMonthWinner.useQuery({ group, courseId: selectedCourseId || undefined }, {
+  const previousMonthWinnerQuery = trpc.dashboard.liveLeaderboardPreviousMonthWinner.useQuery({ group }, {
     refetchInterval: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     staleTime: 5 * 60 * 1000,
@@ -362,30 +338,19 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
   const callStatsByAgentId = useMemo(() => new Map(
     (callStatsQuery.data?.agents || []).map((agent) => [agent.userId, agent]),
   ), [callStatsQuery.data?.agents]);
-  const agents = useMemo(() => sortAgents(
+  const agents = useMemo(() => sortAgentsByOverallMonth(
     (data?.agents || []).map((agent) => ({
       ...agent,
       todayCallsCount: callStatsByAgentId.get(agent.userId)?.todayCallsCount || 0,
       todayCallDurationSeconds: callStatsByAgentId.get(agent.userId)?.todayCallDurationSeconds || 0,
     })),
     group,
-    selectedCourseId,
-  ), [callStatsByAgentId, data?.agents, group, selectedCourseId]);
+  ), [callStatsByAgentId, data?.agents, group]);
   const courses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === group), [data?.selectedReportCourses, group]);
   const groupStats: GroupStats = data?.groupStats || {
     online: { todaySalesCount: 0, yesterdaySalesCount: 0 },
     offline: { todaySalesCount: 0, yesterdaySalesCount: 0 },
   };
-
-  useEffect(() => {
-    if (!courses.length) {
-      setSelectedCourseId('');
-      return;
-    }
-    if (!courses.some((course) => course.courseId === selectedCourseId)) {
-      setSelectedCourseId(courses[0]!.courseId);
-    }
-  }, [courses, selectedCourseId]);
 
   useEffect(() => {
     const latest = data?.latestIncomeEvent;
@@ -422,28 +387,12 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
           <KpiCard label="Oylik tushum" value={data?.kpis.monthIncome || 0} accent="bg-emerald-400" />
         </section>
 
-        {courses.length ? (
-          <section className="flex flex-wrap gap-2 rounded-3xl border border-white/10 bg-slate-900/70 p-3">
-            {courses.map((course) => (
-              <button
-                key={course.courseId}
-                type="button"
-                onClick={() => setSelectedCourseId(course.courseId)}
-                className={`rounded-2xl px-4 py-2 text-sm font-bold transition ${selectedCourseId === course.courseId ? 'bg-cyan-300 text-slate-950' : 'bg-white/5 text-slate-200 hover:bg-white/10'}`}
-              >
-                {course.name}
-              </button>
-            ))}
-          </section>
-        ) : null}
-
         <section className="grid gap-7 lg:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.45fr)]">
           <AgentLeaderboard
             title={group === 'online' ? 'Onlayn' : 'Oflayn'}
             agents={agents}
             tone={group === 'online' ? 'text-cyan-300' : 'text-orange-300'}
             highlightedAgentId={highlightedAgentId}
-            courseId={selectedCourseId}
           />
           <SalesStatsPanel
             courses={courses}
