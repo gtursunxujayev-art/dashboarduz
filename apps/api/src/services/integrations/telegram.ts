@@ -119,6 +119,22 @@ export class TelegramService {
     }
   }
 
+  async getWebhookInfo(botToken: string): Promise<{
+    url: string;
+    pending_update_count: number;
+    last_error_date?: number;
+    last_error_message?: string;
+    max_connections?: number;
+    ip_address?: string;
+  }> {
+    const response = await this.fetchWithRetry(`${this.apiUrl}${botToken}/getWebhookInfo`, { method: 'GET' });
+    const data = await response.json() as { ok?: boolean; result?: any; description?: string };
+    if (!response.ok || !data.ok || !data.result) {
+      throw new Error(`Telegram API error: ${data.description || `HTTP ${response.status}`}`);
+    }
+    return data.result;
+  }
+
   // Set webhook for bot
   async setWebhook(botToken: string, webhookUrl: string, secretToken?: string) {
     const response = await fetch(`${this.apiUrl}${botToken}/setWebhook`, {
@@ -127,7 +143,6 @@ export class TelegramService {
       body: JSON.stringify({
         url: webhookUrl,
         ...(secretToken ? { secret_token: secretToken } : {}),
-        drop_pending_updates: true,
       }),
     });
 
