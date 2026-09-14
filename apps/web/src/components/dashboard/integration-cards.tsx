@@ -151,6 +151,12 @@ export default function IntegrationCards() {
   const telegramRecipientsQuery = trpc.integrations.getTelegramReportRecipients.useQuery(undefined, {
     enabled: telegramConnected,
     retry: false,
+    refetchInterval: 15_000,
+  });
+  const telegramHealthQuery = trpc.integrations.getTelegramHealth.useQuery(undefined, {
+    enabled: telegramConnected,
+    retry: false,
+    refetchInterval: 15_000,
   });
   const connectAmoCRM = trpc.integrations.connectAmoCRM.useMutation();
   const connectTelegram = trpc.integrations.connectTelegram.useMutation();
@@ -591,6 +597,52 @@ export default function IntegrationCards() {
 
               {isTelegramActive && (
                 <div className="mt-4 rounded-md border border-cyan-100 bg-white p-3">
+                  <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Telegram webhook holati</p>
+                        <p className="text-xs text-gray-500">Webhook, kiruvchi yangilanish va foydalanuvchilar soni har 15 soniyada tekshiriladi.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => Promise.all([telegramHealthQuery.refetch(), telegramRecipientsQuery.refetch()])}
+                        disabled={telegramHealthQuery.isFetching || telegramRecipientsQuery.isFetching}
+                        className="rounded-md border border-cyan-200 bg-white px-3 py-1.5 text-xs font-medium text-cyan-700 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {telegramHealthQuery.isFetching || telegramRecipientsQuery.isFetching ? 'Yangilanmoqda...' : 'Yangilash'}
+                      </button>
+                    </div>
+
+                    {telegramHealthQuery.isLoading ? (
+                      <LoadingBlock className="mt-3" compact message="Webhook tekshirilmoqda..." />
+                    ) : telegramHealthQuery.data ? (
+                      <div className="mt-3 space-y-1 text-xs text-gray-600">
+                        <p>
+                          Holat:{' '}
+                          <span className={telegramHealthQuery.data.healthy ? 'font-semibold text-green-600' : 'font-semibold text-red-600'}>
+                            {telegramHealthQuery.data.healthy ? 'Sog‘lom' : 'Muammo aniqlandi'}
+                          </span>
+                        </p>
+                        <p>Foydalanuvchilar: {telegramHealthQuery.data.recipientCount}</p>
+                        <p>Kutilayotgan webhook: <span className="break-all font-mono">{telegramHealthQuery.data.expectedWebhookUrl}</span></p>
+                        <p>Telegram webhook: <span className="break-all font-mono">{telegramHealthQuery.data.liveWebhookUrl || '-'}</span></p>
+                        <p>Navbatdagi update: {telegramHealthQuery.data.pendingUpdateCount}</p>
+                        <p>
+                          Oxirgi kiruvchi update:{' '}
+                          {telegramHealthQuery.data.lastInboundAt
+                            ? new Date(telegramHealthQuery.data.lastInboundAt).toLocaleString()
+                            : '-'}
+                        </p>
+                        {telegramHealthQuery.data.lastErrorMessage && (
+                          <p className="text-red-600">Telegram xatosi: {telegramHealthQuery.data.lastErrorMessage}</p>
+                        )}
+                        {telegramHealthQuery.data.error && (
+                          <p className="text-red-600">Tekshiruv xatosi: {telegramHealthQuery.data.error}</p>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-medium text-gray-900">Rejalashtirilgan hisobot oluvchilari</p>
