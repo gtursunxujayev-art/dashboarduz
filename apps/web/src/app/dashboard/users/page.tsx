@@ -37,6 +37,7 @@ export default function UsersPage() {
   });
   const telegramRecipientsQuery = trpc.users.telegramRecipients.useQuery(undefined, {
     retry: false,
+    refetchInterval: 15_000,
   });
   const createUser = trpc.users.create.useMutation();
   const updateName = trpc.users.updateName.useMutation();
@@ -228,9 +229,19 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       <div className="rounded-lg bg-white shadow">
-        <div className="border-b border-gray-100 px-6 py-5">
-          <h1 className="text-xl font-semibold text-gray-900">Foydalanuvchilar</h1>
-          <p className="mt-1 text-sm text-gray-500">Foydalanuvchi yarating, agentni AmoCRM/UTeL menejeriga bog'lang va login/parolni boshqaring.</p>
+        <div className="flex flex-col gap-3 border-b border-gray-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">Foydalanuvchilar</h1>
+            <p className="mt-1 text-sm text-gray-500">Foydalanuvchi yarating, agentni AmoCRM/UTeL menejeriga bog'lang va login/parolni boshqaring.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => telegramRecipientsQuery.refetch()}
+            disabled={telegramRecipientsQuery.isFetching}
+            className="shrink-0 rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {telegramRecipientsQuery.isFetching ? 'Yangilanmoqda...' : "Telegram ro'yxatini yangilash"}
+          </button>
         </div>
 
         <div className="space-y-4 p-6">
