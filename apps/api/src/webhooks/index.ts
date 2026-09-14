@@ -7,7 +7,8 @@ import { amocrmService } from '../services/integrations/amocrm';
 import { logger } from '../lib/logger';
 import { rateLimiter } from '../services/security/rate-limiter';
 import { EncryptionService } from '../services/security/encryption';
-import { upsertTelegramRecipient } from '../services/integrations/telegram-recipients';
+import { upsertTelegramRecipientRecord } from '../services/integrations/telegram-recipient-store';
+import { extractTelegramRecipientFromPayload } from '../services/integrations/telegram-update';
 
 const router = express.Router();
 
@@ -38,57 +39,6 @@ function extractBearerToken(req: Request): string | null {
   }
   const token = String(match[1] || '').trim();
   return token || null;
-}
-
-function normalizeTelegramText(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function extractTelegramRecipientFromPayload(payload: any): {
-  chatId: string;
-  username: string | null;
-  firstName: string | null;
-  lastName: string | null;
-  started: boolean;
-} | null {
-  const message = payload?.message
-    || payload?.edited_message
-    || payload?.channel_post
-    || payload?.edited_channel_post
-    || payload?.callback_query?.message
-    || null;
-
-  const chat = message?.chat || null;
-  if (!chat || chat.id === null || chat.id === undefined) {
-    return null;
-  }
-
-  const chatType = normalizeTelegramText(chat.type || 'private').toLowerCase();
-  if (chatType && chatType !== 'private') {
-    return null;
-  }
-
-  const from = payload?.message?.from
-    || payload?.edited_message?.from
-    || payload?.callback_query?.from
-    || payload?.channel_post?.from
-    || payload?.edited_channel_post?.from
-    || null;
-
-  const messageText = normalizeTelegramText(
-    message?.text
-    || message?.caption
-    || payload?.callback_query?.data
-    || '',
-  );
-
-  return {
-    chatId: String(chat.id),
-    username: normalizeTelegramText(from?.username || chat.username || '') || null,
-    firstName: normalizeTelegramText(from?.first_name || chat.first_name || '') || null,
-    lastName: normalizeTelegramText(from?.last_name || chat.last_name || '') || null,
-    started: /^\/start\b/i.test(messageText) || Boolean(from || message),
-  };
 }
 
 function extractFaceIdToken(req: Request): string | null {
@@ -1249,30 +1199,29 @@ router.post('/telegram', async (req: Request, res: Response) => {
     if (recipient) {
       try {
         const updateId = req.body?.update_id ? String(req.body.update_id) : null;
-        const baseConfig = {
-          ...((integration.config as Record<string, unknown> | null) || {}),
-          lastInboundUpdateId: updateId,
-          lastInboundAt: new Date().toISOString(),
-        };
-        const upserted = upsertTelegramRecipient(baseConfig, {
+        const seenAt = new Date();
+        await upsertTelegramRecipientRecord({
+          tenantId: integration.tenantId,
+          integrationId: integration.id,
           chatId: recipient.chatId,
           username: recipient.username,
           firstName: recipient.firstName,
           lastName: recipient.lastName,
           started: recipient.started,
-          lastSeenAt: new Date().toISOString(),
+          lastSeenAt: seenAt,
+          lastUpdateId: updateId,
         });
         await prisma.integration.update({
           where: { id: integration.id },
-          data: {
-            config: {
-              ...upserted.config,
-              lastInboundUpdateId: updateId,
-              lastInboundAt: new Date().toISOString(),
-            } as any,
-            lastSyncAt: new Date(),
-          },
+          data: { lastSyncAt: seenAt },
         });
+        logger.info({
+          tenantId: integration.tenantId,
+          integrationId: integration.id,
+          chatId: recipient.chatId,
+          updateId,
+          started: recipient.started,
+        }, 'Telegram recipient discovered');
       } catch (error) {
         logger.warn({ err: error, integrationId: integration.id }, 'Failed to upsert Telegram recipient synchronously');
       }
