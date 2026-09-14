@@ -19,6 +19,7 @@ import {
 } from './helpers';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
+import { loadSelectedReportCourses } from './selected-report-courses';
 
 const LIVE_LEADERBOARD_MANAGER_ROLES = new Set(['Admin', 'Manager']);
 
@@ -30,20 +31,6 @@ type LeaderboardAgent = {
   username: string | null;
   roles: string[];
 };
-
-function parseTelegramDailyReportCourseIds(config: unknown): string[] {
-  const raw = config && typeof config === 'object' && !Array.isArray(config)
-    ? (config as Record<string, unknown>).telegramDailyReportCourseIds
-    : null;
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  return Array.from(new Set(
-    raw
-      .map((value) => String(value || '').trim())
-      .filter(Boolean),
-  )).slice(0, 3);
-}
 
 function canReadLiveLeaderboard(
   roles: readonly string[] | null | undefined,
@@ -559,108 +546,9 @@ export const liveLeaderboardProcedures = {
     });
     const technicalSaleIds = buildTechnicalSaleIdSet(technicalSales);
 
-    const telegramIntegration = await prisma.integration.findUnique({
-      where: {
-        tenantId_type: {
-          tenantId: ctx.tenantId,
-          type: 'telegram',
-        },
-      },
-      select: {
-        status: true,
-        config: true,
-      },
-    });
-    const selectedCourseIds = telegramIntegration?.status === 'active'
-      ? parseTelegramDailyReportCourseIds(telegramIntegration.config)
-      : [];
-
-    const [selectedCourses, selectedCourseSalesRaw] = selectedCourseIds.length > 0
-      ? await Promise.all([
-          prisma.course.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              id: { in: selectedCourseIds },
-            },
-            select: {
-              id: true,
-              name: true,
-              category: true,
-              tariffs: {
-                orderBy: { name: 'asc' },
-                select: { id: true, name: true },
-              },
-            },
-          }),
-          prisma.income.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              type: 'new_sale',
-              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-              courseId: { in: selectedCourseIds },
-            },
-            select: {
-              id: true,
-              type: true,
-              relatedDebtIncomeId: true,
-              courseId: true,
-              tariffId: true,
-              coursePriceAmount: true,
-              paymentAmount: true,
-            },
-          }),
-        ])
-      : [[], []] as const;
-
-    const selectedCourseSales = selectedCourseSalesRaw.filter((row) => !isRowLinkedToTechnicalSale({
-      rowType: row.type,
-      rowId: row.id,
-      relatedDebtIncomeId: row.relatedDebtIncomeId,
-      technicalSaleIds,
-    }));
-    const selectedCourseSalesCountById = new Map<string, number>();
-    const selectedCourseAgreementAmountById = new Map<string, number>();
-    const tariffSalesCountByKey = new Map<string, number>();
-    for (const sale of selectedCourseSales) {
-      if (!sale.courseId) continue;
-      selectedCourseSalesCountById.set(sale.courseId, (selectedCourseSalesCountById.get(sale.courseId) || 0) + 1);
-      selectedCourseAgreementAmountById.set(
-        sale.courseId,
-        (selectedCourseAgreementAmountById.get(sale.courseId) || 0) + (sale.coursePriceAmount ?? sale.paymentAmount ?? 0),
-      );
-      const tariffKey = `${sale.courseId}:${sale.tariffId || 'none'}`;
-      tariffSalesCountByKey.set(tariffKey, (tariffSalesCountByKey.get(tariffKey) || 0) + 1);
-    }
-    const selectedCoursesById = new Map(selectedCourses.map((course) => [course.id, course]));
-    const selectedReportCourses = selectedCourseIds
-      .map((courseId) => {
-        const course = selectedCoursesById.get(courseId);
-        if (!course) return null;
-        const category = String(course.category || '').trim();
-        return {
-          courseId: course.id,
-          name: course.name,
-          category,
-          group: resolveCoursePanelGroup(category),
-          salesCount: selectedCourseSalesCountById.get(course.id) || 0,
-          agreementAmount: selectedCourseAgreementAmountById.get(course.id) || 0,
-          tariffs: [
-            ...course.tariffs.map((tariff) => ({
-              tariffId: tariff.id,
-              name: tariff.name,
-              salesCount: tariffSalesCountByKey.get(`${course.id}:${tariff.id}`) || 0,
-            })),
-            ...(tariffSalesCountByKey.get(`${course.id}:none`)
-              ? [{
-                  tariffId: null,
-                  name: 'Tarifsiz',
-                  salesCount: tariffSalesCountByKey.get(`${course.id}:none`) || 0,
-                }]
-              : []),
-          ],
-        };
-      })
-      .filter((course): course is NonNullable<typeof course> => course !== null && course.group === requestedGroup);
+    const selectedReportCourses = (await loadSelectedReportCourses(ctx.tenantId))
+      .filter((course) => course.group === requestedGroup)
+      .map(({ dashboardCategory: _dashboardCategory, ...course }) => course);
 
     if (!agentIds.length) {
       return {
