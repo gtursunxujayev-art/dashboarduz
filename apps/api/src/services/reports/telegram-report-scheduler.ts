@@ -1,7 +1,7 @@
 import { prisma } from '@dashboarduz/db';
 import { log, LogLevel } from '../observability';
 import { telegramService } from '../integrations/telegram';
-import { parseTelegramRecipients } from '../integrations/telegram-recipients';
+import { listTelegramRecipients } from '../integrations/telegram-recipient-store';
 import { decryptIntegrationTokens } from '../security/encryption';
 import { getRedisClient } from '../queue/redis-client';
 import { amocrmService } from '../integrations/amocrm';
@@ -1566,9 +1566,11 @@ async function sendWindowToIntegration(
   nowUtc: Date,
 ): Promise<{ recipientCount: number; fileName: string }> {
   const reportStartedAt = Date.now();
-  const recipients = parseTelegramRecipients(integration.config).filter(
-    (recipient) => recipient.started && recipient.selectedForReports,
-  );
+  const recipients = (await listTelegramRecipients({
+    tenantId: integration.tenantId,
+    integrationId: integration.id,
+    startedOnly: true,
+  })).filter((recipient) => recipient.selectedForReports);
   if (recipients.length === 0) {
     throw new Error('No Telegram recipients selected for reports');
   }
@@ -1645,9 +1647,14 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
   const redis = getRedisClient();
 
   for (const integration of integrations as TelegramIntegrationWithTenant[]) {
-    const recipientsSelected = parseTelegramRecipients(integration.config).some(
-      (recipient) => recipient.started && recipient.selectedForReports,
-    );
+    const recipientsSelected = await prisma.telegramRecipient.count({
+      where: {
+        tenantId: integration.tenantId,
+        integrationId: integration.id,
+        started: true,
+        selectedForReports: true,
+      },
+    });
     if (!recipientsSelected) {
       continue;
     }
@@ -1802,9 +1809,11 @@ export async function sendManualTelegramReportForTenant(
     throw new Error('Telegram integration is not connected');
   }
 
-  const recipients = parseTelegramRecipients(integration.config).filter(
-    (recipient) => recipient.started && recipient.selectedForReports,
-  );
+  const recipients = (await listTelegramRecipients({
+    tenantId: integration.tenantId,
+    integrationId: integration.id,
+    startedOnly: true,
+  })).filter((recipient) => recipient.selectedForReports);
   if (recipients.length === 0) {
     throw new Error('No Telegram recipients selected for scheduled reports');
   }
