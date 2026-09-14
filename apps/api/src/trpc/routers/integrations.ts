@@ -4,14 +4,20 @@ import { z } from 'zod';
 import { amocrmConnectSchema, faceIdConnectSchema, metaAdsConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
-import { encryptIntegrationTokens } from '../../services/security/encryption';
+import { decryptIntegrationTokens, encryptIntegrationTokens } from '../../services/security/encryption';
 import { amocrmService } from '../../services/integrations/amocrm';
+import { telegramService } from '../../services/integrations/telegram';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { normalizeMetaAdAccountId, syncMetaAdInsightsForTenant, validateMetaAdAccount } from '../../services/integrations/meta-ads';
 import {
+  applyTelegramRecipientsToConfig,
   parseTelegramRecipients,
-  updateTelegramReportSelection,
 } from '../../services/integrations/telegram-recipients';
+import {
+  importLegacyTelegramRecipients,
+  listTelegramRecipients,
+  updateTelegramRecipientSelection,
+} from '../../services/integrations/telegram-recipient-store';
 import { sendImmediateTodayReportForTenant, sendManualTelegramReportForTenant } from '../../services/reports/telegram-report-scheduler';
 
 function normalizeBaseUrl(url?: string): string | null {
@@ -496,7 +502,7 @@ export const integrationsRouter = router({
       const existingDailyReportCourseIds = parseTelegramDailyReportCourseIds(existing?.config);
 
       const validatedAt = new Date();
-      const integration = await prisma.integration.upsert({
+      let integration = await prisma.integration.upsert({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -540,6 +546,31 @@ export const integrationsRouter = router({
             lastValidatedAt: validatedAt.toISOString(),
           },
           lastSyncAt: validatedAt,
+        },
+      });
+
+      await importLegacyTelegramRecipients({
+        tenantId: ctx.tenantId,
+        integrationId: integration.id,
+        config: existing?.config,
+      });
+      const storedRecipients = await listTelegramRecipients({
+        tenantId: ctx.tenantId,
+        integrationId: integration.id,
+      });
+      integration = await prisma.integration.update({
+        where: { id: integration.id },
+        data: {
+          config: {
+            ...applyTelegramRecipientsToConfig(integration.config, storedRecipients),
+            botId: String(verification.bot.id),
+            botUsername: verification.bot.username || null,
+            botName: verification.bot.first_name || null,
+            webhookUrl,
+            webhookSecret,
+            telegramDailyReportCourseIds: existingDailyReportCourseIds,
+            lastValidatedAt: validatedAt.toISOString(),
+          },
         },
       });
 
@@ -625,8 +656,11 @@ export const integrationsRouter = router({
     const selectedDailyReportCourseIds = parseTelegramDailyReportCourseIds(integration.config)
       .filter((courseId) => availableCourseIds.has(courseId));
 
-    const recipients = parseTelegramRecipients(integration.config)
-      .filter((recipient) => recipient.started)
+    const recipients = (await listTelegramRecipients({
+      tenantId: ctx.tenantId,
+      integrationId: integration.id,
+      startedOnly: true,
+    }))
       .map((recipient) => ({
         chatId: recipient.chatId,
         displayName: recipient.displayName,
@@ -644,6 +678,97 @@ export const integrationsRouter = router({
       courseOptions,
       selectedDailyReportCourseIds,
     };
+  }),
+
+  getTelegramHealth: adminProcedure.query(async ({ ctx }) => {
+    const integration = await prisma.integration.findUnique({
+      where: {
+        tenantId_type: {
+          tenantId: ctx.tenantId,
+          type: 'telegram',
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+        config: true,
+        tokensEncrypted: true,
+      },
+    });
+    const expectedWebhookUrl = `${getPublicApiBaseUrl()}/webhooks/telegram`;
+    if (!integration || integration.status !== 'active') {
+      return {
+        connected: false,
+        healthy: false,
+        expectedWebhookUrl,
+        storedWebhookUrl: null,
+        liveWebhookUrl: null,
+        webhookMatches: false,
+        pendingUpdateCount: 0,
+        lastErrorAt: null,
+        lastErrorMessage: null,
+        lastInboundAt: null,
+        lastInboundUpdateId: null,
+        recipientCount: 0,
+        error: 'Telegram integration is not connected.',
+      };
+    }
+
+    const config = asObject(integration.config);
+    const [recipientCount, latestRecipient] = await Promise.all([
+      prisma.telegramRecipient.count({
+        where: { tenantId: ctx.tenantId, integrationId: integration.id, started: true },
+      }),
+      prisma.telegramRecipient.findFirst({
+        where: { tenantId: ctx.tenantId, integrationId: integration.id },
+        orderBy: { lastSeenAt: 'desc' },
+        select: { lastSeenAt: true, lastUpdateId: true },
+      }),
+    ]);
+    const storedWebhookUrl = String(config.webhookUrl || '').trim() || null;
+
+    try {
+      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted || '');
+      const botToken = String(tokens.botToken || tokens.token || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+      if (!botToken) throw new Error('Telegram bot token is missing.');
+      const live = await telegramService.getWebhookInfo(botToken);
+      const liveWebhookUrl = String(live.url || '').trim() || null;
+      const webhookMatches = liveWebhookUrl === expectedWebhookUrl;
+      const lastErrorAt = live.last_error_date
+        ? new Date(live.last_error_date * 1000).toISOString()
+        : null;
+      return {
+        connected: true,
+        healthy: webhookMatches && !live.last_error_message,
+        expectedWebhookUrl,
+        storedWebhookUrl,
+        liveWebhookUrl,
+        webhookMatches,
+        pendingUpdateCount: Number(live.pending_update_count || 0),
+        lastErrorAt,
+        lastErrorMessage: live.last_error_message || null,
+        lastInboundAt: latestRecipient?.lastSeenAt?.toISOString() || null,
+        lastInboundUpdateId: latestRecipient?.lastUpdateId || null,
+        recipientCount,
+        error: null,
+      };
+    } catch (error: any) {
+      return {
+        connected: true,
+        healthy: false,
+        expectedWebhookUrl,
+        storedWebhookUrl,
+        liveWebhookUrl: null,
+        webhookMatches: false,
+        pendingUpdateCount: 0,
+        lastErrorAt: null,
+        lastErrorMessage: null,
+        lastInboundAt: latestRecipient?.lastSeenAt?.toISOString() || null,
+        lastInboundUpdateId: latestRecipient?.lastUpdateId || null,
+        recipientCount,
+        error: String(error?.message || error),
+      };
+    }
   }),
 
   updateTelegramReportRecipients: adminProcedure
@@ -668,19 +793,16 @@ export const integrationsRouter = router({
         });
       }
 
-      const recipients = parseTelegramRecipients(integration.config).filter((recipient) => recipient.started);
-      const availableChatIds = new Set(recipients.map((recipient) => recipient.chatId));
-      for (const chatId of input.chatIds) {
-        const normalized = String(chatId || '').trim();
-        if (!normalized || !availableChatIds.has(normalized)) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: `Unknown Telegram recipient chat id: ${chatId}`,
-          });
-        }
+      let selectedChatIds: string[];
+      try {
+        selectedChatIds = await updateTelegramRecipientSelection({
+          tenantId: ctx.tenantId,
+          integrationId: integration.id,
+          selectedChatIds: input.chatIds,
+        });
+      } catch (error: any) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: String(error?.message || error) });
       }
-
-      const { config: nextConfig, selectedChatIds } = updateTelegramReportSelection(integration.config, input.chatIds);
       const selectedDailyReportCourseIds = Array.from(new Set(
         (input.dailyReportCourseIds || [])
           .map((courseId) => courseId.trim())
@@ -705,8 +827,12 @@ export const integrationsRouter = router({
         }
       }
 
+      const recipients = await listTelegramRecipients({
+        tenantId: ctx.tenantId,
+        integrationId: integration.id,
+      });
       const configWithCourseSelection = {
-        ...nextConfig,
+        ...applyTelegramRecipientsToConfig(integration.config, recipients),
         telegramDailyReportCourseIds: selectedDailyReportCourseIds,
       };
       await prisma.integration.update({
