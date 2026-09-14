@@ -27,6 +27,7 @@ model Tenant {
 
   users            User[]
   integrations    Integration[]
+  telegramRecipients TelegramRecipient[]
   leads           Lead[]
   contacts        Contact[]
   calls           Call[]
@@ -141,12 +142,40 @@ model Integration {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  telegramRecipients TelegramRecipient[]
 
   @@unique([tenantId, type])
   @@index([tenantId])
   @@index([type, status])
   @@map("integrations")
+}
+
+model TelegramRecipient {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  integrationId      String
+  chatId             String
+  username           String?
+  firstName          String?
+  lastName           String?
+  displayName        String
+  started            Boolean  @default(false)
+  selectedForReports Boolean  @default(false)
+  startedAt          DateTime?
+  lastSeenAt         DateTime?
+  lastUpdateId       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, chatId])
+  @@index([tenantId])
+  @@index([tenantId, started])
+  @@index([tenantId, selectedForReports])
+  @@map("telegram_recipients")
 }
 
 model MetaAdInsight {
