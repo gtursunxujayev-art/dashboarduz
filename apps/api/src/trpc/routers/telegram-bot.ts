@@ -1,7 +1,7 @@
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { parseTelegramRecipients } from '../../services/integrations/telegram-recipients';
+import { listTelegramRecipients } from '../../services/integrations/telegram-recipient-store';
 import { telegramService } from '../../services/integrations/telegram';
 import { decryptIntegrationTokens } from '../../services/security/encryption';
 import { managerProcedure, router } from '../trpc';
@@ -82,7 +82,11 @@ export const telegramBotRouter = router({
     ]);
 
     const recipients = integration?.status === 'active'
-      ? parseTelegramRecipients(integration.config).filter((recipient) => recipient.started)
+      ? await listTelegramRecipients({
+          tenantId: ctx.tenantId,
+          integrationId: integration.id,
+          startedOnly: true,
+        })
       : [];
     const recipientsByChatId = new Map(recipients.map((recipient) => [recipient.chatId, recipient]));
 
