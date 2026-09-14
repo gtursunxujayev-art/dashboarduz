@@ -7,6 +7,8 @@ import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 import DashboardMetricCards from '@/components/dashboard/DashboardMetricCards';
 import DashboardSalarySection from '@/components/dashboard/DashboardSalarySection';
 import DashboardSellerTable from '@/components/dashboard/DashboardSellerTable';
+import DashboardIncomeOverview from '@/components/dashboard/income-overview';
+import DashboardSelectedCourses from '@/components/dashboard/selected-courses';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
@@ -1004,28 +1006,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg bg-white shadow">
-        <div className="px-4 py-3 sm:px-5 sm:py-4">
-          <div className="flex items-center">
-            <div className="flex-shrink-0 rounded-md bg-gray-100 p-2">
-              <svg className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            <div className="ml-4">
-                <h3 className="text-base font-medium leading-6 text-gray-900">
-                Xush kelibsiz, {user?.email?.split('@')[0] || user?.phone || 'Foydalanuvchi'}!
-              </h3>
-              <p className="mt-0.5 text-sm text-gray-500">
-                {isFinanceOnly
-                  ? "Moliya panelida tanlangan davr bo'yicha tushum, qarzdorlar va kurs kesimidagi tushum ko'rinadi."
-                  : "Barcha bo'limlar tepadagi bitta filtr bilan ishlaydi."}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {isFinanceOnly ? (
         <div className="space-y-6">
           {financeSummaryQuery.error && (
@@ -1072,7 +1052,11 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
-          <DashboardMetricCards cards={visibleDashboardCards} columns={3} />
+          <div className="space-y-6">
+            <DashboardIncomeOverview />
+            <DashboardSelectedCourses />
+            <DashboardMetricCards cards={visibleDashboardCards} columns={3} />
+          </div>
 
           {salarySection}
 
