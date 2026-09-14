@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import { hashPassword } from '../../services/auth/password';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { amocrmService } from '../../services/integrations/amocrm';
-import { parseTelegramRecipients } from '../../services/integrations/telegram-recipients';
+import { listTelegramRecipients } from '../../services/integrations/telegram-recipient-store';
 
 const roleSchema = z.enum(USER_ROLES);
 const MAPPING_ROLES: UserRole[] = [...AGENT_ROLES, 'TeamLeader'];
@@ -235,8 +235,8 @@ export const usersRouter = router({
         },
       },
       select: {
+        id: true,
         status: true,
-        config: true,
       },
     });
 
@@ -244,8 +244,11 @@ export const usersRouter = router({
       return [];
     }
 
-    return parseTelegramRecipients(integration.config)
-      .filter((recipient) => recipient.started)
+    return (await listTelegramRecipients({
+      tenantId: ctx.tenantId,
+      integrationId: integration.id,
+      startedOnly: true,
+    }))
       .map((recipient) => ({
         id: recipient.chatId,
         name: recipient.displayName,
