@@ -9,6 +9,7 @@ import DashboardSalarySection from '@/components/dashboard/DashboardSalarySectio
 import DashboardSellerTable from '@/components/dashboard/DashboardSellerTable';
 import DashboardIncomeOverview from '@/components/dashboard/income-overview';
 import DashboardSelectedCourses from '@/components/dashboard/selected-courses';
+import DashboardLeadOverview from '@/components/dashboard/lead-overview';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 
@@ -111,6 +112,7 @@ export default function DashboardPage() {
   const [dateFrom, setDateFrom] = useState(getTashkentToday());
   const [dateTo, setDateTo] = useState(getTashkentToday());
   const [pipelineIds, setPipelineIds] = useState<string[]>([]);
+  const [summaryRefreshKey, setSummaryRefreshKey] = useState(0);
   const { isAdmin, isAgentOnly, isTeamLeaderOnly, hasFinanceRole, showSalarySection, isFinanceOnly, isTashkiliyOnly } = useMemo(() => {
     const isAdmin = Boolean(roles.includes('Admin'));
     const hasAgentLikeRole = roles.some((role) => AGENT_ROLES.has(role));
@@ -200,6 +202,7 @@ export default function DashboardPage() {
       pipelineIds: isAdmin ? pipelineIds : undefined,
       dateFrom: range === 'custom' ? dateFrom : undefined,
       dateTo: range === 'custom' ? dateTo : undefined,
+      refreshKey: summaryRefreshKey || undefined,
     },
     {
       enabled: !isFinanceOnly,
@@ -778,21 +781,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-500">Boshqaruv kartalarini moslashtirish</div>
-        <button
-          type="button"
-          onClick={() => setIsEditMode((prev) => !prev)}
-          className={`rounded-md border px-3 py-1.5 text-sm font-medium transition ${
-            isEditMode
-              ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
-              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-          }`}
-        >
-          {isEditMode ? 'Tahrirlashni yopish' : 'Tahrirlash'}
-        </button>
-      </div>
-
       {isEditMode && (
         <div className="rounded-lg bg-white shadow">
           <div className="space-y-4 px-4 py-4 sm:px-5">
@@ -918,7 +906,7 @@ export default function DashboardPage() {
                 Bekor qilish
               </button>
               {saveDashboardLayoutMutation.error && (
-                <p className="text-sm text-red-600">{saveDashboardLayoutMutation.error.message}</p>
+                <p className="text-sm text-red-600">{saveDashboardLayoutMutation.error?.message}</p>
               )}
             </div>
           </div>
@@ -927,8 +915,8 @@ export default function DashboardPage() {
 
       <div className="rounded-lg bg-white shadow">
         <div className="px-3 py-2 sm:px-5 sm:py-4">
-          <div className="space-y-2">
-            {rangeLoadVisible && (
+          <div className="flex flex-col gap-2 xl:flex-row xl:items-end">
+            {false && rangeLoadVisible && (
               <div className="overflow-x-auto">
                 <div
                   className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-2"
@@ -956,7 +944,7 @@ export default function DashboardPage() {
               </div>
             )}
 
-            <div className="overflow-x-auto">
+            <div className="shrink-0 overflow-x-auto">
               <div ref={rangeTabsRef} className="inline-flex min-w-max rounded-md shadow-sm">
                 {RANGE_OPTIONS.map((option, index) => (
                   <button
@@ -975,7 +963,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-[170px_170px_1fr]">
+            <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 md:grid-cols-[170px_170px_1fr]">
               <input
                 type="date"
                 value={dateFrom}
@@ -1054,8 +1042,8 @@ export default function DashboardPage() {
         <>
           <div className="space-y-6">
             <DashboardIncomeOverview />
+            <DashboardLeadOverview />
             <DashboardSelectedCourses />
-            <DashboardMetricCards cards={visibleDashboardCards} columns={3} />
           </div>
 
           {salarySection}
@@ -1069,6 +1057,10 @@ export default function DashboardPage() {
             formatDuration={formatDuration}
             renderMetricValue={renderMetricValue}
             getPeriodFollowUpLabel={getPeriodFollowUpLabel}
+            crmSourceStatus={summaryQuery.data?.sourceStatus?.activity}
+            unmappedSellerNames={summaryQuery.data?.unmappedSellerNames ?? []}
+            onRetry={() => setSummaryRefreshKey((value) => value + 1)}
+            isRetrying={summaryQuery.isFetching}
           />
         </>
       )}
