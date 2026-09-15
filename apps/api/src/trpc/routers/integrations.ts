@@ -91,6 +91,18 @@ function telegramRecipientStorageErrorMessage(): string {
   return "Telegram foydalanuvchilari jadvali tayyor emas. Railway'da `npm run db:migrate:deploy` ni ishga tushiring, so'ng API va Worker'ni qayta deploy qiling.";
 }
 
+function resolveTelegramBotToken(tokensEncrypted: string | null): string {
+  let botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  if (!tokensEncrypted) return botToken;
+  try {
+    const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(tokensEncrypted);
+    return String(tokens.botToken || tokens.token || botToken).trim();
+  } catch (error) {
+    if (!botToken) throw error;
+    return botToken;
+  }
+}
+
 function getPublicApiBaseUrl(): string {
   const explicit = normalizeBaseUrl(process.env.PUBLIC_API_URL || process.env.API_URL);
   if (explicit) {
@@ -763,15 +775,7 @@ export const integrationsRouter = router({
     const storedWebhookUrl = String(config.webhookUrl || '').trim() || null;
 
     try {
-      let botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
-      if (integration.tokensEncrypted) {
-        try {
-          const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
-          botToken = String(tokens.botToken || tokens.token || botToken).trim();
-        } catch (error) {
-          if (!botToken) throw error;
-        }
-      }
+      const botToken = resolveTelegramBotToken(integration.tokensEncrypted);
       if (!botToken) throw new Error('Telegram bot token is missing.');
       const live = await telegramService.getWebhookInfo(botToken);
       const liveWebhookUrl = String(live.url || '').trim() || null;
@@ -820,6 +824,58 @@ export const integrationsRouter = router({
         schedulerReady: false,
         error: String(error?.message || error),
       };
+    }
+  }),
+
+  repairTelegramWebhook: adminProcedure.mutation(async ({ ctx }) => {
+    const integration = await prisma.integration.findUnique({
+      where: { tenantId_type: { tenantId: ctx.tenantId, type: 'telegram' } },
+      select: { id: true, status: true, config: true, tokensEncrypted: true },
+    });
+    if (!integration || integration.status !== 'active') {
+      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram integration is not connected.' });
+    }
+
+    try {
+      const botToken = resolveTelegramBotToken(integration.tokensEncrypted);
+      if (!botToken) throw new Error('Telegram bot token is missing.');
+      const config = asObject(integration.config);
+      const webhookSecret = String(config.webhookSecret || '').trim() || crypto.randomBytes(24).toString('hex');
+      const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/telegram`;
+      const result = await telegramService.setWebhook(botToken, webhookUrl, webhookSecret);
+      if (!result?.ok) {
+        throw new Error(String(result?.description || 'Telegram webhook registration failed.'));
+      }
+      const repairedAt = new Date();
+      await prisma.integration.update({
+        where: { id: integration.id },
+        data: {
+          config: {
+            ...config,
+            webhookUrl,
+            webhookSecret,
+            lastValidatedAt: repairedAt.toISOString(),
+          },
+          lastSyncAt: repairedAt,
+          errorMessage: null,
+        },
+      });
+      await prisma.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'telegram_webhook_repaired',
+          resource: 'integration',
+          resourceId: integration.id,
+          metadata: { webhookUrl },
+        },
+      });
+      return { success: true, webhookUrl, repairedAt: repairedAt.toISOString() };
+    } catch (error: any) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: error?.message || 'Telegram webhookni qayta ulashda xatolik',
+      });
     }
   }),
 
