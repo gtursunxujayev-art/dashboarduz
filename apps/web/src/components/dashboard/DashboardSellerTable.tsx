@@ -14,6 +14,13 @@ type Props = {
   formatDuration: (seconds?: number | null) => string;
   renderMetricValue: (value?: number | null, suffix?: string) => string;
   getPeriodFollowUpLabel: (range: DashboardRange) => string;
+  crmSourceStatus?: {
+    state?: 'ok' | 'partial' | 'unavailable' | 'timeout' | 'mapping_missing';
+    reason?: string | null;
+  };
+  unmappedSellerNames?: string[];
+  onRetry: () => void;
+  isRetrying: boolean;
 };
 
 export default function DashboardSellerTable({
@@ -25,12 +32,55 @@ export default function DashboardSellerTable({
   formatDuration,
   renderMetricValue,
   getPeriodFollowUpLabel,
+  crmSourceStatus,
+  unmappedSellerNames = [],
+  onRetry,
+  isRetrying,
 }: Props) {
+  const crmUnavailable = crmSourceStatus?.state && crmSourceStatus.state !== 'ok';
+  const crmReason = (() => {
+    if (crmSourceStatus?.state === 'timeout' || crmSourceStatus?.reason?.includes('timeout')) {
+      return 'AmoCRM javob berish vaqti tugadi.';
+    }
+    if (crmSourceStatus?.reason?.includes('network_error')) {
+      return 'AmoCRM bilan tarmoq aloqasida xatolik yuz berdi.';
+    }
+    if (crmSourceStatus?.reason?.includes('amo_unavailable')) {
+      return 'AmoCRM integratsiyasi mavjud emas yoki faol emas.';
+    }
+    if (crmSourceStatus?.reason?.includes('fetch_failed')) {
+      return "AmoCRM vazifa yoki hodisa so'rovini qaytarmadi.";
+    }
+    return null;
+  })();
   return (
     <div className="grid grid-cols-1 gap-6">
       <div className="rounded-lg bg-white shadow">
         <div className="px-4 py-5 sm:p-6">
           <h3 className="mb-4 text-lg font-medium leading-6 text-gray-900">Sotuvchilar</h3>
+          {crmUnavailable && (
+            <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="font-semibold">AmoCRM faoliyat ma&apos;lumotlari to&apos;liq yuklanmadi.</p>
+                  {unmappedSellerNames.length > 0 && (
+                    <p className="mt-1">
+                      AmoCRM menejeri biriktirilmagan: {unmappedSellerNames.join(', ')}.
+                    </p>
+                  )}
+                  {crmReason && <p className="mt-1">{crmReason}</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  disabled={isRetrying}
+                  className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60 dark:border-amber-700 dark:bg-slate-900 dark:text-amber-200 dark:hover:bg-slate-800"
+                >
+                  {isRetrying ? 'Yuklanmoqda...' : 'Qayta urinish'}
+                </button>
+              </div>
+            </div>
+          )}
           {isLoading ? (
             <LoadingBlock message="Sotuvchilar ma'lumoti yuklanmoqda..." />
           ) : sellerPerformance.length ? (
