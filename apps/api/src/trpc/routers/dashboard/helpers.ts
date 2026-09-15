@@ -924,7 +924,12 @@ export {
   type LeadFieldOption,
 } from '../../../services/integrations/amocrm-live';
 export { amocrmService } from '../../../services/integrations/amocrm';
-export { getAmoCRMActivityMetrics, summarizeAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+export {
+  createAmoCRMActivityDiagnostics,
+  getAmoCRMActivityMetrics,
+  summarizeAmoCRMActivityMetrics,
+  type AmoCRMActivityDiagnostics,
+} from '../../../services/integrations/amocrm-activity';
 export { LogLevel, log } from '../../../services/observability';
 export { adminProcedure, protectedProcedure, router } from '../../trpc';
 
