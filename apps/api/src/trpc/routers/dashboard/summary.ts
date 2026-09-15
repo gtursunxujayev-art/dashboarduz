@@ -10,6 +10,7 @@ import {
   humanizeKey,
   amocrmService,
   getAmoCRMActivityMetrics,
+  createAmoCRMActivityDiagnostics,
   summarizeAmoCRMActivityMetrics,
   LogLevel,
   log,
@@ -52,16 +53,17 @@ type SummarySourceStatusEntry = {
   ok: boolean;
   retried: boolean;
   reason: string | null;
+  state: 'ok' | 'partial' | 'unavailable' | 'timeout' | 'mapping_missing';
 };
 type SummarySourceStatus = Record<SummarySourceStatusKey, SummarySourceStatusEntry>;
 
 function createSummarySourceStatus(): SummarySourceStatus {
   return {
-    amoContext: { ok: true, retried: false, reason: null },
-    catalog: { ok: true, retried: false, reason: null },
-    leads: { ok: true, retried: false, reason: null },
-    activity: { ok: true, retried: false, reason: null },
-    corporateCalls: { ok: true, retried: false, reason: null },
+    amoContext: { ok: true, retried: false, reason: null, state: 'ok' },
+    catalog: { ok: true, retried: false, reason: null, state: 'ok' },
+    leads: { ok: true, retried: false, reason: null, state: 'ok' },
+    activity: { ok: true, retried: false, reason: null, state: 'ok' },
+    corporateCalls: { ok: true, retried: false, reason: null, state: 'ok' },
   };
 }
 
@@ -107,6 +109,7 @@ async function runSummarySourceWithRetry<T>(params: {
       const reason = detectSummarySourceReason(secondError || firstError, reasonFallback);
       status[key].ok = false;
       status[key].reason = reason;
+      status[key].state = reason === 'timeout' ? 'timeout' : 'unavailable';
       log(LogLevel.WARN, `Dashboard summary source degraded: ${key}`, {
         ...logContext,
         reason,
@@ -125,6 +128,7 @@ export const summaryProcedures = {
         pipelineIds: z.array(z.string()).optional(),
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
+        refreshKey: z.number().int().nonnegative().optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -142,6 +146,7 @@ export const summaryProcedures = {
         p: input.pipelineIds,
         df: input.dateFrom,
         dt: input.dateTo,
+        refresh: input.refreshKey === undefined ? undefined : String(input.refreshKey),
         cr: corporateRevisionKey,
       });
       return getOrSet(cacheKey, 120, async () => {
@@ -187,6 +192,7 @@ export const summaryProcedures = {
       if (!amoContext) {
         sourceStatus.amoContext.ok = false;
         sourceStatus.amoContext.reason = sourceStatus.amoContext.reason || 'amo_not_connected';
+        sourceStatus.amoContext.state = 'unavailable';
       }
 
       const catalogOptions = amoContext
@@ -202,6 +208,7 @@ export const summaryProcedures = {
       if (!amoContext) {
         sourceStatus.catalog.ok = false;
         sourceStatus.catalog.reason = 'amo_unavailable';
+        sourceStatus.catalog.state = 'unavailable';
       }
 
       const fieldLabelMap = buildFieldLabelMap([...getSystemLeadFieldOptions(), ...catalogOptions]);
@@ -240,6 +247,7 @@ export const summaryProcedures = {
       } else {
         sourceStatus.leads.ok = false;
         sourceStatus.leads.reason = amoContext ? 'scope_unavailable' : 'amo_unavailable';
+        sourceStatus.leads.state = 'unavailable';
       }
 
       const [pendingNotifications, activeIntegrations, totalIncomeAggregate, newSalesIncomes, incomesForSellers, callsForSellers] = await Promise.all([
@@ -428,6 +436,7 @@ export const summaryProcedures = {
       const activityManagerIds = agentUsers
         .map((agent) => (agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId).trim() : ''))
         .filter(Boolean);
+      const activityDiagnostics = createAmoCRMActivityDiagnostics();
       const activityByManager = amoContext && activityManagerIds.length > 0
         ? await runSummarySourceWithRetry({
             key: 'activity',
@@ -444,8 +453,9 @@ export const summaryProcedures = {
                 rangeStart,
                 rangeEnd,
                 rangeKind: input.range,
+                diagnostics: activityDiagnostics,
               }),
-              3000,
+              15_000,
               'amo_activity_timeout',
             ),
           })
@@ -453,9 +463,19 @@ export const summaryProcedures = {
       if (!amoContext) {
         sourceStatus.activity.ok = false;
         sourceStatus.activity.reason = 'amo_unavailable';
+        sourceStatus.activity.state = 'unavailable';
       } else if (activityManagerIds.length === 0) {
         sourceStatus.activity.ok = false;
         sourceStatus.activity.reason = 'no_activity_mapping';
+        sourceStatus.activity.state = 'mapping_missing';
+      } else if (sourceStatus.activity.ok) {
+        const activitySources = Object.values(activityDiagnostics);
+        const failedSources = activitySources.filter((source) => !source.ok);
+        if (failedSources.length > 0) {
+          sourceStatus.activity.ok = false;
+          sourceStatus.activity.reason = failedSources.map((source) => source.reason).filter(Boolean).join(',') || 'partial';
+          sourceStatus.activity.state = failedSources.length === activitySources.length ? 'unavailable' : 'partial';
+        }
       }
       activityFetchMs = Date.now() - activityFetchStartedMs;
       const activityTotals = summarizeAmoCRMActivityMetrics(activityByManager);
@@ -651,9 +671,27 @@ export const summaryProcedures = {
         ? (callCountByAgent.get(ctx.user.userId) ?? 0)
         : callsForSellers.length;
 
+      const unmappedSellerNames = agentUsers
+        .filter((agent) => !String(agent.amocrmResponsibleUserId || '').trim())
+        .map((agent) => agent.name || agent.username || agent.id);
+      if (amoContext && activityManagerIds.length > 0 && unmappedSellerNames.length > 0) {
+        sourceStatus.activity.ok = false;
+        sourceStatus.activity.state = 'partial';
+        sourceStatus.activity.reason = [sourceStatus.activity.reason, 'mapping_missing'].filter(Boolean).join(',');
+      }
+      const activityRequestUnavailable = sourceStatus.activity.state === 'timeout'
+        || sourceStatus.activity.state === 'unavailable';
+
       const sellerPerformance = agentUsers
         .map((agent) => {
           const responsibleUserId = agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId) : '';
+          const crmMapped = Boolean(responsibleUserId);
+          const crmAvailability = {
+            mapped: crmMapped,
+            completedTasks: crmMapped && !activityRequestUnavailable && activityDiagnostics.completedTasks.ok,
+            pendingTasks: crmMapped && !activityRequestUnavailable && activityDiagnostics.pendingTasks.ok,
+            events: crmMapped && !activityRequestUnavailable && activityDiagnostics.events.ok,
+          };
           const leadStats = responsibleUserId ? leadsByResponsibleUser.get(responsibleUserId) : undefined;
           const salesStats = salesByManager.get(agent.id) || {
             sales: 0,
@@ -695,11 +733,12 @@ export const summaryProcedures = {
             incomeAmount: tashkiliyOnly ? 0 : salesStats.incomeAmount,
             talkedSeconds: talkedSecondsValue,
             callsCount: callCountByAgent.get(agent.id) ?? 0,
-            followUpCount: activityStats.followUpCount,
-            noteCount: activityStats.noteCount,
-            stageChangeCount: activityStats.stageChangeCount,
-            overdueFollowUpCount: activityStats.overdueFollowUpCount,
-            todayFollowUpCount: activityStats.todayFollowUpCount,
+            followUpCount: crmAvailability.completedTasks ? activityStats.followUpCount : null,
+            noteCount: crmAvailability.events ? activityStats.noteCount : null,
+            stageChangeCount: crmAvailability.events ? activityStats.stageChangeCount : null,
+            overdueFollowUpCount: crmAvailability.pendingTasks ? activityStats.overdueFollowUpCount : null,
+            todayFollowUpCount: crmAvailability.pendingTasks ? activityStats.todayFollowUpCount : null,
+            crmAvailability,
           };
         })
         .sort((a, b) => {
@@ -725,6 +764,7 @@ export const summaryProcedures = {
         dateTo: input.range === 'custom' ? input.dateTo || null : null,
         selectedPipelineIds: selectedPipelineIds || [],
         sourceStatus,
+        unmappedSellerNames,
         sellerPerformance,
         summary: {
           totalLeads,
