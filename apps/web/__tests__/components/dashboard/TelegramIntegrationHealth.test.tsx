@@ -41,7 +41,7 @@ jest.mock('@/lib/trpc', () => {
         getFaceIdStatus: queryStub(undefined), getFaceIdMappings: queryStub([]),
         upsertFaceIdMapping: mutationStub(), removeFaceIdMapping: mutationStub(),
         updateAmoCRMPipelines: mutationStub(), updateTelegramReportRecipients: mutationStub(),
-        sendTelegramTodayReportNow: mutationStub(), sendTelegramWeeklyReportNow: mutationStub(),
+        sendTelegramTodayReportNow: mutationStub(), sendTelegramGroupSummaryNow: mutationStub(), sendTelegramWeeklyReportNow: mutationStub(),
         sendTelegramMonthlyReportNow: mutationStub(), disconnect: mutationStub(),
       },
       users: { list: queryStub([]) },
