@@ -19,6 +19,8 @@ import {
   updateTelegramRecipientSelection,
 } from '../../services/integrations/telegram-recipient-store';
 import { sendImmediateTodayReportForTenant, sendManualTelegramReportForTenant } from '../../services/reports/telegram-report-scheduler';
+import { sendTelegramGroupSummariesForTenant } from '../../services/reports/telegram-group-summary-scheduler';
+import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../../services/integrations/telegram-groups';
 
 function normalizeBaseUrl(url?: string): string | null {
   if (!url) {
@@ -83,6 +85,10 @@ function parseTelegramDailyReportCourseIds(config: unknown): string[] {
       .map((value) => String(value || '').trim())
       .filter(Boolean),
   )).slice(0, 3);
+}
+
+function telegramRecipientStorageErrorMessage(): string {
+  return "Telegram foydalanuvchilari jadvali tayyor emas. Railway'da `npm run db:migrate:deploy` ni ishga tushiring, so'ng API va Worker'ni qayta deploy qiling.";
 }
 
 function getPublicApiBaseUrl(): string {
@@ -618,6 +624,8 @@ export const integrationsRouter = router({
     if (!integration || integration.status !== 'active') {
       return {
         connected: false,
+        recipientStorageReady: true,
+        recipientError: null as string | null,
         recipients: [] as Array<{
           chatId: string;
           displayName: string;
@@ -656,12 +664,21 @@ export const integrationsRouter = router({
     const selectedDailyReportCourseIds = parseTelegramDailyReportCourseIds(integration.config)
       .filter((courseId) => availableCourseIds.has(courseId));
 
-    const recipients = (await listTelegramRecipients({
-      tenantId: ctx.tenantId,
-      integrationId: integration.id,
-      startedOnly: true,
-    }))
-      .map((recipient) => ({
+    let recipientStorageReady = true;
+    let recipientError: string | null = null;
+    let storedRecipients: Awaited<ReturnType<typeof listTelegramRecipients>> = [];
+    try {
+      storedRecipients = await listTelegramRecipients({
+        tenantId: ctx.tenantId,
+        integrationId: integration.id,
+        startedOnly: true,
+      });
+    } catch {
+      recipientStorageReady = false;
+      recipientError = telegramRecipientStorageErrorMessage();
+    }
+
+    const recipients = storedRecipients.map((recipient) => ({
         chatId: recipient.chatId,
         displayName: recipient.displayName,
         username: recipient.username,
@@ -674,6 +691,8 @@ export const integrationsRouter = router({
 
     return {
       connected: true,
+      recipientStorageReady,
+      recipientError,
       recipients,
       courseOptions,
       selectedDailyReportCourseIds,
@@ -696,6 +715,8 @@ export const integrationsRouter = router({
       },
     });
     const expectedWebhookUrl = `${getPublicApiBaseUrl()}/webhooks/telegram`;
+    const onlineGroupCount = getOnlineTelegramGroupIds().length;
+    const offlineGroupCount = getOfflineTelegramGroupIds().length;
     if (!integration || integration.status !== 'active') {
       return {
         connected: false,
@@ -710,26 +731,47 @@ export const integrationsRouter = router({
         lastInboundAt: null,
         lastInboundUpdateId: null,
         recipientCount: 0,
+        recipientStorageReady: true,
+        recipientError: null as string | null,
+        onlineGroupCount,
+        offlineGroupCount,
+        schedulerReady: false,
         error: 'Telegram integration is not connected.',
       };
     }
 
     const config = asObject(integration.config);
-    const [recipientCount, latestRecipient] = await Promise.all([
-      prisma.telegramRecipient.count({
-        where: { tenantId: ctx.tenantId, integrationId: integration.id, started: true },
-      }),
-      prisma.telegramRecipient.findFirst({
-        where: { tenantId: ctx.tenantId, integrationId: integration.id },
-        orderBy: { lastSeenAt: 'desc' },
-        select: { lastSeenAt: true, lastUpdateId: true },
-      }),
-    ]);
+    let recipientCount = 0;
+    let latestRecipient: { lastSeenAt: Date | null; lastUpdateId: string | null } | null = null;
+    let recipientStorageReady = true;
+    let recipientError: string | null = null;
+    try {
+      [recipientCount, latestRecipient] = await Promise.all([
+        prisma.telegramRecipient.count({
+          where: { tenantId: ctx.tenantId, integrationId: integration.id, started: true },
+        }),
+        prisma.telegramRecipient.findFirst({
+          where: { tenantId: ctx.tenantId, integrationId: integration.id },
+          orderBy: { lastSeenAt: 'desc' },
+          select: { lastSeenAt: true, lastUpdateId: true },
+        }),
+      ]);
+    } catch {
+      recipientStorageReady = false;
+      recipientError = telegramRecipientStorageErrorMessage();
+    }
     const storedWebhookUrl = String(config.webhookUrl || '').trim() || null;
 
     try {
-      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted || '');
-      const botToken = String(tokens.botToken || tokens.token || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+      let botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+      if (integration.tokensEncrypted) {
+        try {
+          const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
+          botToken = String(tokens.botToken || tokens.token || botToken).trim();
+        } catch (error) {
+          if (!botToken) throw error;
+        }
+      }
       if (!botToken) throw new Error('Telegram bot token is missing.');
       const live = await telegramService.getWebhookInfo(botToken);
       const liveWebhookUrl = String(live.url || '').trim() || null;
@@ -739,7 +781,7 @@ export const integrationsRouter = router({
         : null;
       return {
         connected: true,
-        healthy: webhookMatches && !live.last_error_message,
+        healthy: webhookMatches && !live.last_error_message && recipientStorageReady,
         expectedWebhookUrl,
         storedWebhookUrl,
         liveWebhookUrl,
@@ -750,6 +792,11 @@ export const integrationsRouter = router({
         lastInboundAt: latestRecipient?.lastSeenAt?.toISOString() || null,
         lastInboundUpdateId: latestRecipient?.lastUpdateId || null,
         recipientCount,
+        recipientStorageReady,
+        recipientError,
+        onlineGroupCount,
+        offlineGroupCount,
+        schedulerReady: Boolean(botToken && onlineGroupCount > 0 && offlineGroupCount > 0),
         error: null,
       };
     } catch (error: any) {
@@ -766,6 +813,11 @@ export const integrationsRouter = router({
         lastInboundAt: latestRecipient?.lastSeenAt?.toISOString() || null,
         lastInboundUpdateId: latestRecipient?.lastUpdateId || null,
         recipientCount,
+        recipientStorageReady,
+        recipientError,
+        onlineGroupCount,
+        offlineGroupCount,
+        schedulerReady: false,
         error: String(error?.message || error),
       };
     }
@@ -870,6 +922,17 @@ export const integrationsRouter = router({
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: error?.message || 'Failed to send report',
+      });
+    }
+  }),
+
+  sendTelegramGroupSummaryNow: adminProcedure.mutation(async ({ ctx }) => {
+    try {
+      return await sendTelegramGroupSummariesForTenant(ctx.tenantId);
+    } catch (error: any) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: error?.message || 'Guruh hisobotini yuborishda xatolik',
       });
     }
   }),
