@@ -27,6 +27,7 @@ jest.mock('@/lib/trpc', () => {
         removeFaceIdMapping: mutationStub(),
         updateAmoCRMPipelines: mutationStub(),
         updateTelegramReportRecipients: mutationStub(),
+        repairTelegramWebhook: mutationStub(),
         sendTelegramTodayReportNow: mutationStub(),
         sendTelegramGroupSummaryNow: mutationStub(),
         sendTelegramWeeklyReportNow: mutationStub(),
