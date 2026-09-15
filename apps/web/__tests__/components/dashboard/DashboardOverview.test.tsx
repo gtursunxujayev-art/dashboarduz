@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import DashboardIncomeOverview from '@/components/dashboard/income-overview';
 import DashboardSelectedCourses from '@/components/dashboard/selected-courses';
+import DashboardLeadOverview from '@/components/dashboard/lead-overview';
 
 jest.mock('@/lib/trpc', () => ({
   trpc: {
@@ -34,6 +35,20 @@ jest.mock('@/lib/trpc', () => ({
           },
         }),
       },
+      leadOverview: {
+        useQuery: () => ({
+          isLoading: false,
+          error: null,
+          refetch: jest.fn(),
+          data: {
+            available: true,
+            reason: null,
+            daily: { total: 12, qualified: 8, nonQualified: 4 },
+            weekly: { total: 43, qualified: 31, nonQualified: 12 },
+            monthly: { total: 126, qualified: 94, nonQualified: 32 },
+          },
+        }),
+      },
     },
   },
 }));
@@ -58,5 +73,17 @@ describe('dashboard overview cards', () => {
     expect(screen.getByText(/Intensiv-2026/)).toHaveTextContent('Intensiv-2026 - 21');
     expect(screen.getByText("Tarif ma'lumoti topilmadi.")).toBeInTheDocument();
     expect(screen.getByText('Tanlangan kurs topilmadi.')).toBeInTheDocument();
+  });
+
+  it('renders fixed-period lead totals and quality counts', () => {
+    render(<DashboardLeadOverview />);
+
+    expect(screen.getByText('Yangi lidlar')).toBeInTheDocument();
+    expect(screen.getByText('Bugungi')).toBeInTheDocument();
+    expect(screen.getByText('Haftadagi')).toBeInTheDocument();
+    expect(screen.getByText('Oydagi')).toBeInTheDocument();
+    expect(screen.getAllByText('Jami')).toHaveLength(3);
+    expect(screen.getAllByText('Sifatli')).toHaveLength(3);
+    expect(screen.getAllByText('Sifatsiz')).toHaveLength(3);
   });
 });
