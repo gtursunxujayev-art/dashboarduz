@@ -171,6 +171,7 @@ export default function IntegrationCards() {
   const removeFaceIdMapping = trpc.integrations.removeFaceIdMapping.useMutation();
   const updateAmoCRMPipelines = trpc.integrations.updateAmoCRMPipelines.useMutation();
   const updateTelegramReportRecipients = trpc.integrations.updateTelegramReportRecipients.useMutation();
+  const repairTelegramWebhook = trpc.integrations.repairTelegramWebhook.useMutation();
   const sendTelegramTodayReportNow = trpc.integrations.sendTelegramTodayReportNow.useMutation();
   const sendTelegramGroupSummaryNow = trpc.integrations.sendTelegramGroupSummaryNow.useMutation();
   const sendTelegramWeeklyReportNow = trpc.integrations.sendTelegramWeeklyReportNow.useMutation();
@@ -438,6 +439,21 @@ export default function IntegrationCards() {
     }
   };
 
+  const handleRepairTelegramWebhook = async () => {
+    setError(null);
+    setActionLoading('telegram');
+    setTelegramReportSentMessage(null);
+    try {
+      await repairTelegramWebhook.mutateAsync();
+      await Promise.all([telegramHealthQuery.refetch(), telegramRecipientsQuery.refetch()]);
+      setTelegramReportSentMessage("Webhook qayta ulandi. Endi botga /start yuborib ko'ring.");
+    } catch (err: any) {
+      setError(err?.message || 'Telegram webhookni qayta ulashda xatolik');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleSendTelegramGroupSummaryNow = async () => {
     setError(null);
     setActionLoading('telegram');
@@ -671,6 +687,17 @@ export default function IntegrationCards() {
                         )}
                         {telegramHealthQuery.data.recipientError && (
                           <p className="text-red-600">Qabul qiluvchilar xatosi: {telegramHealthQuery.data.recipientError}</p>
+                        )}
+                        {(!telegramHealthQuery.data.webhookMatches
+                          || telegramHealthQuery.data.lastErrorMessage?.includes('403')) && (
+                          <button
+                            type="button"
+                            onClick={handleRepairTelegramWebhook}
+                            disabled={loading}
+                            className="mt-2 rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                          >
+                            {loading ? 'Qayta ulanmoqda...' : 'Webhookni qayta ulash'}
+                          </button>
                         )}
                       </div>
                     ) : null}
