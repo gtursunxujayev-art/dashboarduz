@@ -9,13 +9,47 @@ export type AmoCRMActivityMetrics = {
   todayFollowUpCount: number;
 };
 
+export type AmoCRMActivitySourceStatus = {
+  ok: boolean;
+  reason: string | null;
+};
+
+export type AmoCRMActivityDiagnostics = {
+  completedTasks: AmoCRMActivitySourceStatus;
+  pendingTasks: AmoCRMActivitySourceStatus;
+  events: AmoCRMActivitySourceStatus;
+};
+
 type CacheEntry = {
   expiresAt: number;
   value: Map<string, AmoCRMActivityMetrics>;
+  diagnostics: AmoCRMActivityDiagnostics;
 };
 
 const CACHE_TTL_MS = 60 * 1000;
 const metricsCache = new Map<string, CacheEntry>();
+
+export function createAmoCRMActivityDiagnostics(): AmoCRMActivityDiagnostics {
+  return {
+    completedTasks: { ok: true, reason: null },
+    pendingTasks: { ok: true, reason: null },
+    events: { ok: true, reason: null },
+  };
+}
+
+function failureReason(error: unknown): string {
+  const message = String((error as Error | undefined)?.message || error || '').toLowerCase();
+  if (message.includes('timeout')) return 'timeout';
+  if (message.includes('network') || message.includes('fetch')) return 'network_error';
+  return 'fetch_failed';
+}
+
+function copyDiagnostics(target: AmoCRMActivityDiagnostics | undefined, source: AmoCRMActivityDiagnostics) {
+  if (!target) return;
+  target.completedTasks = { ...source.completedTasks };
+  target.pendingTasks = { ...source.pendingTasks };
+  target.events = { ...source.events };
+}
 
 function createEmptyMetrics(): AmoCRMActivityMetrics {
   return {
@@ -300,6 +334,7 @@ export async function getAmoCRMActivityMetrics(params: {
   rangeEnd: Date;
   rangeKind?: 'today' | 'week' | 'month' | 'custom';
   cacheTtlMs?: number;
+  diagnostics?: AmoCRMActivityDiagnostics;
 }): Promise<Map<string, AmoCRMActivityMetrics>> {
   const managerIds = params.managerIds
     .map((managerId) => managerId.trim())
@@ -312,11 +347,13 @@ export async function getAmoCRMActivityMetrics(params: {
   const cacheKey = buildCacheKey(params.tenantId, managerIds, params.rangeStart, params.rangeEnd);
   const cached = metricsCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
+    copyDiagnostics(params.diagnostics, cached.diagnostics);
     return cloneMetricsMap(cached.value);
   }
 
   const managerIdSet = new Set(managerIds);
   const metricsByManager = initializeMetricsMap(managerIds);
+  const diagnostics = createAmoCRMActivityDiagnostics();
 
   let tasks: AmoCRMTask[] = [];
   try {
@@ -356,6 +393,7 @@ export async function getAmoCRMActivityMetrics(params: {
         tenantId: params.tenantId,
         error: String(fallbackError?.message || fallbackError),
       });
+      diagnostics.completedTasks = { ok: false, reason: failureReason(fallbackError) };
       tasks = [];
     }
   }
@@ -420,6 +458,7 @@ export async function getAmoCRMActivityMetrics(params: {
         tenantId: params.tenantId,
         error: String(fallbackError?.message || fallbackError),
       });
+      diagnostics.pendingTasks = { ok: false, reason: failureReason(fallbackError) };
       pendingTasks = [];
     }
   }
@@ -486,6 +525,7 @@ export async function getAmoCRMActivityMetrics(params: {
         tenantId: params.tenantId,
         error: String(fallbackError?.message || fallbackError),
       });
+      diagnostics.events = { ok: false, reason: failureReason(fallbackError) };
       events = [];
     }
   }
@@ -513,10 +553,15 @@ export async function getAmoCRMActivityMetrics(params: {
     }
   }
 
-  metricsCache.set(cacheKey, {
-    expiresAt: Date.now() + Math.max(5_000, params.cacheTtlMs || CACHE_TTL_MS),
-    value: cloneMetricsMap(metricsByManager),
-  });
+  if (Object.values(diagnostics).every((source) => source.ok)) {
+    metricsCache.set(cacheKey, {
+      expiresAt: Date.now() + Math.max(5_000, params.cacheTtlMs || CACHE_TTL_MS),
+      value: cloneMetricsMap(metricsByManager),
+      diagnostics,
+    });
+  }
+
+  copyDiagnostics(params.diagnostics, diagnostics);
 
   return metricsByManager;
 }
