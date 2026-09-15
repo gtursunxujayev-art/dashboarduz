@@ -172,6 +172,7 @@ export default function IntegrationCards() {
   const updateAmoCRMPipelines = trpc.integrations.updateAmoCRMPipelines.useMutation();
   const updateTelegramReportRecipients = trpc.integrations.updateTelegramReportRecipients.useMutation();
   const sendTelegramTodayReportNow = trpc.integrations.sendTelegramTodayReportNow.useMutation();
+  const sendTelegramGroupSummaryNow = trpc.integrations.sendTelegramGroupSummaryNow.useMutation();
   const sendTelegramWeeklyReportNow = trpc.integrations.sendTelegramWeeklyReportNow.useMutation();
   const sendTelegramMonthlyReportNow = trpc.integrations.sendTelegramMonthlyReportNow.useMutation();
   const disconnectIntegration = trpc.integrations.disconnect.useMutation();
@@ -437,6 +438,26 @@ export default function IntegrationCards() {
     }
   };
 
+  const handleSendTelegramGroupSummaryNow = async () => {
+    setError(null);
+    setActionLoading('telegram');
+    setTelegramReportSentMessage(null);
+    try {
+      const result = await sendTelegramGroupSummaryNow.mutateAsync();
+      const summary = result.results.map((item) => {
+        const group = item.group === 'online' ? 'Online' : 'Offline';
+        if (item.status === 'sent') return `${group}: ${item.sentCount}/${item.destinationCount} yuborildi`;
+        if (item.status === 'skipped') return `${group}: o'tkazib yuborildi (${item.error || 'sozlanmagan'})`;
+        return `${group}: xatolik (${item.sentCount}/${item.destinationCount})`;
+      }).join(' · ');
+      setTelegramReportSentMessage(`Bugungi guruh hisoboti: ${summary}.`);
+    } catch (err: any) {
+      setError(err?.message || 'Guruh hisobotini yuborishda xatolik');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleSendTelegramWeeklyReportNow = async () => {
     setError(null);
     setActionLoading('telegram');
@@ -497,6 +518,7 @@ export default function IntegrationCards() {
           }>;
           const telegramRecipients = (telegramRecipientsQuery.data?.recipients || []) as TelegramReportRecipient[];
           const telegramCourseOptions = (telegramRecipientsQuery.data?.courseOptions || []) as TelegramReportCourseOption[];
+          const recipientStorageReady = telegramRecipientsQuery.data?.recipientStorageReady !== false;
 
           return (
             <div key={integration.id} className={`rounded-lg border p-4 ${integration.color}`}>
@@ -624,6 +646,14 @@ export default function IntegrationCards() {
                           </span>
                         </p>
                         <p>Foydalanuvchilar: {telegramHealthQuery.data.recipientCount}</p>
+                        <p>Online guruhlar: {telegramHealthQuery.data.onlineGroupCount}</p>
+                        <p>Offline guruhlar: {telegramHealthQuery.data.offlineGroupCount}</p>
+                        <p>
+                          18:00 / 23:59 reja:{' '}
+                          <span className={telegramHealthQuery.data.schedulerReady ? 'font-semibold text-green-600' : 'font-semibold text-amber-600'}>
+                            {telegramHealthQuery.data.schedulerReady ? 'Tayyor' : 'Sozlash kerak'}
+                          </span>
+                        </p>
                         <p>Kutilayotgan webhook: <span className="break-all font-mono">{telegramHealthQuery.data.expectedWebhookUrl}</span></p>
                         <p>Telegram webhook: <span className="break-all font-mono">{telegramHealthQuery.data.liveWebhookUrl || '-'}</span></p>
                         <p>Navbatdagi update: {telegramHealthQuery.data.pendingUpdateCount}</p>
@@ -639,9 +669,29 @@ export default function IntegrationCards() {
                         {telegramHealthQuery.data.error && (
                           <p className="text-red-600">Tekshiruv xatosi: {telegramHealthQuery.data.error}</p>
                         )}
+                        {telegramHealthQuery.data.recipientError && (
+                          <p className="text-red-600">Qabul qiluvchilar xatosi: {telegramHealthQuery.data.recipientError}</p>
+                        )}
                       </div>
                     ) : null}
                   </div>
+
+                  {!recipientStorageReady && (
+                    <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                      <p className="font-semibold">Telegram foydalanuvchilari ombori tayyor emas</p>
+                      <p className="mt-1 text-xs">
+                        {telegramRecipientsQuery.data?.recipientError || "Railway'da ma'lumotlar bazasi migratsiyasini ishga tushiring."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => Promise.all([telegramRecipientsQuery.refetch(), telegramHealthQuery.refetch()])}
+                        disabled={telegramRecipientsQuery.isFetching || telegramHealthQuery.isFetching}
+                        className="mt-2 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        {telegramRecipientsQuery.isFetching ? 'Tekshirilmoqda...' : 'Qayta tekshirish'}
+                      </button>
+                    </div>
+                  )}
 
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -657,7 +707,7 @@ export default function IntegrationCards() {
 
                   {telegramRecipientsQuery.isLoading ? (
                     <LoadingBlock className="mt-3" compact message="Telegram foydalanuvchilari yuklanmoqda..." />
-                  ) : telegramRecipients.length === 0 ? (
+                  ) : !recipientStorageReady ? null : telegramRecipients.length === 0 ? (
                     <p className="mt-3 text-sm text-gray-500">
                       Hozircha foydalanuvchi yo'q. Foydalanuvchilardan botni ochib <span className="font-mono">/start</span> yuborishni so'rang.
                     </p>
@@ -749,7 +799,7 @@ export default function IntegrationCards() {
                     <button
                       type="button"
                       onClick={handleSaveTelegramRecipients}
-                      disabled={loading || telegramRecipientsQuery.isLoading || telegramRecipients.length === 0}
+                      disabled={loading || telegramRecipientsQuery.isLoading || !recipientStorageReady || telegramRecipients.length === 0}
                       className="rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-800 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {loading ? 'Saqlanmoqda...' : 'Qabul qiluvchilarni saqlash'}
@@ -762,6 +812,14 @@ export default function IntegrationCards() {
                   </div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleSendTelegramGroupSummaryNow}
+                      disabled={loading}
+                      className="rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-800 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading ? 'Yuborilmoqda...' : 'Bugungi guruh hisobotini hozir yuborish'}
+                    </button>
                     <button
                       type="button"
                       onClick={handleSendTelegramTodayReportNow}
