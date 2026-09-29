@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import AnalyticsCharts from '@/components/dashboard/analytics-charts';
@@ -150,9 +151,17 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Tahlil</h1>
-        <p className="mt-1 text-sm text-gray-500">Lid va manba bo&apos;yicha tahlillar.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Tahlil</h1>
+          <p className="mt-1 text-sm text-gray-500">Lid va manba bo&apos;yicha tahlillar.</p>
+        </div>
+        <Link
+          href="/dashboard/analytics/reports"
+          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Hisobotlar &rarr;
+        </Link>
       </div>
 
       <div className="rounded-lg bg-white shadow">
