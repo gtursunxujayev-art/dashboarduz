@@ -18,6 +18,7 @@ import { corporateCallsRouter } from './corporate-calls';
 import { attendanceRouter } from './attendance';
 import { analyticsAiRouter } from './analytics-ai';
 import { aiHelperRouter } from './ai-helper';
+import { reportsRouter } from './reports';
 
 export const appRouter = router({
   auth: authRouter,
@@ -38,6 +39,7 @@ export const appRouter = router({
   corporateCalls: corporateCallsRouter,
   attendance: attendanceRouter,
   analyticsAi: analyticsAiRouter,
+  reports: reportsRouter,
   aiHelper: aiHelperRouter,
 });
 
