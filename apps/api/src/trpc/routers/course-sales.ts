@@ -210,7 +210,7 @@ async function buildActiveSaleChainMetrics(params: {
   });
 }
 
-function buildTechnicalSaleIdSetByAgreement(params: {
+export function buildTechnicalSaleIdSetByAgreement(params: {
   sales: Array<{
     id: string;
     type?: string | null;
