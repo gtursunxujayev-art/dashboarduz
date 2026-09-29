@@ -980,7 +980,7 @@ function canApproveTariffChangeRequest(roles: string[]): boolean {
   return roles.some((role) => APPROVER_ROLES_TARIFF_CHANGE.has(role));
 }
 
-function getAdjustmentRoleScope(rolesInput: string[]) {
+export function getAdjustmentRoleScope(rolesInput: string[]) {
   const roles = rolesInput.map((role) => String(role));
   const isAdmin = roles.includes('Admin');
   const hasFinance = roles.includes('Finance');
@@ -5811,6 +5811,8 @@ export const customerIncomeRouter = router({
         },
         newCourse: { select: { id: true, name: true } },
         newTariff: { select: { id: true, name: true } },
+        previousCourse: { select: { id: true, name: true } },
+        previousTariff: { select: { id: true, name: true } },
       } satisfies Prisma.IncomeAdjustmentRequestSelect;
 
       let requests: Array<any> = [];
@@ -6131,6 +6133,8 @@ export const customerIncomeRouter = router({
               newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
               newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
               newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
+              previousCourseId: sourceIncome.courseId ?? null,
+              previousTariffId: sourceIncome.tariffId ?? null,
             },
             select: {
               id: true,
@@ -6155,6 +6159,8 @@ export const customerIncomeRouter = router({
               newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
               newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
               newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
+              previousCourseId: sourceIncome.courseId ?? null,
+              previousTariffId: sourceIncome.tariffId ?? null,
             },
             select: {
               id: true,
