@@ -203,6 +203,21 @@ const COMPATIBILITY_SQL: string[] = [
   CREATE INDEX IF NOT EXISTS "income_adjustment_requests_createdAt_idx"
     ON "income_adjustment_requests" ("createdAt");
   `,
+  `
+  ALTER TABLE "income_adjustment_requests"
+    ADD COLUMN IF NOT EXISTS "previousCourseId" TEXT,
+    ADD COLUMN IF NOT EXISTS "previousTariffId" TEXT;
+  `,
+  `
+  UPDATE "income_adjustment_requests" r
+  SET "previousCourseId" = i."courseId",
+      "previousTariffId" = i."tariffId"
+  FROM "incomes" i
+  WHERE r."incomeId" = i."id"
+    AND r."status" IN ('pending', 'rejected')
+    AND r."previousCourseId" IS NULL
+    AND r."previousTariffId" IS NULL;
+  `,
 ];
 
 export async function ensureSchemaCompatibility(): Promise<void> {
