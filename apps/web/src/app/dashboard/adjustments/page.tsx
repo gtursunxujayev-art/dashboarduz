@@ -67,6 +67,17 @@ function formatCourseBundle(courseName?: string | null, tariffName?: string | nu
   return parts.length ? parts.join(' / ') : '-';
 }
 
+function getRequestSourceBundle(request: any): string | null {
+  if (request.previousCourse || request.previousTariff) {
+    return formatCourseBundle(request.previousCourse?.name, request.previousTariff?.name);
+  }
+  // Approved tariff changes overwrite the income's course, so its current course is not the source.
+  if (request.type === 'tariff_change' && request.status === 'approved') {
+    return null;
+  }
+  return formatCourseBundle(request.income.course?.name, request.income.tariff?.name);
+}
+
 export default function AdjustmentsPage() {
   const utils = trpc.useUtils();
   const { user } = useAuth();
@@ -540,6 +551,7 @@ export default function AdjustmentsPage() {
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Sana</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Tur</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Mijoz</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Kurs</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Holat</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Izoh</th>
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Amal</th>
@@ -557,6 +569,18 @@ export default function AdjustmentsPage() {
                         <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{getRequestTypeLabel(request.type)}</td>
                         <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
                           {request.income.customer.customerNumber} - {request.income.customer.name}
+                        </td>
+                        <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
+                          {request.type === 'tariff_change' ? (
+                            <div className="space-y-0.5">
+                              <p className="text-gray-500 dark:text-slate-400">{getRequestSourceBundle(request) ?? '-'}</p>
+                              <p className="font-medium text-gray-900 dark:text-slate-100">
+                                &rarr; {formatCourseBundle(request.newCourse?.name, request.newTariff?.name)}
+                              </p>
+                            </div>
+                          ) : (
+                            getRequestSourceBundle(request) ?? '-'
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{getRequestStatusLabel(request.status)}</td>
                         <td className="max-w-xs px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{request.reason || request.reviewNote || '-'}</td>
