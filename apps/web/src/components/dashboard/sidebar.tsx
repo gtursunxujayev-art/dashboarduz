@@ -26,6 +26,7 @@ const FINANCE_ALLOWED_HREFS = new Set([
   '/dashboard/course-sales/online',
   '/dashboard/course-sales/offline',
   '/dashboard/analytics',
+  '/dashboard/analytics/reports',
   '/dashboard/finance',
   '/dashboard/finance/bonus-details',
   '/dashboard/adjustments',
@@ -79,7 +80,14 @@ const navigation: NavigationItem[] = [
       { name: 'Oflayn', href: '/dashboard/course-sales/offline', icon: 'M9 19V6m4 13V10m4 9V4M4 20h16' },
     ],
   },
-  { name: 'Tahlil', href: '/dashboard/analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+  {
+    name: 'Tahlil',
+    href: '/dashboard/analytics',
+    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+    children: [
+      { name: 'Hisobotlar', href: '/dashboard/analytics/reports', icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+    ],
+  },
   {
     name: 'Moliya',
     href: '/dashboard/finance',
