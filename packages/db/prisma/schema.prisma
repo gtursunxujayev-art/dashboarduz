@@ -469,6 +469,7 @@ model Course {
   tariffs Tariff[]
   incomes Income[]
   incomeAdjustmentRequests IncomeAdjustmentRequest[] @relation("IncomeAdjustmentNewCourse")
+  incomeAdjustmentRequestsAsPrevious IncomeAdjustmentRequest[] @relation("IncomeAdjustmentPreviousCourse")
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -489,6 +490,7 @@ model Tariff {
   incomes Income[]
   subTariffs SubTariff[]
   incomeAdjustmentRequests IncomeAdjustmentRequest[] @relation("IncomeAdjustmentNewTariff")
+  incomeAdjustmentRequestsAsPrevious IncomeAdjustmentRequest[] @relation("IncomeAdjustmentPreviousTariff")
 
   @@unique([tenantId, courseId, name])
   @@index([tenantId])
@@ -612,6 +614,8 @@ model IncomeAdjustmentRequest {
   newCourseId      String?
   newTariffId      String?
   newAgreementAmount Int?
+  previousCourseId String?
+  previousTariffId String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   reviewedAt       DateTime?
@@ -623,6 +627,8 @@ model IncomeAdjustmentRequest {
   reviewedBy  User?    @relation("IncomeAdjustmentReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   newCourse   Course?  @relation("IncomeAdjustmentNewCourse", fields: [newCourseId], references: [id], onDelete: SetNull)
   newTariff   Tariff?  @relation("IncomeAdjustmentNewTariff", fields: [newTariffId], references: [id], onDelete: SetNull)
+  previousCourse Course? @relation("IncomeAdjustmentPreviousCourse", fields: [previousCourseId], references: [id], onDelete: SetNull)
+  previousTariff Tariff? @relation("IncomeAdjustmentPreviousTariff", fields: [previousTariffId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([status])
