@@ -1,4 +1,11 @@
 import { prisma } from '@dashboarduz/db';
+import {
+  buildTechnicalSaleIdSet,
+  classifyIncomeCategory,
+  excludeTechnicalRows,
+  loadTechnicalSaleIdsForRows,
+  resolveSaleAgreementAmount,
+} from '../income-facts';
 import { log, LogLevel } from '../observability';
 import { telegramService } from '../integrations/telegram';
 import { listTelegramRecipients } from '../integrations/telegram-recipient-store';
@@ -702,22 +709,6 @@ export function createStyledReportPdf(params: {
   return c.build();
 }
 
-function classifyCourseCategory(value: string | null | undefined): 'online' | 'offline' | 'intensive' | 'other' {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (!normalized) {
-    return 'other';
-  }
-  if (normalized.includes('online') || normalized.includes('onlayn')) {
-    return 'online';
-  }
-  if (normalized.includes('offline') || normalized.includes('oflayn')) {
-    return 'offline';
-  }
-  if (normalized.includes('intensive') || normalized.includes('intensiv')) {
-    return 'intensive';
-  }
-  return 'other';
-}
 
 function isLostLeadStatus(value: unknown): boolean {
   return String(value || '').trim() === '143';
@@ -954,7 +945,7 @@ async function collectMetrics(params: {
 
   const selectedCourseIds = Array.from(new Set(params.selectedReportCourseIds.map((id) => id.trim()).filter(Boolean))).slice(0, 3);
 
-  const [callAggregate, incomes, users, corporateDurationTotal, selectedReportCourses, selectedCourseIncomes] = await Promise.all([
+  const [callAggregate, incomesRaw, users, corporateDurationTotal, selectedReportCourses, selectedCourseIncomesRaw] = await Promise.all([
     prisma.call.aggregate({
       where: {
         tenantId: params.tenantId,
@@ -983,6 +974,7 @@ async function collectMetrics(params: {
         managerUserId: true,
         paymentAmount: true,
         coursePriceAmount: true,
+        debtAmount: true,
         courseId: true,
         course: {
           select: {
@@ -1037,6 +1029,11 @@ async function collectMetrics(params: {
             courseId: { in: selectedCourseIds },
           },
           select: {
+            id: true,
+            type: true,
+            coursePriceAmount: true,
+            debtAmount: true,
+            paymentAmount: true,
             courseId: true,
             tariff: {
               select: {
@@ -1047,6 +1044,11 @@ async function collectMetrics(params: {
         })
       : Promise.resolve([]),
   ]);
+
+  // Technical sales (agreement == 1) and their repayments are bookkeeping rows, not real income.
+  const technicalSaleIds = await loadTechnicalSaleIdsForRows(params.tenantId, incomesRaw);
+  const incomes = excludeTechnicalRows(incomesRaw, technicalSaleIds);
+  const selectedCourseIncomes = selectedCourseIncomesRaw.filter((sale) => !buildTechnicalSaleIdSet([sale]).has(sale.id));
 
   let newLeads = 0;
   let qualifiedLeads = 0;
@@ -1233,85 +1235,14 @@ async function collectMetrics(params: {
     selectedCourseStats.set(income.courseId, courseStats);
   }
 
-  const repaymentRelatedIds = [...new Set(
-    incomes
-      .filter((income) => income.type === 'repayment' && income.relatedDebtIncomeId)
-      .map((income) => String(income.relatedDebtIncomeId)),
-  )];
-  const linkedIncomeById = new Map<string, {
-    id: string;
-    type: string;
-    entryDate: Date;
-    relatedDebtIncomeId: string | null;
-  }>();
-  let lookupIds = repaymentRelatedIds;
-  for (let depth = 0; depth < 6 && lookupIds.length > 0; depth += 1) {
-    const rows = await prisma.income.findMany({
-      where: {
-        tenantId: params.tenantId,
-        id: { in: lookupIds },
-      },
-      select: {
-        id: true,
-        type: true,
-        entryDate: true,
-        relatedDebtIncomeId: true,
-      },
-    });
-    lookupIds = [];
-    for (const row of rows) {
-      linkedIncomeById.set(row.id, {
-        id: row.id,
-        type: String(row.type),
-        entryDate: row.entryDate,
-        relatedDebtIncomeId: row.relatedDebtIncomeId ? String(row.relatedDebtIncomeId) : null,
-      });
-    }
-    for (const row of rows) {
-      if (row.type !== 'new_sale' && row.relatedDebtIncomeId && !linkedIncomeById.has(String(row.relatedDebtIncomeId))) {
-        lookupIds.push(String(row.relatedDebtIncomeId));
-      }
-    }
-    lookupIds = [...new Set(lookupIds)];
-  }
-
-  const resolveRootSaleEntryDate = (incomeId: string | null | undefined): Date | null => {
-    if (!incomeId) return null;
-    let currentId = String(incomeId);
-    for (let depth = 0; depth < 10; depth += 1) {
-      const row = linkedIncomeById.get(currentId);
-      if (!row) {
-        return null;
-      }
-      if (row.type === 'new_sale') {
-        return row.entryDate;
-      }
-      if (!row.relatedDebtIncomeId) {
-        return null;
-      }
-      currentId = row.relatedDebtIncomeId;
-    }
-    return null;
-  };
-
   for (const income of incomes) {
     const paymentAmount = Number(income.paymentAmount || 0);
     incomeTotal += paymentAmount;
 
+    // "Yangi tushum" = first payments of new sales; every repayment is "qarzdorlik tushumi".
+    // Same definition as the Telegram group summary.
     if (income.type === 'new_sale') {
       newSalesIncomeTotal += paymentAmount;
-    } else if (income.type === 'repayment') {
-      const saleEntryDate = resolveRootSaleEntryDate(income.relatedDebtIncomeId);
-      const isSaleCreatedInSelectedRange = Boolean(
-        saleEntryDate
-        && saleEntryDate.getTime() >= params.periodStart.getTime()
-        && saleEntryDate.getTime() <= params.periodEnd.getTime(),
-      );
-      if (isSaleCreatedInSelectedRange) {
-        newSalesIncomeTotal += paymentAmount;
-      } else {
-        debtRepaymentIncomeTotal += paymentAmount;
-      }
     } else {
       debtRepaymentIncomeTotal += paymentAmount;
     }
@@ -1325,13 +1256,13 @@ async function collectMetrics(params: {
     }
 
     newSalesCount += 1;
-    const agreementAmount = Number(income.coursePriceAmount || 0);
+    const agreementAmount = resolveSaleAgreementAmount(income);
     agreementTotal += agreementAmount;
     managerStats.sales += 1;
     managerStats.agreementAmount += agreementAmount;
     managerSalesByUserId.set(income.managerUserId, managerStats);
 
-    const category = classifyCourseCategory(income.course?.category || income.course?.name);
+    const category = classifyIncomeCategory(income.course);
     if (category === 'online') {
       onlineSalesCount += 1;
       onlineAgreementTotal += agreementAmount;
