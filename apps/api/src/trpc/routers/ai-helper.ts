@@ -1,4 +1,5 @@
 import { protectedProcedure, router } from '../trpc';
+import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { promises as fs } from 'node:fs';
@@ -90,8 +91,10 @@ function startOfTashkentDay(date: Date): Date {
   return new Date(Date.UTC(y, m, d) - 5 * 60 * 60 * 1000);
 }
 
+// Calendar date in Tashkent (GMT+5). Plain toISOString() gives the UTC date, which is the previous day
+// for Tashkent midnight, so "bugun" and month/week windows started a day early.
 function toDateOnly(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return new Date(date.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 function getCurrentMonthWindow(now: Date): { dateFrom: string; dateTo: string } {
@@ -434,7 +437,7 @@ async function buildCourseHintSummary(
     };
   }
 
-  const sales = await prisma.income.findMany({
+  const salesRaw = await prisma.income.findMany({
     where: {
       tenantId,
       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -444,14 +447,17 @@ async function buildCourseHintSummary(
     },
     select: {
       id: true,
+      type: true,
+      relatedDebtIncomeId: true,
       paymentAmount: true,
       coursePriceAmount: true,
+      debtAmount: true,
       remainingDebtAmount: true,
       tariff: { select: { name: true } },
     },
   });
 
-  const repayments = await prisma.income.findMany({
+  const repaymentsRaw = await prisma.income.findMany({
     where: {
       tenantId,
       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -460,17 +466,25 @@ async function buildCourseHintSummary(
       entryDate: { gte: rangeStart, lte: rangeEnd },
     },
     select: {
+      id: true,
+      type: true,
+      relatedDebtIncomeId: true,
       paymentAmount: true,
       tariff: { select: { name: true } },
     },
   });
+
+  // Technical sales (agreement == 1) and their repayments are not real sales.
+  const technicalSaleIds = await loadTechnicalSaleIdsForRows(tenantId, [...salesRaw, ...repaymentsRaw]);
+  const sales = excludeTechnicalRows(salesRaw, technicalSaleIds);
+  const repayments = excludeTechnicalRows(repaymentsRaw, technicalSaleIds);
 
   const tariffMap = new Map<string, { salesCount: number; agreementAmount: number; incomeAmount: number; debtAmount: number }>();
   for (const sale of sales) {
     const key = sale.tariff?.name || 'Tarifsiz';
     const row = tariffMap.get(key) || { salesCount: 0, agreementAmount: 0, incomeAmount: 0, debtAmount: 0 };
     row.salesCount += 1;
-    row.agreementAmount += Number(sale.coursePriceAmount || 0);
+    row.agreementAmount += resolveSaleAgreementAmount(sale);
     row.incomeAmount += Number(sale.paymentAmount || 0);
     row.debtAmount += Math.max(0, Number(sale.remainingDebtAmount || 0));
     tariffMap.set(key, row);
@@ -482,7 +496,7 @@ async function buildCourseHintSummary(
     tariffMap.set(key, row);
   }
 
-  const agreementAmount = sales.reduce((sum, row) => sum + Number(row.coursePriceAmount || 0), 0);
+  const agreementAmount = sales.reduce((sum, row) => sum + resolveSaleAgreementAmount(row), 0);
   const incomeAmount = sales.reduce((sum, row) => sum + Number(row.paymentAmount || 0), 0)
     + repayments.reduce((sum, row) => sum + Number(row.paymentAmount || 0), 0);
   const debtAmount = sales.reduce((sum, row) => sum + Math.max(0, Number(row.remainingDebtAmount || 0)), 0);
