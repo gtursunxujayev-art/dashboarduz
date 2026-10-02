@@ -1,4 +1,5 @@
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
+import { resolveSaleAgreementAmount } from '../../../services/income-facts';
 import {
   classifyCourseCategoryFromField,
   INCOME_LIFECYCLE_ACTIVE,
@@ -93,6 +94,7 @@ export async function loadSelectedReportCourses(tenantId: string): Promise<Selec
         courseId: true,
         tariffId: true,
         coursePriceAmount: true,
+        debtAmount: true,
         paymentAmount: true,
       },
     }),
@@ -128,7 +130,7 @@ export async function loadSelectedReportCourses(tenantId: string): Promise<Selec
     salesCountById.set(sale.courseId, (salesCountById.get(sale.courseId) || 0) + 1);
     agreementAmountById.set(
       sale.courseId,
-      (agreementAmountById.get(sale.courseId) || 0) + (sale.coursePriceAmount ?? sale.paymentAmount ?? 0),
+      (agreementAmountById.get(sale.courseId) || 0) + resolveSaleAgreementAmount(sale),
     );
     const tariffKey = `${sale.courseId}:${sale.tariffId || 'none'}`;
     tariffSalesCountByKey.set(tariffKey, (tariffSalesCountByKey.get(tariffKey) || 0) + 1);
