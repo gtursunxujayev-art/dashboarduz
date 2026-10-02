@@ -207,7 +207,7 @@ function SalesStatsPanel({
           <div key={course.courseId} className="rounded-3xl border border-white/10 bg-white/[0.055] p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Tanlangan kurs</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Tanlangan kurs · jami</p>
                 <h3 className="mt-1 text-xl font-black text-white">
                   {course.name} - <span className={tone}>{course.salesCount}</span>
                 </h3>
