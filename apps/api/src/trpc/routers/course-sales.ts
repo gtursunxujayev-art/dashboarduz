@@ -5,6 +5,7 @@ import { hasAgentRole } from '@dashboarduz/shared';
 import { protectedProcedure, router } from '../trpc';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
 import { resolveEffectiveAgreementAmount } from '../../services/technical-income';
+import { NON_TECHNICAL_SALE_WHERE, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../services/income-facts';
 
 const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
@@ -79,6 +80,24 @@ function resolveDateRange(range: CourseSalesRange, now: Date, dateFrom?: string,
 
 function normalizeSubTariffName(value: unknown): string {
   return String(value || '').trim().toLowerCase();
+}
+
+async function findSaleIdsBySubTariff(
+  tenantId: string,
+  subTariffId: string,
+  filters: Record<string, unknown>[],
+): Promise<string[]> {
+  const candidates = await prisma.income.findMany({
+    where: { tenantId, type: 'new_sale', ...(filters.length ? { AND: filters } : {}) },
+    select: {
+      id: true,
+      courseId: true,
+      tariffId: true,
+      legacyImportMeta: true,
+      customer: { select: { profileCourseId: true, profileTariffId: true, profileSubTariffId: true } },
+    },
+  });
+  return candidates.filter((sale) => resolveSaleSubTariffId(sale) === subTariffId).map((sale) => sale.id);
 }
 
 function extractSaleSubTariffId(meta: unknown): string | null {
@@ -438,20 +457,10 @@ export const courseSalesRouter = router({
           },
         },
       });
-      const salesWithResolvedSubTariff = matchedSales.map((sale) => {
-        const saleSubTariffId = extractSaleSubTariffId(sale.legacyImportMeta);
-        const profileMatchedSubTariffId = (
-          sale.customer.profileCourseId === sale.courseId
-          && sale.customer.profileTariffId
-          && sale.customer.profileTariffId === sale.tariffId
-        )
-          ? sale.customer.profileSubTariffId || null
-          : null;
-        return {
-          ...sale,
-          resolvedSubTariffId: saleSubTariffId || profileMatchedSubTariffId || null,
-        };
-      });
+      const salesWithResolvedSubTariff = matchedSales.map((sale) => ({
+        ...sale,
+        resolvedSubTariffId: resolveSaleSubTariffId(sale),
+      }));
       const filteredSales = input.subTariffId
         ? salesWithResolvedSubTariff.filter((sale) => sale.resolvedSubTariffId === input.subTariffId)
         : salesWithResolvedSubTariff;
@@ -575,7 +584,7 @@ export const courseSalesRouter = router({
       const standartCustomerIds = new Set<string>();
       for (const sale of filteredNonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
-        const agreement = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.debtAmount ?? sale.paymentAmount ?? 0);
+        const agreement = metric?.agreementAmount ?? resolveSaleAgreementAmount(sale);
         const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
         const paid = metric?.paidAmount ?? (sale.paymentAmount ?? 0);
         agreementAmount += agreement;
@@ -675,9 +684,12 @@ export const courseSalesRouter = router({
       }
       if (input.subTariffId) {
         scopedFilters.push({
-          customer: { profileSubTariffId: input.subTariffId },
+          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters]) },
         });
       }
+
+      // Technical sales (agreement == 1) are bookkeeping rows; the summaries exclude them, so the lists must too.
+      scopedFilters.push(NON_TECHNICAL_SALE_WHERE);
 
       const where = {
         tenantId: ctx.tenantId,
@@ -887,7 +899,7 @@ export const courseSalesRouter = router({
           const metric = chainMetricsBySaleId.get(sale.id);
           const paidAmount = metric?.paidAmount ?? (sale.paymentAmount ?? 0);
           const debtAmount = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
-          const agreementAmount = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.debtAmount ?? sale.paymentAmount ?? 0);
+          const agreementAmount = metric?.agreementAmount ?? resolveSaleAgreementAmount(sale);
           const lastActivityAt = metric?.lastActivityAt ?? sale.entryDate;
           const managerLabel = sale.manager.name || sale.manager.username || sale.manager.id;
           const profileCourseName = sale.customer.profileCourseId
@@ -952,7 +964,7 @@ export const courseSalesRouter = router({
       }
       if (input.subTariffId) {
         scopedFilters.push({
-          customer: { profileSubTariffId: input.subTariffId },
+          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters]) },
         });
       }
 
@@ -998,6 +1010,7 @@ export const courseSalesRouter = router({
             customerId: true,
             tariffId: true,
             coursePriceAmount: true,
+            debtAmount: true,
             paymentAmount: true,
             remainingDebtAmount: true,
             entryDate: true,
@@ -1122,7 +1135,7 @@ export const courseSalesRouter = router({
       let currentDebtAmount = 0;
       for (const sale of filteredNonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
-        const agreement = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.paymentAmount ?? 0);
+        const agreement = metric?.agreementAmount ?? resolveSaleAgreementAmount(sale);
         const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
         currentAgreementAmount += agreement;
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
@@ -1237,9 +1250,12 @@ export const courseSalesRouter = router({
       }
       if (input.subTariffId) {
         scopedFilters.push({
-          customer: { profileSubTariffId: input.subTariffId },
+          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters]) },
         });
       }
+
+      // Technical sales (agreement == 1) are bookkeeping rows; the summaries exclude them, so the lists must too.
+      scopedFilters.push(NON_TECHNICAL_SALE_WHERE);
 
       const where = {
         tenantId: ctx.tenantId,
@@ -1453,7 +1469,7 @@ export const courseSalesRouter = router({
           const metric = chainMetricsBySaleId.get(sale.id);
           const paidAmount = metric?.paidAmount ?? (sale.paymentAmount ?? 0);
           const debtAmount = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
-          const agreementAmount = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.debtAmount ?? sale.paymentAmount ?? 0);
+          const agreementAmount = metric?.agreementAmount ?? resolveSaleAgreementAmount(sale);
           const lastActivityAt = metric?.lastActivityAt ?? sale.entryDate;
           const managerLabel = sale.manager.name || sale.manager.username || sale.manager.id;
           const profileCourseName = sale.customer.profileCourseId
@@ -1518,7 +1534,7 @@ export const courseSalesRouter = router({
       }
       if (input.subTariffId) {
         scopedFilters.push({
-          customer: { profileSubTariffId: input.subTariffId },
+          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters]) },
         });
       }
 
@@ -1558,6 +1574,7 @@ export const courseSalesRouter = router({
             tariffId: true,
             entryDate: true,
             coursePriceAmount: true,
+            debtAmount: true,
             paymentAmount: true,
             remainingDebtAmount: true,
             customer: {
@@ -1677,17 +1694,19 @@ export const courseSalesRouter = router({
       const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, normalizeSubTariffName(subTariff.name)]));
 
       let rangeAgreementAmount = 0;
+      let rangeSalesPaidAmount = 0;
       let currentAgreementAmount = 0;
       let currentDebtAmount = 0;
       let vipCount = 0;
       let standartCount = 0;
       for (const sale of nonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
-        const agreement = metric?.agreementAmount ?? (sale.coursePriceAmount ?? sale.paymentAmount ?? 0);
+        const agreement = metric?.agreementAmount ?? resolveSaleAgreementAmount(sale);
         const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
         currentAgreementAmount += agreement;
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
           rangeAgreementAmount += agreement;
+          rangeSalesPaidAmount += metric?.paidAmount ?? currentIncomeBySaleId.get(sale.id) ?? 0;
         }
         currentDebtAmount += debt;
         const subTariffName = sale.customer.profileSubTariffId
@@ -1706,8 +1725,10 @@ export const courseSalesRouter = router({
         const metric = chainMetricsBySaleId.get(sale.id);
         return sum + (metric?.paidAmount ?? currentIncomeBySaleId.get(sale.id) ?? 0);
       }, 0);
+      // Share of the agreements made in this period that has been paid so far. Payments on older sales used to be
+      // divided by this period's agreements, which pushed the percentage above 100.
       const collectionPercent = rangeAgreementAmount > 0
-        ? Number(((rangeIncomeAmount / rangeAgreementAmount) * 100).toFixed(1))
+        ? Number(((rangeSalesPaidAmount / rangeAgreementAmount) * 100).toFixed(1))
         : 0;
 
       const tariffRowMap = new Map<
@@ -1756,7 +1777,7 @@ export const courseSalesRouter = router({
             row.customerIds.add(sale.customerId);
             if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
               row.agreementAmount += chainMetricsBySaleId.get(sale.id)?.agreementAmount
-                ?? (sale.coursePriceAmount ?? sale.paymentAmount ?? 0);
+                ?? resolveSaleAgreementAmount(sale);
             }
             row.debtAmount += chainMetricsBySaleId.get(sale.id)?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
           }
@@ -1776,7 +1797,7 @@ export const courseSalesRouter = router({
         managerRow.customerIds.add(sale.customerId);
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
           managerRow.agreementAmount += chainMetricsBySaleId.get(sale.id)?.agreementAmount
-            ?? (sale.coursePriceAmount ?? sale.paymentAmount ?? 0);
+            ?? resolveSaleAgreementAmount(sale);
         }
         managerRow.debtAmount += chainMetricsBySaleId.get(sale.id)?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
         managerMap.set(sale.managerUserId, managerRow);
