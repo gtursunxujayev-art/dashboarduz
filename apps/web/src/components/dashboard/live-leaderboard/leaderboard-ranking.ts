@@ -1,4 +1,5 @@
 export type OverallLeaderboardAgent = {
+  userId?: string;
   name: string;
   group: 'online' | 'offline';
   monthlyIncome: number;
@@ -15,5 +16,6 @@ export function sortAgentsByOverallMonth<T extends OverallLeaderboardAgent>(
       right.monthlyIncome - left.monthlyIncome
       || right.monthlySalesCount - left.monthlySalesCount
       || left.name.localeCompare(right.name)
+      || String(left.userId ?? '').localeCompare(String(right.userId ?? ''))
     ));
 }
