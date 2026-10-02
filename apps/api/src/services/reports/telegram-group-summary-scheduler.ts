@@ -1,4 +1,5 @@
 import { prisma } from '@dashboarduz/db';
+import { classifyIncomeCategory, type IncomeCategory } from '../income-facts';
 import { telegramService } from '../integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../integrations/telegram-groups';
 import { decryptIntegrationTokens } from '../security/encryption';
@@ -63,12 +64,8 @@ function selectedCourseIds(config: unknown): Set<string> {
   return new Set(raw.map((value) => String(value || '').trim()).filter(Boolean).slice(0, 3));
 }
 
-function classifyCourse(value: string | null | undefined): 'online' | 'offline' | 'intensive' | 'other' {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'online' || normalized.includes('online') || normalized.includes('onlayn')) return 'online';
-  if (normalized === 'offline' || normalized.includes('offline') || normalized.includes('oflayn')) return 'offline';
-  if (normalized === 'intensive' || normalized.includes('intensive') || normalized.includes('intensiv')) return 'intensive';
-  return 'other';
+function classifyCourse(value: string | null | undefined): IncomeCategory {
+  return classifyIncomeCategory({ category: value });
 }
 
 function toLocal(date: Date): Date {
@@ -158,8 +155,9 @@ export function aggregateTelegramGroupSummaries(params: {
     const root = rootFor(row);
     if (isTechnicalNewSale(root)) continue;
     const category = classifyCourse(root.course?.category || root.course?.name);
-    const group = category === 'online' ? 'online' : (category === 'offline' || category === 'intensive' ? 'offline' : null);
-    if (!group) continue;
+    // Same split as the live leaderboard: online courses on one side, everything else (offline, intensive,
+    // additional services, courseless rows) on the offline side, so the two totals always add up to all income.
+    const group = category === 'online' ? 'online' : 'offline';
     const metrics = result[group];
     const amount = Number(row.paymentAmount || 0);
     metrics.totalIncome += amount;
