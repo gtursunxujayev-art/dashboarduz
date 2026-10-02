@@ -1,4 +1,8 @@
+import { prisma } from '@dashboarduz/db';
 import {
+  buildLegacyBonusPolicy,
+  calculateBonusMonth,
+  reconcileBonusMonth,
   getTashkentMonthEnd,
   getTashkentMonthKey,
   getTashkentMonthStart,
@@ -75,13 +79,91 @@ describe('monthly course-income bonus policy', () => {
     expect(closure?.agreementAmount).toBe(10_000_000);
   });
 
-  it('falls back to the active chain total when agreement amount is absent', () => {
+  it('never closes a sale whose agreement amount is unknown', () => {
     const chain = [
       { id: 'sale', managerUserId: 'agent-a', paymentAmount: 4_000_000, entryDate: new Date('2026-06-10T05:00:00Z') },
       { id: 'repayment', managerUserId: 'agent-b', paymentAmount: 6_000_000, entryDate: new Date('2026-07-05T05:00:00Z') },
     ] as any;
-    const closure = resolveFullyPaidClosure({ coursePriceAmount: null, debtAmount: null }, chain);
-    expect(closure?.agreementAmount).toBe(10_000_000);
-    expect(closure?.closing.id).toBe('repayment');
+    // Falling back to the running total closed this sale in June (4M) AND July (10M), paying bonus twice.
+    expect(resolveFullyPaidClosure({ coursePriceAmount: null, debtAmount: null }, chain)).toBeNull();
+  });
+});
+
+describe('bonus attribution and reconcile', () => {
+  const july = new Date('2026-07-15T05:00:00Z');
+  const onlineCourse = { id: 'course-online', name: 'Online-Iyul', category: 'online' };
+  const row = (overrides: Record<string, unknown>) => ({
+    type: 'repayment',
+    relatedDebtIncomeId: 'sale',
+    courseId: onlineCourse.id,
+    coursePriceAmount: null,
+    debtAmount: null,
+    remainingDebtAmount: 0,
+    createdAt: new Date('2026-06-10T05:00:00Z'),
+    course: onlineCourse,
+    ...overrides,
+  });
+  // Agent A sells a 10M online course and collects 4M in June; agent B collects the closing 6M in July.
+  const mixedSaleRows = [
+    row({ id: 'sale', type: 'new_sale', relatedDebtIncomeId: null, managerUserId: 'agent-a', coursePriceAmount: 10_000_000, debtAmount: 10_000_000, paymentAmount: 4_000_000, entryDate: new Date('2026-06-10T05:00:00Z') }),
+    row({ id: 'closing', managerUserId: 'agent-b', paymentAmount: 6_000_000, entryDate: new Date('2026-07-05T05:00:00Z') }),
+  ];
+
+  beforeEach(() => {
+    jest.spyOn(prisma.user, 'findMany').mockResolvedValue([
+      { id: 'agent-a', roles: ['OnlineAgent'] },
+      { id: 'agent-b', roles: ['OnlineAgent'] },
+    ] as never);
+    jest.spyOn(prisma.income, 'findMany').mockResolvedValue(mixedSaleRows as never);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('on_debt_closed pays the agent who records the closing payment', async () => {
+    const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
+    const result = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ agentUserId: 'agent-b', sourceIncomeId: 'closing', baseAmount: 10_000_000, bonusAmount: 500_000 });
+  });
+
+  it('on_income counts the closure toward the tier of the closer, the same agent who is paid', async () => {
+    const policy = buildLegacyBonusPolicy({
+      salary: {
+        bonusMode: 'on_income',
+        bonusRules: { online: { mode: 'tiered', simplePercent: 0, tiers: [{ minSales: 1, maxSales: null, percent: 3 }] } },
+      },
+    });
+    const result = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ agentUserId: 'agent-b', closedCount: 1, appliedPercent: 3, bonusAmount: 180_000 });
+  });
+
+  it('deletes pending adjustments once the data matches the finalized snapshot again', async () => {
+    const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
+    const current = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+    jest.spyOn(prisma.bonusMonthSnapshot, 'findUnique').mockResolvedValue({
+      id: 'snap', policy, policyVersionId: null, sourceDigest: current.sourceDigest, lines: [], adjustments: [],
+    } as never);
+    const deleteMany = jest.spyOn(prisma.bonusAdjustment, 'deleteMany').mockResolvedValue({ count: 1 } as never);
+    await expect(reconcileBonusMonth({ tenantId: 't', month: july })).resolves.toBe(0);
+    expect(deleteMany).toHaveBeenCalledWith({ where: { snapshotId: 'snap', status: 'pending' } });
+  });
+
+  it('does not claw back a finalized bonus just because the agent was deactivated', async () => {
+    const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
+    jest.spyOn(prisma.user, 'findMany').mockResolvedValue([{ id: 'agent-a', roles: ['OnlineAgent'] }] as never);
+    jest.spyOn(prisma.bonusMonthSnapshot, 'findUnique').mockResolvedValue({
+      id: 'snap',
+      policy,
+      policyVersionId: null,
+      sourceDigest: 'old-digest',
+      lines: [{ groupKey: 'agent-b:course-online:online:legacy_debt_closed', agentUserId: 'agent-b', courseId: 'course-online', category: 'online', bonusAmount: 500_000 }],
+      adjustments: [],
+    } as never);
+    const create = jest.spyOn(prisma.bonusAdjustment, 'create').mockResolvedValue({ id: 'adj' } as never);
+    await expect(reconcileBonusMonth({ tenantId: 't', month: july })).resolves.toBe(0);
+    expect(create).not.toHaveBeenCalled();
   });
 });
