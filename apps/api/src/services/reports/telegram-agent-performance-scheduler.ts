@@ -1,4 +1,5 @@
 import { prisma } from '@dashboarduz/db';
+import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
 import { AGENT_ROLES } from '@dashboarduz/shared';
 import { type AmoCRMTask, amocrmService } from '../integrations/amocrm';
 import { getTenantAmoCRMContext } from '../integrations/amocrm-live';
@@ -358,9 +359,8 @@ async function collectAgentMetricsForTenant(params: {
   }
   const extensionValues = Array.from(extensionToAgentId.keys());
 
-  const [incomeGrouped, calls] = await Promise.all([
-    prisma.income.groupBy({
-      by: ['managerUserId'],
+  const [incomeRowsRaw, calls] = await Promise.all([
+    prisma.income.findMany({
       where: {
         tenantId: params.tenantId,
         managerUserId: { in: agentIds },
@@ -370,7 +370,11 @@ async function collectAgentMetricsForTenant(params: {
           lte: params.periodEnd,
         },
       },
-      _sum: {
+      select: {
+        id: true,
+        type: true,
+        relatedDebtIncomeId: true,
+        managerUserId: true,
         paymentAmount: true,
       },
     }),
@@ -399,9 +403,11 @@ async function collectAgentMetricsForTenant(params: {
       : Promise.resolve([] as Array<{ from: string; to: string; direction: string; duration: number | null; metadata: unknown }>),
   ]);
 
+  // Technical sales (agreement == 1) and their repayments are not real income.
+  const incomeRows = excludeTechnicalRows(incomeRowsRaw, await loadTechnicalSaleIdsForRows(params.tenantId, incomeRowsRaw));
   const incomeByAgentId = new Map<string, number>();
-  for (const row of incomeGrouped) {
-    incomeByAgentId.set(row.managerUserId, Number(row._sum.paymentAmount || 0));
+  for (const row of incomeRows) {
+    incomeByAgentId.set(row.managerUserId, (incomeByAgentId.get(row.managerUserId) || 0) + Number(row.paymentAmount || 0));
   }
 
   const callsCountByAgentId = new Map<string, number>();
