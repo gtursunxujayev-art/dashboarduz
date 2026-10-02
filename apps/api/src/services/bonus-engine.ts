@@ -12,6 +12,7 @@ import {
 import { buildTechnicalSaleIdSet } from './technical-income';
 
 const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
+export const SYSTEM_FINALIZER_USER_ID = 'system:auto-finalize';
 const ELIGIBLE_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent', 'TeamLeader']);
 
 export type CourseIncomeTier = {
@@ -74,6 +75,8 @@ export type BonusMonthCalculation = {
   items: BonusCalculationItem[];
   finalized: boolean;
   finalizedAt: Date | null;
+  /** Digest in the pre-2026-09 format, so snapshots finalized before the format change still match unchanged data. */
+  legacySourceDigest?: string;
 };
 
 export type BonusIncomeRow = {
@@ -201,8 +204,9 @@ export function resolveFullyPaidClosure(sale: Pick<IncomeRow, 'coursePriceAmount
   closing: IncomeRow;
   agreementAmount: number;
 } | null {
-  const chainTotal = chain.reduce((sum, row) => sum + amount(row.paymentAmount), 0);
-  const agreementAmount = amount(sale.coursePriceAmount ?? sale.debtAmount) || chainTotal;
+  // Without a known agreement a sale cannot be "fully paid": falling back to the running total would make the
+  // last payment of every month look like a closure and pay bonus on the same sale more than once.
+  const agreementAmount = amount(sale.coursePriceAmount ?? sale.debtAmount);
   if (agreementAmount <= 0) return null;
   let paid = 0;
   for (const row of chain) {
@@ -210,6 +214,70 @@ export function resolveFullyPaidClosure(sale: Pick<IncomeRow, 'coursePriceAmount
     if (paid >= agreementAmount) return { closing: row, agreementAmount };
   }
   return null;
+}
+
+export type SaleClosure = {
+  saleId: string;
+  closingIncomeId: string;
+  /** Agent who recorded the closing payment; closures are credited to them. */
+  closerUserId: string;
+  sellerUserId: string;
+  closedAt: Date;
+  agreementAmount: number;
+  category: SalaryCategory;
+  courseId: string | null;
+  tariffId: string | null;
+  profileSubTariffId: string | null;
+};
+
+/**
+ * Every non-technical active sale that became fully paid on or before `rangeEnd`, with the payment that closed it.
+ * Uses the same closure rule as the bonus engine, so plan bonus and bonus counts can never disagree.
+ */
+export async function loadSaleClosures(params: { tenantId: string; rangeEnd: Date }): Promise<SaleClosure[]> {
+  const rows = await prisma.income.findMany({
+    where: { tenantId: params.tenantId, lifecycleStatus: 'active', entryDate: { lte: params.rangeEnd } },
+    select: {
+      id: true, type: true, relatedDebtIncomeId: true, managerUserId: true,
+      courseId: true, tariffId: true, coursePriceAmount: true, debtAmount: true, paymentAmount: true,
+      entryDate: true, createdAt: true,
+      course: { select: { id: true, name: true, category: true } },
+      customer: { select: { profileSubTariffId: true } },
+    },
+    orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+  });
+  const sales = rows.filter((row) => row.type === 'new_sale');
+  const technicalSaleIds = buildTechnicalSaleIdSet(sales);
+  const saleById = new Map(sales.filter((sale) => !technicalSaleIds.has(sale.id)).map((sale) => [sale.id, sale]));
+  const chainBySaleId = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const saleId = row.type === 'new_sale' ? row.id : row.relatedDebtIncomeId;
+    if (!saleId || !saleById.has(saleId)) continue;
+    const chain = chainBySaleId.get(saleId) || [];
+    chain.push(row);
+    chainBySaleId.set(saleId, chain);
+  }
+  const closures: SaleClosure[] = [];
+  for (const [saleId, chain] of chainBySaleId) {
+    const sale = saleById.get(saleId)!;
+    const category = getCategory(sale as unknown as IncomeRow);
+    if (!category) continue;
+    const closure = resolveFullyPaidClosure(sale, chain as unknown as IncomeRow[]);
+    if (!closure) continue;
+    closures.push({
+      saleId,
+      closingIncomeId: closure.closing.id,
+      closerUserId: closure.closing.managerUserId,
+      sellerUserId: sale.managerUserId,
+      closedAt: closure.closing.entryDate,
+      agreementAmount: closure.agreementAmount,
+      category,
+      courseId: sale.courseId,
+      tariffId: sale.tariffId,
+      profileSubTariffId: sale.customer?.profileSubTariffId ?? null,
+    });
+  }
+  return closures;
 }
 
 export async function resolveEffectiveBonusPolicy(tenantId: string, month: Date): Promise<{
@@ -284,12 +352,22 @@ function buildLines(items: BonusCalculationItem[]): BonusCalculationLine[] {
   return [...lines.values()].sort((left, right) => left.groupKey.localeCompare(right.groupKey));
 }
 
-function digestRows(rows: IncomeRow[], policy: BonusPolicy): string {
+function legacyDigestRows(rows: IncomeRow[], policy: BonusPolicy): string {
   const payload = rows.map((row) => [
     row.id, row.type, row.relatedDebtIncomeId, row.managerUserId, row.courseId,
     row.coursePriceAmount, row.paymentAmount, row.entryDate.toISOString(),
   ]).sort((left, right) => String(left[0]).localeCompare(String(right[0])));
   return createHash('sha256').update(JSON.stringify({ policy, payload })).digest('hex');
+}
+
+// Every input the calculation reads must be in the digest, otherwise reconcile never notices the change.
+function digestRows(rows: IncomeRow[], policy: BonusPolicy): string {
+  const payload = rows.map((row) => [
+    row.id, row.type, row.relatedDebtIncomeId, row.managerUserId, row.courseId,
+    row.coursePriceAmount, row.debtAmount, row.paymentAmount, row.entryDate.toISOString(),
+    row.course?.category ?? null, row.course?.name ?? null,
+  ]).sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+  return createHash('sha256').update(JSON.stringify({ v: 2, policy, payload })).digest('hex');
 }
 
 export async function calculateBonusMonth(params: {
@@ -341,7 +419,8 @@ export async function calculateBonusMonth(params: {
     const resolvedClosure = resolveFullyPaidClosure(sale, chain);
     if (!resolvedClosure || resolvedClosure.closing.entryDate < month || resolvedClosure.closing.entryDate > monthEnd) continue;
     closures.push({ sale, closing: resolvedClosure.closing, agreementAmount: resolvedClosure.agreementAmount, category });
-    const legacyKey = `${sale.managerUserId}:${category}`;
+    // A closure is credited to the agent who recorded the closing payment (the "closer"), on every screen.
+    const legacyKey = `${resolvedClosure.closing.managerUserId}:${category}`;
     closedCounts.set(legacyKey, (closedCounts.get(legacyKey) || 0) + 1);
   }
 
@@ -419,15 +498,15 @@ export async function calculateBonusMonth(params: {
       courseOverrideGroups.set(key, group);
       continue;
     }
-    if (resolved.policy.bonusMode !== 'on_debt_closed' || !eligibleAgentIds.has(closure.sale.managerUserId)) continue;
+    if (resolved.policy.bonusMode !== 'on_debt_closed' || !eligibleAgentIds.has(closure.closing.managerUserId)) continue;
     const rule = resolved.policy.bonusRules[closure.category];
-    const closedCount = closedCounts.get(`${closure.sale.managerUserId}:${closure.category}`) || 0;
+    const closedCount = closedCounts.get(`${closure.closing.managerUserId}:${closure.category}`) || 0;
     const appliedPercent = resolveBonusPercent(rule, closedCount);
     items.push({
       sourceKey: `legacy-close:${closure.closing.id}`,
       sourceIncomeId: closure.closing.id,
       sourceSaleId: closure.sale.id,
-      agentUserId: closure.sale.managerUserId,
+      agentUserId: closure.closing.managerUserId,
       courseId,
       courseName: closure.sale.course?.name || null,
       category: closure.category,
@@ -454,6 +533,7 @@ export async function calculateBonusMonth(params: {
     policy: resolved.policy,
     policyVersionId: resolved.policyVersionId,
     sourceDigest: digestRows(rows as IncomeRow[], resolved.policy),
+    legacySourceDigest: legacyDigestRows(rows as IncomeRow[], resolved.policy),
     totalBonusAmount: lines.reduce((sum, line) => sum + line.bonusAmount, 0),
     lines,
     items,
@@ -539,6 +619,7 @@ export async function calculateBonusRange(params: {
   };
 }
 
+/** `userId` is the admin who pressed finalize, or SYSTEM_FINALIZER_USER_ID for the automatic month-end freeze. */
 export async function finalizeBonusMonth(params: { tenantId: string; month: Date; userId: string }): Promise<BonusMonthCalculation> {
   const month = getTashkentMonthStart(params.month);
   if (getTashkentMonthEnd(month) >= new Date()) throw new Error('Only completed months can be finalized.');
@@ -603,7 +684,15 @@ export async function reconcileBonusMonth(params: { tenantId: string; month: Dat
     policy: normalizeBonusPolicy(snapshot.policy),
     policyVersionId: snapshot.policyVersionId,
   });
-  if (current.sourceDigest === snapshot.sourceDigest) return 0;
+  if (current.sourceDigest === snapshot.sourceDigest || current.legacySourceDigest === snapshot.sourceDigest) {
+    // Data is back to what was finalized, so any pending correction is stale.
+    await prisma.bonusAdjustment.deleteMany({ where: { snapshotId: snapshot.id, status: 'pending' } });
+    return 0;
+  }
+  const eligibleAgentIds = new Set((await prisma.user.findMany({
+    where: { tenantId: params.tenantId, isActive: true, roles: { hasSome: [...ELIGIBLE_ROLES] } },
+    select: { id: true },
+  })).map((user) => user.id));
   const originalByKey = new Map(snapshot.lines.map((line) => [line.groupKey, line]));
   const currentByKey = new Map(current.lines.map((line) => [line.groupKey, line]));
   const keys = new Set([...originalByKey.keys(), ...currentByKey.keys()]);
@@ -614,8 +703,11 @@ export async function reconcileBonusMonth(params: { tenantId: string; month: Dat
     const approved = snapshot.adjustments
       .filter((adjustment) => adjustment.groupKey === groupKey && adjustment.status === 'approved')
       .reduce((sum, adjustment) => sum + adjustment.deltaAmount, 0);
-    const delta = (next?.bonusAmount || 0) - (original?.bonusAmount || 0) - approved;
     const pending = snapshot.adjustments.find((adjustment) => adjustment.groupKey === groupKey && adjustment.status === 'pending');
+    // An agent who was deactivated or lost the agent role after finalization drops out of the live calculation;
+    // that is not a reason to claw back bonus they were already paid.
+    const droppedOnlyByEligibility = !next && original && !eligibleAgentIds.has(original.agentUserId);
+    const delta = droppedOnlyByEligibility ? 0 : (next?.bonusAmount || 0) - (original?.bonusAmount || 0) - approved;
     if (delta === 0) {
       if (pending) await prisma.bonusAdjustment.delete({ where: { id: pending.id } });
       continue;
