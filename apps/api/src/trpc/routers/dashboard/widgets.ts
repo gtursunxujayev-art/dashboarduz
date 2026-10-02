@@ -1,3 +1,4 @@
+import { buildTechnicalSaleIdSet, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 import {
   prisma,
   z,
@@ -84,17 +85,7 @@ export const widgetProcedures = {
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
 
       const widgetCourseIds = Array.from(new Set(input.widgets.map((widget) => widget.courseId)));
-      const widgetTariffIds = Array.from(
-        new Set(
-          input.widgets
-            .map((widget) => widget.tariffId)
-            .filter((tariffId): tariffId is string => Boolean(tariffId)),
-        ),
-      );
-      const subTariffWidgets = input.widgets.filter((widget) => Boolean(widget.subTariffId));
-
-      const groupedIncomes = await prisma.income.groupBy({
-        by: ['courseId', 'tariffId'],
+      const salesRaw = await prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
@@ -104,91 +95,45 @@ export const widgetProcedures = {
             lte: rangeEnd,
           },
           courseId: { in: widgetCourseIds },
-          ...(widgetTariffIds.length > 0 ? { tariffId: { in: widgetTariffIds } } : {}),
           ...(scope.isScoped
             ? {
                 managerUserId: ctx.user.userId,
               }
             : {}),
         },
-        _count: {
-          _all: true,
-        },
-        _sum: {
+        select: {
+          id: true,
+          type: true,
+          courseId: true,
+          tariffId: true,
           paymentAmount: true,
           coursePriceAmount: true,
+          debtAmount: true,
+          legacyImportMeta: true,
+          customer: {
+            select: {
+              profileCourseId: true,
+              profileTariffId: true,
+              profileSubTariffId: true,
+            },
+          },
         },
       });
-
-      const subTariffIncomeRows = subTariffWidgets.length > 0
-        ? await prisma.income.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              type: 'new_sale',
-              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-              entryDate: {
-                gte: rangeStart,
-                lte: rangeEnd,
-              },
-              OR: subTariffWidgets.map((widget) => ({
-                courseId: widget.courseId,
-                ...(widget.tariffId ? { tariffId: widget.tariffId } : {}),
-              })),
-              ...(scope.isScoped
-                ? {
-                    managerUserId: ctx.user.userId,
-                  }
-                : {}),
-            },
-            select: {
-              courseId: true,
-              tariffId: true,
-              paymentAmount: true,
-              coursePriceAmount: true,
-              customer: {
-                select: {
-                  profileSubTariffId: true,
-                },
-              },
-            },
-          })
-        : [];
-
-      const groupedIncomeMap = new Map<string, { salesCount: number; agreementAmount: number }>();
-      for (const row of groupedIncomes) {
-        groupedIncomeMap.set(
-          `${row.courseId}::${row.tariffId || ''}`,
-          {
-            salesCount: row._count._all,
-            agreementAmount: Number(row._sum.coursePriceAmount ?? row._sum.paymentAmount ?? 0),
-          },
-        );
-      }
-
-      const subTariffIncomeMap = new Map<string, { salesCount: number; agreementAmount: number }>();
-      for (const income of subTariffIncomeRows) {
-        const subTariffId = income.customer?.profileSubTariffId || '';
-        if (!subTariffId) {
-          continue;
-        }
-        const key = `${income.courseId}::${income.tariffId || ''}::${subTariffId}`;
-        const current = subTariffIncomeMap.get(key) || { salesCount: 0, agreementAmount: 0 };
-        current.salesCount += 1;
-        current.agreementAmount += Number(income.coursePriceAmount ?? income.paymentAmount ?? 0);
-        subTariffIncomeMap.set(key, current);
-      }
+      // Per-row sums with the shared agreement formula; technical (agreement == 1) sales are not real sales.
+      const technicalSaleIds = buildTechnicalSaleIdSet(salesRaw);
+      const sales = salesRaw.filter((sale) => !technicalSaleIds.has(sale.id));
 
       const widgets = input.widgets.map((widget) => {
-        const tariffKey = widget.tariffId || '';
-        const groupedKey = `${widget.courseId}::${tariffKey}`;
-        const subTariffKey = `${widget.courseId}::${tariffKey}::${widget.subTariffId || ''}`;
-        const baseAggregate = groupedIncomeMap.get(groupedKey) || { salesCount: 0, agreementAmount: 0 };
-        const subTariffAggregate = subTariffIncomeMap.get(subTariffKey);
-
+        // A widget without a tariff covers the whole course; without a sub-tariff, every sub-tariff.
+        const matching = sales.filter((sale) => (
+          sale.courseId === widget.courseId
+          && (!widget.tariffId || sale.tariffId === widget.tariffId)
+          && (!widget.subTariffId || resolveSaleSubTariffId(sale) === widget.subTariffId)
+        ));
         return {
           id: widget.id,
-          salesCount: widget.subTariffId ? (subTariffAggregate?.salesCount ?? 0) : baseAggregate.salesCount,
-          agreementAmount: widget.subTariffId ? (subTariffAggregate?.agreementAmount ?? 0) : baseAggregate.agreementAmount,
+          salesCount: matching.length,
+          agreementAmount: matching.reduce((sum, sale) => sum + resolveSaleAgreementAmount(sale), 0),
         };
       });
 
