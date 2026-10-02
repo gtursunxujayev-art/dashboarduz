@@ -1,4 +1,5 @@
 import { prisma } from '@dashboarduz/db';
+import { NON_TECHNICAL_SALE_WHERE } from '../../services/income-facts';
 import { TRPCError } from '@trpc/server';
 import { Prisma } from '@prisma/client';
 import {
@@ -586,6 +587,22 @@ async function normalizeSaleChainChronology(tx: Prisma.TransactionClient, params
   };
 }
 
+async function reconcileBonusAfterIncomeChange(
+  tenantId: string,
+  actorUserId: string,
+  context: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await reconcileFinalizedBonusMonths({ tenantId, actorUserId });
+  } catch (error) {
+    console.error('[Bonus] Finalized month reconciliation failed after income change', {
+      tenantId,
+      ...context,
+      error: String((error as any)?.message || error),
+    });
+  }
+}
+
 async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params: {
   tenantId: string;
   saleId: string;
@@ -1021,8 +1038,9 @@ function getIncomeLifecycleLabel(status: string): string {
 
 function parseDateInput(input: string): Date {
   const value = input.trim();
+  // Date-only input is a Tashkent calendar day; never depend on the server's timezone.
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
-    ? new Date(`${value}T00:00:00`)
+    ? new Date(`${value}T00:00:00.000+05:00`)
     : new Date(value);
 
   if (Number.isNaN(date.getTime())) {
@@ -4003,6 +4021,8 @@ export const customerIncomeRouter = router({
                 managerUserId: scopedManagerUserId,
               }
             : {}),
+          // Technical sales (agreement == 1) are not real debts; never offer them for a repayment.
+          ...NON_TECHNICAL_SALE_WHERE,
         },
         orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
         take: 200,
@@ -4495,15 +4515,7 @@ export const customerIncomeRouter = router({
         skipTelegramNotification,
       });
 
-      try {
-        await reconcileFinalizedBonusMonths({ tenantId: ctx.tenantId, actorUserId: ctx.user.userId });
-      } catch (error) {
-        console.error('[Bonus] Finalized month reconciliation failed after income creation', {
-          tenantId: ctx.tenantId,
-          incomeId: result.income.id,
-          error: String((error as any)?.message || error),
-        });
-      }
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { incomeId: result.income.id });
 
       return {
         income: result.income,
@@ -4968,6 +4980,8 @@ export const customerIncomeRouter = router({
         },
       });
 
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { action: 'updateIncome' });
+
       return {
         success: true,
         income: updatedRepayment,
@@ -5034,48 +5048,21 @@ export const customerIncomeRouter = router({
         }
       }
 
-      const transactionSteps: Prisma.PrismaPromise<unknown>[] = [];
-
-      if (income.type === 'repayment' && income.relatedDebtIncomeId) {
-        const sourceIncome = await prisma.income.findFirst({
-          where: {
-            id: income.relatedDebtIncomeId,
-            tenantId: ctx.tenantId,
-          },
-          select: {
-            id: true,
-            debtAmount: true,
-            remainingDebtAmount: true,
-          },
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.income.delete({
+          where: { id: income.id },
         });
 
-        if (sourceIncome) {
-          const restoredDebtRaw = (sourceIncome.remainingDebtAmount || 0) + (income.paymentAmount || 0);
-          const restoredDebt = sourceIncome.debtAmount !== null
-            ? Math.min(restoredDebtRaw, sourceIncome.debtAmount)
-            : restoredDebtRaw;
-
-          transactionSteps.push(
-            prisma.income.updateMany({
-              where: {
-                id: sourceIncome.id,
-                tenantId: ctx.tenantId,
-              },
-              data: {
-                remainingDebtAmount: Math.max(restoredDebt, 0),
-              },
-            }),
-          );
+        // Recompute the whole chain so later repayments' stored debt stays correct.
+        if (income.type === 'repayment' && income.relatedDebtIncomeId) {
+          await assertSaleChainDebtInvariant(tx, {
+            tenantId: ctx.tenantId,
+            saleId: income.relatedDebtIncomeId,
+          });
         }
-      }
+      });
 
-      transactionSteps.push(
-        prisma.income.delete({
-          where: { id: income.id },
-        }),
-      );
-
-      await prisma.$transaction(transactionSteps);
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { incomeId: income.id });
 
       await prisma.auditLog.create({
         data: {
@@ -5403,7 +5390,8 @@ export const customerIncomeRouter = router({
             courseName: income.course?.name || '',
             tariffName: income.tariff?.name || '',
             subTariffName,
-            agreementAmount: Number(income.coursePriceAmount ?? income.debtAmount ?? 0),
+            // Only the sale row carries the agreement; repeating it on repayment rows doubled the column's total.
+            agreementAmount: income.type === 'new_sale' ? getSaleAgreementAmount(income) : null,
             paymentAmount: Number(income.paymentAmount ?? 0),
             remainingDebtAmount: Number(income.remainingDebtAmount ?? 0),
           };
@@ -5597,6 +5585,7 @@ export const customerIncomeRouter = router({
             lifecycleStatus: true,
             entryDate: true,
             coursePriceAmount: true,
+            debtAmount: true,
             paymentAmount: true,
             remainingDebtAmount: true,
             legacyImportMeta: true,
@@ -5700,7 +5689,7 @@ export const customerIncomeRouter = router({
           entryDate: sale.entryDate,
           courseName: sale.course?.name || '-',
           tariffName: sale.tariff?.name || '-',
-          agreementAmount: sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
+          agreementAmount: getSaleAgreementAmount(sale),
           firstPaymentAmount: sale.paymentAmount ?? 0,
           remainingDebtAmount: sale.remainingDebtAmount ?? 0,
           managerLabel: resolveManagerLabel(sale.manager),
@@ -6116,6 +6105,18 @@ export const customerIncomeRouter = router({
         });
       }
 
+      // A refund returns the whole sale chain, so the requested amount is everything paid on it.
+      const refundChainPaidAmount = input.type === ADJUSTMENT_TYPE_REFUND
+        ? ((await prisma.income.aggregate({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              OR: [{ id: sourceIncome.id }, { relatedDebtIncomeId: sourceIncome.id }],
+            },
+            _sum: { paymentAmount: true },
+          }))._sum.paymentAmount ?? sourceIncome.paymentAmount)
+        : null;
+
       const createdRequest = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         let request: { id: string; type: string; status: string };
         try {
@@ -6128,7 +6129,7 @@ export const customerIncomeRouter = router({
               customerId: sourceIncome.customerId,
               requestedByUserId: ctx.user.userId,
               reason: input.reason?.trim() || null,
-              requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? sourceIncome.paymentAmount : null,
+              requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? refundChainPaidAmount : null,
               refundCardNumber: input.type === ADJUSTMENT_TYPE_REFUND ? input.refundCardNumber || null : null,
               newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
               newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
@@ -6155,7 +6156,7 @@ export const customerIncomeRouter = router({
               customerId: sourceIncome.customerId,
               requestedByUserId: ctx.user.userId,
               reason: input.reason?.trim() || null,
-              requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? sourceIncome.paymentAmount : null,
+              requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? refundChainPaidAmount : null,
               newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
               newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
               newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
@@ -6171,8 +6172,12 @@ export const customerIncomeRouter = router({
         }
 
         if (input.type === ADJUSTMENT_TYPE_REFUND) {
-          await tx.income.update({
-            where: { id: sourceIncome.id },
+          await tx.income.updateMany({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              OR: [{ id: sourceIncome.id }, { relatedDebtIncomeId: sourceIncome.id }],
+            },
             data: {
               lifecycleStatus: INCOME_LIFECYCLE_PENDING_REFUND,
             },
@@ -6298,8 +6303,12 @@ export const customerIncomeRouter = router({
 
       await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         if (request.type === ADJUSTMENT_TYPE_REFUND) {
-          await tx.income.update({
-            where: { id: request.incomeId },
+          await tx.income.updateMany({
+            where: {
+              tenantId: ctx.tenantId,
+              lifecycleStatus: { in: [INCOME_LIFECYCLE_ACTIVE, INCOME_LIFECYCLE_PENDING_REFUND] },
+              OR: [{ id: request.incomeId }, { relatedDebtIncomeId: request.incomeId }],
+            },
             data: {
               lifecycleStatus: INCOME_LIFECYCLE_REFUNDED,
             },
@@ -6397,6 +6406,11 @@ export const customerIncomeRouter = router({
               tariffId: request.newTariffId,
             },
           });
+
+          await assertSaleChainDebtInvariant(tx, {
+            tenantId: ctx.tenantId,
+            saleId: request.incomeId,
+          });
         }
 
         await tx.incomeAdjustmentRequest.update({
@@ -6411,15 +6425,7 @@ export const customerIncomeRouter = router({
         });
       });
 
-      try {
-        await reconcileFinalizedBonusMonths({ tenantId: ctx.tenantId, actorUserId: ctx.user.userId });
-      } catch (error) {
-        console.error('[Bonus] Finalized month reconciliation failed after income adjustment', {
-          tenantId: ctx.tenantId,
-          requestId: request.id,
-          error: String((error as any)?.message || error),
-        });
-      }
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { requestId: request.id });
 
       await prisma.auditLog.create({
         data: {
@@ -6519,11 +6525,21 @@ export const customerIncomeRouter = router({
       }
 
       await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        await tx.income.update({
-          where: { id: request.income.id },
+        // Restore every row of the chain that the refund request put on hold, not just the sale row.
+        await tx.income.updateMany({
+          where: {
+            tenantId: ctx.tenantId,
+            lifecycleStatus: INCOME_LIFECYCLE_PENDING_REFUND,
+            OR: [{ id: request.income.id }, { relatedDebtIncomeId: request.income.id }],
+          },
           data: {
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           },
+        });
+
+        await assertSaleChainDebtInvariant(tx, {
+          tenantId: ctx.tenantId,
+          saleId: request.income.id,
         });
 
         await tx.customer.update({
@@ -6559,6 +6575,8 @@ export const customerIncomeRouter = router({
           },
         },
       });
+
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { requestId: request.id });
 
       if (request.type === ADJUSTMENT_TYPE_REFUND) {
         try {
@@ -7374,6 +7392,8 @@ export const customerIncomeRouter = router({
         }
       }
 
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { action: 'deleteCustomerCourse' });
+
       return {
         success: true,
         deletedCount: resultPayload.deletedCount,
@@ -7562,6 +7582,8 @@ export const customerIncomeRouter = router({
           },
         },
       });
+
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { action: 'updateCustomerCourseSale' });
 
       return {
         success: true,
@@ -7919,9 +7941,15 @@ export const customerIncomeRouter = router({
         const saleMetric = activeSaleChainMetricsBySaleId.get(sale.id);
         const saleDebt = saleMetric?.currentDebtAmount ?? (sale.remainingDebtAmount || 0);
         const salePaid = saleMetric?.paidAmount ?? Number(sale.paymentAmount || 0);
-        current.totalDebtAmount += saleDebt;
-        current.totalPaidAmount += salePaid;
-        current.hasDebt = current.hasDebt || saleDebt > 0;
+        // Totals cover only the sales the list is filtered to, and never technical (agreement == 1) sales.
+        const matchesCourseFilter = (!input?.courseId || sale.course?.id === input.courseId)
+          && (!input?.tariffId || sale.tariff?.id === input.tariffId);
+        const isTechnicalSale = getSaleAgreementAmount(sale) === 1;
+        if (matchesCourseFilter && !isTechnicalSale) {
+          current.totalDebtAmount += saleDebt;
+          current.totalPaidAmount += salePaid;
+          current.hasDebt = current.hasDebt || saleDebt > 0;
+        }
         if (sale.course?.name) {
           current.courses.add(sale.course.name);
         }
