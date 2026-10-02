@@ -83,8 +83,10 @@ function getDisplayedRemainingDebtForIncomeRow(income: any): number {
     return 0;
   }
 
+  // Each row shows the debt left right after that payment. For a sale row that is agreement minus its first payment;
+  // the agreement uses the same order as the API (coursePriceAmount, then debtAmount, then the payment).
   if (income.type === 'new_sale') {
-    const agreementAmount = Number(income.debtAmount ?? income.coursePriceAmount ?? 0);
+    const agreementAmount = Number(income.coursePriceAmount ?? income.debtAmount ?? income.paymentAmount ?? 0);
     const firstPaymentAmount = Number(income.paymentAmount ?? 0);
     return Math.max(agreementAmount - firstPaymentAmount, 0);
   }
@@ -664,7 +666,7 @@ export default function IncomePage() {
         row.telegramUsername || '',
         [row.courseName, row.tariffName, row.subTariffName].filter(Boolean).join(' / ') || '-',
         formatIncomeType(row.type),
-        formatAmount(row.agreementAmount),
+        row.agreementAmount == null ? '' : formatAmount(row.agreementAmount),
         formatAmount(row.paymentAmount),
         formatAmount(row.remainingDebtAmount),
         formatDateForInput(row.deadline),
