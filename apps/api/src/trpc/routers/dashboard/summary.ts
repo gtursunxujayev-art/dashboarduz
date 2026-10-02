@@ -26,6 +26,7 @@ import {
   isAllowedUtelManagerExtension,
   extractUtelManagerKey,
   resolveCallExtension,
+  resolveCallDuration,
   getAgentResponsibleScope,
   resolveDateRange,
   isTashkiliyOnly,
@@ -42,6 +43,7 @@ import {
   getReportLocalDayOfYearForMonthEnd,
   buildTrend,
 } from './helpers';
+import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { AGENT_ROLES } from '@dashboarduz/shared';
 import { getOrSet, buildCacheKey } from '../../../services/cache';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
@@ -250,7 +252,7 @@ export const summaryProcedures = {
         sourceStatus.leads.state = 'unavailable';
       }
 
-      const [pendingNotifications, activeIntegrations, totalIncomeAggregate, newSalesIncomes, incomesForSellers, callsForSellers] = await Promise.all([
+      const [pendingNotifications, activeIntegrations, newSalesIncomesRaw, incomesForSellersRaw, callsForSellers] = await Promise.all([
         scope.isScoped
           ? Promise.resolve(0)
           : prisma.notification.count({
@@ -273,24 +275,6 @@ export const summaryProcedures = {
                 status: 'active',
               },
             }),
-        prisma.income.aggregate({
-          where: {
-            tenantId: ctx.tenantId,
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            entryDate: {
-              gte: rangeStart,
-              lte: rangeEnd,
-            },
-            ...(scope.isScoped
-              ? {
-                  managerUserId: ctx.user.userId,
-                }
-              : {}),
-          },
-          _sum: {
-            paymentAmount: true,
-          },
-        }),
         prisma.income.findMany({
           where: {
             tenantId: ctx.tenantId,
@@ -307,8 +291,12 @@ export const summaryProcedures = {
               : {}),
           },
           select: {
+            id: true,
+            type: true,
+            relatedDebtIncomeId: true,
             paymentAmount: true,
             coursePriceAmount: true,
+            debtAmount: true,
             managerUserId: true,
             course: {
               select: {
@@ -333,10 +321,13 @@ export const summaryProcedures = {
               : {}),
           },
           select: {
+            id: true,
+            relatedDebtIncomeId: true,
             managerUserId: true,
             type: true,
             paymentAmount: true,
             coursePriceAmount: true,
+            debtAmount: true,
             course: {
               select: {
                 name: true,
@@ -368,6 +359,11 @@ export const summaryProcedures = {
           },
         }),
       ]);
+
+      // Technical sales (agreement == 1) and their repayments are bookkeeping rows, not real income.
+      const technicalSaleIds = await loadTechnicalSaleIdsForRows(ctx.tenantId, incomesForSellersRaw);
+      const newSalesIncomes = excludeTechnicalRows(newSalesIncomesRaw, technicalSaleIds);
+      const incomesForSellers = excludeTechnicalRows(incomesForSellersRaw, technicalSaleIds);
 
       let agentUsers: Array<{
         id: string;
@@ -538,7 +534,7 @@ export const summaryProcedures = {
       let newSalesAgreementAmount = 0;
 
       for (const income of newSalesIncomes) {
-        const agreementAmount = income.coursePriceAmount ?? income.paymentAmount ?? 0;
+        const agreementAmount = resolveSaleAgreementAmount(income);
         newSalesAgreementAmount += agreementAmount;
 
         const category = income.course?.category
@@ -565,7 +561,7 @@ export const summaryProcedures = {
       const qualifiedLeadSharePercent = totalLeads > 0 ? (qualifiedLeads / totalLeads) * 100 : 0;
       const nonQualifiedLeadSharePercent = totalLeads > 0 ? (nonQualifiedLeads / totalLeads) * 100 : 0;
       const conversionPercent = totalLeads > 0 ? (newSalesCount / totalLeads) * 100 : 0;
-      const totalIncomeAmount = totalIncomeAggregate._sum.paymentAmount ?? 0;
+      const totalIncomeAmount = incomesForSellers.reduce((sum, income) => sum + (income.paymentAmount ?? 0), 0);
 
       const leadsByResponsibleUser = new Map<string, { newLeads: number; qualifiedLeads: number }>();
       if (leadsDataAvailable) {
@@ -616,7 +612,7 @@ export const summaryProcedures = {
         current.incomeAmount += paymentAmount;
         if (income.type === 'new_sale') {
           current.sales += 1;
-          current.agreementsAmount += income.coursePriceAmount ?? income.paymentAmount ?? 0;
+          current.agreementsAmount += resolveSaleAgreementAmount(income);
         }
 
         salesByManager.set(income.managerUserId, current);
@@ -658,7 +654,8 @@ export const summaryProcedures = {
 
           if (matched) {
             callCount += 1;
-            const callDuration = Math.max(0, call.duration ?? 0);
+            // Same duration rule as the live leaderboard: fall back to the duration stored in call metadata.
+            const callDuration = resolveCallDuration(call.duration, call.metadata);
             talkSeconds += callDuration;
           }
         }
@@ -957,8 +954,8 @@ export const summaryProcedures = {
       ] = await Promise.all([
         prisma.income.findMany({
           where,
+          // No row limit: every total below is summed from this list. Only recentIncomes is trimmed.
           orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
-          take: 300,
           select: {
             id: true,
             type: true,
@@ -966,6 +963,7 @@ export const summaryProcedures = {
             relatedDebtIncomeId: true,
             paymentAmount: true,
             coursePriceAmount: true,
+            debtAmount: true,
             remainingDebtAmount: true,
             entryDate: true,
             customerId: true,
@@ -1066,6 +1064,7 @@ export const summaryProcedures = {
         entryDate: Date;
         coursePriceAmount: number | null;
         paymentAmount: number;
+        debtAmount: number | null;
       }>)
         .filter((income) => (
           income.type === 'new_sale'
@@ -1077,7 +1076,7 @@ export const summaryProcedures = {
           entryDate: sale.entryDate,
           coursePriceAmount: sale.coursePriceAmount,
           paymentAmount: sale.paymentAmount,
-          debtAmount: sale.coursePriceAmount,
+          debtAmount: sale.debtAmount,
         }));
       const activeSaleChainMetricsBySaleId = activeNewSales.length > 0
         ? buildSaleChainMetricsBySaleId({
@@ -1153,6 +1152,7 @@ export const summaryProcedures = {
         lifecycleStatus: string;
         paymentAmount: number;
         coursePriceAmount: number | null;
+        debtAmount: number | null;
         remainingDebtAmount: number;
         entryDate: Date;
         customerId: string;
@@ -1189,7 +1189,7 @@ export const summaryProcedures = {
         byCourse.count += 1;
         byCourse.amount += paymentAmount;
         if (income.type === 'new_sale') {
-          byCourse.agreementAmount += income.coursePriceAmount || paymentAmount;
+          byCourse.agreementAmount += resolveSaleAgreementAmount(income);
         }
         incomeByCourse.set(courseName, byCourse);
 
@@ -1363,6 +1363,7 @@ export const summaryProcedures = {
             relatedDebtIncomeId: income.relatedDebtIncomeId,
             technicalSaleIds,
           }))
+          .slice(0, 300)
           .map((income) => ({
           id: income.id,
           type: income.type,
