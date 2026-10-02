@@ -480,7 +480,8 @@ export default function DashboardPage() {
           id: 'conversion',
           title: 'Konversiya',
           value: `${(stats?.conversionPercent ?? 0).toFixed(1)}%`,
-          subtitle: 'Sotuv / lid',
+          // Leads follow the pipeline filter; sales are not linked to a pipeline, so they are always all sales.
+          subtitle: pipelineIds.length ? "Barcha sotuvlar / tanlangan pipeline lidlari" : 'Sotuv / lid',
           extra: null,
         },
       ]
@@ -559,7 +560,7 @@ export default function DashboardPage() {
               },
             ]
           : []),
-      ], [isTashkiliyOnly, stats, isAgentOnly, agentTalkDurationSeconds]);
+      ], [isTashkiliyOnly, stats, isAgentOnly, agentTalkDurationSeconds, pipelineIds.length]);
 
   const financeCards: DashboardCard[] = useMemo(() => [
     {
