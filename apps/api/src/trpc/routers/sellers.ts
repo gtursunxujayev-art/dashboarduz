@@ -1,4 +1,5 @@
 import { router, protectedProcedure } from '../trpc';
+import { classifyIncomeCategory, isRowLinkedToTechnicalSale, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -35,6 +36,7 @@ type SellerIncomeMetricSource = {
   type: string | null;
   paymentAmount: number | null;
   coursePriceAmount: number | null;
+  debtAmount?: number | null;
   course: {
     category?: string | null;
     name?: string | null;
@@ -200,23 +202,25 @@ function normalizeTelegramSecret(rawValue: string | undefined): string | null {
 }
 
 function resolveSellerIncomeCategory(source: SellerIncomeMetricSource): 'online' | 'offline' | 'intensive' | null {
-  const rawCategory = asString(source.course?.category)?.toLowerCase();
-  if (rawCategory === 'online' || rawCategory === 'offline' || rawCategory === 'intensive') {
-    return rawCategory;
-  }
+  const category = classifyIncomeCategory(source.course);
+  return category === 'online' || category === 'offline' || category === 'intensive' ? category : null;
+}
 
-  const courseName = asString(source.course?.name)?.toLowerCase() || '';
-  if (courseName.includes('onlayn') || courseName.includes('online')) {
-    return 'online';
-  }
-  if (courseName.includes('oflayn') || courseName.includes('offline')) {
-    return 'offline';
-  }
-  if (courseName.includes('intensiv') || courseName.includes('intensive')) {
-    return 'intensive';
-  }
-
-  return null;
+async function excludeTechnicalSellerIncomes<T extends { id?: string; type: string | null; relatedDebtIncomeId?: string | null }>(
+  tenantId: string,
+  rows: T[],
+): Promise<T[]> {
+  const refs = rows
+    .filter((row): row is T & { id: string } => Boolean(row.id))
+    .map((row) => ({ ...row, type: row.type || '' }));
+  const technicalSaleIds = await loadTechnicalSaleIdsForRows(tenantId, refs);
+  if (!technicalSaleIds.size) return rows;
+  return rows.filter((row) => !row.id || !isRowLinkedToTechnicalSale({
+    rowType: row.type || '',
+    rowId: row.id,
+    relatedDebtIncomeId: row.relatedDebtIncomeId,
+    technicalSaleIds,
+  }));
 }
 
 function getInclusiveRangeDayCount(rangeStart: Date, rangeEnd: Date): number {
@@ -250,7 +254,8 @@ function summarizeSellerIncomeMetrics(
 
   for (const income of incomes) {
     const paymentAmount = Number(income.paymentAmount || 0);
-    const agreementAmount = Number(income.coursePriceAmount || 0);
+    // Only sales carry an agreement; repayments add income but no new agreement.
+    const agreementAmount = income.type === 'new_sale' ? resolveSaleAgreementAmount(income) : 0;
     const category = resolveSellerIncomeCategory(income);
 
     incomeAmount += paymentAmount;
@@ -1115,7 +1120,7 @@ export const sellersRouter = router({
 
     const incomeFetchStartedMs = Date.now();
     const allManagerUserIds = Array.from(new Set(Array.from(managerUserIdsByAmoId.values()).flat()));
-    const [incomes, refundRequests, incomesWithCustomer, incomesWithDeadline] = await Promise.all([
+    const [incomesRaw, refundRequests, incomesWithCustomer, incomesWithDeadline] = await Promise.all([
       allManagerUserIds.length > 0
         ? (async () => {
             try {
@@ -1134,6 +1139,9 @@ export const sellersRouter = router({
                   type: true,
                   paymentAmount: true,
                   coursePriceAmount: true,
+                  debtAmount: true,
+                  id: true,
+                  relatedDebtIncomeId: true,
                   course: {
                     select: {
                       category: true,
@@ -1164,6 +1172,9 @@ export const sellersRouter = router({
                   type: true,
                   paymentAmount: true,
                   coursePriceAmount: true,
+                  debtAmount: true,
+                  id: true,
+                  relatedDebtIncomeId: true,
                   course: {
                     select: {
                       name: true,
@@ -1308,6 +1319,7 @@ export const sellersRouter = router({
           })()
         : [],
     ]);
+    const incomes = await excludeTechnicalSellerIncomes(ctx.tenantId, incomesRaw);
     timings.incomeFetchMs = Date.now() - incomeFetchStartedMs;
 
     const callsGroupingStartedMs = Date.now();
@@ -1686,7 +1698,7 @@ export const sellersRouter = router({
         }
       }
 
-      const [sellerIncomes, detailRefundRequests, detailIncomesWithCustomer, detailIncomesWithDeadline] = await Promise.all([
+      const [sellerIncomesRaw, detailRefundRequests, detailIncomesWithCustomer, detailIncomesWithDeadline] = await Promise.all([
         mappedManagerUserIds.length > 0
           ? prisma.income.findMany({
               where: {
@@ -1702,6 +1714,9 @@ export const sellersRouter = router({
                 type: true,
                 paymentAmount: true,
                 coursePriceAmount: true,
+                debtAmount: true,
+                id: true,
+                relatedDebtIncomeId: true,
                 course: {
                   select: {
                     category: true,
@@ -1764,6 +1779,7 @@ export const sellersRouter = router({
             })
           : [],
       ]);
+      const sellerIncomes = await excludeTechnicalSellerIncomes(ctx.tenantId, sellerIncomesRaw);
       const [corporateDurationByUserId, newLeadsForManager, activityMetricsMap] = await Promise.all([
         getCorporateCallDurationByManager({
           tenantId: ctx.tenantId,
@@ -2048,7 +2064,7 @@ export const sellersRouter = router({
       ]);
 
       const extensions = extensionsByManager.get(input.id) || [];
-      const [callsForMetrics, sellerIncomes, activityMetricsMap] = await Promise.all([
+      const [callsForMetrics, sellerIncomesRaw, activityMetricsMap] = await Promise.all([
         extensions.length > 0
           ? prisma.call.findMany({
               where: {
@@ -2083,6 +2099,9 @@ export const sellersRouter = router({
                 type: true,
                 paymentAmount: true,
                 coursePriceAmount: true,
+                debtAmount: true,
+                id: true,
+                relatedDebtIncomeId: true,
                 course: {
                   select: {
                     category: true,
@@ -2102,6 +2121,7 @@ export const sellersRouter = router({
           rangeKind: input.range === 'last30days' ? 'custom' : input.range,
         }),
       ]);
+      const sellerIncomes = await excludeTechnicalSellerIncomes(ctx.tenantId, sellerIncomesRaw);
       const corporateDurationByUserId = await getCorporateCallDurationByManager({
         tenantId: ctx.tenantId,
         managerUserIds: mappedUsers.map((row) => row.id),
