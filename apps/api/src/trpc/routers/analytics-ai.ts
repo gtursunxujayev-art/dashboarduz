@@ -1,4 +1,5 @@
 import { protectedProcedure, router } from '../trpc';
+import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -66,8 +67,9 @@ const analyticsAiInputSchema = z.object({
   focus: aiFocusSchema.default('sales'),
 });
 
+// Calendar date in Tashkent (GMT+5); range bounds are Tashkent midnights, which are the previous UTC day.
 function toDateOnly(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return new Date(date.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 function round(value: number, digits = 2): number {
@@ -154,7 +156,7 @@ function extractAttributionTokens(metadata: unknown): string[] {
 export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, rangeEnd: Date, focus: z.infer<typeof aiFocusSchema>) {
   const [
     leads,
-    incomes,
+    incomesRaw,
     calls,
   ] = await Promise.all([
     prisma.lead.findMany({
@@ -182,8 +184,10 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
       select: {
         id: true,
         type: true,
+        relatedDebtIncomeId: true,
         paymentAmount: true,
         coursePriceAmount: true,
+        debtAmount: true,
         remainingDebtAmount: true,
         managerUserId: true,
         course: {
@@ -263,11 +267,14 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
     }
   }
 
+  // Technical sales (agreement == 1) and their repayments are not real income.
+  const incomes = excludeTechnicalRows(incomesRaw, await loadTechnicalSaleIdsForRows(tenantId, incomesRaw));
   const incomeTotal = sum(incomes.map((income) => income.paymentAmount || 0));
-  const agreementTotal = sum(incomes.filter((income) => income.type === 'new_sale').map((income) => income.coursePriceAmount || 0));
+  const agreementTotal = sum(incomes.filter((income) => income.type === 'new_sale').map((income) => resolveSaleAgreementAmount(income)));
   const newSales = incomes.filter((income) => income.type === 'new_sale').length;
   const repayments = incomes.filter((income) => income.type !== 'new_sale').length;
-  const currentDebtFromRows = sum(incomes.map((income) => Math.max(income.remainingDebtAmount || 0, 0)));
+  // Debt lives on the sale row only (kept current by the chain recompute); repayment rows would double count it.
+  const currentDebtFromRows = sum(incomes.filter((income) => income.type === 'new_sale').map((income) => Math.max(income.remainingDebtAmount || 0, 0)));
 
   const categoryMap = new Map<string, { sales: number; income: number; agreement: number }>();
   for (const income of incomes) {
@@ -276,7 +283,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
     row.income += income.paymentAmount || 0;
     if (income.type === 'new_sale') {
       row.sales += 1;
-      row.agreement += income.coursePriceAmount || 0;
+      row.agreement += resolveSaleAgreementAmount(income);
     }
     categoryMap.set(category, row);
   }
