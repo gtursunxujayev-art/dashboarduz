@@ -33,7 +33,9 @@ import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 import { buildCacheKey, getOrSet } from '../../../services/cache';
-import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthStart } from '../../../services/bonus-engine';
+import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthStart, loadSaleClosures, resolveEffectiveBonusPolicy } from '../../../services/bonus-engine';
+import { computePlanProgressByAgent } from '../../../services/plan-bonus';
+import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import {
   BONUS_DETAIL_EXPORT_LIMIT,
   buildBonusDetailIncomeWhere,
@@ -226,6 +228,8 @@ const salarySummary = protectedProcedure
     }
 
     const salarySettings = extractSalarySettings(tenant.settings);
+    // Label with the bonus policy that applies to the viewed period, not whatever was saved last.
+    const viewedBonusMode = (await resolveEffectiveBonusPolicy(ctx.tenantId, rangeEnd)).policy.bonusMode;
     const agents = selectedManagerUserId
       ? allAgents.filter((agent) => agent.id === selectedManagerUserId)
       : allAgents;
@@ -236,7 +240,7 @@ const salarySummary = protectedProcedure
         monthStart: rangeStart.toISOString(),
         monthEnd: rangeEnd.toISOString(),
         scopedToCurrentAgent: Boolean(scopedManagerUserId),
-        bonusMode: salarySettings.bonusMode,
+        bonusMode: viewedBonusMode,
         bonusPercentages: salarySettings.bonusPercentages,
         kpiSettings: salarySettings.kpiSettings.enabled ? {
           monthlyBudget: salarySettings.kpiSettings.monthlyBudget,
@@ -339,102 +343,6 @@ const salarySummary = protectedProcedure
       });
     }
 
-    const [fullyPaidNewSalesForBonus, closingRepaymentsForBonus] = await Promise.all([
-      prisma.income.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          type: 'new_sale',
-          managerUserId: { in: agentIds },
-          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          remainingDebtAmount: 0,
-          entryDate: {
-            lte: rangeEnd,
-          },
-        },
-        select: {
-          id: true,
-          managerUserId: true,
-          coursePriceAmount: true,
-          debtAmount: true,
-          paymentAmount: true,
-          entryDate: true,
-          course: {
-            select: {
-              name: true,
-              category: true,
-            },
-          },
-        },
-      }),
-      prisma.income.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          type: 'repayment',
-          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          remainingDebtAmount: 0,
-          relatedDebtIncomeId: { not: null },
-          relatedDebtIncome: {
-            managerUserId: { in: agentIds },
-            type: 'new_sale',
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          },
-          entryDate: {
-            lte: rangeEnd,
-          },
-        },
-        orderBy: {
-          entryDate: 'asc',
-        },
-        select: {
-          entryDate: true,
-          relatedDebtIncomeId: true,
-          relatedDebtIncome: {
-            select: {
-              id: true,
-              managerUserId: true,
-            },
-          },
-        },
-      }),
-    ]);
-    const technicalSaleIdsForSalary = buildTechnicalSaleIdSet(fullyPaidNewSalesForBonus);
-    const filteredFullyPaidNewSalesForBonus = fullyPaidNewSalesForBonus.filter((sale) => !technicalSaleIdsForSalary.has(sale.id));
-
-    const closeDateBySaleIdForBonus = new Map<string, Date>();
-    for (const repayment of closingRepaymentsForBonus) {
-      if (!repayment.relatedDebtIncomeId) {
-        continue;
-      }
-      if (technicalSaleIdsForSalary.has(repayment.relatedDebtIncomeId)) {
-        continue;
-      }
-      if (!closeDateBySaleIdForBonus.has(repayment.relatedDebtIncomeId)) {
-        closeDateBySaleIdForBonus.set(repayment.relatedDebtIncomeId, repayment.entryDate);
-      }
-    }
-
-    const monthlyClosedCountsByAgent = new Map<string, SalaryBreakdown>();
-    const getMonthlyClosedCount = (agentId: string, category: SalaryCategory): number => {
-      const byAgent = monthlyClosedCountsByAgent.get(agentId);
-      return byAgent?.[category] ?? 0;
-    };
-
-    for (const sale of filteredFullyPaidNewSalesForBonus) {
-      const closeDate = closeDateBySaleIdForBonus.get(sale.id) ?? sale.entryDate;
-      if (closeDate < rangeStart || closeDate > rangeEnd) {
-        continue;
-      }
-      const category = sale.course?.category
-        ? classifyCourseCategoryFromField(sale.course.category)
-        : classifyCourseCategoryFromField(sale.course?.name);
-      if (category === 'other') {
-        continue;
-      }
-      const existing = monthlyClosedCountsByAgent.get(sale.managerUserId) ?? createZeroBreakdown();
-      existing[category] += 1;
-      monthlyClosedCountsByAgent.set(sale.managerUserId, existing);
-    }
-
     const bonusRange = await calculateBonusRange({ tenantId: ctx.tenantId, rangeStart, rangeEnd });
     for (const item of bonusRange.items) {
       const salaryRow = salaryByAgent.get(item.agentUserId);
@@ -453,166 +361,31 @@ const salarySummary = protectedProcedure
 
     const activePlanBonuses = salarySettings.planBonuses.filter((plan) => plan.isActive);
     if (activePlanBonuses.length > 0) {
-      const [closedSales, closingRepayments] = await Promise.all([
-        prisma.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            type: 'new_sale',
-            managerUserId: { in: agentIds },
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            remainingDebtAmount: 0,
-          },
-        select: {
-          id: true,
-          managerUserId: true,
-          entryDate: true,
-          courseId: true,
-          tariffId: true,
-          coursePriceAmount: true,
-          debtAmount: true,
-          paymentAmount: true,
-          customer: {
-            select: {
-              profileSubTariffId: true,
-              },
-            },
-            course: {
-              select: {
-                category: true,
-              },
-            },
-          },
-        }),
-        prisma.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            type: 'repayment',
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            remainingDebtAmount: 0,
-            relatedDebtIncomeId: { not: null },
-            relatedDebtIncome: {
-              managerUserId: { in: agentIds },
-              type: 'new_sale',
-              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            },
-          },
-          orderBy: {
-            entryDate: 'asc',
-          },
-          select: {
-            entryDate: true,
-            relatedDebtIncomeId: true,
-          },
-        }),
-      ]);
-      const technicalClosedSaleIds = buildTechnicalSaleIdSet(closedSales);
-      const filteredClosedSales = closedSales.filter((sale) => !technicalClosedSaleIds.has(sale.id));
-
-      const profileSubTariffIds = Array.from(
-        new Set(
-          closedSales
-            .map((sale) => sale.customer?.profileSubTariffId)
-            .filter((value): value is string => Boolean(value)),
-        ),
-      );
+      const closures = await loadSaleClosures({ tenantId: ctx.tenantId, rangeEnd });
+      const profileSubTariffIds = Array.from(new Set(
+        closures.map((closure) => closure.profileSubTariffId).filter((value): value is string => Boolean(value)),
+      ));
       const subTariffNameById = new Map<string, string>();
       if (profileSubTariffIds.length > 0) {
         const subTariffs = await prisma.subTariff.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            id: { in: profileSubTariffIds },
-          },
-          select: {
-            id: true,
-            name: true,
-          },
+          where: { tenantId: ctx.tenantId, id: { in: profileSubTariffIds } },
+          select: { id: true, name: true },
         });
         for (const subTariff of subTariffs) {
           subTariffNameById.set(subTariff.id, normalizeSubTariffName(subTariff.name));
         }
       }
 
-      const closeDateBySaleId = new Map<string, Date>();
-      for (const repayment of closingRepayments) {
-        if (!repayment.relatedDebtIncomeId) {
-          continue;
-        }
-        if (technicalClosedSaleIds.has(repayment.relatedDebtIncomeId)) {
-          continue;
-        }
-        if (!closeDateBySaleId.has(repayment.relatedDebtIncomeId)) {
-          closeDateBySaleId.set(repayment.relatedDebtIncomeId, repayment.entryDate);
-        }
-      }
-
-      const monthStartMs = rangeStart.getTime();
-      const monthEndMs = rangeEnd.getTime();
-      const closedSalesFactsByAgentAndPlan = new Map<string, number>();
-
-      const incrementPlanFact = (agentId: string, planId: string) => {
-        const key = `${agentId}:${planId}`;
-        closedSalesFactsByAgentAndPlan.set(key, (closedSalesFactsByAgentAndPlan.get(key) ?? 0) + 1);
-      };
-
-      for (const sale of filteredClosedSales) {
-        const closeDate = closeDateBySaleId.get(sale.id) ?? sale.entryDate;
-        const closeTimestamp = closeDate.getTime();
-        const saleCourseCategory = String(sale.course?.category || '').trim().toLowerCase();
-
-        for (const plan of activePlanBonuses) {
-          if (plan.courseCategory !== saleCourseCategory) {
-            continue;
-          }
-          if (plan.courseId && plan.courseId !== sale.courseId) {
-            continue;
-          }
-          if (plan.tariffId && plan.tariffId !== sale.tariffId) {
-            continue;
-          }
-          if (plan.subTariffId && plan.subTariffId !== sale.customer?.profileSubTariffId) {
-            continue;
-          }
-          if (!plan.tariffId && plan.subTariffName) {
-            const saleSubTariffName = sale.customer?.profileSubTariffId
-              ? subTariffNameById.get(sale.customer.profileSubTariffId) || ''
-              : '';
-            if (!saleSubTariffName || saleSubTariffName !== normalizeSubTariffName(plan.subTariffName)) {
-              continue;
-            }
-          }
-          if (hasExplicitRange) {
-            if (closeTimestamp < monthStartMs || closeTimestamp > monthEndMs) {
-              continue;
-            }
-          } else if (plan.periodMode === 'monthly' && (closeTimestamp < monthStartMs || closeTimestamp > monthEndMs)) {
-            continue;
-          }
-
-          incrementPlanFact(sale.managerUserId, plan.id);
-        }
-      }
-
+      const progressByAgent = computePlanProgressByAgent({
+        plans: activePlanBonuses,
+        closures,
+        agentIds,
+        rangeStart,
+        rangeEnd,
+        subTariffNameById,
+      });
       for (const salaryRow of salaryByAgent.values()) {
-        const planProgress = activePlanBonuses.map((plan) => {
-          const fact = closedSalesFactsByAgentAndPlan.get(`${salaryRow.userId}:${plan.id}`) ?? 0;
-          const completionPercent = plan.targetClosedSales > 0
-            ? Number(((fact / plan.targetClosedSales) * 100).toFixed(1))
-            : 0;
-          const completedUnits = Math.floor(fact / plan.targetClosedSales);
-          const earnedAmount = completedUnits * plan.bonusAmount;
-
-          return {
-            planId: plan.id,
-            name: plan.name,
-            periodMode: plan.periodMode,
-            target: plan.targetClosedSales,
-            fact,
-            completionPercent,
-            completedUnits,
-            earnedAmount,
-          };
-        });
-
+        const planProgress = progressByAgent.get(salaryRow.userId) ?? [];
         salaryRow.planProgress = planProgress;
         salaryRow.planBonusAmount = planProgress.reduce((sum, item) => sum + item.earnedAmount, 0);
       }
@@ -715,13 +488,18 @@ const salarySummary = protectedProcedure
             entryDate: { gte: rangeStart, lte: rangeEnd },
           },
           select: {
+            id: true,
+            relatedDebtIncomeId: true,
             managerUserId: true,
             type: true,
             paymentAmount: true,
             coursePriceAmount: true,
+            debtAmount: true,
           },
         }),
       ]);
+      // Technical sales (agreement == 1) and their repayments are not real sales or collections.
+      const kpiIncomes = excludeTechnicalRows(allIncomes, await loadTechnicalSaleIdsForRows(ctx.tenantId, allIncomes));
 
       // Group new leads by AmoCRM manager -> count per agent
       const newLeadCountByAgent = new Map<string, number>();
@@ -751,7 +529,8 @@ const salarySummary = protectedProcedure
         callDurationByAgent.set(agentId, (callDurationByAgent.get(agentId) || 0) + (call.duration || 0));
         callCountByAgent.set(agentId, (callCountByAgent.get(agentId) || 0) + 1);
         if (call.startedAt) {
-          const dayKey = call.startedAt.toISOString().slice(0, 10);
+          // Working day in Tashkent time, not the UTC date.
+          const dayKey = new Date(call.startedAt.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
           const days = callDaysByAgent.get(agentId) || new Set<string>();
           days.add(dayKey);
           callDaysByAgent.set(agentId, days);
@@ -762,10 +541,12 @@ const salarySummary = protectedProcedure
       const paidByAgent = new Map<string, number>();
       const agreementByAgent = new Map<string, number>();
       const salesCountByAgent = new Map<string, number>();
-      for (const inc of allIncomes) {
+      for (const inc of kpiIncomes) {
         const agentId = inc.managerUserId;
         paidByAgent.set(agentId, (paidByAgent.get(agentId) || 0) + (inc.paymentAmount || 0));
-        agreementByAgent.set(agentId, (agreementByAgent.get(agentId) || 0) + (inc.coursePriceAmount || 0));
+        if (inc.type === 'new_sale') {
+          agreementByAgent.set(agentId, (agreementByAgent.get(agentId) || 0) + resolveSaleAgreementAmount(inc));
+        }
         if (inc.type === 'new_sale') {
           salesCountByAgent.set(agentId, (salesCountByAgent.get(agentId) || 0) + 1);
         }
@@ -993,7 +774,7 @@ const salarySummary = protectedProcedure
       monthStart: rangeStart.toISOString(),
       monthEnd: rangeEnd.toISOString(),
       scopedToCurrentAgent: Boolean(scopedManagerUserId),
-      bonusMode: salarySettings.bonusMode,
+      bonusMode: viewedBonusMode,
       bonusPercentages: salarySettings.bonusPercentages,
       attendancePenaltySettings: salarySettings.attendancePenaltySettings,
       kpiSettings: kpi.enabled ? {
@@ -1076,6 +857,8 @@ async function loadBonusIncomeDetails({
       }
 
       const salarySettings = extractSalarySettings(tenant.settings);
+      // Label with the bonus policy that applies to the viewed period, not whatever was saved last.
+      const viewedBonusMode = (await resolveEffectiveBonusPolicy(ctx.tenantId, rangeEnd)).policy.bonusMode;
       const visibleAgents = selectedManagerUserId
         ? allAgents.filter((agent) => agent.id === selectedManagerUserId)
         : allAgents;
@@ -1086,7 +869,7 @@ async function loadBonusIncomeDetails({
           rangeStart: rangeStart.toISOString(),
           rangeEnd: rangeEnd.toISOString(),
           scopedToCurrentAgent: Boolean(scopedManagerUserId),
-          bonusMode: salarySettings.bonusMode,
+          bonusMode: viewedBonusMode,
           agentOptions: [],
           totals: {
             incomeAmount: 0,
@@ -1134,11 +917,11 @@ async function loadBonusIncomeDetails({
         };
       }
 
+      // All sales, not only the visible agents' own: a visible agent may record the closing payment on a colleague's sale.
       const activeSalesForBonus = await prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
-          managerUserId: { in: visibleAgentIds },
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
           ...(input.courseId ? { courseId: input.courseId } : {}),
           entryDate: {
@@ -1195,6 +978,7 @@ async function loadBonusIncomeDetails({
           paymentAmount: true,
           remainingDebtAmount: true,
           coursePriceAmount: true,
+          debtAmount: true,
           managerUserId: true,
           relatedDebtIncomeId: true,
           legacyImportMeta: true,
@@ -1228,6 +1012,7 @@ async function loadBonusIncomeDetails({
               id: true,
               managerUserId: true,
               coursePriceAmount: true,
+              debtAmount: true,
               paymentAmount: true,
               entryDate: true,
               legacyImportMeta: true,
@@ -1298,10 +1083,7 @@ async function loadBonusIncomeDetails({
 
       const agreementAmountBySaleId = new Map<string, number>();
       for (const sale of filteredActiveSalesForBonus) {
-        agreementAmountBySaleId.set(
-          sale.id,
-          sale.coursePriceAmount ?? sale.paymentAmount ?? 0,
-        );
+        agreementAmountBySaleId.set(sale.id, resolveSaleAgreementAmount(sale));
       }
 
       const debtAfterPaymentByRowId = new Map<string, number>();
@@ -1336,69 +1118,10 @@ async function loadBonusIncomeDetails({
         }
       }
 
-      const lastPaymentBySaleId = new Map<string, { id: string; entryDate: Date; createdAt: Date }>();
-      for (const row of bonusChainRows) {
-        const saleId = row.type === 'new_sale' ? row.id : row.relatedDebtIncomeId;
-        if (!saleId) continue;
-        const existing = lastPaymentBySaleId.get(saleId);
-        if (
-          !existing
-          || row.entryDate.getTime() > existing.entryDate.getTime()
-          || (
-            row.entryDate.getTime() === existing.entryDate.getTime()
-            && row.createdAt.getTime() > existing.createdAt.getTime()
-          )
-        ) {
-          lastPaymentBySaleId.set(saleId, {
-            id: row.id,
-            entryDate: row.entryDate,
-            createdAt: row.createdAt,
-          });
-        }
-      }
-
-      const closeDateBySaleIdForBonus = new Map<string, Date>();
-      for (const sale of filteredActiveSalesForBonus) {
-        const metric = chainMetricsBySaleId.get(sale.id);
-        if (!metric || metric.currentDebtAmount > 0.0001) {
-          continue;
-        }
-        const lastPayment = lastPaymentBySaleId.get(sale.id);
-        closeDateBySaleIdForBonus.set(sale.id, lastPayment?.entryDate ?? sale.entryDate);
-      }
-
-      const monthlyClosedCountsByAgent = new Map<string, SalaryBreakdown>();
-      for (const sale of filteredActiveSalesForBonus) {
-        const closeDate = closeDateBySaleIdForBonus.get(sale.id);
-        if (!closeDate || closeDate < rangeStart || closeDate > rangeEnd) {
-          continue;
-        }
-        const category = sale.course?.category
-          ? classifyCourseCategoryFromField(sale.course.category)
-          : classifyCourseCategoryFromField(sale.course?.name);
-        if (category === 'other') {
-          continue;
-        }
-        const existing = monthlyClosedCountsByAgent.get(sale.managerUserId) ?? createZeroBreakdown();
-        existing[category] += 1;
-        monthlyClosedCountsByAgent.set(sale.managerUserId, existing);
-      }
-
-      const getMonthlyClosedCount = (agentId: string, category: SalaryCategory): number => {
-        const byAgent = monthlyClosedCountsByAgent.get(agentId);
-        return byAgent?.[category] ?? 0;
-      };
-
-      const fullyPaidSaleIds = new Set(
-        filteredActiveSalesForBonus
-          .filter((sale) => (chainMetricsBySaleId.get(sale.id)?.currentDebtAmount ?? 0) <= 0.0001)
-          .map((sale) => sale.id),
-      );
-      const saleById = new Map(filteredActiveSalesForBonus.map((sale) => [sale.id, sale]));
-      const managerUserIdByChainRowId = new Map<string, string>();
-      for (const chainRow of bonusChainRows) {
-        managerUserIdByChainRowId.set(chainRow.id, chainRow.managerUserId);
-      }
+      // Closures come from the bonus engine so "closed" means exactly what it means for the bonus itself.
+      const closuresInRange = (await loadSaleClosures({ tenantId: ctx.tenantId, rangeEnd }))
+        .filter((closure) => closure.closedAt >= rangeStart && (!input.courseId || closure.courseId === input.courseId));
+      const closingIncomeIds = new Set(closuresInRange.map((closure) => closure.closingIncomeId));
       const managerLabelById = new Map(
         visibleAgents.map((agent) => [agent.id, agent.name || agent.username || agent.id]),
       );
@@ -1420,8 +1143,7 @@ async function loadBonusIncomeDetails({
         }))
         .map((income) => {
         const saleId = income.type === 'new_sale' ? income.id : income.relatedDebtIncomeId;
-        const last = saleId ? lastPaymentBySaleId.get(saleId) : undefined;
-        const isLastPayment = Boolean(last && last.id === income.id);
+        const isLastPayment = closingIncomeIds.has(income.id);
 
         const courseCategory = income.course?.category ?? income.relatedDebtIncome?.course?.category;
         const courseName = income.course?.name ?? income.relatedDebtIncome?.course?.name;
@@ -1437,9 +1159,8 @@ async function loadBonusIncomeDetails({
         const closedCount = bonusItem?.closedCount || 0;
         const usedFallback = bonusItem?.usedFallback || false;
 
-        const agreementAmount = income.type === 'new_sale'
-          ? (income.coursePriceAmount ?? income.paymentAmount ?? 0)
-          : (income.relatedDebtIncome?.coursePriceAmount ?? income.coursePriceAmount ?? income.paymentAmount ?? 0);
+        const agreementAmount = (saleId ? agreementAmountBySaleId.get(saleId) : undefined)
+          ?? resolveSaleAgreementAmount(income.type === 'new_sale' ? income : (income.relatedDebtIncome ?? income));
 
         const debtAfterPaymentAmount = debtAfterPaymentByRowId.get(income.id);
         const chainRemainingDebtAmount = debtAfterPaymentAmount ?? (
@@ -1464,7 +1185,7 @@ async function loadBonusIncomeDetails({
           paymentAmount: income.paymentAmount ?? 0,
           remainingDebtAmount: chainRemainingDebtAmount,
           calculatedBonus,
-          isLastPayment: Boolean(bonusItem) || isLastPayment,
+          isLastPayment,
           bonusDebug: {
             category: bonusItem?.category || category,
             closedCount,
@@ -1476,19 +1197,19 @@ async function loadBonusIncomeDetails({
         };
       });
 
-      const totals = rows.reduce(
-        (acc, row) => {
-          acc.incomeAmount += row.paymentAmount;
-          acc.bonusAmount += row.calculatedBonus;
-          acc.rowCount += 1;
-          return acc;
-        },
-        {
-          incomeAmount: 0,
-          bonusAmount: 0,
-          rowCount: 0,
-        },
-      );
+      // Totals are computed over the whole range, never from `rows`, which is capped for display.
+      const incomeByManager = await prisma.income.groupBy({
+        by: ['managerUserId'],
+        where: incomeWhere,
+        _sum: { paymentAmount: true },
+        _count: { _all: true },
+      });
+      const visibleBonusItems = [...bonusItemByIncomeId.values()];
+      const totals = {
+        incomeAmount: incomeByManager.reduce((sum, group) => sum + Number(group._sum.paymentAmount || 0), 0),
+        bonusAmount: visibleBonusItems.reduce((sum, item) => sum + item.bonusAmount, 0),
+        rowCount: incomeByManager.reduce((sum, group) => sum + group._count._all, 0),
+      };
 
       const agentSummaryMap = new Map<string, {
         managerUserId: string;
@@ -1510,38 +1231,20 @@ async function loadBonusIncomeDetails({
         });
       }
 
-      for (const row of rows) {
-        const summary = agentSummaryMap.get(row.managerUserId);
-        if (!summary) {
-          continue;
-        }
-        summary.incomeAmount += row.paymentAmount;
-        summary.totalBonusAmount += row.calculatedBonus;
-        const category = row.bonusDebug?.category;
-        if (category && category !== 'other') {
-          summary.bonusByCategory[category] += row.calculatedBonus;
-        }
+      for (const group of incomeByManager) {
+        const summary = agentSummaryMap.get(group.managerUserId);
+        if (summary) summary.incomeAmount += Number(group._sum.paymentAmount || 0);
+      }
+      for (const item of visibleBonusItems) {
+        const summary = agentSummaryMap.get(item.agentUserId);
+        if (!summary) continue;
+        summary.totalBonusAmount += item.bonusAmount;
+        summary.bonusByCategory[item.category] += item.bonusAmount;
       }
 
-      for (const [saleId, closeDate] of closeDateBySaleIdForBonus.entries()) {
-        if (closeDate < rangeStart || closeDate > rangeEnd) {
-          continue;
-        }
-        const sale = saleById.get(saleId);
-        if (!sale) {
-          continue;
-        }
-        const lastPayment = lastPaymentBySaleId.get(saleId);
-        if (!lastPayment) {
-          continue;
-        }
-        const ownerUserId = managerUserIdByChainRowId.get(lastPayment.id) || sale.managerUserId;
-        const summary = agentSummaryMap.get(ownerUserId);
-        if (!summary) {
-          continue;
-        }
-        const agreementAmount = sale.coursePriceAmount ?? sale.paymentAmount ?? 0;
-        summary.closedAgreementAmount += agreementAmount;
+      for (const closure of closuresInRange) {
+        const summary = agentSummaryMap.get(closure.closerUserId);
+        if (summary) summary.closedAgreementAmount += closure.agreementAmount;
       }
 
       const agentSummary = Array.from(agentSummaryMap.values()).sort((a, b) =>
@@ -1571,7 +1274,7 @@ async function loadBonusIncomeDetails({
         rangeStart: rangeStart.toISOString(),
         rangeEnd: rangeEnd.toISOString(),
         scopedToCurrentAgent: Boolean(scopedManagerUserId),
-        bonusMode: salarySettings.bonusMode,
+        bonusMode: viewedBonusMode,
         agentOptions: visibleAgents.map((agent) => ({
           id: agent.id,
           label: agent.name || agent.username || agent.id,
