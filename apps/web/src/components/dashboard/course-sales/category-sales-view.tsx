@@ -1,5 +1,6 @@
 'use client';
 
+import TariffBreakdownList from './tariff-breakdown-list';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
@@ -199,7 +200,7 @@ export default function CourseTypeSalesView({
   );
 
   const summary = summaryQuery.data?.totals;
-  const tariffCustomerBreakdown = summaryQuery.data?.tariffCustomerBreakdown;
+  const tariffBreakdown = summaryQuery.data?.tariffBreakdown;
   const salesBreakdown = summaryQuery.data?.salesBreakdown;
   const customers = useMemo(
     () => customersQuery.data?.rows ?? [],
@@ -604,11 +605,7 @@ export default function CourseTypeSalesView({
 
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-500">Tariflar</p>
-          <div className="mt-2 space-y-1 text-sm text-gray-700">
-            <p><span className="font-medium">VIP</span> - {tariffCustomerBreakdown?.vip ?? 0}</p>
-            <p><span className="font-medium">Premium</span> - {tariffCustomerBreakdown?.premium ?? 0}</p>
-            <p><span className="font-medium">Standart</span> - {tariffCustomerBreakdown?.standart ?? 0}</p>
-          </div>
+          <TariffBreakdownList rows={tariffBreakdown} />
         </div>
       </div>
 
