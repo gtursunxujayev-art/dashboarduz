@@ -1,5 +1,6 @@
 'use client';
 
+import TariffBreakdownList from '@/components/dashboard/course-sales/tariff-breakdown-list';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -562,9 +563,8 @@ export default function CourseSalesDetailPage() {
             <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summary?.currentDebtAmount)}</p>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">VIP ulushi</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900">{summary?.vipPercent ?? 0}%</p>
-            <p className="mt-1 text-xs text-gray-500">VIP: {summary?.vipCount ?? 0} | Standart: {summary?.standartCount ?? 0}</p>
+            <p className="text-xs uppercase tracking-wide text-gray-500">Tariflar</p>
+            <TariffBreakdownList rows={summary?.tariffBreakdown} />
           </div>
         </div>
       )}
