@@ -6,6 +6,7 @@ import { protectedProcedure, router } from '../trpc';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
 import { resolveEffectiveAgreementAmount } from '../../services/technical-income';
 import { NON_TECHNICAL_SALE_WHERE, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../services/income-facts';
+import { buildTariffBreakdown, type TariffBreakdownRow } from '../../services/tariff-breakdown';
 
 const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
@@ -395,11 +396,7 @@ export const courseSalesRouter = router({
             remainingDebtAmount: 0,
             customerCount: 0,
           },
-          tariffCustomerBreakdown: {
-            vip: 0,
-            premium: 0,
-            standart: 0,
-          },
+          tariffBreakdown: [] as TariffBreakdownRow[],
           salesBreakdown: {
             newSalesCount: 0,
             movedInCount: 0,
@@ -579,9 +576,6 @@ export const courseSalesRouter = router({
       let paidAmount = 0;
       let fullyPaidCount = 0;
       let debtorsCount = 0;
-      const vipCustomerIds = new Set<string>();
-      const premiumCustomerIds = new Set<string>();
-      const standartCustomerIds = new Set<string>();
       for (const sale of filteredNonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
         const agreement = metric?.agreementAmount ?? resolveSaleAgreementAmount(sale);
@@ -595,15 +589,28 @@ export const courseSalesRouter = router({
         } else {
           debtorsCount += 1;
         }
-        const tariffName = String(sale.tariff?.name || '').trim().toLowerCase();
-        if (tariffName.includes('vip')) {
-          vipCustomerIds.add(sale.customerId);
-        } else if (tariffName.includes('premium')) {
-          premiumCustomerIds.add(sale.customerId);
-        } else if (tariffName.includes('standart') || tariffName.includes('standard')) {
-          standartCustomerIds.add(sale.customerId);
-        }
       }
+
+      const breakdownSubTariffIds = Array.from(new Set(
+        filteredNonTechnicalSales.map((sale) => sale.resolvedSubTariffId).filter((id): id is string => Boolean(id)),
+      ));
+      const [breakdownSubTariffs, selectedCourseTariffs] = await Promise.all([
+        breakdownSubTariffIds.length
+          ? prisma.subTariff.findMany({ where: { tenantId: ctx.tenantId, id: { in: breakdownSubTariffIds } }, select: { id: true, name: true } })
+          : Promise.resolve([] as Array<{ id: string; name: string }>),
+        input.courseId && !input.tariffId
+          ? prisma.tariff.findMany({
+              where: { tenantId: ctx.tenantId, courseId: input.courseId, isActive: true },
+              orderBy: { name: 'asc' },
+              select: { id: true, name: true },
+            })
+          : Promise.resolve([] as Array<{ id: string; name: string }>),
+      ]);
+      const tariffBreakdown = buildTariffBreakdown({
+        sales: filteredNonTechnicalSales,
+        subTariffNameById: new Map(breakdownSubTariffs.map((subTariff) => [subTariff.id, subTariff.name])),
+        knownTariffs: selectedCourseTariffs,
+      });
 
       return {
         category: input.category,
@@ -620,11 +627,7 @@ export const courseSalesRouter = router({
           remainingDebtAmount,
           customerCount: new Set(filteredNonTechnicalSales.map((sale) => sale.customerId)).size,
         },
-        tariffCustomerBreakdown: {
-          vip: vipCustomerIds.size,
-          premium: premiumCustomerIds.size,
-          standart: standartCustomerIds.size,
-        },
+        tariffBreakdown,
         salesBreakdown: {
           newSalesCount: directNewSalesCount,
           movedInCount,
@@ -1571,14 +1574,17 @@ export const courseSalesRouter = router({
             id: true,
             customerId: true,
             managerUserId: true,
+            courseId: true,
             tariffId: true,
             entryDate: true,
             coursePriceAmount: true,
             debtAmount: true,
             paymentAmount: true,
             remainingDebtAmount: true,
+            legacyImportMeta: true,
             customer: {
               select: {
+                profileCourseId: true,
                 profileTariffId: true,
                 profileSubTariffId: true,
               },
@@ -1697,8 +1703,6 @@ export const courseSalesRouter = router({
       let rangeSalesPaidAmount = 0;
       let currentAgreementAmount = 0;
       let currentDebtAmount = 0;
-      let vipCount = 0;
-      let standartCount = 0;
       for (const sale of nonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
         const agreement = metric?.agreementAmount ?? resolveSaleAgreementAmount(sale);
@@ -1709,16 +1713,30 @@ export const courseSalesRouter = router({
           rangeSalesPaidAmount += metric?.paidAmount ?? currentIncomeBySaleId.get(sale.id) ?? 0;
         }
         currentDebtAmount += debt;
-        const subTariffName = sale.customer.profileSubTariffId
-          ? subTariffNameById.get(sale.customer.profileSubTariffId) || ''
-          : '';
-        if (subTariffName.includes('vip')) {
-          vipCount += 1;
-        }
-        if (subTariffName.includes('standart')) {
-          standartCount += 1;
-        }
       }
+
+      // Every tariff of the course, including deactivated ones: old sales on a retired tariff must still be counted.
+      const allCourseTariffs = await prisma.tariff.findMany({
+        where: { tenantId: ctx.tenantId, courseId: course.id },
+        select: { id: true, name: true },
+      });
+      // Real tariff / sub-tariff names instead of the old hard-coded VIP/Standart lookup on the customer profile.
+      const courseTariffById = new Map(allCourseTariffs.map((tariff) => [tariff.id, tariff]));
+      const breakdownSales = nonTechnicalSales.map((sale) => ({
+        tariff: sale.tariffId ? courseTariffById.get(sale.tariffId) ?? null : null,
+        resolvedSubTariffId: resolveSaleSubTariffId(sale),
+      }));
+      const breakdownSubTariffIds = Array.from(new Set(
+        breakdownSales.map((sale) => sale.resolvedSubTariffId).filter((id): id is string => Boolean(id)),
+      ));
+      const breakdownSubTariffs = breakdownSubTariffIds.length
+        ? await prisma.subTariff.findMany({ where: { tenantId: ctx.tenantId, id: { in: breakdownSubTariffIds } }, select: { id: true, name: true } })
+        : [];
+      const tariffBreakdown = buildTariffBreakdown({
+        sales: breakdownSales,
+        subTariffNameById: new Map(breakdownSubTariffs.map((subTariff) => [subTariff.id, subTariff.name])),
+        knownTariffs: course.tariffs,
+      });
       const currentCustomerCount = new Set(nonTechnicalSales.map((sale) => sale.customerId)).size;
       const rangeIncomeAmount = Array.from(incomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
       const currentIncomeAmount = nonTechnicalSales.reduce((sum, sale) => {
@@ -1768,20 +1786,34 @@ export const courseSalesRouter = router({
         }
       >();
 
-      for (const sale of nonTechnicalSales) {
-        const effectiveTariffId = sale.tariffId;
-        if (effectiveTariffId) {
-          const row = tariffRowMap.get(effectiveTariffId);
-          if (row) {
-            row.saleIds.push(sale.id);
-            row.customerIds.add(sale.customerId);
-            if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
-              row.agreementAmount += chainMetricsBySaleId.get(sale.id)?.agreementAmount
-                ?? resolveSaleAgreementAmount(sale);
-            }
-            row.debtAmount += chainMetricsBySaleId.get(sale.id)?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
-          }
+      const NO_TARIFF_ROW_KEY = '';
+      const ensureTariffRow = (tariffId: string | null) => {
+        const key = tariffId ?? NO_TARIFF_ROW_KEY;
+        let row = tariffRowMap.get(key);
+        if (!row) {
+          row = {
+            tariffId: key,
+            tariffName: tariffId ? courseTariffById.get(tariffId)?.name || 'Tarif' : 'Tarifsiz',
+            saleIds: [],
+            customerIds: new Set(),
+            agreementAmount: 0,
+            debtAmount: 0,
+            incomeAmount: 0,
+          };
+          tariffRowMap.set(key, row);
         }
+        return row;
+      };
+      for (const sale of nonTechnicalSales) {
+        // Sales on a deactivated tariff, or with no tariff, used to be dropped from this table.
+        const tariffRow = ensureTariffRow(sale.tariffId);
+        tariffRow.saleIds.push(sale.id);
+        tariffRow.customerIds.add(sale.customerId);
+        if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
+          tariffRow.agreementAmount += chainMetricsBySaleId.get(sale.id)?.agreementAmount
+            ?? resolveSaleAgreementAmount(sale);
+        }
+        tariffRow.debtAmount += chainMetricsBySaleId.get(sale.id)?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
 
         const managerLabel = sale.manager.name || sale.manager.username || sale.manager.id;
         const managerRow = managerMap.get(sale.managerUserId) || {
@@ -1810,12 +1842,7 @@ export const courseSalesRouter = router({
         if (!sale) {
           continue;
         }
-        if (sale.tariffId) {
-          const row = tariffRowMap.get(sale.tariffId);
-          if (row) {
-            row.incomeAmount += amount;
-          }
-        }
+        ensureTariffRow(sale.tariffId).incomeAmount += amount;
         const managerRow = managerMap.get(sale.managerUserId);
         if (managerRow) {
           managerRow.incomeAmount += amount;
@@ -1877,9 +1904,7 @@ export const courseSalesRouter = router({
           rangeAgreementAmount,
           rangeIncomeAmount,
           currentDebtAmount,
-          vipCount,
-          standartCount,
-          vipPercent: currentCustomerCount > 0 ? Number(((vipCount / currentCustomerCount) * 100).toFixed(1)) : 0,
+          tariffBreakdown,
           collectionPercent,
         },
         tariffRows,
