@@ -631,6 +631,8 @@ export default function AdjustmentsPage() {
             </p>
 
             <form onSubmit={handleReviewSubmit} className="mt-4 space-y-4">
+              {/* The page-level banner sits behind this overlay, so review errors must render here. */}
+              {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
               {reviewRequest && (
                 <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                   <div className="grid grid-cols-1 gap-2 md:grid-cols-2">

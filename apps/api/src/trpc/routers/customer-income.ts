@@ -6537,10 +6537,13 @@ export const customerIncomeRouter = router({
           },
         });
 
-        await assertSaleChainDebtInvariant(tx, {
-          tenantId: ctx.tenantId,
-          saleId: request.income.id,
-        });
+        // Only a refund rejection changes the chain; a tariff-change rejection leaves every income row as is.
+        if (request.type === ADJUSTMENT_TYPE_REFUND) {
+          await assertSaleChainDebtInvariant(tx, {
+            tenantId: ctx.tenantId,
+            saleId: request.income.id,
+          });
+        }
 
         await tx.customer.update({
           where: { id: request.income.customerId },
