@@ -5060,6 +5060,10 @@ export const customerIncomeRouter = router({
             saleId: income.relatedDebtIncomeId,
           });
         }
+      }, {
+        // Chain recompute after delete can outlast the 5s interactive transaction default.
+        maxWait: 15000,
+        timeout: 60000,
       });
 
       await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { incomeId: income.id });
@@ -6423,6 +6427,10 @@ export const customerIncomeRouter = router({
           },
           select: { id: true },
         });
+      }, {
+        // Tariff change rewrites the whole chain + invariant repair; the 5s default closes it mid-way.
+        maxWait: 15000,
+        timeout: 60000,
       });
 
       await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { requestId: request.id });
@@ -6563,6 +6571,10 @@ export const customerIncomeRouter = router({
           },
           select: { id: true },
         });
+      }, {
+        // Refund rejection restores the chain and runs invariant repair.
+        maxWait: 15000,
+        timeout: 60000,
       });
 
       await prisma.auditLog.create({
@@ -7569,6 +7581,10 @@ export const customerIncomeRouter = router({
           tenantId: ctx.tenantId,
           saleId: saleIncome.id,
         });
+      }, {
+        // Sale edit rewrites the chain + invariant repair; avoid premature transaction close.
+        maxWait: 15000,
+        timeout: 60000,
       });
 
       await prisma.auditLog.create({
