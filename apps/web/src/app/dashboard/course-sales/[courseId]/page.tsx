@@ -138,6 +138,10 @@ export default function CourseSalesDetailPage() {
       tariffId: tariffId || undefined,
       subTariffId: subTariffId || undefined,
       query: searchQuery || undefined,
+      // Same period as the summary cards; without it the API silently defaults to this month.
+      range,
+      dateFrom: range === 'custom' ? dateFrom : undefined,
+      dateTo: range === 'custom' ? dateTo : undefined,
       page,
       limit: 50,
     },
@@ -205,6 +209,11 @@ export default function CourseSalesDetailPage() {
     }
   }, [courseEditTariffId, courseEditSubTariffId, editSubTariffOptions]);
 
+  // A new filter can have fewer pages than the current page number.
+  useEffect(() => {
+    setPage(1);
+  }, [range, dateFrom, dateTo, tariffId, subTariffId, searchQuery]);
+
   useEffect(() => {
     if (!editingSaleIncomeId || !courseEditTariffId) {
       return;
@@ -234,6 +243,9 @@ export default function CourseSalesDetailPage() {
             tariffId: tariffId || undefined,
             subTariffId: subTariffId || undefined,
             query: searchQuery || undefined,
+            range,
+            dateFrom: range === 'custom' ? dateFrom : undefined,
+            dateTo: range === 'custom' ? dateTo : undefined,
             page: currentPage,
             limit: pageSize,
           });

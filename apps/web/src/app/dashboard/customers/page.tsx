@@ -90,7 +90,6 @@ export default function CustomersPage() {
       tariffId: tariffId || undefined,
       subTariffId: subTariffId || undefined,
       debtFilter,
-      limit: 150,
     },
     {
       retry: false,

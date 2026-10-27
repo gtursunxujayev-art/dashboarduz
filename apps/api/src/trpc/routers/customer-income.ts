@@ -7618,7 +7618,8 @@ export const customerIncomeRouter = router({
           tariffId: z.string().uuid().optional(),
           subTariffId: z.string().uuid().optional(),
           debtFilter: z.enum(['all', 'with_debt', 'without_debt']).default('all'),
-          limit: z.number().int().positive().max(1000).default(150),
+          // Omitted = every matching customer; the page and its export need the full filtered list.
+          limit: z.number().int().positive().max(10000).optional(),
         })
         .optional(),
     )
@@ -7678,7 +7679,7 @@ export const customerIncomeRouter = router({
         ...(andConditions.length ? { AND: andConditions } : {}),
       };
 
-      const [allMatchedCustomersLite, customers, courseOptions, catalogCourses] = await Promise.all([
+      const [allMatchedCustomersLite, courseOptions, catalogCourses] = await Promise.all([
         prisma.customer.findMany({
           where,
           orderBy: { createdAt: 'desc' },
@@ -7687,22 +7688,6 @@ export const customerIncomeRouter = router({
             profileCourseId: true,
             profileTariffId: true,
             profileSubTariffId: true,
-          },
-        }),
-        prisma.customer.findMany({
-          where,
-          orderBy: { createdAt: 'desc' },
-          take: input?.limit ?? 300,
-          select: {
-            id: true,
-            customerNumber: true,
-            name: true,
-            telegramUsername: true,
-            profileCourseId: true,
-            profileTariffId: true,
-            profileSubTariffId: true,
-            createdAt: true,
-            updatedAt: true,
           },
         }),
         fetchCourseOptionsSafe(ctx.tenantId),
@@ -8040,29 +8025,29 @@ export const customerIncomeRouter = router({
         }),
       );
 
-      const customersAfterSubTariffFilter = input?.subTariffId
-        ? customers.filter((customer) => {
-            const entries = courseEntriesByCustomer.get(customer.id) || [];
-            return entries.some((entry) =>
-              entry.subTariffId === input.subTariffId
-              && (!input.courseId || entry.courseId === input.courseId)
-              && (!input.tariffId || entry.tariffId === input.tariffId));
+      // Filter first, then limit: limiting before the debt/sub-tariff filter dropped most matching customers.
+      const filteredCustomerIds = Array.from(customersAfterDebtFilterIds);
+      const customersAfterDebtFilter = filteredCustomerIds.length > 0
+        ? await prisma.customer.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              id: { in: filteredCustomerIds },
+            },
+            orderBy: { createdAt: 'desc' },
+            ...(input?.limit ? { take: input.limit } : {}),
+            select: {
+              id: true,
+              customerNumber: true,
+              name: true,
+              telegramUsername: true,
+              profileCourseId: true,
+              profileTariffId: true,
+              profileSubTariffId: true,
+              createdAt: true,
+              updatedAt: true,
+            },
           })
-        : customers;
-      const customersAfterDebtFilter = customersAfterSubTariffFilter.filter((customer) => {
-        if (!input?.debtFilter) {
-          return true;
-        }
-        const aggregate = aggregatesByCustomer.get(customer.id);
-        const hasDebt = Boolean(aggregate?.hasDebt);
-        if (input.debtFilter === 'with_debt') {
-          return hasDebt;
-        }
-        if (input.debtFilter === 'without_debt') {
-          return !hasDebt;
-        }
-        return true;
-      });
+        : [];
 
       return {
         customers: customersAfterDebtFilter.map((customer) => {
