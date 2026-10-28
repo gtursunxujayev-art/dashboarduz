@@ -5,7 +5,7 @@ import { hasAgentRole } from '@dashboarduz/shared';
 import { protectedProcedure, router } from '../trpc';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
 import { resolveEffectiveAgreementAmount } from '../../services/technical-income';
-import { NON_TECHNICAL_SALE_WHERE, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../services/income-facts';
+import { resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../services/income-facts';
 import { buildTariffBreakdown, type TariffBreakdownRow } from '../../services/tariff-breakdown';
 
 const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
@@ -691,8 +691,7 @@ export const courseSalesRouter = router({
         });
       }
 
-      // Technical sales (agreement == 1) are bookkeeping rows; the summaries exclude them, so the lists must too.
-      scopedFilters.push(NON_TECHNICAL_SALE_WHERE);
+      // 1 so'm (technical) sales stay in the customer lists; summaries count them separately as service exchange.
 
       const where = {
         tenantId: ctx.tenantId,
@@ -1257,8 +1256,7 @@ export const courseSalesRouter = router({
         });
       }
 
-      // Technical sales (agreement == 1) are bookkeeping rows; the summaries exclude them, so the lists must too.
-      scopedFilters.push(NON_TECHNICAL_SALE_WHERE);
+      // 1 so'm (technical) sales stay in the customer lists; summaries count them separately as service exchange.
 
       const where = {
         tenantId: ctx.tenantId,
