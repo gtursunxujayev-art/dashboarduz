@@ -62,32 +62,53 @@ export function sumBonusByAgent(items: BonusCalculationItem[], agentIds: string[
   return totals;
 }
 
+/** Bonus per agent for the given courses only. Bonus items carry the course of the sale, so repayments count too. */
+export function sumCourseBonusByAgent(
+  items: BonusCalculationItem[],
+  agentIds: string[],
+  courseIds: string[],
+): Map<string, number> {
+  const courses = new Set(courseIds);
+  return sumBonusByAgent(items.filter((item) => item.courseId !== null && courses.has(item.courseId)), agentIds);
+}
+
+/** Income of the given courses, all time: their sales plus every repayment of those sales. */
+export function courseScopedIncomeWhere(courseIds: string[]) {
+  return {
+    OR: [
+      { relatedDebtIncomeId: null, courseId: { in: courseIds } },
+      { relatedDebtIncome: { courseId: { in: courseIds } } },
+    ],
+  };
+}
+
 type LeaderboardIncomeRow = { managerUserId: string; paymentAmount: number; entryDate: Date; type: string };
 
 /**
- * Per-agent numbers for a board. A board belongs to a group of agents (by role); everything those agents record
- * counts, whatever the course category, so no sale can fall off both boards.
+ * Per-agent numbers for a board. A board belongs to a group of agents (by role), and `rows` is the board's period:
+ * the selected courses on the online board, the current month on the offline board, where everything those agents
+ * record counts, whatever the course category, so no sale can fall off both boards.
  */
 export function summarizeLeaderboardAgents(params: {
   agentIds: string[];
-  monthRows: LeaderboardIncomeRow[];
+  rows: LeaderboardIncomeRow[];
   todayStart: Date;
 }) {
   const wanted = new Set(params.agentIds);
-  const monthIncome = new Map<string, number>();
+  const income = new Map<string, number>();
   const todayIncome = new Map<string, number>();
-  const monthlySales = new Map<string, number>();
-  for (const row of params.monthRows) {
+  const salesCount = new Map<string, number>();
+  for (const row of params.rows) {
     if (!wanted.has(row.managerUserId)) continue;
-    monthIncome.set(row.managerUserId, (monthIncome.get(row.managerUserId) || 0) + (row.paymentAmount || 0));
+    income.set(row.managerUserId, (income.get(row.managerUserId) || 0) + (row.paymentAmount || 0));
     if (row.entryDate >= params.todayStart) {
       todayIncome.set(row.managerUserId, (todayIncome.get(row.managerUserId) || 0) + (row.paymentAmount || 0));
     }
     if (row.type === 'new_sale') {
-      monthlySales.set(row.managerUserId, (monthlySales.get(row.managerUserId) || 0) + 1);
+      salesCount.set(row.managerUserId, (salesCount.get(row.managerUserId) || 0) + 1);
     }
   }
-  return { monthIncome, todayIncome, monthlySales };
+  return { income, todayIncome, salesCount };
 }
 
 export function compareLeaderboardAgents(
@@ -98,6 +119,24 @@ export function compareLeaderboardAgents(
     || right.salesCount - left.salesCount
     || left.name.localeCompare(right.name)
     || left.userId.localeCompare(right.userId);
+}
+
+/** The board's best seller: same order as the board, and an agent with nothing in the period cannot win. */
+export function pickLeaderboardWinner(
+  agents: LeaderboardAgent[],
+  stats: ReturnType<typeof summarizeLeaderboardAgents>,
+  bonusByAgent: Map<string, number>,
+) {
+  return agents
+    .map((agent) => ({
+      userId: agent.id,
+      name: getAgentLabel(agent),
+      salesCount: stats.salesCount.get(agent.id) || 0,
+      income: stats.income.get(agent.id) || 0,
+      bonus: bonusByAgent.get(agent.id) || 0,
+    }))
+    .filter((agent) => agent.income > 0 || agent.salesCount > 0)
+    .sort(compareLeaderboardAgents)[0] || null;
 }
 
 const incomeRowSelect = {
@@ -149,23 +188,63 @@ export const liveLeaderboardProcedures = {
         select: incomeRowSelect,
       });
       const rows = excludeTechnicalRows(rowsRaw, await loadTechnicalSaleIdsForRows(ctx.tenantId, rowsRaw));
-      const stats = summarizeLeaderboardAgents({ agentIds, monthRows: rows, todayStart: previousMonthEnd });
+      const stats = summarizeLeaderboardAgents({ agentIds, rows, todayStart: previousMonthEnd });
       // Finalized months come from the frozen snapshot, exactly what was paid.
       const bonusByAgent = sumBonusByAgent((await getBonusMonth({ tenantId: ctx.tenantId, month: previousMonthStart })).items, agentIds);
 
-      const rankedAgents = groupedAgents
-        .map((agent) => ({
-          userId: agent.id,
-          name: getAgentLabel(agent),
-          salesCount: stats.monthlySales.get(agent.id) || 0,
-          income: stats.monthIncome.get(agent.id) || 0,
-          bonus: bonusByAgent.get(agent.id) || 0,
-        }))
-        .filter((agent) => agent.income > 0 || agent.salesCount > 0)
-        .sort(compareLeaderboardAgents);
-
-      return { generatedAt: now.toISOString(), period, winner: rankedAgents[0] || null };
+      return { generatedAt: now.toISOString(), period, winner: pickLeaderboardWinner(groupedAgents, stats, bonusByAgent) };
     }),
+
+  // Bonus and the best seller of the online board. Bonus needs every month the course ran, so it is polled slowly
+  // instead of on the board's 2-second refresh.
+  liveLeaderboardCourseStats: protectedProcedure.query(async ({ ctx }) => {
+    if (!canReadLiveLeaderboard(ctx.user.roles, 'online')) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'This leaderboard is not available for the current user role.',
+      });
+    }
+
+    const now = new Date();
+    const courseIds = (await loadSelectedReportCourses(ctx.tenantId))
+      .filter((course) => course.group === 'online')
+      .map((course) => course.courseId);
+    // Include deactivated agents: they still count for a course they sold.
+    const agents = await prisma.user.findMany({
+      where: { tenantId: ctx.tenantId, roles: { hasSome: groupAgentRoles('online') } },
+      select: { id: true, name: true, username: true, roles: true },
+    });
+    const groupedAgents = agents.filter((agent) => resolveAgentGroup(agent.roles) === 'online');
+    const agentIds = groupedAgents.map((agent) => agent.id);
+
+    const rowsRaw = courseIds.length && agentIds.length
+      ? await prisma.income.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            managerUserId: { in: agentIds },
+            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+            entryDate: { lte: now },
+            ...courseScopedIncomeWhere(courseIds),
+          },
+          select: incomeRowSelect,
+        })
+      : [];
+    const rows = excludeTechnicalRows(rowsRaw, await loadTechnicalSaleIdsForRows(ctx.tenantId, rowsRaw));
+    if (!rows.length) {
+      return { generatedAt: now.toISOString(), agents: [], winner: null };
+    }
+
+    const stats = summarizeLeaderboardAgents({ agentIds, rows, todayStart: now });
+    const courseStart = new Date(rows.reduce((earliest, row) => Math.min(earliest, row.entryDate.getTime()), now.getTime()));
+    const bonusRange = await calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: courseStart, rangeEnd: now });
+    const bonusByAgent = sumCourseBonusByAgent(bonusRange.items, agentIds, courseIds);
+
+    return {
+      generatedAt: now.toISOString(),
+      agents: groupedAgents.map((agent) => ({ userId: agent.id, bonus: bonusByAgent.get(agent.id) || 0 })),
+      winner: pickLeaderboardWinner(groupedAgents, stats, bonusByAgent),
+    };
+  }),
 
   liveLeaderboardCallStats: protectedProcedure
     .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
@@ -304,11 +383,15 @@ export const liveLeaderboardProcedures = {
     const selectedReportCourses = (await loadSelectedReportCourses(ctx.tenantId))
       .filter((course) => course.group === requestedGroup)
       .map(({ dashboardCategory: _dashboardCategory, ...course }) => course);
+    // The online board shows the courses selected for the Telegram report instead of the month; all of them
+    // together when several are selected, nothing when none is. The offline board stays monthly.
+    const courseIds = requestedGroup === 'online' ? selectedReportCourses.map((course) => course.courseId) : null;
+    const courseWhere = courseIds ? courseScopedIncomeWhere(courseIds) : {};
 
     if (!agentIds.length) {
       return {
         generatedAt: now.toISOString(),
-        kpis: { todayIncome: 0, weekIncome: 0, monthIncome: 0 },
+        kpis: { todayIncome: 0, weekIncome: 0, totalIncome: 0 },
         agents: [],
         groupStats: {
           online: { todaySalesCount: 0, yesterdaySalesCount: 0 },
@@ -325,7 +408,8 @@ export const liveLeaderboardProcedures = {
           tenantId: ctx.tenantId,
           managerUserId: { in: agentIds },
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          entryDate: { gte: loadStart, lte: now },
+          entryDate: courseIds ? { lte: now } : { gte: loadStart, lte: now },
+          ...courseWhere,
         },
         select: incomeRowSelect,
       }),
@@ -334,6 +418,7 @@ export const liveLeaderboardProcedures = {
           tenantId: ctx.tenantId,
           managerUserId: { in: agentIds },
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          ...courseWhere,
         },
         orderBy: [{ createdAt: 'desc' }],
         take: 50,
@@ -343,13 +428,14 @@ export const liveLeaderboardProcedures = {
           manager: { select: { name: true, username: true } },
         },
       }),
-      calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: monthStart, rangeEnd: now }),
+      // The online board gets its bonus from liveLeaderboardCourseStats.
+      courseIds ? null : calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: monthStart, rangeEnd: now }),
     ]);
 
     // Technical sales (agreement == 1) and their repayments are not real income; only look up the sales we loaded.
     const technicalSaleIds = await loadTechnicalSaleIdsForRows(ctx.tenantId, [...rowsRaw, ...latestRowsRaw]);
     const rows = excludeTechnicalRows(rowsRaw, technicalSaleIds);
-    const monthRows = rows.filter((row) => row.entryDate >= monthStart);
+    const periodRows = courseIds ? rows : rows.filter((row) => row.entryDate >= monthStart);
     const weekRows = rows.filter((row) => row.entryDate >= weekStart);
     const todayRows = rows.filter((row) => row.entryDate >= todayStart);
     // Sales counts use the payment date (entryDate), like every other number, not when the row was typed in.
@@ -358,8 +444,8 @@ export const liveLeaderboardProcedures = {
       row.type === 'new_sale' && row.entryDate >= yesterdayStart && row.entryDate < todayStart
     )).length;
 
-    const stats = summarizeLeaderboardAgents({ agentIds, monthRows, todayStart });
-    const monthlyBonusByAgent = sumBonusByAgent(bonusRange.items, agentIds);
+    const stats = summarizeLeaderboardAgents({ agentIds, rows: periodRows, todayStart });
+    const bonusByAgent = sumBonusByAgent(bonusRange?.items || [], agentIds);
     const sumRows = (list: Array<{ paymentAmount: number }>) => list.reduce((total, row) => total + (row.paymentAmount || 0), 0);
 
     const latestIncome = excludeTechnicalRows(latestRowsRaw, technicalSaleIds)[0] || null;
@@ -369,7 +455,7 @@ export const liveLeaderboardProcedures = {
       kpis: {
         todayIncome: sumRows(todayRows),
         weekIncome: sumRows(weekRows),
-        monthIncome: sumRows(monthRows),
+        totalIncome: sumRows(periodRows),
       },
       groupStats: {
         online: requestedGroup === 'online'
@@ -383,10 +469,10 @@ export const liveLeaderboardProcedures = {
         userId: agent.id,
         name: getAgentLabel(agent),
         group: agent.group,
-        monthlySalesCount: stats.monthlySales.get(agent.id) || 0,
-        monthlyIncome: stats.monthIncome.get(agent.id) || 0,
+        salesCount: stats.salesCount.get(agent.id) || 0,
+        income: stats.income.get(agent.id) || 0,
         todayIncome: stats.todayIncome.get(agent.id) || 0,
-        monthlyBonus: monthlyBonusByAgent.get(agent.id) || 0,
+        bonus: bonusByAgent.get(agent.id) || 0,
       })),
       selectedReportCourses,
       latestIncomeEvent: latestIncome
