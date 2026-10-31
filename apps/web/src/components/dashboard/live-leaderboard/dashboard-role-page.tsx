@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
-import { sortAgentsByOverallMonth } from './leaderboard-ranking';
+import { sortAgentsForBoard } from './leaderboard-ranking';
 
 type AgentGroup = 'online' | 'offline';
 
@@ -13,10 +13,10 @@ type LeaderboardAgent = {
   group: AgentGroup;
   todayCallsCount: number;
   todayCallDurationSeconds: number;
-  monthlySalesCount: number;
-  monthlyIncome: number;
+  salesCount: number;
+  income: number;
   todayIncome: number;
-  monthlyBonus: number;
+  bonus: number;
 };
 
 type LatestIncomeEvent = {
@@ -47,7 +47,7 @@ type GroupStats = {
   offline: { todaySalesCount: number; yesterdaySalesCount: number };
 };
 
-type PreviousMonthWinner = {
+type BoardWinner = {
   userId: string;
   name: string;
   salesCount: number;
@@ -102,7 +102,7 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
   );
 }
 
-function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: number; highlight: boolean }) {
+function AgentRow({ agent, rank, highlight, incomeLabel }: { agent: LeaderboardAgent; rank: number; highlight: boolean; incomeLabel: string }) {
   return (
     <div className={`leaderboard-row grid grid-cols-[40px_minmax(0,1fr)] items-center gap-2 rounded-3xl border px-3 py-2 transition-all duration-700 sm:grid-cols-[46px_minmax(0,1fr)_auto] sm:gap-3 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
       <div className={`flex h-8 w-8 items-center justify-center rounded-xl text-base font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
@@ -117,18 +117,18 @@ function AgentRow({ agent, rank, highlight }: { agent: LeaderboardAgent; rank: n
           <span>Vaqt: <b className="font-mono text-cyan-300">{formatDuration(agent.todayCallDurationSeconds)}</b></span>
         </div>
         <div className="text-sm font-semibold text-slate-300">
-          <span>Sotuv: <b className="text-white">{agent.monthlySalesCount}</b></span>
+          <span>Sotuv: <b className="text-white">{agent.salesCount}</b></span>
         </div>
         <div className="text-sm font-semibold text-slate-300">
           <span>Bugun: <b className="text-cyan-300">{formatCompactMoney(agent.todayIncome)}</b></span>
         </div>
         <div className="text-sm font-semibold text-slate-300">
-          <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(agent.monthlyBonus)}</b></span>
+          <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(agent.bonus)}</b></span>
         </div>
       </div>
       <div className="hidden rounded-2xl bg-slate-950/60 px-3 py-1.5 text-right sm:block">
-        <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Oylik</div>
-        <div className="text-base font-black text-white">{formatCompactMoney(agent.monthlyIncome)}</div>
+        <div className="text-xs uppercase tracking-[0.18em] text-slate-400">{incomeLabel}</div>
+        <div className="text-base font-black text-white">{formatCompactMoney(agent.income)}</div>
       </div>
     </div>
   );
@@ -139,11 +139,13 @@ function AgentLeaderboard({
   agents,
   tone,
   highlightedAgentId,
+  incomeLabel,
 }: {
   title: string;
   agents: LeaderboardAgent[];
   tone: string;
   highlightedAgentId: string | null;
+  incomeLabel: string;
 }) {
   return (
     <section className="min-h-[560px] rounded-[2rem] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-black/30">
@@ -157,7 +159,7 @@ function AgentLeaderboard({
       </div>
       <div className="space-y-3">
         {agents.map((agent, index) => (
-          <AgentRow key={agent.userId} agent={agent} rank={index + 1} highlight={highlightedAgentId === agent.userId} />
+          <AgentRow key={agent.userId} agent={agent} rank={index + 1} highlight={highlightedAgentId === agent.userId} incomeLabel={incomeLabel} />
         ))}
         {!agents.length ? (
           <div className="rounded-3xl border border-dashed border-white/15 p-10 text-center text-slate-400">Bu guruhda agentlar yo'q.</div>
@@ -171,15 +173,19 @@ function SalesStatsPanel({
   courses,
   todaySalesCount,
   yesterdaySalesCount,
-  previousMonthWinner,
-  previousMonthWinnerError,
+  winner,
+  winnerError,
+  winnerLabel,
+  winnerEmptyText,
   tone,
 }: {
   courses: SelectedReportCourse[];
   todaySalesCount: number;
   yesterdaySalesCount: number;
-  previousMonthWinner: PreviousMonthWinner | null | undefined;
-  previousMonthWinnerError: boolean;
+  winner: BoardWinner | null | undefined;
+  winnerError: boolean;
+  winnerLabel: string;
+  winnerEmptyText: string;
   tone: string;
 }) {
   return (
@@ -246,40 +252,40 @@ function SalesStatsPanel({
             👑
           </span>
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-200">O'tgan oy</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-200">{winnerLabel}</p>
             <h3 className="mt-1 text-lg font-black leading-tight text-white">Eng yaxshi sotuvchisi</h3>
           </div>
         </div>
 
-        {previousMonthWinnerError ? (
+        {winnerError ? (
           <div className="mt-5 rounded-2xl border border-red-300/15 bg-red-400/5 px-4 py-5 text-center text-sm font-semibold text-red-200/80">
             Ma'lumotni yuklab bo'lmadi.
           </div>
-        ) : previousMonthWinner === undefined ? (
+        ) : winner === undefined ? (
           <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/35 px-4 py-5 text-center text-sm font-semibold text-slate-400">
             Hisoblanmoqda...
           </div>
-        ) : previousMonthWinner ? (
+        ) : winner ? (
           <>
-            <p className="mt-5 truncate text-2xl font-black text-white">{previousMonthWinner.name}</p>
+            <p className="mt-5 truncate text-2xl font-black text-white">{winner.name}</p>
             <div className="mt-4 grid grid-cols-3 gap-2">
               <div className="rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-3 text-center">
                 <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Sotuv</p>
-                <p className="mt-1 text-lg font-black text-amber-200">{previousMonthWinner.salesCount}</p>
+                <p className="mt-1 text-lg font-black text-amber-200">{winner.salesCount}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-3 text-center">
                 <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Tushum</p>
-                <p className="mt-1 text-lg font-black text-emerald-300">{formatCompactMoney(previousMonthWinner.income)}</p>
+                <p className="mt-1 text-lg font-black text-emerald-300">{formatCompactMoney(winner.income)}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-3 text-center">
                 <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Bonus</p>
-                <p className="mt-1 text-lg font-black text-fuchsia-300">{formatCompactMoney(previousMonthWinner.bonus)}</p>
+                <p className="mt-1 text-lg font-black text-fuchsia-300">{formatCompactMoney(winner.bonus)}</p>
               </div>
             </div>
           </>
         ) : (
           <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/35 px-4 py-5 text-center text-sm font-semibold text-slate-400">
-            O'tgan oy sotuv topilmadi.
+            {winnerEmptyText}
           </div>
         )}
       </div>
@@ -322,12 +328,24 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
     staleTime: 10_000,
     retry: 1,
   });
+  // The online board is per course (the ones selected for the Telegram report); the offline board is monthly.
+  const isCourseBoard = group === 'online';
+  const courseStatsQuery = trpc.dashboard.liveLeaderboardCourseStats.useQuery(undefined, {
+    enabled: isCourseBoard,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: false,
+    staleTime: 20_000,
+    retry: 1,
+  });
   const previousMonthWinnerQuery = trpc.dashboard.liveLeaderboardPreviousMonthWinner.useQuery({ group }, {
+    enabled: !isCourseBoard,
     refetchInterval: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     staleTime: 5 * 60 * 1000,
     retry: 1,
   });
+  const winnerQuery = isCourseBoard ? courseStatsQuery : previousMonthWinnerQuery;
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [highlightedAgentId, setHighlightedAgentId] = useState<string | null>(null);
   const [popupEvent, setPopupEvent] = useState<LatestIncomeEvent | null>(null);
@@ -338,14 +356,18 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
   const callStatsByAgentId = useMemo(() => new Map(
     (callStatsQuery.data?.agents || []).map((agent) => [agent.userId, agent]),
   ), [callStatsQuery.data?.agents]);
-  const agents = useMemo(() => sortAgentsByOverallMonth(
+  const courseBonusByAgentId = useMemo(() => new Map(
+    (courseStatsQuery.data?.agents || []).map((agent) => [agent.userId, agent.bonus]),
+  ), [courseStatsQuery.data?.agents]);
+  const agents = useMemo(() => sortAgentsForBoard(
     (data?.agents || []).map((agent) => ({
       ...agent,
+      bonus: isCourseBoard ? courseBonusByAgentId.get(agent.userId) || 0 : agent.bonus,
       todayCallsCount: callStatsByAgentId.get(agent.userId)?.todayCallsCount || 0,
       todayCallDurationSeconds: callStatsByAgentId.get(agent.userId)?.todayCallDurationSeconds || 0,
     })),
     group,
-  ), [callStatsByAgentId, data?.agents, group]);
+  ), [callStatsByAgentId, courseBonusByAgentId, data?.agents, group, isCourseBoard]);
   const courses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === group), [data?.selectedReportCourses, group]);
   const groupStats: GroupStats = data?.groupStats || {
     online: { todaySalesCount: 0, yesterdaySalesCount: 0 },
@@ -384,7 +406,7 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
         <section className="grid gap-5 md:grid-cols-3">
           <KpiCard label="Bugungi tushum" value={data?.kpis.todayIncome || 0} accent="bg-cyan-400" />
           <KpiCard label="Haftalik tushum" value={data?.kpis.weekIncome || 0} accent="bg-fuchsia-400" />
-          <KpiCard label="Oylik tushum" value={data?.kpis.monthIncome || 0} accent="bg-emerald-400" />
+          <KpiCard label={isCourseBoard ? 'Kurs tushumi' : 'Oylik tushum'} value={data?.kpis.totalIncome || 0} accent="bg-emerald-400" />
         </section>
 
         <section className="grid gap-7 lg:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.45fr)]">
@@ -393,13 +415,16 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
             agents={agents}
             tone={group === 'online' ? 'text-cyan-300' : 'text-orange-300'}
             highlightedAgentId={highlightedAgentId}
+            incomeLabel={isCourseBoard ? 'Kurs' : 'Oylik'}
           />
           <SalesStatsPanel
             courses={courses}
             todaySalesCount={groupStats[group].todaySalesCount}
             yesterdaySalesCount={groupStats[group].yesterdaySalesCount}
-            previousMonthWinner={previousMonthWinnerQuery.data?.winner}
-            previousMonthWinnerError={previousMonthWinnerQuery.isError}
+            winner={winnerQuery.data?.winner}
+            winnerError={winnerQuery.isError}
+            winnerLabel={isCourseBoard ? "Kurs bo'yicha" : "O'tgan oy"}
+            winnerEmptyText={isCourseBoard ? "Kurs bo'yicha sotuv topilmadi." : "O'tgan oy sotuv topilmadi."}
             tone={group === 'online' ? 'text-cyan-300' : 'text-orange-300'}
           />
         </section>
