@@ -2,19 +2,19 @@ export type OverallLeaderboardAgent = {
   userId?: string;
   name: string;
   group: 'online' | 'offline';
-  monthlyIncome: number;
-  monthlySalesCount: number;
+  income: number;
+  salesCount: number;
 };
 
-export function sortAgentsByOverallMonth<T extends OverallLeaderboardAgent>(
+export function sortAgentsForBoard<T extends OverallLeaderboardAgent>(
   agents: T[],
   group: OverallLeaderboardAgent['group'],
 ): T[] {
   return agents
     .filter((agent) => agent.group === group)
     .sort((left, right) => (
-      right.monthlyIncome - left.monthlyIncome
-      || right.monthlySalesCount - left.monthlySalesCount
+      right.income - left.income
+      || right.salesCount - left.salesCount
       || left.name.localeCompare(right.name)
       || String(left.userId ?? '').localeCompare(String(right.userId ?? ''))
     ));
