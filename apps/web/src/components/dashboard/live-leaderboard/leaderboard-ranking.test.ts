@@ -1,28 +1,28 @@
 import { describe, expect, it } from '@jest/globals';
-import { sortAgentsByOverallMonth } from './leaderboard-ranking';
+import { sortAgentsForBoard } from './leaderboard-ranking';
 
 describe('original live leaderboard ranking', () => {
-  it('uses overall monthly income, sales, and name without considering course metrics', () => {
-    const ranked = sortAgentsByOverallMonth([
+  it('uses overall income, sales, and name without considering course metrics', () => {
+    const ranked = sortAgentsForBoard([
       {
         name: 'Ali',
         group: 'online' as const,
-        monthlyIncome: 4_000_000,
-        monthlySalesCount: 10,
+        income: 4_000_000,
+        salesCount: 10,
         courseMetrics: [{ qualifyingIncome: 99_000_000, bonus: 9_900_000 }],
       },
       {
         name: 'Bobur',
         group: 'online' as const,
-        monthlyIncome: 6_000_000,
-        monthlySalesCount: 2,
+        income: 6_000_000,
+        salesCount: 2,
         courseMetrics: [{ qualifyingIncome: 1, bonus: 1 }],
       },
       {
         name: 'Dilshod',
         group: 'offline' as const,
-        monthlyIncome: 20_000_000,
-        monthlySalesCount: 20,
+        income: 20_000_000,
+        salesCount: 20,
         courseMetrics: [{ qualifyingIncome: 20_000_000, bonus: 2_000_000 }],
       },
     ], 'online');
@@ -31,10 +31,10 @@ describe('original live leaderboard ranking', () => {
   });
 
   it('uses sales and then name as stable tie breakers', () => {
-    const ranked = sortAgentsByOverallMonth([
-      { name: 'Zafar', group: 'online' as const, monthlyIncome: 5_000_000, monthlySalesCount: 3 },
-      { name: 'Bobur', group: 'online' as const, monthlyIncome: 5_000_000, monthlySalesCount: 4 },
-      { name: 'Ali', group: 'online' as const, monthlyIncome: 5_000_000, monthlySalesCount: 4 },
+    const ranked = sortAgentsForBoard([
+      { name: 'Zafar', group: 'online' as const, income: 5_000_000, salesCount: 3 },
+      { name: 'Bobur', group: 'online' as const, income: 5_000_000, salesCount: 4 },
+      { name: 'Ali', group: 'online' as const, income: 5_000_000, salesCount: 4 },
     ], 'online');
 
     expect(ranked.map((agent) => agent.name)).toEqual(['Ali', 'Bobur', 'Zafar']);
