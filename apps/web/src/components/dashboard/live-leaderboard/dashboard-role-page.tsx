@@ -21,6 +21,7 @@ type LeaderboardAgent = {
 
 type LatestIncomeEvent = {
   incomeId: string;
+  type: string;
   createdAt: string;
   entryDate: string;
   managerUserId: string;
@@ -75,8 +76,9 @@ function formatDuration(totalSeconds: number) {
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
 }
 
-function playNewIncomeSound() {
-  const audio = new Audio('/sounds/new-income.m4a');
+// First payments of new sales get their own cheer; debt repayments keep the original one.
+function playNewIncomeSound(incomeType: string) {
+  const audio = new Audio(incomeType === 'new_sale' ? '/sounds/first-payment-cheer.m4a' : '/sounds/new-income.m4a');
   audio.volume = 0.1;
   void audio.play().catch(() => undefined);
   const startedAt = window.performance.now();
@@ -389,7 +391,7 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
       setHighlightedAgentId(latest.managerUserId);
       setPopupEvent(latest);
       if (soundEnabled) {
-        playNewIncomeSound();
+        playNewIncomeSound(latest.type);
       }
       const timer = window.setTimeout(() => setHighlightedAgentId(null), 4200);
       return () => window.clearTimeout(timer);
