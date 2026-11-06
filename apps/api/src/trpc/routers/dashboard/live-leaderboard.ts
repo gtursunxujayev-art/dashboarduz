@@ -478,6 +478,7 @@ export const liveLeaderboardProcedures = {
       latestIncomeEvent: latestIncome
         ? {
             incomeId: latestIncome.id,
+            type: latestIncome.type,
             createdAt: latestIncome.createdAt.toISOString(),
             entryDate: latestIncome.entryDate.toISOString(),
             managerUserId: latestIncome.managerUserId,
