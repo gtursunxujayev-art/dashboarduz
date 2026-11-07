@@ -77,7 +77,8 @@ function detectSummarySourceReason(error: unknown, fallback: string): string {
   if (message.toLowerCase().includes('timeout')) {
     return 'timeout';
   }
-  if (message.toLowerCase().includes('network') || message.toLowerCase().includes('fetch')) {
+  const lower = message.toLowerCase();
+  if (!lower.startsWith('failed to fetch amocrm') && (lower.includes('network') || lower.includes('fetch failed'))) {
     return 'network_error';
   }
   return fallback;

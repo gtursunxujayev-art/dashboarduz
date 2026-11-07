@@ -40,7 +40,9 @@ export function createAmoCRMActivityDiagnostics(): AmoCRMActivityDiagnostics {
 function failureReason(error: unknown): string {
   const message = String((error as Error | undefined)?.message || error || '').toLowerCase();
   if (message.includes('timeout')) return 'timeout';
-  if (message.includes('network') || message.includes('fetch')) return 'network_error';
+  // Our own HTTP-status errors read "Failed to fetch AmoCRM ...: <status>" — those are API errors, not network errors.
+  if (message.startsWith('failed to fetch amocrm')) return 'fetch_failed';
+  if (message.includes('network') || message.includes('fetch failed')) return 'network_error';
   return 'fetch_failed';
 }
 

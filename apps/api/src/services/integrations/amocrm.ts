@@ -581,6 +581,11 @@ export class AmoCRMService {
       throw new Error(`Failed to fetch AmoCRM tasks: ${response.status} ${response.statusText}`);
     }
 
+    // amoCRM answers an empty result set with 204 No Content (no JSON body).
+    if (response.status === 204) {
+      return {} as AmoCRMTaskListResponse;
+    }
+
     return (await response.json()) as AmoCRMTaskListResponse;
   }
 
@@ -668,6 +673,11 @@ export class AmoCRMService {
       throw new Error(`Failed to fetch AmoCRM events: ${response.status} ${response.statusText}`);
     }
 
+    // amoCRM answers an empty result set with 204 No Content (no JSON body).
+    if (response.status === 204) {
+      return {} as AmoCRMEventListResponse;
+    }
+
     return (await response.json()) as AmoCRMEventListResponse;
   }
 
@@ -679,32 +689,51 @@ export class AmoCRMService {
     limit?: number;
     maxPages?: number;
   }, baseUrl?: string): Promise<AmoCRMEvent[]> {
-    const pageSize = Math.min(Math.max(params?.limit || 250, 1), 250);
+    // amoCRM docs disagree on the events page size (100 in RU docs, 250 in EN); stay within the safe bound.
+    const pageSize = Math.min(Math.max(params?.limit || 100, 1), 100);
     const maxPages = Math.max(params?.maxPages || 100, 1);
     const allEvents: AmoCRMEvent[] = [];
+    const seenEventIds = new Set<string>();
 
-    let page = 1;
-    while (page <= maxPages) {
-      const response = await this.fetchEvents(
-        accessToken,
-        {
-          page,
-          limit: pageSize,
-          dateFrom: params?.dateFrom,
-          dateTo: params?.dateTo,
-          userIds: params?.userIds || undefined,
-          entityType: params?.entityType,
-        },
-        baseUrl,
-      );
-      const events = Array.isArray(response._embedded?.events) ? response._embedded.events : [];
-      allEvents.push(...events);
+    // amoCRM accepts at most 10 IDs in filter[created_by]; larger lists are rejected,
+    // so query users in chunks of 10.
+    const userIds = Array.from(new Set((params?.userIds || []).filter(Boolean)));
+    const userChunks: Array<string[] | undefined> = userIds.length
+      ? Array.from({ length: Math.ceil(userIds.length / 10) }, (_, i) => userIds.slice(i * 10, i * 10 + 10))
+      : [undefined];
 
-      const hasNext = Boolean(response._links?.next?.href);
-      if (!hasNext || events.length < pageSize) {
-        break;
+    for (const chunk of userChunks) {
+      let page = 1;
+      while (page <= maxPages) {
+        const response = await this.fetchEvents(
+          accessToken,
+          {
+            page,
+            limit: pageSize,
+            dateFrom: params?.dateFrom,
+            dateTo: params?.dateTo,
+            userIds: chunk,
+            entityType: params?.entityType,
+          },
+          baseUrl,
+        );
+        const events = Array.isArray(response._embedded?.events) ? response._embedded.events : [];
+        for (const event of events) {
+          const eventId = (event as { id?: unknown }).id;
+          if (eventId !== undefined && eventId !== null) {
+            const key = String(eventId);
+            if (seenEventIds.has(key)) continue;
+            seenEventIds.add(key);
+          }
+          allEvents.push(event);
+        }
+
+        const hasNext = Boolean(response._links?.next?.href);
+        if (!hasNext || events.length < pageSize) {
+          break;
+        }
+        page += 1;
       }
-      page += 1;
     }
 
     return allEvents;
