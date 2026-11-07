@@ -14,6 +14,7 @@ import { getCorporateCallDurationByManager } from '../../../services/corporate-c
 import { calculateBonusRange, getBonusMonth, type BonusCalculationItem } from '../../../services/bonus-engine';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../../../services/income-facts';
 import { loadSelectedReportCourses } from './selected-report-courses';
+import { getCallsProvider } from '../../../services/calls-source';
 
 const LIVE_LEADERBOARD_MANAGER_ROLES = new Set(['Admin', 'Manager']);
 
@@ -291,7 +292,7 @@ export const liveLeaderboardProcedures = {
           ? prisma.call.findMany({
               where: {
                 tenantId: ctx.tenantId,
-                provider: 'utel',
+                provider: await getCallsProvider(ctx.tenantId),
                 startedAt: { gte: todayStart, lte: now },
                 OR: [
                   { from: { in: extensions } },

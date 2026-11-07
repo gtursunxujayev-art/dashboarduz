@@ -9,6 +9,7 @@ import { startTelegramAgentPerformanceScheduler, stopTelegramAgentPerformanceSch
 import { ensureSchemaCompatibility } from '../services/db/schema-compatibility';
 import { startTelegramGroupSummaryScheduler, stopTelegramGroupSummaryScheduler } from '../services/reports/telegram-group-summary-scheduler';
 import { startBonusAutoFinalizeScheduler, stopBonusAutoFinalizeScheduler } from '../services/bonus-auto-finalize';
+import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from '../services/integrations/amocrm-call-sync';
 
 // Initialize observability
 initSentry();
@@ -20,6 +21,7 @@ async function startWorkerService() {
   startTelegramAgentPerformanceScheduler();
   startTelegramGroupSummaryScheduler();
   startBonusAutoFinalizeScheduler();
+  startAmoCallsSyncScheduler();
   log(LogLevel.INFO, 'Worker service started');
 }
 
@@ -38,6 +40,7 @@ process.on('SIGTERM', () => {
   log(LogLevel.INFO, 'SIGTERM received, shutting down gracefully');
   stopTelegramGroupSummaryScheduler();
   stopBonusAutoFinalizeScheduler();
+  stopAmoCallsSyncScheduler();
   stopTelegramAgentPerformanceScheduler();
   stopTelegramReportScheduler();
   process.exit(0);
@@ -47,6 +50,7 @@ process.on('SIGINT', () => {
   log(LogLevel.INFO, 'SIGINT received, shutting down gracefully');
   stopTelegramGroupSummaryScheduler();
   stopBonusAutoFinalizeScheduler();
+  stopAmoCallsSyncScheduler();
   stopTelegramAgentPerformanceScheduler();
   stopTelegramReportScheduler();
   process.exit(0);

@@ -49,6 +49,7 @@ import { getOrSet, buildCacheKey } from '../../../services/cache';
 import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
+import { getCallsProvider } from '../../../services/calls-source';
 
 type SummarySourceStatusKey = 'amoContext' | 'catalog' | 'leads' | 'activity' | 'corporateCalls';
 type SummarySourceStatusEntry = {
@@ -340,7 +341,7 @@ export const summaryProcedures = {
         prisma.call.findMany({
           where: {
             tenantId: ctx.tenantId,
-            provider: 'utel',
+            provider: await getCallsProvider(ctx.tenantId),
             startedAt: {
               gte: rangeStart,
               lte: rangeEnd,

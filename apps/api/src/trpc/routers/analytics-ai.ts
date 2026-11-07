@@ -9,6 +9,7 @@ import {
   INCOME_LIFECYCLE_ACTIVE,
   resolveDateRange,
 } from './dashboard/helpers';
+import { getCallsProviderFilter } from '../../services/calls-source';
 
 const ANALYTICS_AI_PROMPT_VERSION = 'sales-intelligence-v1';
 
@@ -201,6 +202,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
     prisma.call.findMany({
       where: {
         tenantId,
+        provider: await getCallsProviderFilter(tenantId),
         startedAt: { gte: rangeStart, lte: rangeEnd },
       },
       select: {

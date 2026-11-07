@@ -15,6 +15,7 @@ import { log, LogLevel } from '../../services/observability';
 import { decryptIntegrationTokens } from '../../services/security/encryption';
 import { telegramService } from '../../services/integrations/telegram';
 import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
+import { getCallsProvider } from '../../services/calls-source';
 
 const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
@@ -1086,7 +1087,7 @@ export const sellersRouter = router({
         calls = await prisma.call.findMany({
           where: {
             tenantId: ctx.tenantId,
-            provider: 'utel',
+            provider: await getCallsProvider(ctx.tenantId),
             startedAt: {
               gte: rangeStart,
               lte: rangeEnd,
@@ -1631,7 +1632,7 @@ export const sellersRouter = router({
         ? await prisma.call.findMany({
             where: {
               tenantId: ctx.tenantId,
-              provider: 'utel',
+              provider: await getCallsProvider(ctx.tenantId),
               startedAt: {
                 gte: rangeStart,
                 lte: rangeEnd,
@@ -1654,7 +1655,7 @@ export const sellersRouter = router({
         ? await prisma.call.findMany({
             where: {
               tenantId: ctx.tenantId,
-              provider: 'utel',
+              provider: await getCallsProvider(ctx.tenantId),
               startedAt: {
                 gte: rangeStart,
                 lte: rangeEnd,
@@ -2069,7 +2070,7 @@ export const sellersRouter = router({
           ? prisma.call.findMany({
               where: {
                 tenantId: ctx.tenantId,
-                provider: 'utel',
+                provider: await getCallsProvider(ctx.tenantId),
                 startedAt: {
                   gte: rangeStart,
                   lte: rangeEnd,

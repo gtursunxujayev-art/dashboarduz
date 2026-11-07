@@ -41,6 +41,7 @@ import {
   buildBonusDetailIncomeWhere,
   isBonusDetailExportOverLimit,
 } from '../../../services/bonus-detail-export';
+import { getCallsProvider } from '../../../services/calls-source';
 
 function calculateProratedFixedSalary(
   monthlyFixedSalary: number,
@@ -454,7 +455,7 @@ const salarySummary = protectedProcedure
           ? prisma.call.findMany({
               where: {
                 tenantId: ctx.tenantId,
-                provider: 'utel',
+                provider: await getCallsProvider(ctx.tenantId),
                 startedAt: { gte: rangeStart, lte: rangeEnd },
                 OR: [
                   { from: { in: allExtensions } },

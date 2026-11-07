@@ -142,6 +142,7 @@ export interface AmoCRMNote {
   entity_id?: number | string;
   note_type?: string;
   created_at?: number | string;
+  updated_at?: number | string;
   created_by?: number | string;
   responsible_user_id?: number | string;
   params?: {
@@ -661,15 +662,18 @@ export class AmoCRMService {
   }
 
   /** One page of notes of an entity type (e.g. call notes on leads or contacts). */
-  async fetchNotes(accessToken: string, entityType: 'leads' | 'contacts', params?: {
+  async fetchNotes(accessToken: string, entityType: 'leads' | 'contacts' | 'companies', params?: {
     page?: number;
     limit?: number;
     noteTypes?: string[];
     entityIds?: string[];
     updatedAtFrom?: Date;
     updatedAtTo?: Date;
+    /** Oldest-updated first, so a capped run can resume from the last note it saw. */
+    orderByUpdatedAsc?: boolean;
   }, baseUrl?: string): Promise<AmoCRMNote[]> {
     const queryParams = new URLSearchParams();
+    if (params?.orderByUpdatedAsc) queryParams.set('order[updated_at]', 'asc');
     if (params?.page) queryParams.set('page', params.page.toString());
     if (params?.limit) queryParams.set('limit', Math.min(params.limit, 250).toString());
     params?.noteTypes?.forEach((noteType) => queryParams.append('filter[note_type][]', noteType));

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { AmoCallsSourcePanel } from '@/components/dashboard/amo-calls-source-panel';
 
 type IntegrationId = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel' | 'faceid_attendance';
 
@@ -632,6 +633,8 @@ export default function IntegrationCards() {
                   </div>
                 </div>
               )}
+
+              {isAmoActive && <AmoCallsSourcePanel />}
 
               {isTelegramActive && (
                 <div className="mt-4 rounded-md border border-cyan-100 bg-white p-3">

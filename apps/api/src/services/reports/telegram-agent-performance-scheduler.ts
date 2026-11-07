@@ -8,6 +8,7 @@ import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 import { LogLevel, log } from '../observability';
 import { getCorporateCallDurationByManager } from '../corporate-call-durations';
+import { getCallsProvider } from '../calls-source';
 
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5 (Asia/Tashkent)
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
@@ -382,7 +383,7 @@ async function collectAgentMetricsForTenant(params: {
       ? prisma.call.findMany({
           where: {
             tenantId: params.tenantId,
-            provider: 'utel',
+            provider: await getCallsProvider(params.tenantId),
             startedAt: {
               gte: params.periodStart,
               lte: params.periodEnd,

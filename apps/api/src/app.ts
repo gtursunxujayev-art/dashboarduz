@@ -12,6 +12,7 @@ import { telegramService } from './services/integrations/telegram';
 import { startTelegramReportScheduler, stopTelegramReportScheduler } from './services/reports/telegram-report-scheduler';
 import { startTelegramAgentPerformanceScheduler, stopTelegramAgentPerformanceScheduler } from './services/reports/telegram-agent-performance-scheduler';
 import { startTelegramGroupSummaryScheduler, stopTelegramGroupSummaryScheduler } from './services/reports/telegram-group-summary-scheduler';
+import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from './services/integrations/amocrm-call-sync';
 
 dotenv.config();
 
@@ -52,6 +53,7 @@ if (schedulerEnabledInApi) {
   startTelegramReportScheduler();
   startTelegramAgentPerformanceScheduler();
   startTelegramGroupSummaryScheduler();
+  startAmoCallsSyncScheduler();
   log(LogLevel.INFO, 'Report schedulers are enabled in API process', {
     mode: 'api',
     env: process.env.NODE_ENV || 'unknown',
@@ -420,6 +422,7 @@ function stopSchedulersInApi(): void {
   }
   stopTelegramAgentPerformanceScheduler();
   stopTelegramGroupSummaryScheduler();
+  stopAmoCallsSyncScheduler();
   stopTelegramReportScheduler();
 }
 

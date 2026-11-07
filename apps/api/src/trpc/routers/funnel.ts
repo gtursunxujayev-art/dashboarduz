@@ -55,6 +55,7 @@ import {
   z,
 } from './dashboard/helpers';
 import { resolveAgentGroup } from './dashboard/live-leaderboard';
+import { getCallsProvider } from '../../services/calls-source';
 
 const funnelGroupSchema = z.enum(['all', 'online', 'offline']);
 const stageRefSchema = z.object({ pipelineId: z.string().min(1), statusId: z.string().min(1) });
@@ -408,7 +409,7 @@ async function buildFunnelBase(params: {
       ? prisma.call.findMany({
           where: {
             tenantId,
-            provider: 'utel',
+            provider: await getCallsProvider(tenantId),
             startedAt: { gte: rangeStart, lte: rangeEnd },
             OR: [{ from: { in: extensions } }, { to: { in: extensions } }],
           },

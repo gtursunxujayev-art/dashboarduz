@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
 import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
+import { getCallsProvider, getCallsProviderFilter } from '../../services/calls-source';
 
 const callsListSchema = z.object({
   page: z.number().int().positive().default(1),
@@ -296,6 +297,7 @@ export const callsRouter = router({
 
       const where: any = {
         tenantId: ctx.tenantId,
+        provider: await getCallsProviderFilter(ctx.tenantId),
         ...(scope.isScoped
           ? {
               lead: {
@@ -446,7 +448,7 @@ export const callsRouter = router({
       ? await prisma.call.findMany({
           where: {
             tenantId: ctx.tenantId,
-            provider: 'utel',
+            provider: await getCallsProvider(ctx.tenantId),
             startedAt: {
               gte: rangeStart,
               lte: rangeEnd,

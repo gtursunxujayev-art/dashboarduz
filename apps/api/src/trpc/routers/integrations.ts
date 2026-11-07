@@ -8,6 +8,17 @@ import { decryptIntegrationTokens, encryptIntegrationTokens } from '../../servic
 import { amocrmService } from '../../services/integrations/amocrm';
 import { telegramService } from '../../services/integrations/telegram';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
+import {
+  CALL_NOTE_ENTITY_TYPES,
+  readCallsSyncState,
+  triggerTenantAmoCallsSync,
+} from '../../services/integrations/amocrm-call-sync';
+import {
+  AMOCRM_CALL_PROVIDER,
+  CALLS_SOURCE_CONFIG_KEY,
+  invalidateCallsProvider,
+  readCallsSource,
+} from '../../services/calls-source';
 import { normalizeMetaAdAccountId, syncMetaAdInsightsForTenant, validateMetaAdAccount } from '../../services/integrations/meta-ads';
 import {
   applyTelegramRecipientsToConfig,
@@ -488,6 +499,69 @@ export const integrationsRouter = router({
         selectedPipelineIds: nextPipelineIds,
       };
     }),
+
+  getCallsSource: adminProcedure.query(async ({ ctx }) => {
+    const integration = await prisma.integration.findUnique({
+      where: { tenantId_type: { tenantId: ctx.tenantId, type: 'amocrm' } },
+      select: { status: true, config: true },
+    });
+    const state = readCallsSyncState(integration?.config);
+    const cursors = CALL_NOTE_ENTITY_TYPES.map((entityType) => state.cursors[entityType]);
+    const syncedUntil = cursors.every((cursor) => typeof cursor === 'number')
+      ? new Date(Math.min(...(cursors as number[])) * 1000).toISOString()
+      : null;
+    const importedCalls = await prisma.call.count({ where: { tenantId: ctx.tenantId, provider: AMOCRM_CALL_PROVIDER } });
+
+    return {
+      amoConnected: integration?.status === 'active',
+      source: readCallsSource(integration?.config),
+      lastRunAt: state.lastRunAt ?? null,
+      lastError: state.lastError ?? null,
+      backfillComplete: Boolean(state.backfillComplete),
+      syncedUntil,
+      importedCalls,
+    };
+  }),
+
+  setCallsSource: adminProcedure
+    .input(z.object({ source: z.enum(['utel', 'amocrm']) }))
+    .mutation(async ({ input, ctx }) => {
+      const integration = await prisma.integration.findUnique({
+        where: { tenantId_type: { tenantId: ctx.tenantId, type: 'amocrm' } },
+        select: { id: true, status: true, config: true },
+      });
+      if (input.source === 'amocrm' && integration?.status !== 'active') {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'AmoCRM integration is not connected.' });
+      }
+      if (integration) {
+        const config = integration.config && typeof integration.config === 'object' ? (integration.config as Record<string, unknown>) : {};
+        await prisma.integration.update({
+          where: { id: integration.id },
+          data: { config: { ...config, [CALLS_SOURCE_CONFIG_KEY]: input.source } },
+        });
+        await prisma.auditLog.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.user.userId,
+            action: 'integration_update',
+            resource: 'integration',
+            resourceId: integration.id,
+            metadata: { type: 'amocrm', callsSource: input.source },
+          },
+        });
+      }
+      await invalidateCallsProvider(ctx.tenantId);
+      if (input.source === 'amocrm') {
+        void triggerTenantAmoCallsSync(ctx.tenantId).catch(() => undefined);
+      }
+
+      return { success: true, source: input.source };
+    }),
+
+  syncAmoCallsNow: adminProcedure.mutation(async ({ ctx }) => {
+    void triggerTenantAmoCallsSync(ctx.tenantId).catch(() => undefined);
+    return { started: true };
+  }),
 
   connectTelegram: adminProcedure
     .input(telegramBotConnectSchema)

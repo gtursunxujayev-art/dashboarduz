@@ -14,6 +14,7 @@ import { getRedisClient } from '../queue/redis-client';
 import { amocrmService } from '../integrations/amocrm';
 import { extractLeadValue, getTenantAmoCRMContext, humanizeKey } from '../integrations/amocrm-live';
 import { getCorporateCallDurationByManager, getCorporateCallDurationTotal } from '../corporate-call-durations';
+import { getCallsProvider, getCallsProviderFilter } from '../calls-source';
 
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
@@ -949,6 +950,7 @@ async function collectMetrics(params: {
     prisma.call.aggregate({
       where: {
         tenantId: params.tenantId,
+        provider: await getCallsProviderFilter(params.tenantId),
         startedAt: {
           gte: params.periodStart,
           lte: params.periodEnd,
@@ -1304,7 +1306,7 @@ async function collectMetrics(params: {
     const managerCalls = await prisma.call.findMany({
       where: {
         tenantId: params.tenantId,
-        provider: 'utel',
+        provider: await getCallsProvider(params.tenantId),
         startedAt: {
           gte: params.periodStart,
           lte: params.periodEnd,
