@@ -20,6 +20,44 @@ export const AMO_LOST_STATUS_ID = '143';
 
 export type StageSortIndex = Map<string, Map<string, number>>;
 
+/**
+ * Fetches page 1, then the following pages in parallel waves of `concurrency`, stopping at the first
+ * short/empty page. Much faster than strictly sequential paging for amoCRM's slow list endpoints.
+ */
+export async function fetchPagesConcurrently<T>(
+  fetchPage: (page: number) => Promise<T[]>,
+  options: { pageSize: number; maxPages: number; concurrency: number },
+): Promise<{ items: T[]; truncated: boolean }> {
+  const items: T[] = [];
+  const first = await fetchPage(1);
+
+  items.push(...first);
+  if (first.length < options.pageSize) {
+    return { items, truncated: false };
+  }
+
+  let nextPage = 2;
+
+  while (nextPage <= options.maxPages) {
+    const pages: number[] = [];
+
+    for (let page = nextPage; page < nextPage + options.concurrency && page <= options.maxPages; page += 1) {
+      pages.push(page);
+    }
+    const results = await Promise.all(pages.map((page) => fetchPage(page)));
+
+    for (const result of results) {
+      items.push(...result);
+      if (result.length < options.pageSize) {
+        return { items, truncated: false };
+      }
+    }
+    nextPage += pages.length;
+  }
+
+  return { items, truncated: true };
+}
+
 export function safeDiv(numerator: number, denominator: number): number {
   if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
     return 0;

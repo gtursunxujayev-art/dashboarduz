@@ -10,6 +10,7 @@ import {
   buildStageSortIndex,
   computeLostRevenueRow,
   computeTeamRatios,
+  fetchPagesConcurrently,
   safeDiv,
   sumFunnelRows,
   sumLostRevenueRows,
@@ -53,7 +54,8 @@ const stageRefSchema = z.object({ pipelineId: z.string().min(1), statusId: z.str
 const PLAN_EDITOR_ROLES = ['Admin', 'Manager'];
 const LEADS_PAGE_SIZE = 250;
 const LEADS_MAX_PAGES = 40;
-const LEADS_TIMEOUT_MS = 15_000;
+const LEADS_CONCURRENCY = 4; // amoCRM allows ~7 requests/second per account
+const LEADS_PAGE_TIMEOUT_MS = 20_000;
 
 type FunnelSourceState = 'ok' | 'partial' | 'unavailable' | 'timeout';
 type FunnelSourceStatus = { leads: { ok: boolean; reason: string | null; state: FunnelSourceState } };
@@ -199,6 +201,7 @@ async function buildFunnelBase(params: {
   rangeStart: Date;
   rangeEnd: Date;
   group: z.infer<typeof funnelGroupSchema>;
+  pipelineId: string | null;
   ishlanganStage: FunnelStageRef | null;
   taklifStage: FunnelStageRef | null;
 }): Promise<FunnelBaseResult> {
@@ -217,6 +220,9 @@ async function buildFunnelBase(params: {
     }
   }
   const extensions = Array.from(extensionToUserId.keys());
+  const responsibleIds = Array.from(new Set(agents
+    .map((agent) => (agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId).trim() : ''))
+    .filter(Boolean)));
 
   const loadLeads = async (): Promise<Array<Record<string, unknown>> | null> => {
     let amoContext;
@@ -233,35 +239,60 @@ async function buildFunnelBase(params: {
 
       return null;
     }
-    const run = () => withTimeout(
-      amocrmService.fetchAllLeads(
-        amoContext.accessToken,
-        {
-          pipelineIds: amoContext.selectedPipelineIds,
-          createdAtFrom: rangeStart,
-          createdAtTo: rangeEnd,
-          limit: LEADS_PAGE_SIZE,
-          maxPages: LEADS_MAX_PAGES,
-        },
-        amoContext.baseUrl,
-      ),
-      LEADS_TIMEOUT_MS,
-      'amo_leads_timeout',
-    );
+    if (!responsibleIds.length) {
+      return [];
+    }
+    // Ask amoCRM only for what the table needs: the chosen funnel and the group's managers.
+    const pipelineIds = params.pipelineId ? [params.pipelineId] : amoContext.selectedPipelineIds;
+    const fetchPageOnce = async (page: number) => {
+      const response = await withTimeout(
+        amocrmService.fetchLeads(
+          amoContext.accessToken,
+          '',
+          {
+            page,
+            limit: LEADS_PAGE_SIZE,
+            pipelineIds: pipelineIds || undefined,
+            responsibleUserIds: responsibleIds,
+            createdAtFrom: rangeStart,
+            createdAtTo: rangeEnd,
+          },
+          amoContext.baseUrl,
+        ),
+        LEADS_PAGE_TIMEOUT_MS,
+        'amo_leads_timeout',
+      );
+
+      return (response._embedded?.leads ?? []) as Array<Record<string, unknown>>;
+    };
+    const fetchPage = async (page: number) => {
+      try {
+        return await fetchPageOnce(page);
+      } catch {
+        return fetchPageOnce(page);
+      }
+    };
 
     try {
-      let leads;
+      const startedAt = Date.now();
+      const { items, truncated } = await fetchPagesConcurrently(fetchPage, {
+        pageSize: LEADS_PAGE_SIZE,
+        maxPages: LEADS_MAX_PAGES,
+        concurrency: LEADS_CONCURRENCY,
+      });
 
-      try {
-        leads = await run();
-      } catch {
-        leads = await run();
-      }
-      if (leads.length >= LEADS_PAGE_SIZE * LEADS_MAX_PAGES) {
+      if (truncated) {
         sourceStatus.leads = { ok: false, reason: 'page_cap', state: 'partial' };
       }
+      log(LogLevel.INFO, 'Funnel: amoCRM leads loaded', {
+        tenantId,
+        leads: items.length,
+        pipelines: pipelineIds?.length ?? 0,
+        managers: responsibleIds.length,
+        ms: Date.now() - startedAt,
+      });
 
-      return leads as Array<Record<string, unknown>>;
+      return items;
     } catch (error) {
       const reason = detectLeadsFailureReason(error);
 
@@ -394,6 +425,7 @@ export const funnelRouter = router({
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
         group: funnelGroupSchema.default('all'),
+        pipelineId: z.string().min(1).nullable().optional(),
         ishlanganStage: stageRefSchema.nullable().optional(),
         taklifStage: stageRefSchema.nullable().optional(),
         refreshKey: z.number().int().nonnegative().optional(),
@@ -411,6 +443,7 @@ export const funnelRouter = router({
         df: input.dateFrom,
         dt: input.dateTo,
         g: input.group,
+        p: input.pipelineId ?? undefined,
         is: ishlanganStage ? `${ishlanganStage.pipelineId}:${ishlanganStage.statusId}` : undefined,
         ts: taklifStage ? `${taklifStage.pipelineId}:${taklifStage.statusId}` : undefined,
         refresh: input.refreshKey === undefined ? undefined : String(input.refreshKey),
@@ -420,6 +453,7 @@ export const funnelRouter = router({
         rangeStart,
         rangeEnd,
         group: input.group,
+        pipelineId: input.pipelineId ?? null,
         ishlanganStage,
         taklifStage,
       }));

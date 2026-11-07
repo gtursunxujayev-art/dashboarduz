@@ -314,6 +314,11 @@ export class AmoCRMService {
         throw new Error(`Failed to fetch leads from AmoCRM: ${response.status} ${response.statusText}`);
       }
 
+      // amoCRM answers an empty result set (or a page past the end) with 204 No Content.
+      if (response.status === 204) {
+        return { _embedded: { leads: [] } } as AmoCRMLeadListResponse;
+      }
+
       const data = await response.json() as AmoCRMLeadListResponse;
       if (!data._embedded || !data._embedded.leads) {
         throw new Error('Invalid response structure from AmoCRM');

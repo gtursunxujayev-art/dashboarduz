@@ -36,6 +36,77 @@ export const STAGE_STORAGE_KEYS = {
   taklif: 'dashboarduz-funnel-taklif-stage',
 } as const;
 
+export const FILTERS_STORAGE_KEY = 'dashboarduz-funnel-filters';
+
+export type FunnelFilters = {
+  range: ExtendedDashboardRange;
+  dateFrom: string;
+  dateTo: string;
+  group: FunnelGroup;
+  pipelineId: string | null;
+  ishlangan: FunnelStageRef | null;
+  taklif: FunnelStageRef | null;
+};
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+export function serializeFilters(filters: FunnelFilters): string {
+  return JSON.stringify({
+    ...filters,
+    ishlangan: serializeStageRef(filters.ishlangan),
+    taklif: serializeStageRef(filters.taklif),
+  });
+}
+
+/**
+ * Restores saved filters, dropping anything no longer valid (unknown range/group, a funnel or stage
+ * that was removed from amoCRM, a stage outside the chosen funnel).
+ */
+export function parseStoredFilters(
+  raw: string | null | undefined,
+  defaults: FunnelFilters,
+  pipelines: FunnelPipelineOption[],
+): FunnelFilters {
+  let stored: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = raw ? JSON.parse(raw) : {};
+    if (parsed && typeof parsed === 'object') stored = parsed as Record<string, unknown>;
+  } catch {
+    stored = {};
+  }
+
+  const range = RANGE_OPTIONS.some((option) => option.value === stored.range)
+    ? (stored.range as ExtendedDashboardRange)
+    : defaults.range;
+  const group = GROUP_OPTIONS.some((option) => option.value === stored.group)
+    ? (stored.group as FunnelGroup)
+    : defaults.group;
+  const dateFrom = typeof stored.dateFrom === 'string' && ISO_DAY.test(stored.dateFrom) ? stored.dateFrom : defaults.dateFrom;
+  const dateTo = typeof stored.dateTo === 'string' && ISO_DAY.test(stored.dateTo) ? stored.dateTo : defaults.dateTo;
+  const pipelineId = typeof stored.pipelineId === 'string' && pipelines.some((pipeline) => pipeline.id === stored.pipelineId)
+    ? stored.pipelineId
+    : null;
+  const stageFor = (value: unknown, fallback: FunnelStageRef | null) => {
+    const ref = typeof value === 'string' ? parseStageRef(value) : fallback;
+    if (!isStageRefValid(ref, pipelines)) return null;
+    return pipelineId && ref?.pipelineId !== pipelineId ? null : ref;
+  };
+
+  return {
+    range,
+    dateFrom,
+    dateTo,
+    group,
+    pipelineId,
+    ishlangan: stageFor(stored.ishlangan, defaults.ishlangan),
+    taklif: stageFor(stored.taklif, defaults.taklif),
+  };
+}
+
+export function stagePipelines(pipelines: FunnelPipelineOption[], pipelineId: string | null): FunnelPipelineOption[] {
+  return pipelineId ? pipelines.filter((pipeline) => pipeline.id === pipelineId) : pipelines;
+}
+
 export function serializeStageRef(ref: FunnelStageRef | null): string {
   return ref ? `${ref.pipelineId}:${ref.statusId}` : '';
 }
@@ -58,6 +129,7 @@ export function buildFunnelQueryInput(params: {
   dateFrom: string;
   dateTo: string;
   group: FunnelGroup;
+  pipelineId: string | null;
   ishlangan: FunnelStageRef | null;
   taklif: FunnelStageRef | null;
   refreshKey: number;
@@ -65,6 +137,7 @@ export function buildFunnelQueryInput(params: {
   return {
     ...toApiDateRange(params.range, { dateFrom: params.dateFrom, dateTo: params.dateTo }, now),
     group: params.group,
+    pipelineId: params.pipelineId,
     ishlanganStage: params.ishlangan,
     taklifStage: params.taklif,
     refreshKey: params.refreshKey,

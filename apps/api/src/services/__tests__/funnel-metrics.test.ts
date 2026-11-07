@@ -3,6 +3,7 @@ import {
   bucketLeadsByResponsible,
   computeLostRevenueRow,
   computeTeamRatios,
+  fetchPagesConcurrently,
   isLeadAtOrAfterStage,
   safeDiv,
   sumFunnelRows,
@@ -43,6 +44,34 @@ function row(partial: Partial<FunnelManagerRow>): FunnelManagerRow {
     ...partial,
   };
 }
+
+describe('fetchPagesConcurrently', () => {
+  it('fetches pages in waves and stops at the first short page', async () => {
+    const requested: number[] = [];
+    const fetchPage = async (page: number) => {
+      requested.push(page);
+      return page < 6 ? [page, page] : page === 6 ? [page] : [];
+    };
+    const result = await fetchPagesConcurrently(fetchPage, { pageSize: 2, maxPages: 40, concurrency: 4 });
+    expect(result.items).toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6]);
+    expect(result.truncated).toBe(false);
+    // page 1, then wave 2-5, then wave 6-9 (6 is short, so we stop)
+    expect(requested.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it('stops after one request when the first page is short', async () => {
+    const fetchPage = jest.fn(async () => [1]);
+    const result = await fetchPagesConcurrently(fetchPage, { pageSize: 2, maxPages: 40, concurrency: 4 });
+    expect(result.items).toEqual([1]);
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports truncation at the page cap', async () => {
+    const result = await fetchPagesConcurrently(async () => [1, 1], { pageSize: 2, maxPages: 3, concurrency: 4 });
+    expect(result.items).toHaveLength(6);
+    expect(result.truncated).toBe(true);
+  });
+});
 
 describe('safeDiv', () => {
   it('returns 0 for zero or negative denominators', () => {
