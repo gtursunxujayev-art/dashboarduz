@@ -31,7 +31,7 @@ describe('funnel view helpers', () => {
   });
 
   it('builds the API input, converting last week to a custom range', () => {
-    const base = { dateFrom: '', dateTo: '', group: 'online' as const, pipelineId: null, ishlangan: null, taklif: null, refreshKey: 0 };
+    const base = { dateFrom: '', dateTo: '', group: 'online' as const, pipelineId: null, taklif: null, refreshKey: 0 };
     expect(buildFunnelQueryInput({ ...base, range: 'last_week' }, now)).toMatchObject({
       range: 'custom', dateFrom: '2026-10-26', dateTo: '2026-11-01', group: 'online',
     });
@@ -47,13 +47,13 @@ describe('funnel view helpers', () => {
     ];
     const defaults = {
       range: 'month' as const, dateFrom: '2026-11-07', dateTo: '2026-11-07', group: 'all' as const,
-      pipelineId: null, ishlangan: null, taklif: null,
+      pipelineId: null, taklif: null,
     };
 
     it('round-trips every filter', () => {
       const filters = {
         range: 'custom' as const, dateFrom: '2026-10-19', dateTo: '2026-11-07', group: 'online' as const,
-        pipelineId: '10', ishlangan: { pipelineId: '10', statusId: '20' }, taklif: { pipelineId: '10', statusId: '30' },
+        pipelineId: '10', taklif: { pipelineId: '10', statusId: '30' },
       };
       expect(parseStoredFilters(serializeFilters(filters), defaults, pipelines)).toEqual(filters);
     });
@@ -65,9 +65,9 @@ describe('funnel view helpers', () => {
     });
 
     it('drops a removed funnel and stages outside the chosen funnel', () => {
-      const stored = JSON.stringify({ pipelineId: '99', ishlangan: '10:20', taklif: '11:40' });
-      expect(parseStoredFilters(stored, defaults, pipelines)).toMatchObject({ pipelineId: null, ishlangan: { pipelineId: '10', statusId: '20' } });
-      const scoped = JSON.stringify({ pipelineId: '10', ishlangan: '10:20', taklif: '11:40' });
+      const stored = JSON.stringify({ pipelineId: '99', taklif: '10:20' });
+      expect(parseStoredFilters(stored, defaults, pipelines)).toMatchObject({ pipelineId: null, taklif: { pipelineId: '10', statusId: '20' } });
+      const scoped = JSON.stringify({ pipelineId: '10', taklif: '11:40' });
       expect(parseStoredFilters(scoped, defaults, pipelines)).toMatchObject({ pipelineId: '10', taklif: null });
     });
 

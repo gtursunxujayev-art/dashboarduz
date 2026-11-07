@@ -31,10 +31,8 @@ export const HOLE_LABELS: Record<FunnelHole, string> = {
   chek: 'Chek',
 };
 
-export const STAGE_STORAGE_KEYS = {
-  ishlangan: 'dashboarduz-funnel-ishlangan-stage',
-  taklif: 'dashboarduz-funnel-taklif-stage',
-} as const;
+/** Where the first version of the page saved the Taklif stage (read once as a fallback). */
+export const LEGACY_TAKLIF_STAGE_KEY = 'dashboarduz-funnel-taklif-stage';
 
 export const FILTERS_STORAGE_KEY = 'dashboarduz-funnel-filters';
 
@@ -44,7 +42,6 @@ export type FunnelFilters = {
   dateTo: string;
   group: FunnelGroup;
   pipelineId: string | null;
-  ishlangan: FunnelStageRef | null;
   taklif: FunnelStageRef | null;
 };
 
@@ -53,7 +50,6 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 export function serializeFilters(filters: FunnelFilters): string {
   return JSON.stringify({
     ...filters,
-    ishlangan: serializeStageRef(filters.ishlangan),
     taklif: serializeStageRef(filters.taklif),
   });
 }
@@ -98,7 +94,6 @@ export function parseStoredFilters(
     dateTo,
     group,
     pipelineId,
-    ishlangan: stageFor(stored.ishlangan, defaults.ishlangan),
     taklif: stageFor(stored.taklif, defaults.taklif),
   };
 }
@@ -130,7 +125,6 @@ export function buildFunnelQueryInput(params: {
   dateTo: string;
   group: FunnelGroup;
   pipelineId: string | null;
-  ishlangan: FunnelStageRef | null;
   taklif: FunnelStageRef | null;
   refreshKey: number;
 }, now: Date = new Date()) {
@@ -138,7 +132,6 @@ export function buildFunnelQueryInput(params: {
     ...toApiDateRange(params.range, { dateFrom: params.dateFrom, dateTo: params.dateTo }, now),
     group: params.group,
     pipelineId: params.pipelineId,
-    ishlanganStage: params.ishlangan,
     taklifStage: params.taklif,
     refreshKey: params.refreshKey,
   };

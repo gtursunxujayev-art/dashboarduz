@@ -56,6 +56,11 @@ export function FunnelCrmBanner({
 }) {
   const reasonText = (() => {
     if (!reason) return null;
+    if (reason.startsWith('calls_')) {
+      return reason.includes('timeout')
+        ? "AmoCRM qo'ng'iroqlari javob berish vaqti tugadi — Ishlangan lid hisoblanmadi."
+        : "AmoCRM qo'ng'iroqlari yuklanmadi — Ishlangan lid hisoblanmadi.";
+    }
     if (reason.includes('timeout')) return 'AmoCRM javob berish vaqti tugadi.';
     if (reason.includes('network_error')) return 'AmoCRM bilan tarmoq aloqasida xatolik yuz berdi.';
     if (reason.includes('amo_unavailable')) return 'AmoCRM integratsiyasi mavjud emas yoki faol emas.';

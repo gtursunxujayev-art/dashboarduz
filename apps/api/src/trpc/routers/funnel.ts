@@ -11,6 +11,13 @@ import {
   computeLostRevenueRow,
   computeTeamRatios,
   fetchPagesConcurrently,
+  CALL_NOTE_TYPES,
+  chunk,
+  findAnsweredLeadIds,
+  leadContactIds,
+  MIN_ANSWERED_CALL_SECONDS,
+  runWithConcurrency,
+  type FunnelLeadLike,
   safeDiv,
   sumFunnelRows,
   sumLostRevenueRows,
@@ -56,9 +63,13 @@ const LEADS_PAGE_SIZE = 250;
 const LEADS_MAX_PAGES = 40;
 const LEADS_CONCURRENCY = 4; // amoCRM allows ~7 requests/second per account
 const LEADS_PAGE_TIMEOUT_MS = 20_000;
+const NOTES_PAGE_SIZE = 250;
+const NOTES_ENTITY_CHUNK = 100; // entity ids per notes request (keeps the URL short)
+const NOTES_MAX_PAGES_PER_CHUNK = 20;
 
 type FunnelSourceState = 'ok' | 'partial' | 'unavailable' | 'timeout';
-type FunnelSourceStatus = { leads: { ok: boolean; reason: string | null; state: FunnelSourceState } };
+type FunnelSourceEntry = { ok: boolean; reason: string | null; state: FunnelSourceState };
+type FunnelSourceStatus = { leads: FunnelSourceEntry; calls: FunnelSourceEntry };
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, reason: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -202,13 +213,15 @@ async function buildFunnelBase(params: {
   rangeEnd: Date;
   group: z.infer<typeof funnelGroupSchema>;
   pipelineId: string | null;
-  ishlanganStage: FunnelStageRef | null;
   taklifStage: FunnelStageRef | null;
 }): Promise<FunnelBaseResult> {
   const { tenantId, rangeStart, rangeEnd } = params;
   const agents = await loadFunnelAgents(tenantId, params.group);
   const agentIds = agents.map((agent) => agent.id);
-  const sourceStatus: FunnelSourceStatus = { leads: { ok: true, reason: null, state: 'ok' } };
+  const sourceStatus: FunnelSourceStatus = {
+    leads: { ok: true, reason: null, state: 'ok' },
+    calls: { ok: true, reason: null, state: 'ok' },
+  };
 
   const extensionToUserId = new Map<string, string>();
 
@@ -224,7 +237,85 @@ async function buildFunnelBase(params: {
     .map((agent) => (agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId).trim() : ''))
     .filter(Boolean)));
 
-  const loadLeads = async (): Promise<Array<Record<string, unknown>> | null> => {
+  /** Lead ids with an answered call (>= 50 s) in amoCRM call notes on the lead or its contacts. */
+  const loadAnsweredLeadIds = async (
+    amoContext: NonNullable<Awaited<ReturnType<typeof getTenantAmoCRMContext>>>,
+    leads: FunnelLeadLike[],
+  ): Promise<Set<string> | null> => {
+    const leadIds = Array.from(new Set(leads.map((lead) => String(lead.id ?? '')).filter(Boolean)));
+    const contactIds = Array.from(new Set(leads.flatMap(leadContactIds)));
+
+    if (!leadIds.length) return new Set();
+
+    const fetchNotesFor = (entityType: 'leads' | 'contacts', entityIds: string[]) => async () => {
+      const fetchPageOnce = (page: number) => withTimeout(
+        amocrmService.fetchNotes(
+          amoContext.accessToken,
+          entityType,
+          {
+            page,
+            limit: NOTES_PAGE_SIZE,
+            noteTypes: CALL_NOTE_TYPES,
+            entityIds,
+            // A call note is created during the call; it can only be updated afterwards.
+            updatedAtFrom: rangeStart,
+          },
+          amoContext.baseUrl,
+        ),
+        LEADS_PAGE_TIMEOUT_MS,
+        'amo_notes_timeout',
+      );
+      const { items } = await fetchPagesConcurrently(
+        async (page) => {
+          try {
+            return await fetchPageOnce(page);
+          } catch {
+            return fetchPageOnce(page);
+          }
+        },
+        { pageSize: NOTES_PAGE_SIZE, maxPages: NOTES_MAX_PAGES_PER_CHUNK, concurrency: 1 },
+      );
+
+      return { entityType, items };
+    };
+    const tasks = [
+      ...chunk(leadIds, NOTES_ENTITY_CHUNK).map((ids) => fetchNotesFor('leads', ids)),
+      ...chunk(contactIds, NOTES_ENTITY_CHUNK).map((ids) => fetchNotesFor('contacts', ids)),
+    ];
+
+    try {
+      const startedAt = Date.now();
+      const results = await runWithConcurrency(tasks, LEADS_CONCURRENCY);
+      const leadNotes = results.filter((result) => result.entityType === 'leads').flatMap((result) => result.items);
+      const contactNotes = results.filter((result) => result.entityType === 'contacts').flatMap((result) => result.items);
+      const answered = findAnsweredLeadIds(leads, leadNotes, contactNotes, { rangeEnd });
+
+      log(LogLevel.INFO, 'Funnel: amoCRM call notes loaded', {
+        tenantId,
+        leads: leadIds.length,
+        contacts: contactIds.length,
+        notes: leadNotes.length + contactNotes.length,
+        answeredLeads: answered.size,
+        requests: tasks.length,
+        ms: Date.now() - startedAt,
+      });
+
+      return answered;
+    } catch (error) {
+      const reason = detectLeadsFailureReason(error);
+
+      sourceStatus.calls = { ok: false, reason: `calls_${reason}`, state: reason === 'timeout' ? 'timeout' : 'unavailable' };
+      log(LogLevel.WARN, 'Funnel: amoCRM call notes unavailable', {
+        tenantId,
+        reason,
+        error: String((error as Error | undefined)?.message || error),
+      });
+
+      return null;
+    }
+  };
+
+  const loadLeads = async (): Promise<{ leads: FunnelLeadLike[]; answered: Set<string> | null } | null> => {
     let amoContext;
 
     try {
@@ -240,7 +331,7 @@ async function buildFunnelBase(params: {
       return null;
     }
     if (!responsibleIds.length) {
-      return [];
+      return { leads: [], answered: new Set() };
     }
     // Ask amoCRM only for what the table needs: the chosen funnel and the group's managers.
     const pipelineIds = params.pipelineId ? [params.pipelineId] : amoContext.selectedPipelineIds;
@@ -252,6 +343,7 @@ async function buildFunnelBase(params: {
           {
             page,
             limit: LEADS_PAGE_SIZE,
+            with: 'contacts',
             pipelineIds: pipelineIds || undefined,
             responsibleUserIds: responsibleIds,
             createdAtFrom: rangeStart,
@@ -263,7 +355,7 @@ async function buildFunnelBase(params: {
         'amo_leads_timeout',
       );
 
-      return (response._embedded?.leads ?? []) as Array<Record<string, unknown>>;
+      return (response._embedded?.leads ?? []) as FunnelLeadLike[];
     };
     const fetchPage = async (page: number) => {
       try {
@@ -292,7 +384,7 @@ async function buildFunnelBase(params: {
         ms: Date.now() - startedAt,
       });
 
-      return items;
+      return { leads: items, answered: await loadAnsweredLeadIds(amoContext, items) };
     } catch (error) {
       const reason = detectLeadsFailureReason(error);
 
@@ -307,9 +399,9 @@ async function buildFunnelBase(params: {
     }
   };
 
-  const [leads, pipelinesResult, calls, salesRaw] = await Promise.all([
+  const [leadsResult, pipelinesResult, calls, salesRaw] = await Promise.all([
     loadLeads(),
-    params.ishlanganStage || params.taklifStage
+    params.taklifStage
       ? loadFunnelPipelines(tenantId).catch(() => ({ connected: false, pipelines: [] as FunnelPipeline[] }))
       : Promise.resolve({ connected: true, pipelines: [] as FunnelPipeline[] }),
     extensions.length
@@ -346,12 +438,10 @@ async function buildFunnelBase(params: {
   ]);
 
   const stageIndex = buildStageSortIndex(pipelinesResult.pipelines);
+  const leads = leadsResult?.leads ?? null;
+  const answeredLeadIds = leadsResult?.answered ?? null;
   const leadBuckets = leads
-    ? bucketLeadsByResponsible(
-        leads as Parameters<typeof bucketLeadsByResponsible>[0],
-        { ishlangan: params.ishlanganStage, taklif: params.taklifStage },
-        stageIndex,
-      )
+    ? bucketLeadsByResponsible(leads, params.taklifStage, stageIndex, answeredLeadIds ?? new Set())
     : new Map<string, LeadBuckets>();
 
   const callsByUserId = new Map<string, number>();
@@ -389,7 +479,7 @@ async function buildFunnelBase(params: {
       userId: agent.id,
       name: agentLabel(agent),
       assignedLeads: leadsKnown ? (bucket?.assigned ?? 0) : null,
-      ishlanganLeads: leadsKnown ? (bucket?.ishlangan ?? 0) : null,
+      ishlanganLeads: leadsKnown && answeredLeadIds ? (bucket?.ishlangan ?? 0) : null,
       taklifLeads: leadsKnown ? (bucket?.taklif ?? 0) : null,
       calls: callsByUserId.get(agent.id) || 0,
       sales: saleStats.sales,
@@ -426,7 +516,6 @@ export const funnelRouter = router({
         dateTo: z.string().optional(),
         group: funnelGroupSchema.default('all'),
         pipelineId: z.string().min(1).nullable().optional(),
-        ishlanganStage: stageRefSchema.nullable().optional(),
         taklifStage: stageRefSchema.nullable().optional(),
         refreshKey: z.number().int().nonnegative().optional(),
       }),
@@ -434,7 +523,6 @@ export const funnelRouter = router({
     .query(async ({ ctx, input }) => {
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
-      const ishlanganStage = input.ishlanganStage ?? null;
       const taklifStage = input.taklifStage ?? null;
 
       const cacheKey = buildCacheKey('funnel', {
@@ -444,7 +532,7 @@ export const funnelRouter = router({
         dt: input.dateTo,
         g: input.group,
         p: input.pipelineId ?? undefined,
-        is: ishlanganStage ? `${ishlanganStage.pipelineId}:${ishlanganStage.statusId}` : undefined,
+        v: 'calls50', // Ishlangan = answered call >= 50 s (bump when the definition changes)
         ts: taklifStage ? `${taklifStage.pipelineId}:${taklifStage.statusId}` : undefined,
         refresh: input.refreshKey === undefined ? undefined : String(input.refreshKey),
       });
@@ -454,7 +542,6 @@ export const funnelRouter = router({
         rangeEnd,
         group: input.group,
         pipelineId: input.pipelineId ?? null,
-        ishlanganStage,
         taklifStage,
       }));
 
@@ -484,7 +571,8 @@ export const funnelRouter = router({
         dateFrom: rangeStart.toISOString(),
         dateTo: rangeEnd.toISOString(),
         group: input.group,
-        stages: { ishlangan: ishlanganStage, taklif: taklifStage },
+        stages: { taklif: taklifStage },
+        minAnsweredCallSeconds: MIN_ANSWERED_CALL_SECONDS,
         sourceStatus: base.sourceStatus,
         unmappedManagerNames: visibleIds ? [] : base.unmappedManagerNames,
         rows: visibleRows,

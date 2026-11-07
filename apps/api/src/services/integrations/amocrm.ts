@@ -137,6 +137,27 @@ export interface AmoCRMEvent {
   [key: string]: unknown;
 }
 
+export interface AmoCRMNote {
+  id?: number | string;
+  entity_id?: number | string;
+  note_type?: string;
+  created_at?: number | string;
+  created_by?: number | string;
+  responsible_user_id?: number | string;
+  params?: {
+    duration?: number | string;
+    phone?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface AmoCRMNoteListResponse {
+  _embedded?: {
+    notes?: AmoCRMNote[];
+  };
+}
+
 export interface AmoCRMEventListResponse {
   _embedded?: {
     events?: AmoCRMEvent[];
@@ -637,6 +658,49 @@ export class AmoCRMService {
     }
 
     return allTasks;
+  }
+
+  /** One page of notes of an entity type (e.g. call notes on leads or contacts). */
+  async fetchNotes(accessToken: string, entityType: 'leads' | 'contacts', params?: {
+    page?: number;
+    limit?: number;
+    noteTypes?: string[];
+    entityIds?: string[];
+    updatedAtFrom?: Date;
+    updatedAtTo?: Date;
+  }, baseUrl?: string): Promise<AmoCRMNote[]> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.set('page', params.page.toString());
+    if (params?.limit) queryParams.set('limit', Math.min(params.limit, 250).toString());
+    params?.noteTypes?.forEach((noteType) => queryParams.append('filter[note_type][]', noteType));
+    params?.entityIds?.forEach((entityId) => queryParams.append('filter[entity_id][]', entityId));
+    if (params?.updatedAtFrom) {
+      queryParams.set('filter[updated_at][from]', Math.floor(params.updatedAtFrom.getTime() / 1000).toString());
+    }
+    if (params?.updatedAtTo) {
+      queryParams.set('filter[updated_at][to]', Math.floor(params.updatedAtTo.getTime() / 1000).toString());
+    }
+
+    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
+    const url = `${resolvedBaseUrl}/api/v4/${entityType}/notes${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await this.fetchWithTimeout(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ error: errorText, status: response.status, entityType }, 'AmoCRM notes fetch error');
+      throw new Error(`Failed to fetch AmoCRM notes: ${response.status} ${response.statusText}`);
+    }
+    if (response.status === 204) {
+      return [];
+    }
+
+    const data = (await response.json()) as AmoCRMNoteListResponse;
+    return Array.isArray(data._embedded?.notes) ? data._embedded.notes : [];
   }
 
   async fetchEvents(accessToken: string, params?: {

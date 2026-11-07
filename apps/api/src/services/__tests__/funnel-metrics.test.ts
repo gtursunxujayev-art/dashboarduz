@@ -1,6 +1,9 @@
 import {
   buildStageSortIndex,
   bucketLeadsByResponsible,
+  chunk,
+  findAnsweredLeadIds,
+  runWithConcurrency,
   computeLostRevenueRow,
   computeTeamRatios,
   fetchPagesConcurrently,
@@ -101,30 +104,99 @@ describe('isLeadAtOrAfterStage', () => {
 });
 
 describe('bucketLeadsByResponsible', () => {
-  it('counts assigned, ishlangan and taklif per responsible user', () => {
+  it('counts assigned, answered (ishlangan) and taklif per responsible user', () => {
     const buckets = bucketLeadsByResponsible(
       [
-        { pipeline_id: 1, status_id: 10, responsible_user_id: 5 },
-        { pipeline_id: 1, status_id: 30, responsible_user_id: 5 },
-        { pipeline_id: 1, status_id: 142, responsible_user_id: 5 },
-        { pipeline_id: 1, status_id: 30, responsible_user_id: 6 },
-        { pipeline_id: 1, status_id: 30 },
+        { id: 1, pipeline_id: 1, status_id: 10, responsible_user_id: 5 },
+        { id: 2, pipeline_id: 1, status_id: 30, responsible_user_id: 5 },
+        { id: 3, pipeline_id: 1, status_id: 142, responsible_user_id: 5 },
+        { id: 4, pipeline_id: 1, status_id: 30, responsible_user_id: 6 },
+        { id: 5, pipeline_id: 1, status_id: 30 },
       ],
-      { ishlangan: stage, taklif: { pipelineId: '1', statusId: '30' } },
+      { pipelineId: '1', statusId: '30' },
       index,
+      new Set(['1', '2', '4']),
     );
     expect(buckets.get('5')).toEqual({ assigned: 3, ishlangan: 2, taklif: 2 });
     expect(buckets.get('6')).toEqual({ assigned: 1, ishlangan: 1, taklif: 1 });
     expect(buckets.size).toBe(2);
   });
 
-  it('leaves stage counts at 0 when no stage is chosen', () => {
+  it('leaves taklif at 0 when no stage is chosen', () => {
     const buckets = bucketLeadsByResponsible(
-      [{ pipeline_id: 1, status_id: 40, responsible_user_id: 5 }],
-      { ishlangan: null, taklif: null },
+      [{ id: 1, pipeline_id: 1, status_id: 40, responsible_user_id: 5 }],
+      null,
       index,
+      new Set(),
     );
     expect(buckets.get('5')).toEqual({ assigned: 1, ishlangan: 0, taklif: 0 });
+  });
+});
+
+describe('findAnsweredLeadIds', () => {
+  const created = Math.floor(new Date('2026-10-12T09:00:00Z').getTime() / 1000);
+  const at = (iso: string) => Math.floor(new Date(iso).getTime() / 1000);
+  const rangeEnd = new Date('2026-11-07T18:59:59Z');
+  const leads = [
+    { id: 100, created_at: created, _embedded: { contacts: [{ id: 900 }] } },
+    { id: 101, created_at: created, _embedded: { contacts: [{ id: 901 }] } },
+    { id: 102, created_at: created },
+  ];
+
+  it('counts a lead with a call note of at least 50 seconds on the lead', () => {
+    const result = findAnsweredLeadIds(
+      leads,
+      [
+        { entity_id: 100, note_type: 'call_out', created_at: at('2026-11-03T10:34:00Z'), params: { duration: 116 } },
+        { entity_id: 102, note_type: 'call_out', created_at: at('2026-10-16T11:03:00Z'), params: { duration: 0 } },
+      ],
+      [],
+      { rangeEnd },
+    );
+    expect([...result]).toEqual(['100']);
+  });
+
+  it('counts calls stored on the lead contact, incoming or outgoing', () => {
+    const result = findAnsweredLeadIds(
+      leads,
+      [],
+      [{ entity_id: 901, note_type: 'call_in', created_at: at('2026-10-20T08:00:00Z'), params: { duration: '50' } }],
+      { rangeEnd },
+    );
+    expect([...result]).toEqual(['101']);
+  });
+
+  it('ignores short calls, non-call notes, calls before lead creation and after the period', () => {
+    const result = findAnsweredLeadIds(
+      leads,
+      [
+        { entity_id: 100, note_type: 'call_out', created_at: at('2026-10-20T08:00:00Z'), params: { duration: 49 } },
+        { entity_id: 100, note_type: 'common', created_at: at('2026-10-20T08:00:00Z'), params: { duration: 300 } },
+        { entity_id: 100, note_type: 'call_out', created_at: created - 60, params: { duration: 300 } },
+        { entity_id: 100, note_type: 'call_out', created_at: at('2026-11-08T08:00:00Z'), params: { duration: 300 } },
+        { entity_id: 555, note_type: 'call_out', created_at: at('2026-10-20T08:00:00Z'), params: { duration: 300 } },
+      ],
+      [],
+      { rangeEnd },
+    );
+    expect(result.size).toBe(0);
+  });
+});
+
+describe('runWithConcurrency and chunk', () => {
+  it('keeps order and never exceeds the limit', async () => {
+    let active = 0;
+    let peak = 0;
+    const tasks = [30, 10, 20, 5, 15].map((ms, i) => async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      active -= 1;
+      return i;
+    });
+    expect(await runWithConcurrency(tasks, 2)).toEqual([0, 1, 2, 3, 4]);
+    expect(peak).toBe(2);
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
   });
 });
 

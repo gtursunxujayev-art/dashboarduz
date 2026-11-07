@@ -10,9 +10,12 @@ export type FunnelPipeline = {
 };
 
 export type FunnelLeadLike = {
+  id?: number | string | null;
+  created_at?: number | string | null;
   pipeline_id?: number | string | null;
   status_id?: number | string | null;
   responsible_user_id?: number | string | null;
+  _embedded?: { contacts?: Array<{ id?: number | string | null } | null> | null } | null;
 };
 
 export const AMO_WON_STATUS_ID = '142';
@@ -112,10 +115,15 @@ export function isLeadAtOrAfterStage(
 
 export type LeadBuckets = { assigned: number; ishlangan: number; taklif: number };
 
+/**
+ * Groups leads by responsible user. A lead is "ishlangan" when its id is in `answeredLeadIds`
+ * (it had an answered call of the minimum length); "taklif" when it reached the chosen stage.
+ */
 export function bucketLeadsByResponsible(
   leads: FunnelLeadLike[],
-  stages: { ishlangan: FunnelStageRef | null; taklif: FunnelStageRef | null },
+  taklifStage: FunnelStageRef | null,
   index: StageSortIndex,
+  answeredLeadIds: ReadonlySet<string>,
 ): Map<string, LeadBuckets> {
   const buckets = new Map<string, LeadBuckets>();
 
@@ -126,12 +134,121 @@ export function bucketLeadsByResponsible(
     const bucket = buckets.get(responsible) || { assigned: 0, ishlangan: 0, taklif: 0 };
 
     bucket.assigned += 1;
-    if (stages.ishlangan && isLeadAtOrAfterStage(lead, stages.ishlangan, index)) bucket.ishlangan += 1;
-    if (stages.taklif && isLeadAtOrAfterStage(lead, stages.taklif, index)) bucket.taklif += 1;
+    if (answeredLeadIds.has(toId(lead.id))) bucket.ishlangan += 1;
+    if (taklifStage && isLeadAtOrAfterStage(lead, taklifStage, index)) bucket.taklif += 1;
     buckets.set(responsible, bucket);
   }
 
   return buckets;
+}
+
+export const CALL_NOTE_TYPES = ['call_in', 'call_out'];
+export const MIN_ANSWERED_CALL_SECONDS = 50;
+
+export type CallNoteLike = {
+  entity_id?: number | string | null;
+  note_type?: string | null;
+  created_at?: number | string | null;
+  params?: { duration?: number | string | null } | null;
+};
+
+function toUnixSeconds(value: unknown): number | null {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+
+  return parsed > 1_000_000_000_000 ? Math.floor(parsed / 1000) : parsed;
+}
+
+/** Contact ids linked to each lead (from GET /leads?with=contacts). */
+export function leadContactIds(lead: FunnelLeadLike): string[] {
+  const contacts = lead._embedded?.contacts;
+
+  if (!Array.isArray(contacts)) return [];
+
+  return contacts.map((contact) => toId(contact?.id)).filter(Boolean);
+}
+
+/**
+ * Lead ids that had an answered call (call note with duration >= minDuration) after the lead was
+ * created and no later than `rangeEnd`. Calls may sit on the lead itself or on one of its contacts.
+ */
+export function findAnsweredLeadIds(
+  leads: FunnelLeadLike[],
+  leadNotes: CallNoteLike[],
+  contactNotes: CallNoteLike[],
+  options: { rangeEnd: Date; minDurationSeconds?: number },
+): Set<string> {
+  const minDuration = options.minDurationSeconds ?? MIN_ANSWERED_CALL_SECONDS;
+  const rangeEndSeconds = Math.floor(options.rangeEnd.getTime() / 1000);
+  const qualifies = (note: CallNoteLike, leadCreatedAt: number | null) => {
+    if (!note.note_type || !CALL_NOTE_TYPES.includes(note.note_type)) return false;
+    if (Number(note.params?.duration ?? 0) < minDuration) return false;
+    const createdAt = toUnixSeconds(note.created_at);
+
+    if (createdAt === null || createdAt > rangeEndSeconds) return false;
+
+    return leadCreatedAt === null || createdAt >= leadCreatedAt;
+  };
+
+  const leadsById = new Map<string, FunnelLeadLike>();
+  const leadIdsByContact = new Map<string, string[]>();
+
+  for (const lead of leads) {
+    const leadId = toId(lead.id);
+
+    if (!leadId) continue;
+    leadsById.set(leadId, lead);
+    for (const contactId of leadContactIds(lead)) {
+      leadIdsByContact.set(contactId, [...(leadIdsByContact.get(contactId) || []), leadId]);
+    }
+  }
+
+  const answered = new Set<string>();
+
+  for (const note of leadNotes) {
+    const leadId = toId(note.entity_id);
+    const lead = leadsById.get(leadId);
+
+    if (lead && qualifies(note, toUnixSeconds(lead.created_at))) answered.add(leadId);
+  }
+  for (const note of contactNotes) {
+    for (const leadId of leadIdsByContact.get(toId(note.entity_id)) || []) {
+      if (qualifies(note, toUnixSeconds(leadsById.get(leadId)?.created_at))) answered.add(leadId);
+    }
+  }
+
+  return answered;
+}
+
+/** Runs async tasks with at most `limit` in flight; results keep input order. */
+export async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < tasks.length) {
+      const current = next;
+
+      next += 1;
+      const task = tasks[current];
+
+      if (task) results[current] = await task();
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+
+  return results;
+}
+
+export function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
 }
 
 export type FunnelManagerRow = {

@@ -11,7 +11,7 @@ import {
   FILTERS_STORAGE_KEY,
   GROUP_OPTIONS,
   RANGE_OPTIONS,
-  STAGE_STORAGE_KEYS,
+  LEGACY_TAKLIF_STAGE_KEY,
   buildFunnelQueryInput,
   parseStageRef,
   parseStoredFilters,
@@ -24,6 +24,16 @@ import {
 } from './funnel-view';
 
 const inputClass = 'rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100';
+
+function RefreshSpinner() {
+  return (
+    <span
+      role="status"
+      aria-label="Yangilanmoqda"
+      className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"
+    />
+  );
+}
 
 function readStorage(key: string): string | null {
   try {
@@ -52,13 +62,12 @@ export default function FunnelPage() {
     dateTo: getTashkentToday(),
     group: 'all',
     pipelineId: null,
-    ishlangan: null,
     taklif: null,
   }));
   const [filtersHydrated, setFiltersHydrated] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [planError, setPlanError] = useState('');
-  const { range, dateFrom, dateTo, group, pipelineId, ishlangan, taklif } = filters;
+  const { range, dateFrom, dateTo, group, pipelineId, taklif } = filters;
 
   const utils = trpc.useContext();
   const stageOptionsQuery = trpc.funnel.stageOptions.useQuery(undefined, { staleTime: 10 * 60 * 1000 });
@@ -72,9 +81,8 @@ export default function FunnelPage() {
       readStorage(FILTERS_STORAGE_KEY),
       {
         ...current,
-        // Stages saved by the first version of this page, before all filters were saved together.
-        ishlangan: parseStageRef(readStorage(STAGE_STORAGE_KEYS.ishlangan)),
-        taklif: parseStageRef(readStorage(STAGE_STORAGE_KEYS.taklif)),
+        // Stage saved by the first version of this page, before all filters were saved together.
+        taklif: parseStageRef(readStorage(LEGACY_TAKLIF_STAGE_KEY)),
       },
       pipelines,
     ));
@@ -92,15 +100,14 @@ export default function FunnelPage() {
     setFilters((current) => ({
       ...current,
       pipelineId: nextPipelineId,
-      ishlangan: keepStage(current.ishlangan),
       taklif: keepStage(current.taklif),
     }));
   };
 
   const customRangeInvalid = range === 'custom' && (!dateFrom || !dateTo || dateFrom > dateTo);
   const queryInput = useMemo(
-    () => buildFunnelQueryInput({ range, dateFrom, dateTo, group, pipelineId, ishlangan, taklif, refreshKey }),
-    [range, dateFrom, dateTo, group, pipelineId, ishlangan, taklif, refreshKey],
+    () => buildFunnelQueryInput({ range, dateFrom, dateTo, group, pipelineId, taklif, refreshKey }),
+    [range, dateFrom, dateTo, group, pipelineId, taklif, refreshKey],
   );
   const summaryQuery = trpc.funnel.summary.useQuery(queryInput, {
     enabled: filtersHydrated && !customRangeInvalid,
@@ -118,9 +125,15 @@ export default function FunnelPage() {
   });
 
   const data = summaryQuery.data;
+  // Old results stay on screen while new filters load (keepPreviousData), so flag that they are stale.
+  const isRefreshing = Boolean(data) && summaryQuery.isFetching;
   const leadsStatus = data?.sourceStatus.leads;
+  const callsStatus = data?.sourceStatus.calls;
+  const crmFailureReason = leadsStatus && !leadsStatus.ok
+    ? (leadsStatus.reason || 'fetch_failed')
+    : (callsStatus && !callsStatus.ok ? (callsStatus.reason || 'calls_fetch_failed') : null);
 
-  const renderStageSelect = (kind: 'ishlangan' | 'taklif', label: string, value: FunnelStageRef | null) => (
+  const renderStageSelect = (kind: 'taklif', label: string, value: FunnelStageRef | null) => (
     <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
       {label}
       <select
@@ -200,15 +213,17 @@ export default function FunnelPage() {
               {pipelines.map((pipeline) => <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>)}
             </select>
           </label>
-          {renderStageSelect('ishlangan', 'Ishlangan bosqich', ishlangan)}
           {renderStageSelect('taklif', 'Taklif bosqich', taklif)}
         </div>
         {customRangeInvalid && <p className="mt-2 text-sm text-red-600">Sanalar oralig&apos;ini to&apos;g&apos;ri tanlang.</p>}
         {stageOptionsQuery.isSuccess && !stageOptionsQuery.data.connected && (
           <p className="mt-2 text-sm text-amber-700">AmoCRM ulanmagan — bosqichlarni tanlab bo&apos;lmaydi.</p>
         )}
-        {(!ishlangan || !taklif) && pipelines.length > 0 && (
-          <p className="mt-2 text-sm text-gray-500">Ishlangan va Taklif ustunlari uchun bosqichlarni tanlang.</p>
+        <p className="mt-2 text-sm text-gray-500">
+          Ishlangan lid — davrda yaratilgan va kamida {data?.minAnsweredCallSeconds ?? 50} soniya gaplashilgan (amoCRM qo&apos;ng&apos;iroqlari) lidlar.
+        </p>
+        {!taklif && pipelines.length > 0 && (
+          <p className="mt-1 text-sm text-gray-500">Taklif ustuni uchun bosqichni tanlang.</p>
         )}
       </div>
 
@@ -220,10 +235,13 @@ export default function FunnelPage() {
 
       <div className="rounded-lg bg-white shadow">
         <div className="px-4 py-5 sm:p-6">
-          <h3 className="mb-4 text-lg font-medium text-gray-900">Menejerlar voronkasi</h3>
+          <h3 className="mb-4 flex items-center gap-2 text-lg font-medium text-gray-900">
+            Menejerlar voronkasi
+            {isRefreshing && <RefreshSpinner />}
+          </h3>
           {data && (
             <FunnelCrmBanner
-              reason={leadsStatus && !leadsStatus.ok ? (leadsStatus.reason || 'fetch_failed') : null}
+              reason={crmFailureReason}
               unmappedNames={data.unmappedManagerNames}
               onRetry={() => setRefreshKey((key) => key + 1)}
               isRetrying={summaryQuery.isFetching}
@@ -233,13 +251,15 @@ export default function FunnelPage() {
           {!data && summaryQuery.isLoading ? (
             <LoadingBlock message="Voronka ma'lumoti yuklanmoqda..." />
           ) : data && data.rows.length ? (
-            <FunnelTable
-              rows={data.rows}
-              totals={data.totals}
-              canEditPlans={data.canEditPlans}
-              showMoney={showMoney}
-              onPlanChange={(userId, plan) => setPlanMutation.mutate({ userId, plan })}
-            />
+            <div className={`transition-opacity ${isRefreshing ? 'opacity-50' : ''}`} aria-busy={isRefreshing}>
+              <FunnelTable
+                rows={data.rows}
+                totals={data.totals}
+                canEditPlans={data.canEditPlans}
+                showMoney={showMoney}
+                onPlanChange={(userId, plan) => setPlanMutation.mutate({ userId, plan })}
+              />
+            </div>
           ) : data ? (
             <p className="text-sm text-gray-600">Tanlangan guruhda menejer topilmadi.</p>
           ) : null}
@@ -249,11 +269,16 @@ export default function FunnelPage() {
       {showMoney && data && data.rows.length > 0 && (
         <div className="rounded-lg bg-white shadow">
           <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg font-medium text-gray-900">Yo&apos;qotilgan tushum</h3>
+            <h3 className="flex items-center gap-2 text-lg font-medium text-gray-900">
+              Yo&apos;qotilgan tushum
+              {isRefreshing && <RefreshSpinner />}
+            </h3>
             <p className="mb-4 mt-1 text-sm text-gray-500">
               Jamoa ko&apos;rsatkichlariga nisbatan har bir menejer qayerda ko&apos;proq tushum yo&apos;qotayotgani.
             </p>
-            <LostRevenueTable rows={data.lostRevenue.rows} totals={data.lostRevenue.totals} />
+            <div className={`transition-opacity ${isRefreshing ? 'opacity-50' : ''}`} aria-busy={isRefreshing}>
+              <LostRevenueTable rows={data.lostRevenue.rows} totals={data.lostRevenue.totals} />
+            </div>
           </div>
         </div>
       )}

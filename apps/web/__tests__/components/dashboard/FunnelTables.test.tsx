@@ -63,6 +63,11 @@ describe('FunnelCrmBanner', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  it('explains a call-notes failure', () => {
+    render(<FunnelCrmBanner reason="calls_fetch_failed" unmappedNames={[]} onRetry={jest.fn()} isRetrying={false} />);
+    expect(screen.getByText(/Ishlangan lid hisoblanmadi/)).toBeInTheDocument();
+  });
+
   it('renders nothing when everything loaded', () => {
     const { container } = render(<FunnelCrmBanner reason={null} unmappedNames={[]} onRetry={jest.fn()} isRetrying={false} />);
     expect(container).toBeEmptyDOMElement();
