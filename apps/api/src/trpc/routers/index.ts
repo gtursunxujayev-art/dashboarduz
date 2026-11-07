@@ -19,6 +19,7 @@ import { attendanceRouter } from './attendance';
 import { analyticsAiRouter } from './analytics-ai';
 import { aiHelperRouter } from './ai-helper';
 import { reportsRouter } from './reports';
+import { funnelRouter } from './funnel';
 
 export const appRouter = router({
   auth: authRouter,
@@ -40,6 +41,7 @@ export const appRouter = router({
   attendance: attendanceRouter,
   analyticsAi: analyticsAiRouter,
   reports: reportsRouter,
+  funnel: funnelRouter,
   aiHelper: aiHelperRouter,
 });
 

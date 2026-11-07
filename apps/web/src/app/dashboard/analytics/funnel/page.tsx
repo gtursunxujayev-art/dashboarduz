@@ -1,0 +1,227 @@
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/contexts/auth-context';
+import LoadingBlock from '@/components/dashboard/loading-block';
+import { FunnelCrmBanner, FunnelTable, LostRevenueTable } from '@/components/dashboard/funnel-tables';
+import { getTashkentToday, type ExtendedDashboardRange } from '@/lib/date-range';
+import {
+  GROUP_OPTIONS,
+  RANGE_OPTIONS,
+  STAGE_STORAGE_KEYS,
+  buildFunnelQueryInput,
+  isStageRefValid,
+  parseStageRef,
+  serializeStageRef,
+  type FunnelGroup,
+  type FunnelStageRef,
+} from './funnel-view';
+
+const inputClass = 'rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100';
+
+function readStoredStage(key: string): FunnelStageRef | null {
+  try {
+    return parseStageRef(window.localStorage.getItem(key));
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredStage(key: string, ref: FunnelStageRef | null) {
+  try {
+    if (ref) window.localStorage.setItem(key, serializeStageRef(ref));
+    else window.localStorage.removeItem(key);
+  } catch {
+    // Storage may be blocked; the selection then just isn't remembered.
+  }
+}
+
+export default function FunnelPage() {
+  const { user } = useAuth();
+  const roles = user?.roles || [];
+  const showMoney = !(roles.includes('Tashkiliy') && !roles.some((role: string) => ['Admin', 'Manager', 'TeamLeader', 'Finance'].includes(role)));
+
+  const [range, setRange] = useState<ExtendedDashboardRange>('month');
+  const [dateFrom, setDateFrom] = useState(getTashkentToday());
+  const [dateTo, setDateTo] = useState(getTashkentToday());
+  const [group, setGroup] = useState<FunnelGroup>('all');
+  const [ishlangan, setIshlangan] = useState<FunnelStageRef | null>(null);
+  const [taklif, setTaklif] = useState<FunnelStageRef | null>(null);
+  const [stagesHydrated, setStagesHydrated] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [planError, setPlanError] = useState('');
+
+  const utils = trpc.useContext();
+  const stageOptionsQuery = trpc.funnel.stageOptions.useQuery(undefined, { staleTime: 10 * 60 * 1000 });
+  const pipelines = useMemo(() => stageOptionsQuery.data?.pipelines ?? [], [stageOptionsQuery.data]);
+
+  // Restore remembered stages once the pipeline list is known; drop ones that no longer exist.
+  useEffect(() => {
+    if (stagesHydrated || !stageOptionsQuery.isSuccess) return;
+    const storedIshlangan = readStoredStage(STAGE_STORAGE_KEYS.ishlangan);
+    const storedTaklif = readStoredStage(STAGE_STORAGE_KEYS.taklif);
+    setIshlangan(isStageRefValid(storedIshlangan, pipelines) ? storedIshlangan : null);
+    setTaklif(isStageRefValid(storedTaklif, pipelines) ? storedTaklif : null);
+    setStagesHydrated(true);
+  }, [stagesHydrated, stageOptionsQuery.isSuccess, pipelines]);
+
+  const changeStage = (kind: 'ishlangan' | 'taklif', value: string) => {
+    const ref = parseStageRef(value);
+    if (kind === 'ishlangan') setIshlangan(ref);
+    else setTaklif(ref);
+    writeStoredStage(STAGE_STORAGE_KEYS[kind], ref);
+  };
+
+  const customRangeInvalid = range === 'custom' && (!dateFrom || !dateTo || dateFrom > dateTo);
+  const queryInput = useMemo(
+    () => buildFunnelQueryInput({ range, dateFrom, dateTo, group, ishlangan, taklif, refreshKey }),
+    [range, dateFrom, dateTo, group, ishlangan, taklif, refreshKey],
+  );
+  const summaryQuery = trpc.funnel.summary.useQuery(queryInput, {
+    enabled: stagesHydrated && !customRangeInvalid,
+    retry: 1,
+    staleTime: 60 * 1000,
+    keepPreviousData: true,
+  });
+
+  const setPlanMutation = trpc.funnel.setPlan.useMutation({
+    onSuccess: () => {
+      setPlanError('');
+      void utils.funnel.summary.invalidate();
+    },
+    onError: (error) => setPlanError(error.message || "Rejani saqlab bo'lmadi."),
+  });
+
+  const data = summaryQuery.data;
+  const leadsStatus = data?.sourceStatus.leads;
+
+  const renderStageSelect = (kind: 'ishlangan' | 'taklif', label: string, value: FunnelStageRef | null) => (
+    <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+      {label}
+      <select
+        className={inputClass}
+        value={serializeStageRef(value)}
+        onChange={(event) => changeStage(kind, event.target.value)}
+        disabled={!pipelines.length}
+      >
+        <option value="">— Bosqichni tanlang —</option>
+        {pipelines.map((pipeline) => (
+          <optgroup key={pipeline.id} label={pipeline.name}>
+            {pipeline.statuses.map((status) => (
+              <option key={status.id} value={serializeStageRef({ pipelineId: pipeline.id, statusId: status.id })}>
+                {status.name}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </label>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <Link href="/dashboard/analytics" className="text-sm text-blue-600 hover:underline">← Tahlil</Link>
+          <h1 className="mt-1 text-2xl font-semibold text-gray-900">Voronka</h1>
+          <p className="text-sm text-gray-500">Menejerlar bo&apos;yicha voronka va yo&apos;qotilgan tushum tahlili</p>
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-white p-4 shadow">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-gray-600">Davr</span>
+            <div className="flex flex-wrap gap-1">
+              {RANGE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setRange(option.value)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${range === option.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {range === 'custom' && (
+            <div className="flex items-end gap-2">
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+                Dan
+                <input type="date" className={inputClass} value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+                Gacha
+                <input type="date" className={inputClass} value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+              </label>
+            </div>
+          )}
+          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+            Guruh
+            <select className={inputClass} value={group} onChange={(event) => setGroup(event.target.value as FunnelGroup)}>
+              {GROUP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          {renderStageSelect('ishlangan', 'Ishlangan bosqich', ishlangan)}
+          {renderStageSelect('taklif', 'Taklif bosqich', taklif)}
+        </div>
+        {customRangeInvalid && <p className="mt-2 text-sm text-red-600">Sanalar oralig&apos;ini to&apos;g&apos;ri tanlang.</p>}
+        {stageOptionsQuery.isSuccess && !stageOptionsQuery.data.connected && (
+          <p className="mt-2 text-sm text-amber-700">AmoCRM ulanmagan — bosqichlarni tanlab bo&apos;lmaydi.</p>
+        )}
+        {(!ishlangan || !taklif) && pipelines.length > 0 && (
+          <p className="mt-2 text-sm text-gray-500">Ishlangan va Taklif ustunlari uchun bosqichlarni tanlang.</p>
+        )}
+      </div>
+
+      {summaryQuery.error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          Ma&apos;lumotni yuklab bo&apos;lmadi: {summaryQuery.error.message}
+        </div>
+      )}
+
+      <div className="rounded-lg bg-white shadow">
+        <div className="px-4 py-5 sm:p-6">
+          <h3 className="mb-4 text-lg font-medium text-gray-900">Menejerlar voronkasi</h3>
+          {data && (
+            <FunnelCrmBanner
+              reason={leadsStatus && !leadsStatus.ok ? (leadsStatus.reason || 'fetch_failed') : null}
+              unmappedNames={data.unmappedManagerNames}
+              onRetry={() => setRefreshKey((key) => key + 1)}
+              isRetrying={summaryQuery.isFetching}
+            />
+          )}
+          {planError && <p className="mb-3 text-sm text-red-600">{planError}</p>}
+          {!data && summaryQuery.isLoading ? (
+            <LoadingBlock message="Voronka ma'lumoti yuklanmoqda..." />
+          ) : data && data.rows.length ? (
+            <FunnelTable
+              rows={data.rows}
+              totals={data.totals}
+              canEditPlans={data.canEditPlans}
+              showMoney={showMoney}
+              onPlanChange={(userId, plan) => setPlanMutation.mutate({ userId, plan })}
+            />
+          ) : data ? (
+            <p className="text-sm text-gray-600">Tanlangan guruhda menejer topilmadi.</p>
+          ) : null}
+        </div>
+      </div>
+
+      {showMoney && data && data.rows.length > 0 && (
+        <div className="rounded-lg bg-white shadow">
+          <div className="px-4 py-5 sm:p-6">
+            <h3 className="text-lg font-medium text-gray-900">Yo&apos;qotilgan tushum</h3>
+            <p className="mb-4 mt-1 text-sm text-gray-500">
+              Jamoa ko&apos;rsatkichlariga nisbatan har bir menejer qayerda ko&apos;proq tushum yo&apos;qotayotgani.
+            </p>
+            <LostRevenueTable rows={data.lostRevenue.rows} totals={data.lostRevenue.totals} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

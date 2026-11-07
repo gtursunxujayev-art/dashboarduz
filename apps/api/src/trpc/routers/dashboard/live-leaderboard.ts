@@ -37,7 +37,7 @@ function canReadLiveLeaderboard(
     : roles.length === 1 && roles[0] === 'OfflineDashboard';
 }
 
-function resolveAgentGroup(roles: readonly string[]): AgentGroup | null {
+export function resolveAgentGroup(roles: readonly string[]): AgentGroup | null {
   if (roles.includes('OnlineAgent')) return 'online';
   if (roles.includes('OfflineAgent') || roles.includes('TeamLeader')) return 'offline';
   return null;

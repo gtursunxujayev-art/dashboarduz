@@ -7,6 +7,12 @@ import { useAuth } from '@/contexts/auth-context';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import {
+  getPreviousMonthRange,
+  getPreviousWeekRange,
+  getTashkentDateShift,
+  getTashkentToday,
+} from '@/lib/date-range';
+import {
   CartesianGrid,
   Line,
   LineChart,
@@ -19,76 +25,6 @@ import {
 type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
-function getTashkentToday(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
-  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
-  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
-  return `${year}-${month}-${day}`;
-}
-
-function getTashkentDateShift(days: number): string {
-  const now = new Date();
-  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
-  local.setDate(local.getDate() + days);
-  const year = local.getFullYear();
-  const month = String(local.getMonth() + 1).padStart(2, '0');
-  const day = String(local.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getPreviousWeekRange() {
-  const now = new Date();
-  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
-  local.setHours(0, 0, 0, 0);
-  const day = local.getDay();
-  const daysSinceMonday = (day + 6) % 7;
-  const currentWeekMonday = new Date(local);
-  currentWeekMonday.setDate(local.getDate() - daysSinceMonday);
-  const previousWeekMonday = new Date(currentWeekMonday);
-  previousWeekMonday.setDate(currentWeekMonday.getDate() - 7);
-  const previousWeekSunday = new Date(currentWeekMonday);
-  previousWeekSunday.setDate(currentWeekMonday.getDate() - 1);
-
-  const toIso = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const dayValue = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${dayValue}`;
-  };
-
-  return {
-    dateFrom: toIso(previousWeekMonday),
-    dateTo: toIso(previousWeekSunday),
-  };
-}
-
-function getPreviousMonthRange() {
-  const now = new Date();
-  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
-  const year = local.getFullYear();
-  const month = local.getMonth();
-  const previousMonthStart = new Date(year, month - 1, 1);
-  const previousMonthEnd = new Date(year, month, 0);
-
-  const toIso = (date: Date) => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
-  return {
-    dateFrom: toIso(previousMonthStart),
-    dateTo: toIso(previousMonthEnd),
-  };
-}
 
 function formatAmount(value: number | null | undefined): string {
   return `${new Intl.NumberFormat('ru-RU').format(value ?? 0)} so'm`;

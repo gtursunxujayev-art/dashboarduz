@@ -30,6 +30,8 @@ export interface AmoCRMLeadCustomFieldsResponse {
 export interface AmoCRMLeadPipelineStatus {
   id?: number | string;
   name?: string;
+  sort?: number;
+  type?: number;
 }
 
 export interface AmoCRMLeadPipeline {
