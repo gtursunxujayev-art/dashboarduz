@@ -9,6 +9,7 @@ import {
   resolveBonusPercent,
   resolveCallDuration,
   resolveCallExtension,
+  type SalaryCategory,
   TRPCError,
   z,
 } from './helpers';
@@ -172,12 +173,6 @@ export function summarizeAgreementBonusAndDebt(params: {
   sales: AgreementSale[];
   paidBySaleId: Map<string, number>;
   policy: BonusPolicy;
-  /**
-   * Monthly boards: the percent payroll already applies to the agent in a course this month (`agent:course`), so
-   * the bonus still to come uses the same rate as Fakt. Without it, a tiered rule is matched by the agent's number
-   * of unpaid sales (as if they all closed), not by every sale since the course started.
-   */
-  appliedPercentByAgentCourse?: Map<string, number>;
 }) {
   const wanted = new Set(params.agentIds);
   const sales = params.sales.filter((sale) => wanted.has(sale.managerUserId));
@@ -189,8 +184,7 @@ export function summarizeAgreementBonusAndDebt(params: {
       teamAgreementByCourse.set(sale.courseId, (teamAgreementByCourse.get(sale.courseId) || 0) + agreement);
     }
     const category = classifyCourseCategoryFromField(sale.course?.category || sale.course?.name);
-    const unpaid = agreement - Math.min(agreement, params.paidBySaleId.get(sale.id) || 0) > 0;
-    if (category !== 'other' && (!params.appliedPercentByAgentCourse || unpaid)) {
+    if (category !== 'other') {
       const key = `${sale.managerUserId}:${category}`;
       salesCountByAgentCategory.set(key, (salesCountByAgentCategory.get(key) || 0) + 1);
     }
@@ -200,6 +194,7 @@ export function summarizeAgreementBonusAndDebt(params: {
   const bonusFact = new Map<string, number>();
   const bonusPending = new Map<string, number>();
   const debt = new Map<string, number>();
+  const openSales: OpenSale[] = [];
   for (const sale of sales) {
     const agreement = resolveSaleAgreementAmount(sale);
     const paid = Math.min(agreement, params.paidBySaleId.get(sale.id) || 0);
@@ -209,10 +204,7 @@ export function summarizeAgreementBonusAndDebt(params: {
     const category = classifyCourseCategoryFromField(sale.course?.category || sale.course?.name);
     if (category === 'other') continue;
     const override = sale.courseId ? params.policy.courseOverrides[sale.courseId] : undefined;
-    const appliedPercent = params.appliedPercentByAgentCourse?.get(`${sale.managerUserId}:${sale.courseId}`);
-    const percent = appliedPercent !== undefined
-      ? appliedPercent
-      : override
+    const percent = override
       ? resolveCourseIncomePercent(override, teamAgreementByCourse.get(sale.courseId!) || 0).percent
       : resolveBonusPercent(
           params.policy.bonusRules[category],
@@ -223,12 +215,89 @@ export function summarizeAgreementBonusAndDebt(params: {
       bonusFact.set(sale.managerUserId, (bonusFact.get(sale.managerUserId) || 0) + Math.round(agreement * percent / 100));
     }
     if (remaining > 0) {
+      openSales.push({ managerUserId: sale.managerUserId, courseId: sale.courseId, category, agreement, remaining });
       const paidOnClosure = Boolean(override) || params.policy.bonusMode === 'on_debt_closed';
       const pending = Math.round((paidOnClosure ? agreement : remaining) * percent / 100);
       bonusPending.set(sale.managerUserId, (bonusPending.get(sale.managerUserId) || 0) + pending);
     }
   }
-  return { bonus, bonusFact, bonusPending, debt };
+  return { bonus, bonusFact, bonusPending, debt, openSales };
+}
+
+export type OpenSale = {
+  managerUserId: string;
+  courseId: string | null;
+  category: SalaryCategory;
+  agreement: number;
+  remaining: number;
+};
+
+/**
+ * Offline Kutilma: this month's bonus in the given courses if every still-unpaid sale there were paid off this
+ * month. Payroll tiers on the number of sales an agent closes in the month (every course of the category) and the
+ * tier's percent applies to all of that month's closures, so the open sales raise the count and the higher percent
+ * is applied to this month's closures plus the open sales. Course overrides tier on the course's team amount the
+ * same way. In on-income mode an open sale adds its remaining debt instead of its whole agreement.
+ */
+export function projectMonthlyKutilma(params: {
+  agentIds: string[];
+  policy: BonusPolicy;
+  monthItems: BonusCalculationItem[];
+  courseIds: string[];
+  openSales: OpenSale[];
+}): Map<string, number> {
+  const courses = new Set(params.courseIds);
+  const isOverride = (courseId: string | null) => Boolean(courseId && params.policy.courseOverrides[courseId]);
+  const openBase = (sale: OpenSale) => (params.policy.bonusMode === 'on_income' ? sale.remaining : sale.agreement);
+  const result = new Map<string, number>();
+  const add = (agentId: string, value: number) => result.set(agentId, (result.get(agentId) || 0) + value);
+
+  const teamAmountByCourse = new Map<string, number>();
+  for (const item of params.monthItems) {
+    if (item.calculationMode === 'course_team_income' && item.courseId) {
+      teamAmountByCourse.set(item.courseId, (teamAmountByCourse.get(item.courseId) || 0) + item.baseAmount);
+    }
+  }
+  for (const sale of params.openSales) {
+    if (isOverride(sale.courseId)) {
+      teamAmountByCourse.set(sale.courseId!, (teamAmountByCourse.get(sale.courseId!) || 0) + sale.agreement);
+    }
+  }
+
+  for (const agentId of params.agentIds) {
+    const items = params.monthItems.filter((item) => item.agentUserId === agentId);
+    const plainItems = items.filter((item) => item.calculationMode !== 'course_team_income');
+    const open = params.openSales.filter((sale) => sale.managerUserId === agentId);
+    const openPlain = open.filter((sale) => !isOverride(sale.courseId));
+    const categories = new Set<SalaryCategory>([
+      ...plainItems.filter((item) => item.courseId !== null && courses.has(item.courseId)).map((item) => item.category),
+      ...openPlain.map((sale) => sale.category),
+    ]);
+    for (const category of categories) {
+      // Tier count: what payroll counts this month (closures in every course of the category) plus the open sales.
+      const closedCount = plainItems
+        .filter((item) => item.category === category)
+        .reduce((max, item) => Math.max(max, item.closedCount), 0);
+      const openInCategory = openPlain.filter((sale) => sale.category === category);
+      const percent = resolveBonusPercent(params.policy.bonusRules[category], closedCount + openInCategory.length);
+      const base = plainItems
+        .filter((item) => item.category === category && item.courseId !== null && courses.has(item.courseId))
+        .reduce((sum, item) => sum + item.baseAmount, 0)
+        + openInCategory.reduce((sum, sale) => sum + openBase(sale), 0);
+      add(agentId, Math.round(base * percent / 100));
+    }
+    for (const courseId of params.courseIds) {
+      const override = params.policy.courseOverrides[courseId];
+      if (!override) continue;
+      const percent = resolveCourseIncomePercent(override, teamAmountByCourse.get(courseId) || 0).percent;
+      const base = items
+        .filter((item) => item.calculationMode === 'course_team_income' && item.courseId === courseId)
+        .reduce((sum, item) => sum + item.baseAmount, 0)
+        + open.filter((sale) => sale.courseId === courseId).reduce((sum, sale) => sum + sale.agreement, 0);
+      add(agentId, Math.round(base * percent / 100));
+    }
+  }
+  return result;
 }
 
 /** Loads the agents' sales matching `saleWhere`, every payment on them, and summarizes bonus and debt. */
@@ -237,7 +306,6 @@ async function loadAgreementBonusAndDebt(params: {
   agentIds: string[];
   saleWhere: Record<string, unknown>;
   now: Date;
-  appliedPercentByAgentCourse?: Map<string, number>;
 }) {
   if (!params.agentIds.length) {
     return {
@@ -245,6 +313,7 @@ async function loadAgreementBonusAndDebt(params: {
       bonusFact: new Map<string, number>(),
       bonusPending: new Map<string, number>(),
       debt: new Map<string, number>(),
+      openSales: [] as OpenSale[],
     };
   }
   const [salesRaw, { policy }] = await Promise.all([
@@ -289,7 +358,6 @@ async function loadAgreementBonusAndDebt(params: {
     sales,
     paidBySaleId,
     policy,
-    appliedPercentByAgentCourse: params.appliedPercentByAgentCourse,
   });
 }
 
@@ -643,24 +711,14 @@ export const liveLeaderboardProcedures = {
       }),
       // The online board gets its bonus and debt from liveLeaderboardCourseStats. The offline bonus is paid monthly,
       // all over the selected offline course(s): Fakt is this month's real bonus from the bonus engine (sales paid
-      // off in earlier months were already paid out and are left out), Kutilma adds what the course's still-unpaid
-      // sales will earn once repaid.
+      // off in earlier months were already paid out and are left out), Kutilma is this month's bonus if every
+      // still-unpaid sale of the course were paid off this month (projectMonthlyKutilma).
       offlineCourseIds.length
         ? calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: monthStart, rangeEnd: now })
         : null,
     ]);
-    const appliedPercentByAgentCourse = new Map<string, number>();
-    for (const item of offlineMonthBonus?.items || []) {
-      if (item.courseId) appliedPercentByAgentCourse.set(`${item.agentUserId}:${item.courseId}`, item.appliedPercent);
-    }
     const offlineCourseStats = offlineCourseIds.length
-      ? await loadAgreementBonusAndDebt({
-          tenantId: ctx.tenantId,
-          agentIds,
-          saleWhere: { courseId: { in: offlineCourseIds } },
-          now,
-          appliedPercentByAgentCourse,
-        })
+      ? await loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: offlineCourseIds } }, now })
       : null;
 
     // Technical sales (agreement == 1) and their repayments are not real income; only look up the sales we loaded.
@@ -677,8 +735,16 @@ export const liveLeaderboardProcedures = {
 
     const stats = summarizeLeaderboardAgents({ agentIds, rows: periodRows, todayStart });
     const bonusFactByAgent = sumCourseBonusByAgent(offlineMonthBonus?.items || [], agentIds, offlineCourseIds);
-    const pendingByAgent = offlineCourseStats?.bonusPending || new Map<string, number>();
-    const bonusByAgent = new Map(agentIds.map((id) => [id, (bonusFactByAgent.get(id) || 0) + (pendingByAgent.get(id) || 0)]));
+    const currentMonthPolicy = offlineMonthBonus?.months[offlineMonthBonus.months.length - 1]?.policy;
+    const bonusByAgent = offlineMonthBonus && currentMonthPolicy
+      ? projectMonthlyKutilma({
+          agentIds,
+          policy: currentMonthPolicy,
+          monthItems: offlineMonthBonus.items,
+          courseIds: offlineCourseIds,
+          openSales: offlineCourseStats?.openSales || [],
+        })
+      : new Map<string, number>();
     const debtByAgent = offlineCourseStats?.debt || new Map<string, number>();
     const sumRows = (list: Array<{ paymentAmount: number }>) => list.reduce((total, row) => total + (row.paymentAmount || 0), 0);
 
