@@ -172,6 +172,12 @@ export function summarizeAgreementBonusAndDebt(params: {
   sales: AgreementSale[];
   paidBySaleId: Map<string, number>;
   policy: BonusPolicy;
+  /**
+   * Monthly boards: the percent payroll already applies to the agent in a course this month (`agent:course`), so
+   * the bonus still to come uses the same rate as Fakt. Without it, a tiered rule is matched by the agent's number
+   * of unpaid sales (as if they all closed), not by every sale since the course started.
+   */
+  appliedPercentByAgentCourse?: Map<string, number>;
 }) {
   const wanted = new Set(params.agentIds);
   const sales = params.sales.filter((sale) => wanted.has(sale.managerUserId));
@@ -183,7 +189,8 @@ export function summarizeAgreementBonusAndDebt(params: {
       teamAgreementByCourse.set(sale.courseId, (teamAgreementByCourse.get(sale.courseId) || 0) + agreement);
     }
     const category = classifyCourseCategoryFromField(sale.course?.category || sale.course?.name);
-    if (category !== 'other') {
+    const unpaid = agreement - Math.min(agreement, params.paidBySaleId.get(sale.id) || 0) > 0;
+    if (category !== 'other' && (!params.appliedPercentByAgentCourse || unpaid)) {
       const key = `${sale.managerUserId}:${category}`;
       salesCountByAgentCategory.set(key, (salesCountByAgentCategory.get(key) || 0) + 1);
     }
@@ -202,7 +209,10 @@ export function summarizeAgreementBonusAndDebt(params: {
     const category = classifyCourseCategoryFromField(sale.course?.category || sale.course?.name);
     if (category === 'other') continue;
     const override = sale.courseId ? params.policy.courseOverrides[sale.courseId] : undefined;
-    const percent = override
+    const appliedPercent = params.appliedPercentByAgentCourse?.get(`${sale.managerUserId}:${sale.courseId}`);
+    const percent = appliedPercent !== undefined
+      ? appliedPercent
+      : override
       ? resolveCourseIncomePercent(override, teamAgreementByCourse.get(sale.courseId!) || 0).percent
       : resolveBonusPercent(
           params.policy.bonusRules[category],
@@ -227,6 +237,7 @@ async function loadAgreementBonusAndDebt(params: {
   agentIds: string[];
   saleWhere: Record<string, unknown>;
   now: Date;
+  appliedPercentByAgentCourse?: Map<string, number>;
 }) {
   if (!params.agentIds.length) {
     return {
@@ -273,7 +284,13 @@ async function loadAgreementBonusAndDebt(params: {
     if (!row.relatedDebtIncomeId) continue;
     paidBySaleId.set(row.relatedDebtIncomeId, (paidBySaleId.get(row.relatedDebtIncomeId) || 0) + (row.paymentAmount || 0));
   }
-  return summarizeAgreementBonusAndDebt({ agentIds: params.agentIds, sales, paidBySaleId, policy });
+  return summarizeAgreementBonusAndDebt({
+    agentIds: params.agentIds,
+    sales,
+    paidBySaleId,
+    policy,
+    appliedPercentByAgentCourse: params.appliedPercentByAgentCourse,
+  });
 }
 
 /**
@@ -598,7 +615,7 @@ export const liveLeaderboardProcedures = {
     }
 
     const offlineCourseIds = courseIds ? [] : selectedReportCourses.map((course) => course.courseId);
-    const [rowsRaw, latestRowsRaw, offlineMonthBonus, offlineCourseStats] = await Promise.all([
+    const [rowsRaw, latestRowsRaw, offlineMonthBonus] = await Promise.all([
       prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -631,10 +648,20 @@ export const liveLeaderboardProcedures = {
       offlineCourseIds.length
         ? calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: monthStart, rangeEnd: now })
         : null,
-      offlineCourseIds.length
-        ? loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: offlineCourseIds } }, now })
-        : null,
     ]);
+    const appliedPercentByAgentCourse = new Map<string, number>();
+    for (const item of offlineMonthBonus?.items || []) {
+      if (item.courseId) appliedPercentByAgentCourse.set(`${item.agentUserId}:${item.courseId}`, item.appliedPercent);
+    }
+    const offlineCourseStats = offlineCourseIds.length
+      ? await loadAgreementBonusAndDebt({
+          tenantId: ctx.tenantId,
+          agentIds,
+          saleWhere: { courseId: { in: offlineCourseIds } },
+          now,
+          appliedPercentByAgentCourse,
+        })
+      : null;
 
     // Technical sales (agreement == 1) and their repayments are not real income; only look up the sales we loaded.
     const technicalSaleIds = await loadTechnicalSaleIdsForRows(ctx.tenantId, [...rowsRaw, ...latestRowsRaw]);
