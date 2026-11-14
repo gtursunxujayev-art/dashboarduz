@@ -146,6 +146,8 @@ describe('live leaderboard numbers', () => {
       paidBySaleId: new Map([['s1', 7_000_000], ['s2', 6_000_000], ['s3', 0]]),
     });
     expect(result.bonus.get('a')).toBe(800_000);
+    // Fakt: 5% of what was paid (7M + 6M).
+    expect(result.bonusFact.get('a')).toBe(650_000);
     expect(result.debt.get('a')).toBe(3_000_000);
     expect(result.bonus.has('x')).toBe(false);
   });
