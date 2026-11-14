@@ -95,6 +95,12 @@ function playNewIncomeSound(incomeType: string) {
   window.requestAnimationFrame(tick);
 }
 
+// Premium and VIP share the first line; the other tariffs follow in their usual order.
+function sortTariffsForPanel<T extends { name: string }>(tariffs: T[]): T[] {
+  const rank = (name: string) => (/premium/i.test(name) ? 0 : /vip/i.test(name) ? 1 : 2);
+  return [...tariffs].sort((left, right) => rank(left.name) - rank(right.name));
+}
+
 function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
     <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.07] px-7 py-2.5 shadow-2xl shadow-black/30 backdrop-blur-xl">
@@ -197,17 +203,15 @@ function SalesStatsPanel({
   return (
     <aside className="min-h-[560px] rounded-[2rem] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-black/30">
       <div className="mb-6">
-        <p className={`text-sm font-bold uppercase tracking-[0.28em] ${tone}`}>Sotuvlar</p>
-        <h2 className="mt-2 text-3xl font-black text-white">Statistika</h2>
+        <h2 className="text-3xl font-black text-white">Statistika</h2>
       </div>
 
       <div className="rounded-3xl border border-white/10 bg-white/[0.055] p-5">
-        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Sotuvlar</p>
-        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[1.7rem] font-black leading-tight text-white">
+        <p className="flex flex-nowrap items-center gap-x-3 whitespace-nowrap text-[1.53rem] font-black leading-tight text-white">
           <span className="whitespace-nowrap">
             Bugun - <span className={tone}>{todaySalesCount}</span>
           </span>
-          <span className="hidden text-slate-500 min-[420px]:inline">|</span>
+          <span className="text-slate-500">|</span>
           <span className="whitespace-nowrap">
             Kecha - <span className={tone}>{yesterdaySalesCount}</span>
           </span>
@@ -219,8 +223,7 @@ function SalesStatsPanel({
           <div key={course.courseId} className="rounded-3xl border border-white/10 bg-white/[0.055] p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Tanlangan kurs · jami</p>
-                <h3 className="mt-1 text-xl font-black text-white">
+                <h3 className="text-xl font-black text-white">
                   {course.name} - <span className={tone}>{course.salesCount}</span>
                 </h3>
                 <p className="mt-2 text-sm font-semibold text-slate-300">
@@ -230,7 +233,7 @@ function SalesStatsPanel({
             </div>
 
             <div className="mt-5 flex flex-wrap gap-3">
-              {course.tariffs.map((tariff) => (
+              {sortTariffsForPanel(course.tariffs).map((tariff) => (
                 <div
                   key={`${course.courseId}:${tariff.tariffId || 'none'}`}
                   className="rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-3 text-sm font-black text-slate-200"
@@ -432,7 +435,7 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
             winner={winnerQuery.data?.winner}
             winnerError={winnerQuery.isError}
             winnerLabel={isCourseBoard
-              ? (previousCourseNames.length ? `O'tgan kurs · ${previousCourseNames.join(', ')}` : "O'tgan kurs")
+              ? previousCourseNames.join(', ')
               : "O'tgan oy"}
             winnerEmptyText={isCourseBoard
               ? (previousCourseNames.length ? "O'tgan kurs bo'yicha sotuv topilmadi." : "O'tgan kurs topilmadi.")
