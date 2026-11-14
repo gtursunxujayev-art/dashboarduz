@@ -5,6 +5,7 @@ import {
   courseScopedIncomeWhere,
   pickLeaderboardWinner,
   pickPreviousCourseIds,
+  projectMonthlyKutilma,
   sumBonusByAgent,
   summarizeAgreementBonusAndDebt,
   sumCourseBonusByAgent,
@@ -161,18 +162,32 @@ describe('live leaderboard numbers', () => {
     expect(pickPreviousCourseIds([['nov']], ['nov'], (id) => online.has(id))).toEqual([]);
   });
 
-  it('prices the bonus still to come at the rate payroll applies this month, not by all-time sales', () => {
-    const course = { name: '16-Couching', category: 'offline' };
-    const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { offline: 1 } } });
-    const sales = Array.from({ length: 20 }, (_, index) => ({
-      id: `s${index}`, managerUserId: 'z', courseId: 'c', coursePriceAmount: 10_000_000, debtAmount: null, paymentAmount: 0, course,
-    }));
-    const paidBySaleId = new Map(sales.map((sale, index) => [sale.id, index < 15 ? 10_000_000 : 2_000_000]));
-    const result = summarizeAgreementBonusAndDebt({
-      agentIds: ['z'], sales, paidBySaleId, policy, appliedPercentByAgentCourse: new Map([['z:c', 7]]),
+  it('projects Kutilma at the tier the agent reaches once every open debt closes this month', () => {
+    const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed' } });
+    policy.bonusRules.offline = {
+      mode: 'tiered',
+      simplePercent: 5,
+      tiers: [
+        { minSales: 1, maxSales: 3, percent: 2 },
+        { minSales: 4, maxSales: 5, percent: 3 },
+        { minSales: 6, maxSales: 7, percent: 4 },
+        { minSales: 8, maxSales: 9, percent: 5 },
+        { minSales: 10, maxSales: 15, percent: 6 },
+      ],
+    };
+    const closed = (id: string): BonusCalculationItem => ({
+      sourceKey: id, sourceIncomeId: id, sourceSaleId: id, agentUserId: 'm', courseId: 'c', courseName: null,
+      category: 'offline', calculationMode: 'legacy_debt_closed', eventDate: new Date('2026-11-05T05:00:00Z'),
+      baseAmount: 10_000_000, appliedPercent: 2, bonusAmount: 200_000, agreementAmount: 10_000_000,
+      closingIncomeId: id, closedCount: 2, usedFallback: false,
     });
-    // 5 unpaid sales close on their whole 10M agreement at payroll's 7%.
-    expect(result.bonusPending.get('z')).toBe(3_500_000);
-    expect(result.debt.get('z')).toBe(40_000_000);
+    const openSales = Array.from({ length: 6 }, () => ({
+      managerUserId: 'm', courseId: 'c', category: 'offline' as const, agreement: 10_000_000, remaining: 8_000_000,
+    }));
+    const kutilma = projectMonthlyKutilma({
+      agentIds: ['m'], policy, monthItems: [closed('a'), closed('b')], courseIds: ['c'], openSales,
+    });
+    // 2 closed + 6 open = 8 closures, so 5% on all 8 agreements (80M), not the 2% paid today.
+    expect(kutilma.get('m')).toBe(4_000_000);
   });
 });
