@@ -161,8 +161,8 @@ export type AgreementSale = {
 
 /**
  * Leaderboard-only bonus and debt, credited to the seller. `bonus` (Kutilma) is the policy percent applied to the
- * whole agreement of every sale, as if it were already paid in full; `bonusFact` (Fakt) is the same percent of what
- * has actually been paid so far, repayments included (the payroll bonus engine still pays on payments
+ * whole agreement of every sale, as if it were already paid in full; `bonusFact` (Fakt) is the same, but only for
+ * sales the customer has already paid in full, repayments included (the payroll bonus engine still pays on payments
  * and closures). Debt is what the customer still owes on the sale. `bonusPending` is the bonus the engine would
  * still pay once the debt is repaid: the whole agreement × percent when bonus is paid on closure (debt-closed mode
  * or a course override), the remaining debt × percent when it is paid on income.
@@ -209,7 +209,9 @@ export function summarizeAgreementBonusAndDebt(params: {
           salesCountByAgentCategory.get(`${sale.managerUserId}:${category}`) || 0,
         );
     bonus.set(sale.managerUserId, (bonus.get(sale.managerUserId) || 0) + Math.round(agreement * percent / 100));
-    bonusFact.set(sale.managerUserId, (bonusFact.get(sale.managerUserId) || 0) + Math.round(paid * percent / 100));
+    if (remaining === 0) {
+      bonusFact.set(sale.managerUserId, (bonusFact.get(sale.managerUserId) || 0) + Math.round(agreement * percent / 100));
+    }
     if (remaining > 0) {
       const paidOnClosure = Boolean(override) || params.policy.bonusMode === 'on_debt_closed';
       const pending = Math.round((paidOnClosure ? agreement : remaining) * percent / 100);
@@ -596,7 +598,7 @@ export const liveLeaderboardProcedures = {
     }
 
     const offlineCourseIds = courseIds ? [] : selectedReportCourses.map((course) => course.courseId);
-    const [rowsRaw, latestRowsRaw, offlineMonthBonus, offlineMonthSales, offlineCourseStats] = await Promise.all([
+    const [rowsRaw, latestRowsRaw, offlineMonthBonus, offlineCourseStats] = await Promise.all([
       prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -622,13 +624,13 @@ export const liveLeaderboardProcedures = {
           manager: { select: { name: true, username: true } },
         },
       }),
-      // The online board gets its bonus and debt from liveLeaderboardCourseStats. The offline bonus is monthly:
-      // Fakt is this month's real bonus from the bonus engine (nothing paid in other months), Kutilma adds what
-      // this month's new sales would still earn once their debt is repaid. Debt is over the selected offline course(s).
-      courseIds ? null : calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: monthStart, rangeEnd: now }),
-      courseIds
-        ? null
-        : loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { entryDate: { gte: monthStart, lte: now } }, now }),
+      // The online board gets its bonus and debt from liveLeaderboardCourseStats. The offline bonus is paid monthly,
+      // all over the selected offline course(s): Fakt is this month's real bonus from the bonus engine (sales paid
+      // off in earlier months were already paid out and are left out), Kutilma adds what the course's still-unpaid
+      // sales will earn once repaid.
+      offlineCourseIds.length
+        ? calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: monthStart, rangeEnd: now })
+        : null,
       offlineCourseIds.length
         ? loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: offlineCourseIds } }, now })
         : null,
@@ -647,8 +649,8 @@ export const liveLeaderboardProcedures = {
     )).length;
 
     const stats = summarizeLeaderboardAgents({ agentIds, rows: periodRows, todayStart });
-    const bonusFactByAgent = sumBonusByAgent(offlineMonthBonus?.items || [], agentIds);
-    const pendingByAgent = offlineMonthSales?.bonusPending || new Map<string, number>();
+    const bonusFactByAgent = sumCourseBonusByAgent(offlineMonthBonus?.items || [], agentIds, offlineCourseIds);
+    const pendingByAgent = offlineCourseStats?.bonusPending || new Map<string, number>();
     const bonusByAgent = new Map(agentIds.map((id) => [id, (bonusFactByAgent.get(id) || 0) + (pendingByAgent.get(id) || 0)]));
     const debtByAgent = offlineCourseStats?.debt || new Map<string, number>();
     const sumRows = (list: Array<{ paymentAmount: number }>) => list.reduce((total, row) => total + (row.paymentAmount || 0), 0);
