@@ -17,6 +17,7 @@ type LeaderboardAgent = {
   income: number;
   todayIncome: number;
   bonus: number;
+  debt: number;
 };
 
 type LatestIncomeEvent = {
@@ -110,7 +111,7 @@ function AgentRow({ agent, rank, highlight, incomeLabel }: { agent: LeaderboardA
       <div className={`flex h-8 w-8 items-center justify-center rounded-xl text-base font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
         {rank}
       </div>
-      <div className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-1 sm:grid-cols-3 2xl:grid-cols-[minmax(120px,1fr)_110px_145px_80px_95px_90px]">
+      <div className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-1 sm:grid-cols-3 2xl:grid-cols-[minmax(120px,1fr)_110px_145px_80px_95px_90px_120px]">
         <div className="col-span-2 truncate text-lg font-extrabold text-white sm:col-span-3 2xl:col-span-1">{agent.name}</div>
         <div className="text-sm font-semibold text-slate-300">
           <span>Qo'ng'iroq: <b className="text-cyan-300">{agent.todayCallsCount}</b></span>
@@ -126,6 +127,9 @@ function AgentRow({ agent, rank, highlight, incomeLabel }: { agent: LeaderboardA
         </div>
         <div className="text-sm font-semibold text-slate-300">
           <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(agent.bonus)}</b></span>
+        </div>
+        <div className="text-sm font-semibold text-slate-300">
+          <span>Qarzdorlik: <b className="text-rose-300">{formatCompactMoney(agent.debt)}</b></span>
         </div>
       </div>
       <div className="hidden rounded-2xl bg-slate-950/60 px-3 py-1.5 text-right sm:block">
@@ -358,18 +362,20 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
   const callStatsByAgentId = useMemo(() => new Map(
     (callStatsQuery.data?.agents || []).map((agent) => [agent.userId, agent]),
   ), [callStatsQuery.data?.agents]);
-  const courseBonusByAgentId = useMemo(() => new Map(
-    (courseStatsQuery.data?.agents || []).map((agent) => [agent.userId, agent.bonus]),
+  const courseStatsByAgentId = useMemo(() => new Map(
+    (courseStatsQuery.data?.agents || []).map((agent) => [agent.userId, agent]),
   ), [courseStatsQuery.data?.agents]);
   const agents = useMemo(() => sortAgentsForBoard(
     (data?.agents || []).map((agent) => ({
       ...agent,
-      bonus: isCourseBoard ? courseBonusByAgentId.get(agent.userId) || 0 : agent.bonus,
+      bonus: isCourseBoard ? courseStatsByAgentId.get(agent.userId)?.bonus || 0 : agent.bonus,
+      debt: isCourseBoard ? courseStatsByAgentId.get(agent.userId)?.debt || 0 : agent.debt,
       todayCallsCount: callStatsByAgentId.get(agent.userId)?.todayCallsCount || 0,
       todayCallDurationSeconds: callStatsByAgentId.get(agent.userId)?.todayCallDurationSeconds || 0,
     })),
     group,
-  ), [callStatsByAgentId, courseBonusByAgentId, data?.agents, group, isCourseBoard]);
+  ), [callStatsByAgentId, courseStatsByAgentId, data?.agents, group, isCourseBoard]);
+  const previousCourseNames = courseStatsQuery.data?.previousCourseNames || [];
   const courses = useMemo(() => (data?.selectedReportCourses || []).filter((course) => course.group === group), [data?.selectedReportCourses, group]);
   const groupStats: GroupStats = data?.groupStats || {
     online: { todaySalesCount: 0, yesterdaySalesCount: 0 },
@@ -425,8 +431,12 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
             yesterdaySalesCount={groupStats[group].yesterdaySalesCount}
             winner={winnerQuery.data?.winner}
             winnerError={winnerQuery.isError}
-            winnerLabel={isCourseBoard ? "Kurs bo'yicha" : "O'tgan oy"}
-            winnerEmptyText={isCourseBoard ? "Kurs bo'yicha sotuv topilmadi." : "O'tgan oy sotuv topilmadi."}
+            winnerLabel={isCourseBoard
+              ? (previousCourseNames.length ? `O'tgan kurs · ${previousCourseNames.join(', ')}` : "O'tgan kurs")
+              : "O'tgan oy"}
+            winnerEmptyText={isCourseBoard
+              ? (previousCourseNames.length ? "O'tgan kurs bo'yicha sotuv topilmadi." : "O'tgan kurs topilmadi.")
+              : "O'tgan oy sotuv topilmadi."}
             tone={group === 'online' ? 'text-cyan-300' : 'text-orange-300'}
           />
         </section>

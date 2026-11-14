@@ -1,19 +1,27 @@
 import {
+  classifyCourseCategoryFromField,
   getRangeStart,
   INCOME_LIFECYCLE_ACTIVE,
   isAllowedUtelManagerExtension,
   normalizeDigits,
   prisma,
   protectedProcedure,
+  resolveBonusPercent,
   resolveCallDuration,
   resolveCallExtension,
   TRPCError,
   z,
 } from './helpers';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
-import { calculateBonusRange, getBonusMonth, type BonusCalculationItem } from '../../../services/bonus-engine';
-import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../../../services/income-facts';
-import { loadSelectedReportCourses } from './selected-report-courses';
+import {
+  resolveCourseIncomePercent,
+  resolveEffectiveBonusPolicy,
+  type BonusCalculationItem,
+  type BonusPolicy,
+} from '../../../services/bonus-engine';
+import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
+import { buildTechnicalSaleIdSet } from '../../../services/technical-income';
+import { loadSelectedReportCourses, parseTelegramDailyReportCourseIds } from './selected-report-courses';
 import { getCallsProvider } from '../../../services/calls-source';
 
 const LIVE_LEADERBOARD_MANAGER_ROLES = new Set(['Admin', 'Manager']);
@@ -140,6 +148,153 @@ export function pickLeaderboardWinner(
     .sort(compareLeaderboardAgents)[0] || null;
 }
 
+export type AgreementSale = {
+  id: string;
+  managerUserId: string;
+  courseId: string | null;
+  coursePriceAmount: number | null;
+  debtAmount: number | null;
+  paymentAmount: number;
+  course: { name: string; category: string } | null;
+};
+
+/**
+ * Leaderboard-only bonus and debt, credited to the seller. Bonus is the policy percent applied to the whole
+ * agreement of every sale, as if it were already paid in full (the payroll bonus engine still pays on payments
+ * and closures). Debt is what the customer still owes on the sale.
+ */
+export function summarizeAgreementBonusAndDebt(params: {
+  agentIds: string[];
+  sales: AgreementSale[];
+  paidBySaleId: Map<string, number>;
+  policy: BonusPolicy;
+}) {
+  const wanted = new Set(params.agentIds);
+  const sales = params.sales.filter((sale) => wanted.has(sale.managerUserId));
+  const teamAgreementByCourse = new Map<string, number>();
+  const salesCountByAgentCategory = new Map<string, number>();
+  for (const sale of sales) {
+    const agreement = resolveSaleAgreementAmount(sale);
+    if (sale.courseId) {
+      teamAgreementByCourse.set(sale.courseId, (teamAgreementByCourse.get(sale.courseId) || 0) + agreement);
+    }
+    const category = classifyCourseCategoryFromField(sale.course?.category || sale.course?.name);
+    if (category !== 'other') {
+      const key = `${sale.managerUserId}:${category}`;
+      salesCountByAgentCategory.set(key, (salesCountByAgentCategory.get(key) || 0) + 1);
+    }
+  }
+
+  const bonus = new Map<string, number>();
+  const debt = new Map<string, number>();
+  for (const sale of sales) {
+    const agreement = resolveSaleAgreementAmount(sale);
+    const remaining = Math.max(0, agreement - (params.paidBySaleId.get(sale.id) || 0));
+    debt.set(sale.managerUserId, (debt.get(sale.managerUserId) || 0) + remaining);
+
+    const category = classifyCourseCategoryFromField(sale.course?.category || sale.course?.name);
+    if (category === 'other') continue;
+    const override = sale.courseId ? params.policy.courseOverrides[sale.courseId] : undefined;
+    const percent = override
+      ? resolveCourseIncomePercent(override, teamAgreementByCourse.get(sale.courseId!) || 0).percent
+      : resolveBonusPercent(
+          params.policy.bonusRules[category],
+          salesCountByAgentCategory.get(`${sale.managerUserId}:${category}`) || 0,
+        );
+    bonus.set(sale.managerUserId, (bonus.get(sale.managerUserId) || 0) + Math.round(agreement * percent / 100));
+  }
+  return { bonus, debt };
+}
+
+/** Loads the agents' sales matching `saleWhere`, every payment on them, and summarizes bonus and debt. */
+async function loadAgreementBonusAndDebt(params: {
+  tenantId: string;
+  agentIds: string[];
+  saleWhere: Record<string, unknown>;
+  now: Date;
+}) {
+  if (!params.agentIds.length) return { bonus: new Map<string, number>(), debt: new Map<string, number>() };
+  const [salesRaw, { policy }] = await Promise.all([
+    prisma.income.findMany({
+      where: {
+        tenantId: params.tenantId,
+        type: 'new_sale',
+        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+        managerUserId: { in: params.agentIds },
+        entryDate: { lte: params.now },
+        ...params.saleWhere,
+      },
+      select: {
+        id: true, type: true, managerUserId: true, courseId: true,
+        coursePriceAmount: true, debtAmount: true, paymentAmount: true,
+        course: { select: { name: true, category: true } },
+      },
+    }),
+    resolveEffectiveBonusPolicy(params.tenantId, params.now),
+  ]);
+  const technicalSaleIds = buildTechnicalSaleIdSet(salesRaw);
+  const sales = salesRaw.filter((sale) => !technicalSaleIds.has(sale.id));
+  // Repayments count whoever recorded them: the debt belongs to the seller's customer.
+  const repayments = sales.length
+    ? await prisma.income.findMany({
+        where: {
+          tenantId: params.tenantId,
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          relatedDebtIncomeId: { in: sales.map((sale) => sale.id) },
+          entryDate: { lte: params.now },
+        },
+        select: { relatedDebtIncomeId: true, paymentAmount: true },
+      })
+    : [];
+  const paidBySaleId = new Map(sales.map((sale) => [sale.id, sale.paymentAmount || 0]));
+  for (const row of repayments) {
+    if (!row.relatedDebtIncomeId) continue;
+    paidBySaleId.set(row.relatedDebtIncomeId, (paidBySaleId.get(row.relatedDebtIncomeId) || 0) + (row.paymentAmount || 0));
+  }
+  return summarizeAgreementBonusAndDebt({ agentIds: params.agentIds, sales, paidBySaleId, policy });
+}
+
+/**
+ * The course(s) selected before the current ones: walks the selection history newest first and returns the
+ * first entry's courses that are no longer selected.
+ */
+export function pickPreviousCourseIds(
+  historyNewestFirst: string[][],
+  currentCourseIds: string[],
+  isEligible: (courseId: string) => boolean,
+): string[] {
+  const current = new Set(currentCourseIds);
+  for (const selection of historyNewestFirst) {
+    const previous = selection.filter((courseId) => !current.has(courseId) && isEligible(courseId));
+    if (previous.length) return previous;
+  }
+  return [];
+}
+
+async function loadPreviousOnlineCourses(tenantId: string, currentCourseIds: string[]) {
+  const logs = await prisma.auditLog.findMany({
+    where: { tenantId, action: 'integration_update', resource: 'integration' },
+    orderBy: { createdAt: 'desc' },
+    take: 300,
+    select: { metadata: true },
+  });
+  const history = logs
+    .filter((log) => (log.metadata as Record<string, unknown> | null)?.type === 'telegram'
+      && Array.isArray((log.metadata as Record<string, unknown>).telegramDailyReportCourseIds))
+    .map((log) => parseTelegramDailyReportCourseIds(log.metadata));
+  const historyIds = Array.from(new Set(history.flat()));
+  if (!historyIds.length) return [];
+  const courses = await prisma.course.findMany({
+    where: { tenantId, id: { in: historyIds } },
+    select: { id: true, name: true, category: true },
+  });
+  const onlineById = new Map(courses
+    .filter((course) => classifyCourseCategoryFromField(course.category || course.name) === 'online')
+    .map((course) => [course.id, course]));
+  return pickPreviousCourseIds(history, currentCourseIds, (courseId) => onlineById.has(courseId))
+    .map((courseId) => onlineById.get(courseId)!);
+}
+
 const incomeRowSelect = {
   id: true,
   type: true,
@@ -190,14 +345,19 @@ export const liveLeaderboardProcedures = {
       });
       const rows = excludeTechnicalRows(rowsRaw, await loadTechnicalSaleIdsForRows(ctx.tenantId, rowsRaw));
       const stats = summarizeLeaderboardAgents({ agentIds, rows, todayStart: previousMonthEnd });
-      // Finalized months come from the frozen snapshot, exactly what was paid.
-      const bonusByAgent = sumBonusByAgent((await getBonusMonth({ tenantId: ctx.tenantId, month: previousMonthStart })).items, agentIds);
+      // Leaderboard bonus: percent of the whole agreement of last month's sales.
+      const bonusByAgent = (await loadAgreementBonusAndDebt({
+        tenantId: ctx.tenantId,
+        agentIds,
+        saleWhere: { entryDate: { gte: previousMonthStart, lte: previousMonthEnd } },
+        now,
+      })).bonus;
 
       return { generatedAt: now.toISOString(), period, winner: pickLeaderboardWinner(groupedAgents, stats, bonusByAgent) };
     }),
 
-  // Bonus and the best seller of the online board. Bonus needs every month the course ran, so it is polled slowly
-  // instead of on the board's 2-second refresh.
+  // Bonus and debt of the online board's current course(s), and the best seller of the previous course.
+  // Polled slowly instead of on the board's 2-second refresh.
   liveLeaderboardCourseStats: protectedProcedure.query(async ({ ctx }) => {
     if (!canReadLiveLeaderboard(ctx.user.roles, 'online')) {
       throw new TRPCError({
@@ -218,32 +378,43 @@ export const liveLeaderboardProcedures = {
     const groupedAgents = agents.filter((agent) => resolveAgentGroup(agent.roles) === 'online');
     const agentIds = groupedAgents.map((agent) => agent.id);
 
-    const rowsRaw = courseIds.length && agentIds.length
-      ? await prisma.income.findMany({
+    const [current, previousCourses] = await Promise.all([
+      courseIds.length
+        ? loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: courseIds } }, now })
+        : null,
+      loadPreviousOnlineCourses(ctx.tenantId, courseIds),
+    ]);
+    const previousCourseIds = previousCourses.map((course) => course.id);
+
+    let winner: ReturnType<typeof pickLeaderboardWinner> = null;
+    if (previousCourseIds.length && agentIds.length) {
+      const [rowsRaw, previous] = await Promise.all([
+        prisma.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             managerUserId: { in: agentIds },
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
             entryDate: { lte: now },
-            ...courseScopedIncomeWhere(courseIds),
+            ...courseScopedIncomeWhere(previousCourseIds),
           },
           select: incomeRowSelect,
-        })
-      : [];
-    const rows = excludeTechnicalRows(rowsRaw, await loadTechnicalSaleIdsForRows(ctx.tenantId, rowsRaw));
-    if (!rows.length) {
-      return { generatedAt: now.toISOString(), agents: [], winner: null };
+        }),
+        loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: previousCourseIds } }, now }),
+      ]);
+      const rows = excludeTechnicalRows(rowsRaw, await loadTechnicalSaleIdsForRows(ctx.tenantId, rowsRaw));
+      const stats = summarizeLeaderboardAgents({ agentIds, rows, todayStart: now });
+      winner = pickLeaderboardWinner(groupedAgents, stats, previous.bonus);
     }
-
-    const stats = summarizeLeaderboardAgents({ agentIds, rows, todayStart: now });
-    const courseStart = new Date(rows.reduce((earliest, row) => Math.min(earliest, row.entryDate.getTime()), now.getTime()));
-    const bonusRange = await calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: courseStart, rangeEnd: now });
-    const bonusByAgent = sumCourseBonusByAgent(bonusRange.items, agentIds, courseIds);
 
     return {
       generatedAt: now.toISOString(),
-      agents: groupedAgents.map((agent) => ({ userId: agent.id, bonus: bonusByAgent.get(agent.id) || 0 })),
-      winner: pickLeaderboardWinner(groupedAgents, stats, bonusByAgent),
+      agents: groupedAgents.map((agent) => ({
+        userId: agent.id,
+        bonus: current?.bonus.get(agent.id) || 0,
+        debt: current?.debt.get(agent.id) || 0,
+      })),
+      previousCourseNames: previousCourses.map((course) => course.name),
+      winner,
     };
   }),
 
@@ -403,7 +574,8 @@ export const liveLeaderboardProcedures = {
       };
     }
 
-    const [rowsRaw, latestRowsRaw, bonusRange] = await Promise.all([
+    const offlineCourseIds = courseIds ? [] : selectedReportCourses.map((course) => course.courseId);
+    const [rowsRaw, latestRowsRaw, offlineBonus, offlineDebt] = await Promise.all([
       prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -429,8 +601,14 @@ export const liveLeaderboardProcedures = {
           manager: { select: { name: true, username: true } },
         },
       }),
-      // The online board gets its bonus from liveLeaderboardCourseStats.
-      courseIds ? null : calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: monthStart, rangeEnd: now }),
+      // The online board gets its bonus and debt from liveLeaderboardCourseStats. The offline board's bonus is
+      // over this month's sales; its debt is over the selected offline course(s).
+      courseIds
+        ? null
+        : loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { entryDate: { gte: monthStart, lte: now } }, now }),
+      offlineCourseIds.length
+        ? loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: offlineCourseIds } }, now })
+        : null,
     ]);
 
     // Technical sales (agreement == 1) and their repayments are not real income; only look up the sales we loaded.
@@ -446,7 +624,8 @@ export const liveLeaderboardProcedures = {
     )).length;
 
     const stats = summarizeLeaderboardAgents({ agentIds, rows: periodRows, todayStart });
-    const bonusByAgent = sumBonusByAgent(bonusRange?.items || [], agentIds);
+    const bonusByAgent = offlineBonus?.bonus || new Map<string, number>();
+    const debtByAgent = offlineDebt?.debt || new Map<string, number>();
     const sumRows = (list: Array<{ paymentAmount: number }>) => list.reduce((total, row) => total + (row.paymentAmount || 0), 0);
 
     const latestIncome = excludeTechnicalRows(latestRowsRaw, technicalSaleIds)[0] || null;
@@ -474,6 +653,7 @@ export const liveLeaderboardProcedures = {
         income: stats.income.get(agent.id) || 0,
         todayIncome: stats.todayIncome.get(agent.id) || 0,
         bonus: bonusByAgent.get(agent.id) || 0,
+        debt: debtByAgent.get(agent.id) || 0,
       })),
       selectedReportCourses,
       latestIncomeEvent: latestIncome

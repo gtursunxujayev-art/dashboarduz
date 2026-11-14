@@ -4,7 +4,9 @@ import {
   compareLeaderboardAgents,
   courseScopedIncomeWhere,
   pickLeaderboardWinner,
+  pickPreviousCourseIds,
   sumBonusByAgent,
+  summarizeAgreementBonusAndDebt,
   sumCourseBonusByAgent,
   summarizeLeaderboardAgents,
 } from '../dashboard/live-leaderboard';
@@ -128,5 +130,30 @@ describe('live leaderboard numbers', () => {
       { userId: 'c', name: 'Zilola', income: 200, salesCount: 0 },
     ];
     expect([...agents].sort(compareLeaderboardAgents).map((agent) => agent.userId)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('pays leaderboard bonus on the whole agreement and counts the unpaid rest as debt', () => {
+    const course = { name: 'Online-Noyabr', category: 'online' };
+    const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
+    const result = summarizeAgreementBonusAndDebt({
+      agentIds: ['a', 'b'],
+      policy,
+      sales: [
+        { id: 's1', managerUserId: 'a', courseId: 'c1', coursePriceAmount: 10_000_000, debtAmount: null, paymentAmount: 4_000_000, course },
+        { id: 's2', managerUserId: 'a', courseId: 'c1', coursePriceAmount: 6_000_000, debtAmount: null, paymentAmount: 6_000_000, course },
+        { id: 's3', managerUserId: 'x', courseId: 'c1', coursePriceAmount: 9_000_000, debtAmount: null, paymentAmount: 0, course },
+      ],
+      paidBySaleId: new Map([['s1', 7_000_000], ['s2', 6_000_000], ['s3', 0]]),
+    });
+    expect(result.bonus.get('a')).toBe(800_000);
+    expect(result.debt.get('a')).toBe(3_000_000);
+    expect(result.bonus.has('x')).toBe(false);
+  });
+
+  it('finds the course selected before the current one', () => {
+    const online = new Set(['oct', 'sep', 'nov']);
+    const history = [['nov'], ['nov', 'offline-1'], ['oct', 'offline-1'], ['sep']];
+    expect(pickPreviousCourseIds(history, ['nov'], (id) => online.has(id))).toEqual(['oct']);
+    expect(pickPreviousCourseIds([['nov']], ['nov'], (id) => online.has(id))).toEqual([]);
   });
 });
