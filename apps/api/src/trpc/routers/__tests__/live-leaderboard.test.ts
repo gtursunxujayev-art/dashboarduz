@@ -160,4 +160,19 @@ describe('live leaderboard numbers', () => {
     expect(pickPreviousCourseIds(history, ['nov'], (id) => online.has(id))).toEqual(['oct']);
     expect(pickPreviousCourseIds([['nov']], ['nov'], (id) => online.has(id))).toEqual([]);
   });
+
+  it('prices the bonus still to come at the rate payroll applies this month, not by all-time sales', () => {
+    const course = { name: '16-Couching', category: 'offline' };
+    const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { offline: 1 } } });
+    const sales = Array.from({ length: 20 }, (_, index) => ({
+      id: `s${index}`, managerUserId: 'z', courseId: 'c', coursePriceAmount: 10_000_000, debtAmount: null, paymentAmount: 0, course,
+    }));
+    const paidBySaleId = new Map(sales.map((sale, index) => [sale.id, index < 15 ? 10_000_000 : 2_000_000]));
+    const result = summarizeAgreementBonusAndDebt({
+      agentIds: ['z'], sales, paidBySaleId, policy, appliedPercentByAgentCourse: new Map([['z:c', 7]]),
+    });
+    // 5 unpaid sales close on their whole 10M agreement at payroll's 7%.
+    expect(result.bonusPending.get('z')).toBe(3_500_000);
+    expect(result.debt.get('z')).toBe(40_000_000);
+  });
 });
