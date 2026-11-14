@@ -159,8 +159,9 @@ export type AgreementSale = {
 };
 
 /**
- * Leaderboard-only bonus and debt, credited to the seller. Bonus is the policy percent applied to the whole
- * agreement of every sale, as if it were already paid in full (the payroll bonus engine still pays on payments
+ * Leaderboard-only bonus and debt, credited to the seller. `bonus` (Kutilma) is the policy percent applied to the
+ * whole agreement of every sale, as if it were already paid in full; `bonusFact` (Fakt) is the same percent of what
+ * has actually been paid so far, repayments included (the payroll bonus engine still pays on payments
  * and closures). Debt is what the customer still owes on the sale.
  */
 export function summarizeAgreementBonusAndDebt(params: {
@@ -186,10 +187,12 @@ export function summarizeAgreementBonusAndDebt(params: {
   }
 
   const bonus = new Map<string, number>();
+  const bonusFact = new Map<string, number>();
   const debt = new Map<string, number>();
   for (const sale of sales) {
     const agreement = resolveSaleAgreementAmount(sale);
-    const remaining = Math.max(0, agreement - (params.paidBySaleId.get(sale.id) || 0));
+    const paid = Math.min(agreement, params.paidBySaleId.get(sale.id) || 0);
+    const remaining = agreement - paid;
     debt.set(sale.managerUserId, (debt.get(sale.managerUserId) || 0) + remaining);
 
     const category = classifyCourseCategoryFromField(sale.course?.category || sale.course?.name);
@@ -202,8 +205,9 @@ export function summarizeAgreementBonusAndDebt(params: {
           salesCountByAgentCategory.get(`${sale.managerUserId}:${category}`) || 0,
         );
     bonus.set(sale.managerUserId, (bonus.get(sale.managerUserId) || 0) + Math.round(agreement * percent / 100));
+    bonusFact.set(sale.managerUserId, (bonusFact.get(sale.managerUserId) || 0) + Math.round(paid * percent / 100));
   }
-  return { bonus, debt };
+  return { bonus, bonusFact, debt };
 }
 
 /** Loads the agents' sales matching `saleWhere`, every payment on them, and summarizes bonus and debt. */
@@ -213,7 +217,9 @@ async function loadAgreementBonusAndDebt(params: {
   saleWhere: Record<string, unknown>;
   now: Date;
 }) {
-  if (!params.agentIds.length) return { bonus: new Map<string, number>(), debt: new Map<string, number>() };
+  if (!params.agentIds.length) {
+    return { bonus: new Map<string, number>(), bonusFact: new Map<string, number>(), debt: new Map<string, number>() };
+  }
   const [salesRaw, { policy }] = await Promise.all([
     prisma.income.findMany({
       where: {
@@ -411,6 +417,7 @@ export const liveLeaderboardProcedures = {
       agents: groupedAgents.map((agent) => ({
         userId: agent.id,
         bonus: current?.bonus.get(agent.id) || 0,
+        bonusFact: current?.bonusFact.get(agent.id) || 0,
         debt: current?.debt.get(agent.id) || 0,
       })),
       previousCourseNames: previousCourses.map((course) => course.name),
@@ -575,7 +582,7 @@ export const liveLeaderboardProcedures = {
     }
 
     const offlineCourseIds = courseIds ? [] : selectedReportCourses.map((course) => course.courseId);
-    const [rowsRaw, latestRowsRaw, offlineBonus, offlineDebt] = await Promise.all([
+    const [rowsRaw, latestRowsRaw, offlineCourseStats] = await Promise.all([
       prisma.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -601,11 +608,8 @@ export const liveLeaderboardProcedures = {
           manager: { select: { name: true, username: true } },
         },
       }),
-      // The online board gets its bonus and debt from liveLeaderboardCourseStats. The offline board's bonus is
-      // over this month's sales; its debt is over the selected offline course(s).
-      courseIds
-        ? null
-        : loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { entryDate: { gte: monthStart, lte: now } }, now }),
+      // The online board gets its bonus and debt from liveLeaderboardCourseStats. On the offline board, bonus
+      // (Fakt and Kutilma) and debt are over the selected offline course(s), so the three numbers match up.
       offlineCourseIds.length
         ? loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: offlineCourseIds } }, now })
         : null,
@@ -624,8 +628,9 @@ export const liveLeaderboardProcedures = {
     )).length;
 
     const stats = summarizeLeaderboardAgents({ agentIds, rows: periodRows, todayStart });
-    const bonusByAgent = offlineBonus?.bonus || new Map<string, number>();
-    const debtByAgent = offlineDebt?.debt || new Map<string, number>();
+    const bonusByAgent = offlineCourseStats?.bonus || new Map<string, number>();
+    const bonusFactByAgent = offlineCourseStats?.bonusFact || new Map<string, number>();
+    const debtByAgent = offlineCourseStats?.debt || new Map<string, number>();
     const sumRows = (list: Array<{ paymentAmount: number }>) => list.reduce((total, row) => total + (row.paymentAmount || 0), 0);
 
     const latestIncome = excludeTechnicalRows(latestRowsRaw, technicalSaleIds)[0] || null;
@@ -653,6 +658,7 @@ export const liveLeaderboardProcedures = {
         income: stats.income.get(agent.id) || 0,
         todayIncome: stats.todayIncome.get(agent.id) || 0,
         bonus: bonusByAgent.get(agent.id) || 0,
+        bonusFact: bonusFactByAgent.get(agent.id) || 0,
         debt: debtByAgent.get(agent.id) || 0,
       })),
       selectedReportCourses,
