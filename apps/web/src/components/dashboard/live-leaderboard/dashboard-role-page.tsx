@@ -17,6 +17,7 @@ type LeaderboardAgent = {
   income: number;
   todayIncome: number;
   bonus: number;
+  bonusFact: number;
   debt: number;
 };
 
@@ -117,7 +118,7 @@ function AgentRow({ agent, rank, highlight, incomeLabel }: { agent: LeaderboardA
       <div className={`flex h-8 w-8 items-center justify-center rounded-xl text-base font-black ${rank === 1 ? 'bg-amber-300 text-slate-950' : rank === 2 ? 'bg-slate-200 text-slate-950' : rank === 3 ? 'bg-orange-300 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>
         {rank}
       </div>
-      <div className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-1 sm:grid-cols-3 2xl:grid-cols-[minmax(120px,1fr)_110px_145px_80px_95px_90px_120px]">
+      <div className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-1 sm:grid-cols-3 2xl:grid-cols-[minmax(120px,1fr)_110px_145px_80px_95px_115px_120px]">
         <div className="col-span-2 truncate text-lg font-extrabold text-white sm:col-span-3 2xl:col-span-1">{agent.name}</div>
         <div className="text-sm font-semibold text-slate-300">
           <span>Qo'ng'iroq: <b className="text-cyan-300">{agent.todayCallsCount}</b></span>
@@ -132,7 +133,8 @@ function AgentRow({ agent, rank, highlight, incomeLabel }: { agent: LeaderboardA
           <span>Bugun: <b className="text-cyan-300">{formatCompactMoney(agent.todayIncome)}</b></span>
         </div>
         <div className="text-sm font-semibold text-slate-300">
-          <span>Bonus: <b className="text-fuchsia-300">{formatCompactMoney(agent.bonus)}</b></span>
+          <div className="leading-tight">Fakt: <b className="text-fuchsia-300">{formatCompactMoney(agent.bonusFact)}</b></div>
+          <div className="leading-tight">Kutilma: <b className="text-fuchsia-200/80">{formatCompactMoney(agent.bonus)}</b></div>
         </div>
         <div className="text-sm font-semibold text-slate-300">
           <span>Qarzdorlik: <b className="text-rose-300">{formatCompactMoney(agent.debt)}</b></span>
@@ -372,6 +374,7 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
     (data?.agents || []).map((agent) => ({
       ...agent,
       bonus: isCourseBoard ? courseStatsByAgentId.get(agent.userId)?.bonus || 0 : agent.bonus,
+      bonusFact: isCourseBoard ? courseStatsByAgentId.get(agent.userId)?.bonusFact || 0 : agent.bonusFact,
       debt: isCourseBoard ? courseStatsByAgentId.get(agent.userId)?.debt || 0 : agent.debt,
       todayCallsCount: callStatsByAgentId.get(agent.userId)?.todayCallsCount || 0,
       todayCallDurationSeconds: callStatsByAgentId.get(agent.userId)?.todayCallDurationSeconds || 0,
