@@ -148,6 +148,8 @@ describe('live leaderboard numbers', () => {
     expect(result.bonus.get('a')).toBe(800_000);
     // Fakt: 5% of what was paid (7M + 6M).
     expect(result.bonusFact.get('a')).toBe(650_000);
+    // Debt-closed mode pays on the whole agreement once s1 (3M still owed) closes.
+    expect(result.bonusPending.get('a')).toBe(500_000);
     expect(result.debt.get('a')).toBe(3_000_000);
     expect(result.bonus.has('x')).toBe(false);
   });
