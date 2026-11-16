@@ -1,0 +1,47 @@
+{
+  "apps/api/src/trpc/routers/attendance.ts": {
+    "attendanceDaySummary.count": 1,
+    "attendanceDaySummary.findMany": 1,
+    "attendanceEvent.count": 1,
+    "attendanceEvent.findMany": 1
+  },
+  "apps/api/src/trpc/routers/auth.ts": {
+    "user.findFirst": 1
+  },
+  "apps/api/src/trpc/routers/corporate-calls.ts": {
+    "corporateCallDuration.findMany": 1
+  },
+  "apps/api/src/trpc/routers/course-sales.ts": {
+    "income.count": 2,
+    "income.findMany": 2
+  },
+  "apps/api/src/trpc/routers/customer-income.ts": {
+    "course.findMany": 2,
+    "customer.findFirst": 2,
+    "incomeAdjustmentRequest.count": 3,
+    "incomeAdjustmentRequest.findMany": 2
+  },
+  "apps/api/src/trpc/routers/dashboard/salary.ts": {
+    "income.count": 1,
+    "income.findMany": 1,
+    "income.groupBy": 1
+  },
+  "apps/api/src/trpc/routers/dashboard/summary.ts": {
+    "income.findMany": 2
+  },
+  "apps/api/src/trpc/routers/funnel.ts": {
+    "user.findMany": 2
+  },
+  "apps/api/src/trpc/routers/income-debug.ts": {
+    "income.count": 2,
+    "income.findMany": 1,
+    "income.findUnique": 1
+  },
+  "apps/api/src/trpc/routers/notifications.ts": {
+    "notification.count": 1,
+    "notification.findMany": 1
+  },
+  "apps/api/src/trpc/routers/users.ts": {
+    "user.findFirst": 1
+  }
+}
