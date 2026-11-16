@@ -40,6 +40,18 @@
   "src/services/__tests__/funnel-metrics.test.ts": {
     "@typescript-eslint/require-await": 3
   },
+  "src/services/ai-helper/assistant.ts": {
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unsafe-argument": 1,
+    "@typescript-eslint/no-unsafe-assignment": 2,
+    "@typescript-eslint/no-unsafe-member-access": 9,
+    "@typescript-eslint/no-unsafe-return": 1
+  },
+  "src/services/ai-helper/course-hints.ts": {
+    "@typescript-eslint/no-unsafe-argument": 3,
+    "@typescript-eslint/no-unsafe-assignment": 1,
+    "@typescript-eslint/no-unsafe-return": 1
+  },
   "src/services/attendance/faceid.ts": {
     "@typescript-eslint/no-explicit-any": 2,
     "@typescript-eslint/no-unsafe-assignment": 2
@@ -99,6 +111,10 @@
   },
   "src/services/funnel-metrics.ts": {
     "@typescript-eslint/no-unsafe-assignment": 1
+  },
+  "src/services/income-problems/finance-snapshot.ts": {
+    "@typescript-eslint/no-unsafe-assignment": 1,
+    "eqeqeq": 1
   },
   "src/services/integration-settings/connection.ts": {
     "@typescript-eslint/no-explicit-any": 2,
@@ -215,6 +231,10 @@
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-member-access": 1
   },
+  "src/services/users/accounts.ts": {
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unsafe-member-access": 2
+  },
   "src/trpc/context.ts": {
     "import/order": 1
   },
@@ -223,13 +243,6 @@
   },
   "src/trpc/routers/__tests__/selected-report-courses.test.ts": {
     "@typescript-eslint/unbound-method": 1
-  },
-  "src/trpc/routers/ai-helper.ts": {
-    "@typescript-eslint/no-explicit-any": 2,
-    "@typescript-eslint/no-unsafe-argument": 4,
-    "@typescript-eslint/no-unsafe-assignment": 3,
-    "@typescript-eslint/no-unsafe-member-access": 9,
-    "@typescript-eslint/no-unsafe-return": 2
   },
   "src/trpc/routers/analytics-ai.ts": {
     "@typescript-eslint/no-explicit-any": 4,
@@ -323,10 +336,9 @@
     "@typescript-eslint/no-unsafe-return": 1
   },
   "src/trpc/routers/income-problems.ts": {
-    "@typescript-eslint/no-unsafe-assignment": 1,
     "@typescript-eslint/require-await": 2,
     "@typescript-eslint/restrict-template-expressions": 2,
-    "eqeqeq": 2
+    "eqeqeq": 1
   },
   "src/trpc/routers/index.ts": {
     "import/order": 17
@@ -381,11 +393,16 @@
     "@typescript-eslint/no-unsafe-assignment": 2,
     "import/order": 3
   },
-  "src/trpc/routers/users.ts": {
-    "@typescript-eslint/no-explicit-any": 6,
+  "src/trpc/routers/users/access.ts": {
+    "@typescript-eslint/no-explicit-any": 2,
     "@typescript-eslint/no-unnecessary-type-assertion": 3,
-    "@typescript-eslint/no-unsafe-assignment": 4,
-    "@typescript-eslint/no-unsafe-member-access": 11
+    "@typescript-eslint/no-unsafe-assignment": 1,
+    "@typescript-eslint/no-unsafe-member-access": 3
+  },
+  "src/trpc/routers/users/accounts.ts": {
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unsafe-assignment": 3,
+    "@typescript-eslint/no-unsafe-member-access": 6
   },
   "src/trpc/server.ts": {
     "import/order": 2

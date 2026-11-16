@@ -4,8 +4,8 @@ import { z } from 'zod';
 
 import { parseSnapshotDate, recomputeSaleChainState, recomputeSaleChainStateFully } from '../../../services/income-debug/chain-recompute';
 import { findSnapshotMatch, getSaleChainConsistencySnapshot } from '../../../services/income-debug/snapshots';
+import { getActiveSnapshot } from '../../../services/income-problems/finance-snapshot';
 import { adminProcedure } from '../../trpc';
-import { getActiveSnapshot } from '../income-problems';
 
 export const incomeDebugRepairProcedures = {
   repairDatesFromSnapshot: adminProcedure

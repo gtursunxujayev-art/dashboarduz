@@ -10,7 +10,10 @@
     "income.findMany": 1,
     "income.groupBy": 1
   },
-  "apps/api/src/trpc/routers/attendance.ts": {
+  "apps/api/src/services/users/accounts.ts": {
+    "user.findFirst": 1
+  },
+  "apps/api/src/trpc/routers/attendance/records.ts": {
     "attendanceDaySummary.count": 1,
     "attendanceDaySummary.findMany": 1,
     "attendanceEvent.count": 1,
@@ -54,7 +57,7 @@
     "notification.count": 1,
     "notification.findMany": 1
   },
-  "apps/api/src/trpc/routers/users.ts": {
-    "user.findFirst": 2
+  "apps/api/src/trpc/routers/users/access.ts": {
+    "user.findFirst": 1
   }
 }

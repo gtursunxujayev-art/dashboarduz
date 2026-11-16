@@ -2,8 +2,8 @@ import type { DbClient } from '@dashboarduz/db';
 import { normalizeDigits } from '@dashboarduz/shared';
 
 import { type MatchTextOptions, normalizeMatchText } from '../../lib/text';
-import type { FinanceSnapshotRow } from '../../trpc/routers/income-problems';
 import { evaluateSaleChainConsistency, getSaleAgreementAmount } from '../income-chain';
+import type { FinanceSnapshotRow } from '../income-problems/finance-snapshot';
 
 const NAME_MATCH: MatchTextOptions = { collapseWhitespace: true, unifyApostrophes: true };
 
