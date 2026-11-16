@@ -22,23 +22,27 @@ function canReadAllUsers(roles: string[]): boolean {
 
 function parseDateKey(value: string, fieldName: string): string {
   const normalized = String(value || '').trim();
+
   if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: `${fieldName} YYYY-MM-DD formatda bo'lishi kerak.`,
     });
   }
+
   return normalized;
 }
 
 function parseDateTime(value: string, fieldName: string): Date {
   const parsed = new Date(String(value || '').trim());
+
   if (Number.isNaN(parsed.getTime())) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: `${fieldName} noto'g'ri formatda.`,
     });
   }
+
   return parsed;
 }
 
@@ -47,6 +51,7 @@ function toLocalDateKey(date: Date): string {
   const year = shifted.getUTCFullYear();
   const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
   const day = String(shifted.getUTCDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
@@ -55,6 +60,7 @@ function toLocalTimeValue(date: Date): string {
   const hh = String(shifted.getUTCHours()).padStart(2, '0');
   const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
   const ss = String(shifted.getUTCSeconds()).padStart(2, '0');
+
   return `${hh}:${mm}:${ss}`;
 }
 
@@ -68,6 +74,7 @@ function readFaceMatchMeta(rawPayload: unknown): {
   }
 
   const meta = (rawPayload as Record<string, unknown>).__matchMeta;
+
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
     return { matchReason: null, matchStepTried: null, rawUser: null };
   }
@@ -282,6 +289,7 @@ export const attendanceRouter = router({
     .mutation(async ({ ctx, input }) => {
       const dateFrom = parseAttendanceReportDateKey(input.dateFrom);
       const dateTo = parseAttendanceReportDateKey(input.dateTo);
+
       if (!dateFrom || !dateTo) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -296,6 +304,7 @@ export const attendanceRouter = router({
       }
 
       const calendarDayCount = countAttendanceReportCalendarDays(dateFrom, dateTo);
+
       if (isAttendanceReportCalendarRangeOverLimit(calendarDayCount)) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -304,6 +313,7 @@ export const attendanceRouter = router({
       }
 
       const workdayDateKeys = enumerateAttendanceReportWorkdays(dateFrom, dateTo);
+
       if (workdayDateKeys.length === 0) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -454,6 +464,7 @@ export const attendanceRouter = router({
         summaryAnomalies,
         unmatchedEvents: unmatchedEvents.map((row) => {
           const matchMeta = readFaceMatchMeta(row.rawPayload);
+
           return {
             id: row.id,
             localDate: row.localDate,
@@ -662,6 +673,7 @@ export const attendanceRouter = router({
             action: true,
           },
         });
+
         if (!targetEvent) {
           throw new TRPCError({ code: 'NOT_FOUND', message: "Attendance event topilmadi." });
         }
@@ -844,6 +856,7 @@ export const attendanceRouter = router({
     .mutation(async ({ ctx, input }) => {
       const dateFrom = parseDateKey(input.dateFrom, 'dateFrom');
       const dateTo = parseDateKey(input.dateTo, 'dateTo');
+
       if (dateFrom > dateTo) {
         throw new TRPCError({
           code: 'BAD_REQUEST',

@@ -61,6 +61,7 @@ export const settingsProcedures = {
       }
 
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
+
       if (!amoContext) {
         return { values: [] as string[] };
       }
@@ -91,6 +92,7 @@ export const settingsProcedures = {
 
         for (const lead of leads) {
           const value = extractLeadValue(lead, input.fieldKey);
+
           if (value) {
             values.add(value);
           }
@@ -103,6 +105,7 @@ export const settingsProcedures = {
         }
 
         const hasNext = Boolean(response._links?.next?.href);
+
         if (!hasNext || stagnantPages >= 5) {
           break;
         }

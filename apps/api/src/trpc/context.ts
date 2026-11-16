@@ -16,8 +16,10 @@ export async function createContext(opts: { req: Request; res: Response }): Prom
 
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
+
     try {
       const { verifyJWT } = await import('../services/auth/jwt');
+
       user = verifyJWT(token);
       tenantId = user.tenantId;
     } catch (error) {
@@ -28,6 +30,7 @@ export async function createContext(opts: { req: Request; res: Response }): Prom
   // Also check subdomain for tenant resolution
   const host = opts.req.headers.host || '';
   const subdomain = host.split('.')[0];
+
   if (subdomain && subdomain !== 'localhost' && subdomain !== 'www') {
     // TODO: Resolve tenant from subdomain
   }

@@ -161,9 +161,11 @@ export function normalizeDashboardUserLayout(value: unknown): DashboardUserLayou
     ? row.customSalesWidgets
         .map((item) => {
           const parsed = dashboardCustomSalesWidgetSchema.safeParse(item);
+
           if (!parsed.success) {
             return null;
           }
+
           return {
             id: parsed.data.id,
             title: parsed.data.title.trim(),
@@ -183,10 +185,12 @@ export function normalizeDashboardUserLayout(value: unknown): DashboardUserLayou
 
 export function isAllowedUtelManagerExtension(value: unknown): boolean {
   const digits = normalizeDigits(value);
+
   if (!digits) {
     return false;
   }
   const parsed = Number.parseInt(digits, 10);
+
   return Number.isFinite(parsed) && parsed >= UTEL_MIN_EXTENSION && parsed <= UTEL_MAX_EXTENSION;
 }
 
@@ -200,6 +204,7 @@ export function extractUtelManagerKey(metadata: unknown): string | null {
   const managerName = normalizeTextToken(
     data.manager || data.agent || data.user || data.operator || data.responsible || data.employee,
   );
+
   return extension || managerName || null;
 }
 
@@ -214,6 +219,7 @@ export function resolveCallExtension(call: { from: string; to: string; direction
     || metadataData?.internal
     || metadataData?.line,
   );
+
   if (isAllowedUtelManagerExtension(metadataExtension)) {
     return metadataExtension;
   }
@@ -234,6 +240,7 @@ export function resolveCallExtension(call: { from: string; to: string; direction
 
   if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
   if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
+
   return null;
 }
 
@@ -243,6 +250,7 @@ function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): 
   }
   const normalizedKey = key.toLowerCase();
   const matchingEntry = Object.entries(source).find(([entryKey]) => entryKey.toLowerCase() === normalizedKey);
+
   return matchingEntry?.[1];
 }
 
@@ -252,8 +260,10 @@ function parseCallDuration(value: unknown): number | null {
   }
   if (typeof value === 'string' && value.trim()) {
     const parsed = Number.parseInt(value.trim(), 10);
+
     return Number.isNaN(parsed) ? null : Math.max(0, parsed);
   }
+
   return null;
 }
 
@@ -263,12 +273,14 @@ export function resolveCallDuration(duration: number | null, metadata: unknown):
   }
 
   const metadataObject = asObject(metadata);
+
   if (!metadataObject) {
     return 0;
   }
 
   const candidates = [metadataObject];
   const rawHistory = asObject(metadataObject.raw_call_history);
+
   if (rawHistory) {
     candidates.push(rawHistory);
   }
@@ -276,6 +288,7 @@ export function resolveCallDuration(duration: number | null, metadata: unknown):
   for (const candidate of candidates) {
     for (const key of ['normalized_duration', 'duration', 'billsec', 'conversation', 'talk_duration']) {
       const parsed = parseCallDuration(getCaseInsensitiveValue(candidate, key));
+
       if (parsed !== null) {
         return parsed;
       }
@@ -287,11 +300,13 @@ export function resolveCallDuration(duration: number | null, metadata: unknown):
 
 export async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
   const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
   }
 
   let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
+
   try {
     currentUser = await db.user.findFirst({
       where: {
@@ -330,6 +345,7 @@ export function getRangeStart(range: DashboardRange, now: Date): Date {
   if (range === 'week') {
     const day = shiftedNow.getUTCDay();
     const daysSinceMonday = (day + 6) % 7;
+
     return new Date(Date.UTC(year, month, date - daysSinceMonday) - offsetMs);
   }
 
@@ -361,6 +377,7 @@ export function getReportLocalDayKey(date: Date): string {
   const year = shifted.getUTCFullYear();
   const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
   const day = String(shifted.getUTCDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
@@ -369,17 +386,20 @@ export function getReportLocalDayOfYear(date: Date): number {
   const year = shifted.getUTCFullYear();
   const yearStart = Date.UTC(year, 0, 1);
   const currentDay = Date.UTC(year, shifted.getUTCMonth(), shifted.getUTCDate());
+
   return Math.floor((currentDay - yearStart) / 86_400_000) + 1;
 }
 
 export function getReportLocalDaysInYear(year: number): number {
   const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
   return isLeapYear ? 366 : 365;
 }
 
 export function getReportLocalDayOfYearForMonthEnd(year: number, month: number): number {
   const yearStart = Date.UTC(year, 0, 1);
   const monthEnd = Date.UTC(year, month + 1, 0);
+
   return Math.floor((monthEnd - yearStart) / 86_400_000) + 1;
 }
 
@@ -411,6 +431,7 @@ export function parseCustomDate(input: string, endOfDay: boolean): Date {
 
   const timestamp = `${input}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
   const parsed = new Date(timestamp);
+
   if (Number.isNaN(parsed.getTime())) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid custom date: ${input}` });
   }
@@ -435,6 +456,7 @@ export function resolveDateRange(range: DashboardRange, now: Date, dateFrom?: st
 
   const rangeStart = parseCustomDate(dateFrom, false);
   const rangeEnd = parseCustomDate(dateTo, true);
+
   if (rangeEnd < rangeStart) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'dateTo must be greater than or equal to dateFrom.' });
   }
@@ -472,14 +494,17 @@ export function toPieData(input: Map<string, number>) {
 
 export function buildFieldLabelMap(options: LeadFieldOption[]): Map<string, string> {
   const labels = new Map<string, string>();
+
   for (const option of options) {
     labels.set(option.key, option.label);
   }
+
   return labels;
 }
 
 export async function collectCatalogFieldOptions(tenantId: string, db: DbClient): Promise<LeadFieldOption[]> {
   const context = await (await import('../../../services/integrations/amocrm-live')).getTenantAmoCRMContext(tenantId, db);
+
   if (!context) {
     return [];
   }
@@ -489,8 +514,10 @@ export async function collectCatalogFieldOptions(tenantId: string, db: DbClient)
     const fields = Array.isArray(catalog?._embedded?.custom_fields) ? catalog._embedded.custom_fields : [];
 
     const options: LeadFieldOption[] = [];
+
     for (const field of fields) {
       const identifier = normalizeIdentifier(field.code || field.name || field.id);
+
       if (!identifier) {
         continue;
       }
@@ -514,6 +541,7 @@ export function isMappedValue(value: string | null, targetValues: string[]): boo
   }
 
   const normalizedValue = value.trim().toLowerCase();
+
   return targetValues.some((target) => target.trim().toLowerCase() === normalizedValue);
 }
 
@@ -527,6 +555,7 @@ export function classifyCourseCategory(
   courseName: string | null | undefined,
 ): 'online' | 'offline' | 'intensive' | 'additional_service' | 'other' {
   const normalized = normalizeCourseCategoryName(courseName);
+
   if (!normalized) {
     return 'other';
   }
@@ -579,6 +608,7 @@ export function classifyCourseCategoryFromField(
   category: string | null | undefined,
 ): 'online' | 'offline' | 'intensive' | 'additional_service' | 'other' {
   const normalized = String(category || '').trim().toLowerCase();
+
   if (
     normalized === 'online'
     || normalized === 'offline'
@@ -587,6 +617,7 @@ export function classifyCourseCategoryFromField(
   ) {
     return normalized;
   }
+
   return classifyCourseCategory(category);
 }
 
@@ -607,19 +638,23 @@ export function toFiniteNumber(value: unknown, fallback = 0): number {
   }
   if (typeof value === 'string') {
     const parsed = Number.parseFloat(value.trim());
+
     return Number.isFinite(parsed) ? parsed : fallback;
   }
+
   return fallback;
 }
 
 export function normalizePercentage(value: unknown): number {
   const parsed = toFiniteNumber(value, 0);
+
   if (parsed <= 0) {
     return 0;
   }
   if (parsed >= 100) {
     return 100;
   }
+
   return Number(parsed.toFixed(2));
 }
 
@@ -642,6 +677,7 @@ export function createSimpleBonusRule(percent: unknown): SalaryCategoryBonusRule
 
 export function normalizeSalaryTier(raw: unknown): SalaryRuleTier | null {
   const row = asObject(raw);
+
   if (!row) {
     return null;
   }
@@ -651,12 +687,14 @@ export function normalizeSalaryTier(raw: unknown): SalaryRuleTier | null {
     ? null
     : Math.floor(toFiniteNumber(maxRaw, 0));
   const percent = normalizePercentage(row.percent);
+
   if (minSales <= 0 || percent <= 0) {
     return null;
   }
   if (maxSales !== null && maxSales < minSales) {
     return null;
   }
+
   return { minSales, maxSales, percent };
 }
 
@@ -666,6 +704,7 @@ export function isValidTierSequence(tiers: SalaryRuleTier[]): boolean {
   }
   for (let index = 0; index < tiers.length; index += 1) {
     const current = tiers[index];
+
     if (!current) {
       return false;
     }
@@ -674,10 +713,12 @@ export function isValidTierSequence(tiers: SalaryRuleTier[]): boolean {
     }
     if (index > 0) {
       const prev = tiers[index - 1];
+
       if (!prev) {
         return false;
       }
       const prevMax = prev.maxSales ?? Number.MAX_SAFE_INTEGER;
+
       if (current.minSales <= prevMax) {
         return false;
       }
@@ -686,11 +727,13 @@ export function isValidTierSequence(tiers: SalaryRuleTier[]): boolean {
       }
     }
   }
+
   return true;
 }
 
 export function normalizeCategoryBonusRule(raw: unknown, fallbackPercent: unknown): SalaryCategoryBonusRule {
   const row = asObject(raw);
+
   if (!row) {
     return createSimpleBonusRule(fallbackPercent);
   }
@@ -724,15 +767,18 @@ export function resolveBonusPercent(rule: SalaryCategoryBonusRule, closedSalesCo
   for (const tier of rule.tiers) {
     const withinMin = closedSalesCount >= tier.minSales;
     const withinMax = tier.maxSales === null || closedSalesCount <= tier.maxSales;
+
     if (withinMin && withinMax) {
       return normalizePercentage(tier.percent);
     }
   }
+
   return normalizePercentage(rule.simplePercent);
 }
 
 export function toPositiveInteger(value: unknown): number {
   const parsed = Math.floor(toFiniteNumber(value, 0));
+
   return parsed > 0 ? parsed : 0;
 }
 
@@ -742,6 +788,7 @@ export function normalizeSubTariffName(value: unknown): string {
 
 export function normalizePlanBonus(raw: unknown): SalaryPlanBonus | null {
   const row = asObject(raw);
+
   if (!row) {
     return null;
   }
@@ -762,6 +809,7 @@ export function normalizePlanBonus(raw: unknown): SalaryPlanBonus | null {
 
   const targetClosedSales = toPositiveInteger(row.targetClosedSales);
   const bonusAmount = toPositiveInteger(row.bonusAmount);
+
   if (targetClosedSales <= 0 || bonusAmount <= 0) {
     return null;
   }
@@ -810,12 +858,15 @@ export function extractSalarySettings(settings: unknown): SalarySettingsSnapshot
   };
 
   const fixedSalaries = new Map<string, number>();
+
   for (const item of rawFixedSalaries) {
     const row = asObject(item);
+
     if (!row) {
       continue;
     }
     const userId = typeof row?.userId === 'string' ? row.userId : '';
+
     if (!userId) {
       continue;
     }
@@ -830,6 +881,7 @@ export function extractSalarySettings(settings: unknown): SalarySettingsSnapshot
   const rawKpiThresholds = asObject(rawKpi?.thresholds);
   const parseThreshold = (raw: unknown): KpiThreshold => {
     const obj = asObject(raw);
+
     return {
       full: toFiniteNumber(obj?.full, 0),
       half: toFiniteNumber(obj?.half, 0),
@@ -855,9 +907,12 @@ export function extractSalarySettings(settings: unknown): SalarySettingsSnapshot
       if (metric === 'callCount') return rawKpiThresholds?.callCount;
       if (metric === 'followUpCount') return rawKpiThresholds?.followUpCount;
       if (metric === 'followUpDonePercent') return rawKpiThresholds?.followUpDonePercent;
+
       return rawKpiThresholds?.stageChangeCount;
     })();
+
     acc[metric] = parseThreshold(rawThreshold);
+
     return acc;
   }, {} as Record<KpiMetricKey, KpiThreshold>);
   const kpiSettings: KpiSettings = {
@@ -901,6 +956,7 @@ export function getBonusAmount(amount: number, percentage: number): number {
   if (amount <= 0 || percentage <= 0) {
     return 0;
   }
+
   return Math.round((amount * percentage) / 100);
 }
 

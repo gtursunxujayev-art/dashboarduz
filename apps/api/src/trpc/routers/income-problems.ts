@@ -132,38 +132,48 @@ function normalizeName(value: unknown): string {
 
 function parseMoney(value: unknown): number {
   const raw = String(value ?? '').trim();
+
   if (!raw) return 0;
   const normalized = raw.replace(/\s+/g, '').replace(/,/g, '.').replace(/[^\d.-]/g, '');
   const parsed = Number(normalized);
+
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function parseDateText(value: unknown): string | null {
   const raw = String(value ?? '').trim();
+
   if (!raw) return null;
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
   const ddmmyyyy = raw.match(/^(\d{2})[./-](\d{2})[./-](\d{4})/);
+
   if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
   const parsed = new Date(raw);
+
   if (Number.isNaN(parsed.getTime())) return null;
+
   return parsed.toISOString().slice(0, 10);
 }
 
 function parseDateRange(dateFrom: string, dateTo: string) {
   const from = new Date(`${dateFrom}T00:00:00+05:00`);
   const to = new Date(`${dateTo}T23:59:59.999+05:00`);
+
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Davr sanalari noto�g�ri.' });
   }
+
   return { from, to };
 }
 
 function detectHeaderRow(rows: Array<Array<string | number | boolean | null>>): number {
   let bestIndex = 0;
   let bestScore = -1;
+
   for (let index = 0; index < Math.min(rows.length, 12); index += 1) {
     const normalized = (rows[index] || []).map((cell) => normalizeHeader(cell));
     let score = 0;
+
     for (const aliases of Object.values(HEADER_ALIASES)) {
       if (normalized.some((header) => aliases.some((alias) => header.includes(alias)))) score += 1;
     }
@@ -172,6 +182,7 @@ function detectHeaderRow(rows: Array<Array<string | number | boolean | null>>): 
       bestIndex = index;
     }
   }
+
   return bestIndex;
 }
 
@@ -195,6 +206,7 @@ function detectMapping(headers: string[]): SnapshotMapping {
   (Object.keys(result) as Array<keyof SnapshotMapping>).forEach((field) => {
     const aliases = HEADER_ALIASES[field];
     const foundIndex = headers.findIndex((header) => aliases.some((alias) => header.includes(alias)));
+
     if (foundIndex >= 0) result[field] = foundIndex;
   });
 
@@ -225,6 +237,7 @@ function normalizeFinanceRows(rows: Array<Array<string | number | boolean | null
     }
     if (!normalizedPhone && !normalizedName) {
       errors.push(`Qator ${rowIndex + 1}: mijoz telefoni yoki ismi topilmadi.`);
+
       return;
     }
 
@@ -253,7 +266,9 @@ function normalizeFinanceRows(rows: Array<Array<string | number | boolean | null
 
 async function readTenantSettings(tenantId: string, db: DbClient) {
   const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { settings: true } });
+
   if (!tenant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ish maydoni topilmadi.' });
+
   return asSettingsObject(tenant.settings);
 }
 
@@ -268,7 +283,9 @@ async function getActiveSnapshot(tenantId: string, db: DbClient): Promise<Active
   const settings = await readTenantSettings(tenantId, db);
   const incomeProblems = asSettingsObject(settings.incomeProblems);
   const activeSnapshot = incomeProblems.activeSnapshot;
+
   if (!activeSnapshot || typeof activeSnapshot !== 'object' || Array.isArray(activeSnapshot)) return null;
+
   return activeSnapshot as ActiveSnapshot;
 }
 
@@ -287,21 +304,25 @@ async function loadProjectRows(tenantId: string, from: Date, to: Date, db: DbCli
   const subTariffIds = Array.from(new Set(incomes.map((income) => {
     const meta = income.legacyImportMeta as Record<string, unknown> | null;
     const value = typeof meta?.saleSubTariffId === 'string' ? meta.saleSubTariffId : income.customer?.profileSubTariffId || null;
+
     return value;
   }).filter((value): value is string => Boolean(value))));
 
   const subTariffNameById = new Map<string, string>();
+
   if (subTariffIds.length > 0) {
     const subTariffs = await db.subTariff.findMany({
       where: { tenantId, id: { in: subTariffIds } },
       select: { id: true, name: true },
     });
+
     subTariffs.forEach((row) => subTariffNameById.set(row.id, row.name));
   }
 
   return incomes.map((income) => {
     const meta = income.legacyImportMeta as Record<string, unknown> | null;
     const subTariffId = typeof meta?.saleSubTariffId === 'string' ? meta.saleSubTariffId : income.customer?.profileSubTariffId || null;
+
     return {
       id: income.id,
       rowIndex: 0,
@@ -327,6 +348,7 @@ async function loadProjectRows(tenantId: string, from: Date, to: Date, db: DbCli
 
 function groupRows<T extends FinanceSnapshotRow | ProjectComparisonRow>(rows: T[]): Map<string, GroupSummary> {
   const map = new Map<string, GroupSummary>();
+
   for (const row of rows) {
     const key = row.normalizedPhone ? `phone:${row.normalizedPhone}` : `name:${row.normalizedName}`;
     const current = map.get(key) || {
@@ -337,6 +359,7 @@ function groupRows<T extends FinanceSnapshotRow | ProjectComparisonRow>(rows: T[
       paymentCount: 0,
       rows: [],
     };
+
     current.totalPaid += row.paymentAmount;
     current.paymentCount += 1;
     current.rows.push(row);
@@ -344,6 +367,7 @@ function groupRows<T extends FinanceSnapshotRow | ProjectComparisonRow>(rows: T[
     if (!current.name && row.customerName) current.name = row.customerName;
     map.set(key, current);
   }
+
   return map;
 }
 
@@ -370,6 +394,7 @@ function summarizeComparisons(dbGroups: Map<string, GroupSummary>, financeGroups
   for (const [key, dbGroup] of dbGroups.entries()) {
     if (!key.startsWith('phone:')) continue;
     const financeGroup = financeGroups.get(key);
+
     if (!financeGroup) continue;
     matchedDb.add(key);
     matchedFinance.add(key);
@@ -379,6 +404,7 @@ function summarizeComparisons(dbGroups: Map<string, GroupSummary>, financeGroups
       : dbGroup.paymentCount !== financeGroup.paymentCount
         ? 'count_mismatch'
         : 'matched';
+
     if (status === 'amount_mismatch') summary.amountMismatchCount += 1;
     if (status === 'matched') summary.matchedCustomers += 1;
     rows.push({
@@ -399,24 +425,30 @@ function summarizeComparisons(dbGroups: Map<string, GroupSummary>, financeGroups
 
   const dbNameGroups = new Map<string, GroupSummary[]>();
   const financeNameGroups = new Map<string, GroupSummary[]>();
+
   dbGroups.forEach((group, key) => {
     if (matchedDb.has(key) || key.startsWith('phone:') || !group.rows[0]?.normalizedName) return;
     const nameKey = group.rows[0].normalizedName;
+
     dbNameGroups.set(nameKey, [...(dbNameGroups.get(nameKey) || []), group]);
   });
   financeGroups.forEach((group, key) => {
     if (matchedFinance.has(key) || key.startsWith('phone:') || !group.rows[0]?.normalizedName) return;
     const nameKey = group.rows[0].normalizedName;
+
     financeNameGroups.set(nameKey, [...(financeNameGroups.get(nameKey) || []), group]);
   });
 
   const allNameKeys = new Set([...dbNameGroups.keys(), ...financeNameGroups.keys()]);
+
   allNameKeys.forEach((nameKey) => {
     const dbList = dbNameGroups.get(nameKey) || [];
     const financeList = financeNameGroups.get(nameKey) || [];
+
     if (dbList.length === 1 && financeList.length === 1) {
       const dbGroup = dbList[0]!;
       const financeGroup = financeList[0]!;
+
       matchedDb.add(dbGroup.groupKey);
       matchedFinance.add(financeGroup.groupKey);
       const differenceAmount = dbGroup.totalPaid - financeGroup.totalPaid;
@@ -425,6 +457,7 @@ function summarizeComparisons(dbGroups: Map<string, GroupSummary>, financeGroups
         : dbGroup.paymentCount !== financeGroup.paymentCount
           ? 'count_mismatch'
           : 'matched';
+
       if (status === 'amount_mismatch') summary.amountMismatchCount += 1;
       if (status === 'matched') summary.matchedCustomers += 1;
       rows.push({
@@ -441,6 +474,7 @@ function summarizeComparisons(dbGroups: Map<string, GroupSummary>, financeGroups
         dbGroupKeys: [dbGroup.groupKey],
         financeGroupKeys: [financeGroup.groupKey],
       });
+
       return;
     }
 
@@ -509,6 +543,7 @@ function summarizeComparisons(dbGroups: Map<string, GroupSummary>, financeGroups
 export const incomeProblemsRouter = router({
   getActiveSnapshot: adminProcedure.query(async ({ ctx }) => {
     const snapshot = await getActiveSnapshot(ctx.tenantId, ctx.db);
+
     return snapshot
       ? {
           exists: true,
@@ -534,8 +569,10 @@ export const incomeProblemsRouter = router({
       const recommendedSheet = [...input.sheets]
         .sort((a, b) => {
           const score = (sheet: { headers: string[] }) => detectMapping(sheet.headers.map((header) => normalizeHeader(header))).paymentAmount != null ? 1 : 0;
+
           return score(b) - score(a) || b.rowCount - a.rowCount;
         })[0];
+
       return {
         workbookName: input.workbookName,
         sheets: input.sheets,
@@ -553,6 +590,7 @@ export const incomeProblemsRouter = router({
       const mergedMapping = { ...detectedMapping, ...(input.mapping || {}) } as SnapshotMapping;
       const dataRows = input.rows.slice(headerRowIndex + 1);
       const { normalizedRows, errors } = normalizeFinanceRows(dataRows, mergedMapping);
+
       return {
         workbookName: input.workbookName,
         sheetName: input.sheetName,
@@ -571,6 +609,7 @@ export const incomeProblemsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { normalizedRows, errors } = normalizeFinanceRows(input.rows.slice(detectHeaderRow(input.rows) + 1), input.mapping);
       const settings = await readTenantSettings(ctx.tenantId, ctx.db);
+
       await writeTenantSettings(ctx.tenantId, {
         ...settings,
         incomeProblems: {
@@ -586,6 +625,7 @@ export const incomeProblemsRouter = router({
           },
         },
       }, ctx.db);
+
       return { rowCount: normalizedRows.length, errors: errors.slice(0, 20) };
     }),
 
@@ -593,6 +633,7 @@ export const incomeProblemsRouter = router({
     .input(z.object({ dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), search: z.string().trim().max(120).optional(), status: compareStatusSchema.optional() }))
     .query(async ({ ctx, input }) => {
       const snapshot = await getActiveSnapshot(ctx.tenantId, ctx.db);
+
       if (!snapshot) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Faol moliya snapshot yuklanmagan.' });
       const { from, to } = parseDateRange(input.dateFrom, input.dateTo);
       const projectRows = await loadProjectRows(ctx.tenantId, from, to, ctx.db);
@@ -602,8 +643,10 @@ export const incomeProblemsRouter = router({
       const filteredRows = compared.rows.filter((row) => {
         if (input.status && row.status !== input.status) return false;
         if (!search) return true;
+
         return normalizeName(`${row.phone} ${row.name}`).includes(search);
       });
+
       return {
         snapshot: {
           workbookName: snapshot.workbookName,
@@ -620,11 +663,13 @@ export const incomeProblemsRouter = router({
     .input(z.object({ dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), dbGroupKeys: z.array(z.string()).max(20), financeGroupKeys: z.array(z.string()).max(20) }))
     .query(async ({ ctx, input }) => {
       const snapshot = await getActiveSnapshot(ctx.tenantId, ctx.db);
+
       if (!snapshot) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Faol moliya snapshot yuklanmagan.' });
       const { from, to } = parseDateRange(input.dateFrom, input.dateTo);
       const projectRows = await loadProjectRows(ctx.tenantId, from, to, ctx.db);
       const dbMap = groupRows(projectRows);
       const financeMap = groupRows(snapshot.rows.filter((row) => row.paymentDate && row.paymentDate >= input.dateFrom && row.paymentDate <= input.dateTo));
+
       return {
         dbRows: input.dbGroupKeys.flatMap((key) => dbMap.get(key)?.rows || []).sort((a, b) => String(a.paymentDate || '').localeCompare(String(b.paymentDate || ''))),
         financeRows: input.financeGroupKeys.flatMap((key) => financeMap.get(key)?.rows || []).sort((a, b) => String(a.paymentDate || '').localeCompare(String(b.paymentDate || ''))),

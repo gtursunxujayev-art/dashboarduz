@@ -93,20 +93,24 @@ function hasSalesManagerRole(roles: unknown): boolean {
   }
   if (typeof roles === 'string') {
     const normalized = roles.trim().toLowerCase();
+
     if (SALES_MANAGER_ROLE_TOKENS.has(normalized)) {
       return true;
     }
+
     return normalized
       .split(/[,\s|;]+/)
       .map((token) => token.trim())
       .filter(Boolean)
       .some((token) => SALES_MANAGER_ROLE_TOKENS.has(token));
   }
+
   return false;
 }
 
 function normalizeCourseCategoryValue(value: unknown): string {
   const normalized = String(value || '').trim().toLowerCase();
+
   if (!normalized) {
     return 'offline';
   }
@@ -125,6 +129,7 @@ function normalizeCourseCategoryValue(value: unknown): string {
   if (normalized === "qo'shimcha_xizmat" || normalized === 'qoshimcha_xizmat' || normalized === 'additional') {
     return 'additional_service';
   }
+
   return 'offline';
 }
 
@@ -147,10 +152,12 @@ function extractSaleSubTariffId(meta: Prisma.JsonValue | null | undefined): stri
     return null;
   }
   const candidate = (meta as Record<string, unknown>)[SALE_SUB_TARIFF_META_KEY];
+
   if (typeof candidate !== 'string') {
     return null;
   }
   const normalized = candidate.trim();
+
   return normalized.length > 0 ? normalized : null;
 }
 
@@ -159,6 +166,7 @@ function resolveManagerLabel(
   fallbackId?: string | null,
 ): string {
   const candidate = manager?.name || manager?.username || manager?.id || fallbackId || null;
+
   return candidate ? String(candidate) : '-';
 }
 
@@ -253,10 +261,12 @@ async function refreshCustomerProfileFromLatestActiveSale(
         profileSubTariffId: null,
       },
     });
+
     return;
   }
 
   let nextSubTariffId: string | null = null;
+
   if (latestActiveSale.tariffId) {
     const customer = await tx.customer.findUnique({
       where: { id: params.customerId },
@@ -273,6 +283,7 @@ async function refreshCustomerProfileFromLatestActiveSale(
         },
         select: { id: true },
       });
+
       nextSubTariffId = subTariff?.id || null;
     }
   }
@@ -357,9 +368,11 @@ async function normalizeSaleChainChronology(tx: Prisma.TransactionClient, params
     })),
   ].sort((a, b) => {
     const byDate = a.entryDate.getTime() - b.entryDate.getTime();
+
     if (byDate !== 0) {
       return byDate;
     }
+
     return a.createdAt.getTime() - b.createdAt.getTime();
   });
 
@@ -405,6 +418,7 @@ async function normalizeSaleChainChronology(tx: Prisma.TransactionClient, params
 
   for (const repayment of chain.slice(1)) {
     const debtAmount = rollingDebt;
+
     rollingDebt = Math.max(debtAmount - Math.max(Number(repayment.paymentAmount || 0), 0), 0);
 
     await tx.income.update({
@@ -471,6 +485,7 @@ async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params
         deadline: true,
       },
     });
+
     if (!sourceSale) {
       return false;
     }
@@ -494,6 +509,7 @@ async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params
 
     for (const repayment of repayments) {
       const debtAmount = rollingDebt;
+
       rollingDebt = Math.max(debtAmount - Math.max(Number(repayment.paymentAmount || 0), 0), 0);
       await tx.income.update({
         where: { id: repayment.id },
@@ -532,6 +548,7 @@ async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params
         paymentAmount: true,
       },
     });
+
     if (!sale) {
       return null;
     }
@@ -562,10 +579,12 @@ async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params
       agreementAmount,
       chainRows,
     });
+
     return { sale, consistency };
   };
 
   let loaded = await loadConsistency(params.saleId);
+
   if (!loaded) {
     return;
   }
@@ -580,6 +599,7 @@ async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params
     ));
 
     let repaired = false;
+
     if (shouldAutoRepair) {
       repaired = await recomputeSaleChainDebtFields(sale.id);
       if (repaired) {
@@ -602,6 +622,7 @@ async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params
       chainRows: consistency.chainLength,
       repaired,
     };
+
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
       message: `Debt invariant mismatch after mutation: ${consistency.issues.join(', ')} | debug=${JSON.stringify(invariantDebug)}`,
@@ -735,6 +756,7 @@ async function fetchCourseOptionsSafe(tenantId: string, db: DbClient): Promise<A
       category: true,
     },
   });
+
   return (courses as Array<{ id: string; name: string; category: string }>).map((course) => ({
     ...course,
     category: normalizeCourseCategoryValue(course.category),
@@ -804,6 +826,7 @@ function getIncomeLifecycleLabel(status: string): string {
   if (status === INCOME_LIFECYCLE_REFUNDED) {
     return 'refunded';
   }
+
   return INCOME_LIFECYCLE_ACTIVE;
 }
 
@@ -823,14 +846,17 @@ function parseDateInput(input: string): Date {
 
 function parseCustomDateInReportTimezone(input: string, endOfDay: boolean): Date {
   const value = String(input || '').trim();
+
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date format: ${input}` });
   }
   const timestamp = `${value}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
   const date = new Date(timestamp);
+
   if (Number.isNaN(date.getTime())) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date: ${input}` });
   }
+
   return date;
 }
 
@@ -857,6 +883,7 @@ function normalizeTelegramSecret(rawValue: string | undefined): string | null {
     return null;
   }
   const normalized = rawValue.replace(/^['"`]+|['"`]+$/g, '').trim();
+
   return normalized || null;
 }
 
@@ -868,9 +895,11 @@ function parseTelegramGroupIdsFromEnvKeys(keys: readonly string[]): string[] {
 
 function resolveRefundGroupIds(): string[] {
   const preferred = parseTelegramGroupIdsFromEnvKeys(['REFUND_GROUP_ID', 'REFUND_GROUP_IDS']);
+
   if (preferred.length > 0) {
     return preferred;
   }
+
   return parseTelegramGroupIdsFromEnvKeys(REFUND_PAYMENT_GROUP_ENV_KEYS);
 }
 
@@ -915,11 +944,13 @@ async function fetchLatestResponsibleManagerByCustomer(params: {
   });
 
   const result = new Map<string, { managerUserId: string | null; managerLabel: string | null }>();
+
   for (const income of latestIncomes) {
     if (result.has(income.customerId)) {
       continue;
     }
     const managerLabel = income.manager?.name || income.manager?.username || income.managerUserId || null;
+
     result.set(income.customerId, {
       managerUserId: income.managerUserId || null,
       managerLabel,
@@ -931,16 +962,19 @@ async function fetchLatestResponsibleManagerByCustomer(params: {
 
 function buildTelegramChatIdCandidates(groupId: string): string[] {
   const normalized = String(groupId || '').trim();
+
   if (!normalized) {
     return [];
   }
 
   const candidates = new Set<string>([normalized]);
+
   if (/^-100\d+$/.test(normalized)) {
     candidates.add(`-${normalized.slice(4)}`);
   } else if (/^-\d+$/.test(normalized) && !normalized.startsWith('-100')) {
     candidates.add(`-100${normalized.slice(1)}`);
   }
+
   return Array.from(candidates);
 }
 
@@ -968,11 +1002,13 @@ function formatDateGmt5(dateValue: Date): string {
   const year = local.getUTCFullYear();
   const month = String(local.getUTCMonth() + 1).padStart(2, '0');
   const day = String(local.getUTCDate()).padStart(2, '0');
+
   return `${day}.${month}.${year}`;
 }
 
 function isOfflineOrIntensive(category: string | null | undefined): boolean {
   const normalized = String(category || '').trim().toLowerCase();
+
   return normalized === 'offline' || normalized === 'intensive' || normalized === 'additional_service';
 }
 
@@ -987,6 +1023,7 @@ function resolvePaymentGroupEnvKeysByCategory(category: string | null | undefine
   if (isOnlineCategory(category)) {
     return ONLINE_PAYMENT_GROUP_ENV_KEYS;
   }
+
   return null;
 }
 
@@ -1004,10 +1041,12 @@ async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient):
   });
 
   let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
+
   if (integration?.tokensEncrypted) {
     try {
       const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
       const integrationBotToken = normalizeTelegramSecret(tokens.botToken || tokens.token);
+
       botToken = integrationBotToken || botToken;
     } catch (error) {
       console.warn('[Income][Telegram] Failed to decrypt integration bot token, using TELEGRAM_BOT_TOKEN fallback if provided.', {
@@ -1038,8 +1077,10 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   };
 
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+
   if (!botToken) {
     console.warn('[Income][Telegram] Bot token is missing. Connect Telegram integration or set TELEGRAM_BOT_TOKEN.');
+
     return {
       attempted: false,
       delivered: false,
@@ -1078,6 +1119,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   }
 
   const saleIncomeId = createdIncome.type === 'new_sale' ? createdIncome.id : createdIncome.relatedDebtIncomeId;
+
   if (!saleIncomeId) {
     return {
       attempted: false,
@@ -1147,6 +1189,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
       },
     },
   });
+
   saleIncome = withCategory
     ? {
         ...withCategory,
@@ -1170,6 +1213,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   }
 
   const categoryGroupKeys = resolvePaymentGroupEnvKeysByCategory(saleIncome.course.category);
+
   if (!categoryGroupKeys) {
     return {
       attempted: false,
@@ -1181,13 +1225,16 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   }
 
   const groupIds = parseTelegramGroupIdsFromEnvKeys(categoryGroupKeys);
+
   if (!groupIds.length) {
     const normalizedCategory = String(saleIncome.course.category || '').trim().toLowerCase() || 'unknown';
+
     console.warn('[Income][Telegram] Group ID is missing for payment category', {
       tenantId: params.tenantId,
       category: normalizedCategory,
       expectedEnv: categoryGroupKeys,
     });
+
     return {
       attempted: false,
       delivered: false,
@@ -1216,6 +1263,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   });
 
   let subTariffHashtag: string | null = null;
+
   if (saleIncome.tariffId) {
     if (params.preferredSubTariffId) {
       const selectedSubTariff = await db.subTariff.findFirst({
@@ -1227,6 +1275,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
         },
         select: { name: true },
       });
+
       if (selectedSubTariff?.name) {
         subTariffHashtag = toHashtag(selectedSubTariff.name);
       }
@@ -1242,6 +1291,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
         orderBy: { name: 'asc' },
         select: { name: true },
       });
+
       if (firstActiveSubTariff?.name) {
         subTariffHashtag = toHashtag(firstActiveSubTariff.name);
       }
@@ -1292,14 +1342,17 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   const message = messageLines.join('\n');
   const splitMessage = (text: string): string[] => {
     const maxLength = 3500;
+
     if (text.length <= maxLength) {
       return [text];
     }
     const lines = text.split('\n');
     const chunks: string[] = [];
     let current = '';
+
     for (const line of lines) {
       const next = current ? `${current}\n${line}` : line;
+
       if (next.length > maxLength) {
         if (current) {
           chunks.push(current);
@@ -1317,6 +1370,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     if (current) {
       chunks.push(current);
     }
+
     return chunks.length ? chunks : [text];
   };
   const messageChunks = splitMessage(message);
@@ -1334,6 +1388,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
       sentCount += 1;
     } catch (error) {
       const errorMessage = String((error as any)?.message || error);
+
       sendErrors.push(`${groupId}: ${errorMessage}`);
       console.error('[Income][Telegram] Failed to send offline/intensive payment message', {
         tenantId: params.tenantId,
@@ -1438,12 +1493,15 @@ async function sendTariffChangeRequestedTelegram(params: {
   }
 
   const groupIds = parseTelegramGroupIdsFromEnvKeys(TARIFF_CHANGE_GROUP_ENV_KEYS);
+
   if (!groupIds.length) {
     console.warn('[Income][Telegram] Tariff change group is missing. Set TARIFF_CHANGE_GROUP_ID (or CHANGE_GROUP_ID).');
+
     return;
   }
 
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+
   if (!botToken) {
     return;
   }
@@ -1488,6 +1546,7 @@ async function sendTariffChangeRequestedTelegram(params: {
     agreementBlock,
     metaBlock,
   ].filter(Boolean).join('\n\n');
+
   for (const groupId of groupIds) {
     try {
       await telegramService.sendMessage(botToken, groupId, message, {
@@ -1567,12 +1626,15 @@ async function sendTariffChangeApprovedTelegram(params: {
   }
 
   const groupIds = parseTelegramGroupIdsFromEnvKeys(TARIFF_CHANGE_GROUP_ENV_KEYS);
+
   if (!groupIds.length) {
     console.warn('[Income][Telegram] Tariff change group is missing. Set TARIFF_CHANGE_GROUP_ID (or CHANGE_GROUP_ID).');
+
     return;
   }
 
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+
   if (!botToken) {
     return;
   }
@@ -1602,6 +1664,7 @@ async function sendTariffChangeApprovedTelegram(params: {
   ];
 
   const message = messageLines.join('\n');
+
   for (const groupId of groupIds) {
     try {
       await telegramService.sendMessage(botToken, groupId, message, {
@@ -1627,14 +1690,18 @@ async function sendRefundApprovedTelegram(params: {
   const { db } = params;
 
   const groupIds = resolveRefundGroupIds();
+
   if (!groupIds.length) {
     console.warn('[Income][Telegram] Refund group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
+
     return;
   }
 
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+
   if (!botToken) {
     console.warn('[Income][Telegram] Bot token is missing for refund message.');
+
     return;
   }
 
@@ -1747,14 +1814,18 @@ async function sendRefundRequestedTelegram(params: {
   const { db } = params;
 
   const groupIds = resolveRefundGroupIds();
+
   if (!groupIds.length) {
     console.warn('[Income][Telegram] Refund request group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
+
     return;
   }
 
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+
   if (!botToken) {
     console.warn('[Income][Telegram] Bot token is missing for refund request message.');
+
     return;
   }
 
@@ -1908,6 +1979,7 @@ function buildRefundDetailsBlock(params: {
     ...(params.reason ? [`Izoh: ${params.reason}`] : []),
     ...(params.reviewNote ? [`Javob izohi: ${params.reviewNote}`] : []),
   ];
+
   return details.join('\n');
 }
 
@@ -1917,17 +1989,20 @@ async function sendMessageToTelegramChat(
   text: string,
 ): Promise<void> {
   const normalized = String(chatId || '').trim();
+
   if (!normalized) {
     throw new Error('Empty Telegram chat id');
   }
 
   const candidates = buildTelegramChatIdCandidates(normalized);
   let lastError = '';
+
   for (const candidate of candidates) {
     try {
       await telegramService.sendMessage(botToken, candidate, text, {
         disable_web_page_preview: true,
       });
+
       return;
     } catch (error) {
       lastError = String((error as any)?.message || error);
@@ -1946,6 +2021,7 @@ async function notifyFinanceUsersRefundRequested(params: {
   const { db } = params;
 
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+
   if (!botToken) {
     return;
   }
@@ -2032,6 +2108,7 @@ async function notifyFinanceUsersRefundRequested(params: {
 
   for (const financeUser of financeUsers) {
     const chatId = String(financeUser.telegramId || '').trim();
+
     if (!chatId) {
       continue;
     }
@@ -2058,6 +2135,7 @@ async function notifyRefundRequesterReviewResult(params: {
   const { db } = params;
 
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+
   if (!botToken) {
     return;
   }
@@ -2116,6 +2194,7 @@ async function notifyRefundRequesterReviewResult(params: {
   });
 
   const requesterChatId = String(request?.requestedBy?.telegramId || '').trim();
+
   if (!request?.income?.customer || !requesterChatId) {
     return;
   }
@@ -2233,6 +2312,7 @@ function normalizeStringValue(value: BulkIncomeCell | undefined): string {
     if (!Number.isFinite(value)) {
       return '';
     }
+
     return String(value);
   }
 
@@ -2253,16 +2333,19 @@ function sanitizeTelegramUsername(value: string): string {
 
 function parseAmountValue(value: BulkIncomeCell | undefined): number {
   const normalized = normalizeStringValue(value);
+
   if (!normalized) {
     return 0;
   }
 
   const digits = normalized.replace(/[^\d-]/g, '');
+
   if (!digits || digits === '-') {
     return 0;
   }
 
   const parsed = Number.parseInt(digits, 10);
+
   if (Number.isNaN(parsed)) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid numeric amount: ${normalized}` });
   }
@@ -2273,6 +2356,7 @@ function parseAmountValue(value: BulkIncomeCell | undefined): number {
 function excelSerialToDateString(serial: number): string {
   const epoch = Date.UTC(1899, 11, 30);
   const milliseconds = epoch + Math.round(serial * 86400000);
+
   return new Date(milliseconds).toISOString().slice(0, 10);
 }
 
@@ -2281,10 +2365,12 @@ function parseDateValue(value: BulkIncomeCell | undefined): string {
     if (value > 1000 && value < 100000) {
       return excelSerialToDateString(value);
     }
+
     return new Date(value).toISOString().slice(0, 10);
   }
 
   const normalized = normalizeStringValue(value);
+
   if (!normalized) {
     return '';
   }
@@ -2294,6 +2380,7 @@ function parseDateValue(value: BulkIncomeCell | undefined): string {
 
 function resolveType(rawType: string): 'new_sale' | 'repayment' {
   const key = normalizeKey(rawType);
+
   if (!key) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Income type is required.' });
   }
@@ -2312,11 +2399,13 @@ function resolveType(rawType: string): 'new_sale' | 'repayment' {
 function getRowValue(row: Map<string, BulkIncomeCell>, candidateHeaders: string[]): BulkIncomeCell | undefined {
   for (const candidate of candidateHeaders) {
     const value = row.get(candidate);
+
     if (value === null || value === undefined) {
       continue;
     }
 
     const normalized = normalizeStringValue(value);
+
     if (!normalized) {
       continue;
     }
@@ -2329,13 +2418,16 @@ function getRowValue(row: Map<string, BulkIncomeCell>, candidateHeaders: string[
 
 function buildNormalizedRow(rawRow: BulkIncomeRow): Map<string, BulkIncomeCell> {
   const normalizedRow = new Map<string, BulkIncomeCell>();
+
   for (const [rawHeader, value] of Object.entries(rawRow)) {
     const normalizedHeader = normalizeKey(rawHeader);
+
     if (!normalizedHeader) {
       continue;
     }
     normalizedRow.set(normalizedHeader, value);
   }
+
   return normalizedRow;
 }
 
@@ -2402,10 +2494,12 @@ async function buildRowLookupContext(tenantId: string, db: DbClient): Promise<Ro
 
   const addManagerAlias = (alias: string, managerId: string) => {
     const normalizedAlias = normalizeKey(alias);
+
     if (!normalizedAlias) {
       return;
     }
     const existing = aliasCandidates.get(normalizedAlias) ?? new Set<string>();
+
     existing.add(managerId);
     aliasCandidates.set(normalizedAlias, existing);
   };
@@ -2430,6 +2524,7 @@ async function buildRowLookupContext(tenantId: string, db: DbClient): Promise<Ro
         .split(/\s+/)
         .map((token: string) => token.trim())
         .filter(Boolean);
+
       for (const token of tokens) {
         addManagerAlias(token, manager.id);
       }
@@ -2465,6 +2560,7 @@ async function buildRowLookupContext(tenantId: string, db: DbClient): Promise<Ro
       }
 
       const firstSubTariff = tariff.subTariffs[0];
+
       if (firstSubTariff?.id) {
         firstSubTariffIdByTariffId.set(tariff.id, firstSubTariff.id);
       }
@@ -2498,6 +2594,7 @@ function resolveManagerUserId(params: {
   }
 
   const exactMatch = lookupContext.managersByKey.get(normalizedRawValue);
+
   if (exactMatch) {
     return exactMatch;
   }
@@ -2537,11 +2634,13 @@ function parseBulkRowToCreateIncomeInput(
   });
 
   const entryDate = parseDateValue(getRowValue(row, ENTRY_DATE_HEADERS));
+
   if (!entryDate) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Row ${rowNumber}: date is required.` });
   }
 
   const customerNumber = sanitizeCustomerNumber(normalizeStringValue(getRowValue(row, CUSTOMER_NUMBER_HEADERS)));
+
   if (!customerNumber) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Row ${rowNumber}: customer number is required.` });
   }
@@ -2554,6 +2653,7 @@ function parseBulkRowToCreateIncomeInput(
 
   const customerName = normalizeStringValue(getRowValue(row, CUSTOMER_NAME_HEADERS)) || undefined;
   const telegramUsernameRaw = sanitizeTelegramUsername(normalizeStringValue(getRowValue(row, TELEGRAM_HEADERS)));
+
   if (telegramUsernameRaw && !TELEGRAM_USERNAME_REGEX.test(telegramUsernameRaw)) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -2568,6 +2668,7 @@ function parseBulkRowToCreateIncomeInput(
   if (type === 'new_sale') {
     const courseRaw = normalizeStringValue(getRowValue(row, COURSE_HEADERS));
     const courseId = lookupContext.coursesByKey.get(normalizeKey(courseRaw));
+
     if (!courseId) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -2577,6 +2678,7 @@ function parseBulkRowToCreateIncomeInput(
 
     const tariffRaw = normalizeStringValue(getRowValue(row, TARIFF_HEADERS));
     const tariffId = lookupContext.tariffsByCourseIdAndKey.get(buildLookupKey(courseId, tariffRaw));
+
     if (!tariffId) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -2586,6 +2688,7 @@ function parseBulkRowToCreateIncomeInput(
 
     const subTariffRaw = normalizeStringValue(getRowValue(row, SUB_TARIFF_HEADERS));
     let subTariffId: string | undefined;
+
     if (subTariffRaw) {
       subTariffId = lookupContext.subTariffsByTariffIdAndKey.get(buildLookupKey(tariffId, subTariffRaw));
       if (!subTariffId) {
@@ -2599,6 +2702,7 @@ function parseBulkRowToCreateIncomeInput(
     }
 
     const coursePriceAmount = parseAmountValue(getRowValue(row, COURSE_PRICE_HEADERS));
+
     if (coursePriceAmount <= 0) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -2690,19 +2794,23 @@ function parseCsvRows(csvContent: string): BulkIncomeRow[] {
   }
 
   const headerRow = rows[0] ?? [];
+
   if (!headerRow.length) {
     return [];
   }
   const bodyRows = rows.slice(1);
   const headers = headerRow.map((header) => header.trim());
+
   return bodyRows.map((line) => {
     const result: BulkIncomeRow = {};
+
     headers.forEach((header, index) => {
       if (!header) {
         return;
       }
       result[header] = line[index] ?? '';
     });
+
     return result;
   });
 }
@@ -2710,11 +2818,13 @@ function parseCsvRows(csvContent: string): BulkIncomeRow[] {
 function resolveGoogleSheetCsvUrl(sheetUrlInput: string): string {
   const trimmedInput = sheetUrlInput.trim();
   const spreadsheetIdPattern = /^[a-zA-Z0-9-_]{20,}$/;
+
   if (spreadsheetIdPattern.test(trimmedInput)) {
     return `https://docs.google.com/spreadsheets/d/${trimmedInput}/export?format=csv`;
   }
 
   let parsedUrl: URL;
+
   try {
     parsedUrl = new URL(trimmedInput);
   } catch {
@@ -2722,6 +2832,7 @@ function resolveGoogleSheetCsvUrl(sheetUrlInput: string): string {
   }
 
   const host = parsedUrl.hostname.toLowerCase();
+
   if (!host.includes('google.com')) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -2734,6 +2845,7 @@ function resolveGoogleSheetCsvUrl(sheetUrlInput: string): string {
   }
 
   const idMatch = parsedUrl.pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+
   if (!idMatch?.[1]) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -2777,11 +2889,13 @@ async function createIncomeEntry(params: {
     db,
   });
   const entryDate = parseDateInput(input.entryDate);
+
   if (entryDate > new Date()) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: "Kelajakdagi sana kiritish mumkin emas. Bugungi yoki o'tgan sanani tanlang." });
   }
   const deadline = input.deadline ? parseDateInput(input.deadline) : null;
   const customerNumber = sanitizeCustomerNumber(input.customerNumber.trim());
+
   if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -2792,6 +2906,7 @@ async function createIncomeEntry(params: {
   const normalizedTelegramUsername = input.telegramUsername
     ? sanitizeTelegramUsername(input.telegramUsername.trim())
     : null;
+
   if (normalizedTelegramUsername && !TELEGRAM_USERNAME_REGEX.test(normalizedTelegramUsername)) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -2916,6 +3031,7 @@ async function createIncomeEntry(params: {
     }
 
     const remainingDebtAmount = Math.max(input.coursePriceAmount - input.paymentAmount, 0);
+
     createdIncome = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const createdSale = await tx.income.create({
         data: {
@@ -2962,6 +3078,7 @@ async function createIncomeEntry(params: {
     });
   } else {
     let debtSourceId = input.debtSourceIncomeId;
+
     if (!debtSourceId) {
       const candidateDebts = await db.income.findMany({
         where: {
@@ -2986,6 +3103,7 @@ async function createIncomeEntry(params: {
         db,
       });
       const latestDebt = candidateDebts.find((sale) => (candidateMetrics.get(sale.id)?.currentDebtAmount ?? 0) > 0);
+
       debtSourceId = latestDebt?.id;
     }
 
@@ -3056,6 +3174,7 @@ async function createIncomeEntry(params: {
     }
 
     const remainingDebtAmount = Math.max(sourceCurrentDebt - input.paymentAmount, 0);
+
     createdIncome = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const repayment = await tx.income.create({
         data: {
@@ -3086,6 +3205,7 @@ async function createIncomeEntry(params: {
         tenantId,
         saleId: debtSource.id,
       });
+
       if (normalized.didReorder) {
         chronologyReordered = true;
         chronologyCanonicalSaleId = normalized.canonicalSaleId;
@@ -3098,6 +3218,7 @@ async function createIncomeEntry(params: {
       const refreshedRepayment = await tx.income.findUnique({
         where: { id: repayment.id },
       });
+
       return refreshedRepayment ?? repayment;
     }, {
       // Repayment flow can touch long chains; avoid premature interactive transaction close.
@@ -3233,6 +3354,7 @@ type HistoricalProgressState = {
 
 function asHistoricalProgressState(value: unknown): HistoricalProgressState {
   const raw = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+
   return {
     stage: String(raw.stage || HISTORICAL_IMPORT_STATUS_PREPARED),
     totalRows: Number(raw.totalRows || 0),
@@ -3265,6 +3387,7 @@ function isHistoricalImportSessionStale(status: string, updatedAt: Date | null |
   if (!(updatedAt instanceof Date)) {
     return false;
   }
+
   return Date.now() - updatedAt.getTime() > HISTORICAL_IMPORT_STALE_MS;
 }
 
@@ -3359,6 +3482,7 @@ async function ensureHistoricalCatalogItems(params: {
     });
 
     const tariffsByKey = ensuredCourses.get(normalizeKey(item.courseName))?.tariffsByKey ?? new Map<string, string>();
+
     for (const tariffName of item.tariffs) {
       const tariff = await db.tariff.upsert({
         where: {
@@ -3380,6 +3504,7 @@ async function ensureHistoricalCatalogItems(params: {
           name: true,
         },
       });
+
       tariffsByKey.set(normalizeKey(tariff.name), tariff.id);
     }
 
@@ -3398,6 +3523,7 @@ async function ensureHistoricalCatalogItems(params: {
 
   const courseIdByKey = new Map<string, string>();
   const tariffIdByCourseAndKey = new Map<string, string>();
+
   for (const course of courses) {
     courseIdByKey.set(normalizeKey(course.name), course.id);
     for (const tariff of course.tariffs) {
@@ -3445,6 +3571,7 @@ async function annotateHistoricalIncome(params: {
 function shouldBackfillCustomerText(currentValue: string | null | undefined, fallbackValue: string | null | undefined, customerNumber?: string) {
   const current = String(currentValue || '').trim();
   const fallback = String(fallbackValue || '').trim();
+
   if (!fallback) {
     return false;
   }
@@ -3457,6 +3584,7 @@ function shouldBackfillCustomerText(currentValue: string | null | undefined, fal
   if (/^\d+$/.test(current) && current.length >= 7) {
     return true;
   }
+
   return false;
 }
 
@@ -3545,6 +3673,7 @@ export const customerIncomeRouter = router({
     ]);
 
     let managers = managersInitial;
+
     if ((managersInitial as Array<unknown>).length === 0) {
       managers = await ctx.db.user.findMany({
         where: {
@@ -3636,6 +3765,7 @@ export const customerIncomeRouter = router({
         telegramUsername: string | null;
       }>).map((customer) => {
         const responsibleManager = responsibleManagerMap.get(customer.id);
+
         return {
           ...customer,
           responsibleManagerUserId: responsibleManager?.managerUserId ?? null,
@@ -3738,6 +3868,7 @@ export const customerIncomeRouter = router({
 
       return customers.map((customer) => {
         const responsibleManager = responsibleManagerMap.get(customer.id);
+
         return {
           ...customer,
           responsibleManagerUserId: responsibleManager?.managerUserId ?? null,
@@ -3822,11 +3953,13 @@ export const customerIncomeRouter = router({
     .input(createCourseSchema)
     .mutation(async ({ ctx, input }) => {
       const name = input.name.trim();
+
       if (!name) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course name is required.' });
       }
       const startDate = input.startDate ? parseDateInput(input.startDate) : null;
       const endDate = input.endDate ? parseDateInput(input.endDate) : null;
+
       if (startDate && endDate && endDate.getTime() < startDate.getTime()) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -3875,6 +4008,7 @@ export const customerIncomeRouter = router({
       }
 
       const name = input.name.trim();
+
       if (!name) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Tariff name is required.' });
       }
@@ -3921,6 +4055,7 @@ export const customerIncomeRouter = router({
       }
 
       const name = input.name.trim();
+
       if (!name) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Sub-tariff name is required.' });
       }
@@ -3987,6 +4122,7 @@ export const customerIncomeRouter = router({
         isActive?: boolean;
         isHiddenFromIncomeForm?: boolean;
       } = {};
+
       if (typeof input.name === 'string') {
         data.name = input.name.trim();
       }
@@ -4053,6 +4189,7 @@ export const customerIncomeRouter = router({
       }
 
       const data: { name?: string; isActive?: boolean } = {};
+
       if (typeof input.name === 'string') {
         data.name = input.name.trim();
       }
@@ -4095,6 +4232,7 @@ export const customerIncomeRouter = router({
       }
 
       const data: { name?: string; isActive?: boolean } = {};
+
       if (typeof input.name === 'string') {
         data.name = input.name.trim();
       }
@@ -4206,6 +4344,7 @@ export const customerIncomeRouter = router({
       }
 
       const parsedEntryDate = input.entryDate ? parseDateInput(input.entryDate) : null;
+
       if (parsedEntryDate && parsedEntryDate > new Date()) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: "Kelajakdagi sana kiritish mumkin emas. Bugungi yoki o'tgan sanani tanlang." });
       }
@@ -4230,6 +4369,7 @@ export const customerIncomeRouter = router({
         });
 
         const nextManagerUserId = input.managerUserId ?? income.managerUserId;
+
         await assertManagerBelongsToTenantWithOptions({
           tenantId: ctx.tenantId,
           managerUserId: nextManagerUserId,
@@ -4310,6 +4450,7 @@ export const customerIncomeRouter = router({
         }
 
         let nextSubTariffId: string | null = null;
+
         if (requestedSubTariffId) {
           const subTariff = await ctx.db.subTariff.findFirst({
             where: {
@@ -4334,7 +4475,9 @@ export const customerIncomeRouter = router({
         const repaymentDebtStates = linkedRepayments.map((repayment) => {
           const debtAmount = rollingDebt;
           const remainingDebtAmount = Math.max(debtAmount - Number(repayment.paymentAmount || 0), 0);
+
           rollingDebt = remainingDebtAmount;
+
           return {
             id: repayment.id,
             debtAmount,
@@ -4397,16 +4540,19 @@ export const customerIncomeRouter = router({
               tenantId: ctx.tenantId,
               saleId: income.id,
             });
+
             if (normalized.didReorder) {
               chronologyReordered = true;
               chronologyCanonicalSaleId = normalized.canonicalSaleId;
               const refreshedIncome = await tx.income.findUnique({
                 where: { id: income.id },
               });
+
               await assertSaleChainDebtInvariant(tx, {
                 tenantId: ctx.tenantId,
                 saleId: normalized.canonicalSaleId,
               });
+
               return refreshedIncome ?? updatedSale;
             }
           }
@@ -4466,6 +4612,7 @@ export const customerIncomeRouter = router({
       }
 
       const nextManagerUserId = input.managerUserId ?? income.managerUserId;
+
       await assertManagerBelongsToTenantWithOptions({
         tenantId: ctx.tenantId,
         managerUserId: nextManagerUserId,
@@ -4474,6 +4621,7 @@ export const customerIncomeRouter = router({
       });
 
       const nextPaymentAmount = input.paymentAmount ?? income.paymentAmount;
+
       if (nextPaymentAmount <= 0) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -4510,6 +4658,7 @@ export const customerIncomeRouter = router({
       }
 
       const sourceDebtAtRepaymentTime = income.debtAmount ?? (sourceIncome.remainingDebtAmount + income.paymentAmount);
+
       if (nextPaymentAmount > sourceDebtAtRepaymentTime) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -4559,16 +4708,19 @@ export const customerIncomeRouter = router({
           tenantId: ctx.tenantId,
           saleId: sourceIncome.id,
         });
+
         if (normalized.didReorder) {
           chronologyReordered = true;
           chronologyCanonicalSaleId = normalized.canonicalSaleId;
           const refreshedIncome = await tx.income.findUnique({
             where: { id: income.id },
           });
+
           await assertSaleChainDebtInvariant(tx, {
             tenantId: ctx.tenantId,
             saleId: normalized.canonicalSaleId,
           });
+
           return refreshedIncome ?? updatedRow;
         }
 
@@ -4868,6 +5020,7 @@ export const customerIncomeRouter = router({
           : [];
 
         const createdByLabelByIncomeId = new Map<string, string>();
+
         for (const log of auditLogs) {
           if (!log.resourceId || createdByLabelByIncomeId.has(log.resourceId)) {
             continue;
@@ -4877,6 +5030,7 @@ export const customerIncomeRouter = router({
             || log.user?.phone
             || log.user?.email
             || 'qo‘lda';
+
           createdByLabelByIncomeId.set(log.resourceId, label);
         }
   
@@ -4979,6 +5133,7 @@ export const customerIncomeRouter = router({
       );
 
       const subTariffNameById = new Map<string, string>();
+
       if (subTariffIds.length > 0) {
         const subTariffs = await ctx.db.subTariff.findMany({
           where: {
@@ -4990,6 +5145,7 @@ export const customerIncomeRouter = router({
             name: true,
           },
         });
+
         for (const subTariff of subTariffs) {
           subTariffNameById.set(subTariff.id, subTariff.name);
         }
@@ -5004,6 +5160,7 @@ export const customerIncomeRouter = router({
           const profileSubTariffId = income.customer?.profileSubTariffId || null;
           const subTariffId = saleSubTariffId || profileSubTariffId || null;
           const subTariffName = subTariffId ? subTariffNameById.get(subTariffId) || null : null;
+
           return {
             id: income.id,
             entryDate: income.entryDate,
@@ -5114,8 +5271,10 @@ export const customerIncomeRouter = router({
         : [];
 
       const paidBySaleId = new Map<string, number>();
+
       for (const payment of saleChainPayments) {
         const saleId = payment.relatedDebtIncomeId || payment.id;
+
         paidBySaleId.set(saleId, (paidBySaleId.get(saleId) ?? 0) + Number(payment.paymentAmount || 0));
       }
 
@@ -5277,6 +5436,7 @@ export const customerIncomeRouter = router({
       maybeAddSubTariffId(customer.profileSubTariffId || null);
 
       const subTariffNameById = new Map<string, string>();
+
       if (collectedSubTariffIds.size > 0) {
         const subTariffs = await ctx.db.subTariff.findMany({
           where: {
@@ -5288,6 +5448,7 @@ export const customerIncomeRouter = router({
             name: true,
           },
         });
+
         for (const subTariff of subTariffs) {
           subTariffNameById.set(subTariff.id, subTariff.name);
         }
@@ -5303,6 +5464,7 @@ export const customerIncomeRouter = router({
               ? (customer.profileSubTariffId || null)
               : null;
             const effectiveSubTariffId = saleSubTariffId || profileMatchedSubTariffId;
+
             return effectiveSubTariffId ? subTariffNameById.get(effectiveSubTariffId) || null : null;
           })(),
           saleIncomeId: sale.id,
@@ -5318,6 +5480,7 @@ export const customerIncomeRouter = router({
         payments: paymentHistory.map((income) => {
           const fallbackCourse = income.relatedDebtIncome?.course?.name || '-';
           const fallbackTariff = income.relatedDebtIncome?.tariff?.name || '-';
+
           return {
             id: income.id,
             type: income.type,
@@ -5335,6 +5498,7 @@ export const customerIncomeRouter = router({
                 ? (customer.profileSubTariffId || null)
                 : null;
               const effectiveSubTariffId = saleSubTariffId || profileMatchedSubTariffId;
+
               return effectiveSubTariffId ? subTariffNameById.get(effectiveSubTariffId) || null : null;
             })(),
             managerLabel: resolveManagerLabel(income.manager),
@@ -5426,6 +5590,7 @@ export const customerIncomeRouter = router({
       } satisfies Prisma.IncomeAdjustmentRequestSelect;
 
       let requests: Array<any> = [];
+
       requests = await ctx.db.incomeAdjustmentRequest.findMany({
         where,
         orderBy: [{ createdAt: 'desc' }],
@@ -5476,9 +5641,11 @@ export const customerIncomeRouter = router({
 
       const profileSubTariffNameById = new Map(profileSubTariffs.map((subTariff) => [subTariff.id, subTariff.name]));
       const newTariffSubTariffNamesByTariffId = new Map<string, Set<string>>();
+
       for (const subTariff of newTariffSubTariffs) {
         const tariffId = subTariff.tariffId;
         const bucket = newTariffSubTariffNamesByTariffId.get(tariffId) || new Set<string>();
+
         bucket.add(subTariff.name.trim().toLowerCase());
         newTariffSubTariffNamesByTariffId.set(tariffId, bucket);
       }
@@ -5497,14 +5664,17 @@ export const customerIncomeRouter = router({
           const oldSubTariffName = request.income.customer.profileSubTariffId
             ? profileSubTariffNameById.get(request.income.customer.profileSubTariffId) || null
             : null;
+
           if (!oldSubTariffName || !request.newTariff?.id) {
             return null;
           }
           const normalizedOldName = oldSubTariffName.trim().toLowerCase();
           const targetTariffNames = newTariffSubTariffNamesByTariffId.get(request.newTariff.id);
+
           if (!targetTariffNames || !targetTariffNames.has(normalizedOldName)) {
             return null;
           }
+
           return oldSubTariffName;
         })(),
         requestedByLabel: request.requestedBy.name || request.requestedBy.username || request.requestedBy.id,
@@ -5600,6 +5770,7 @@ export const customerIncomeRouter = router({
       }
 
       let sourceIncome = sourceIncomeRaw;
+
       if (input.type === ADJUSTMENT_TYPE_REFUND && sourceIncomeRaw.type === 'repayment') {
         if (!sourceIncomeRaw.relatedDebtIncomeId) {
           throw new TRPCError({
@@ -6239,6 +6410,7 @@ export const customerIncomeRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const customerNumber = sanitizeCustomerNumber(input.customerNumber.trim());
+
       if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -6247,6 +6419,7 @@ export const customerIncomeRouter = router({
       }
 
       const name = input.name.trim();
+
       if (!name) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -6257,6 +6430,7 @@ export const customerIncomeRouter = router({
       const normalizedTelegramUsername = input.telegramUsername
         ? sanitizeTelegramUsername(input.telegramUsername.trim())
         : null;
+
       if (normalizedTelegramUsername && !TELEGRAM_USERNAME_REGEX.test(normalizedTelegramUsername)) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -6286,6 +6460,7 @@ export const customerIncomeRouter = router({
         },
         select: { id: true },
       });
+
       if (existing) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -6298,6 +6473,7 @@ export const customerIncomeRouter = router({
           where: { id: input.courseId, tenantId: ctx.tenantId, isActive: true },
           select: { id: true },
         });
+
         if (!course) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected course not found.' });
         }
@@ -6312,6 +6488,7 @@ export const customerIncomeRouter = router({
           },
           select: { id: true },
         });
+
         if (!tariff) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected tariff not found for course.' });
         }
@@ -6326,6 +6503,7 @@ export const customerIncomeRouter = router({
           },
           select: { id: true },
         });
+
         if (!subTariff) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected sub-tariff not found for tariff.' });
         }
@@ -6369,6 +6547,7 @@ export const customerIncomeRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const customerNumber = sanitizeCustomerNumber(input.customerNumber.trim());
+
       if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -6377,6 +6556,7 @@ export const customerIncomeRouter = router({
       }
 
       const name = input.name.trim();
+
       if (!name) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -6484,6 +6664,7 @@ export const customerIncomeRouter = router({
           where: { id: courseId, tenantId: ctx.tenantId, isActive: true },
           select: { id: true },
         });
+
         if (!course) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected course not found.' });
         }
@@ -6493,6 +6674,7 @@ export const customerIncomeRouter = router({
           where: { id: tariffId, tenantId: ctx.tenantId, courseId, isActive: true },
           select: { id: true },
         });
+
         if (!tariff) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected tariff not found for course.' });
         }
@@ -6502,6 +6684,7 @@ export const customerIncomeRouter = router({
           where: { id: subTariffId, tenantId: ctx.tenantId, tariffId, isActive: true },
           select: { id: true },
         });
+
         if (!subTariff) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected sub-tariff not found for tariff.' });
         }
@@ -6537,6 +6720,7 @@ export const customerIncomeRouter = router({
           });
 
           const saleIds = activeSales.map((sale) => sale.id);
+
           if (saleIds.length > 0) {
             const salesUpdate = await tx.income.updateMany({
               where: {
@@ -6548,6 +6732,7 @@ export const customerIncomeRouter = router({
                 tariffId,
               },
             });
+
             updatedSalesCount = salesUpdate.count;
 
             const repaymentsUpdate = await tx.income.updateMany({
@@ -6562,6 +6747,7 @@ export const customerIncomeRouter = router({
                 tariffId,
               },
             });
+
             updatedRepaymentsCount = repaymentsUpdate.count;
           }
         }
@@ -6698,6 +6884,7 @@ export const customerIncomeRouter = router({
         },
       });
       const saleChainIds = saleChain.map((item) => item.id);
+
       if (!saleChainIds.length) {
         return {
           success: true,
@@ -6753,6 +6940,7 @@ export const customerIncomeRouter = router({
             },
             select: { id: true },
           });
+
           if (existingPending) {
             throw new TRPCError({
               code: 'PRECONDITION_FAILED',
@@ -6783,6 +6971,7 @@ export const customerIncomeRouter = router({
             },
             select: { id: true },
           });
+
           createdRefundRequestId = request.id;
 
           await refreshCustomerProfileFromLatestActiveSale(tx, {
@@ -6885,6 +7074,7 @@ export const customerIncomeRouter = router({
             tenantId: ctx.tenantId,
             saleId: targetSale.id,
           });
+
           if (normalized.didReorder) {
             relinkedRepaymentIds = normalized.reorderedIncomeIds.filter((id) => id !== normalized.canonicalSaleId);
           }
@@ -7087,8 +7277,10 @@ export const customerIncomeRouter = router({
         });
       }
       let nextSubTariffId: string | null = input.newSubTariffId || null;
+
       if (input.newTariffId) {
         const subTariffIdSet = new Set(activeSubTariffs.map((item) => item.id));
+
         if (nextSubTariffId && !subTariffIdSet.has(nextSubTariffId)) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
@@ -7096,6 +7288,7 @@ export const customerIncomeRouter = router({
           });
         }
         const firstActiveSubTariff = activeSubTariffs[0];
+
         if (!nextSubTariffId && firstActiveSubTariff) {
           nextSubTariffId = firstActiveSubTariff.id;
         }
@@ -7117,6 +7310,7 @@ export const customerIncomeRouter = router({
           status: ADJUSTMENT_STATUS_PENDING,
         },
       });
+
       if (pendingAdjustmentCount > 0) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -7433,6 +7627,7 @@ export const customerIncomeRouter = router({
         ),
       );
       const missingSaleSubTariffIds = saleSubTariffIds.filter((id) => !profileSubTariffNameById.has(id));
+
       if (missingSaleSubTariffIds.length > 0) {
         const additionalSubTariffs = await ctx.db.subTariff.findMany({
           where: {
@@ -7441,6 +7636,7 @@ export const customerIncomeRouter = router({
           },
           select: { id: true, name: true },
         });
+
         for (const subTariff of additionalSubTariffs) {
           profileSubTariffNameById.set(subTariff.id, subTariff.name);
         }
@@ -7505,6 +7701,7 @@ export const customerIncomeRouter = router({
         const labelParts = [sale.course?.name || null, sale.tariff?.name || null, subTariffName].filter(Boolean);
         const label = labelParts.length ? labelParts.join(' / ') : "Noma'lum kurs";
         const list = courseEntriesByCustomer.get(sale.customerId) || [];
+
         list.push({
           saleIncomeId: sale.id,
           courseId: sale.course?.id || null,
@@ -7535,6 +7732,7 @@ export const customerIncomeRouter = router({
         const matchesCourseFilter = (!input?.courseId || sale.course?.id === input.courseId)
           && (!input?.tariffId || sale.tariff?.id === input.tariffId);
         const isTechnicalSale = getSaleAgreementAmount(sale) === 1;
+
         if (matchesCourseFilter && !isTechnicalSale) {
           current.totalDebtAmount += saleDebt;
           current.totalPaidAmount += salePaid;
@@ -7587,6 +7785,7 @@ export const customerIncomeRouter = router({
         ? new Set(
             customerIds.filter((customerId) => {
               const entries = courseEntriesByCustomer.get(customerId) || [];
+
               return entries.some((entry) =>
                 entry.subTariffId === input.subTariffId
                 && (!input.courseId || entry.courseId === input.courseId)
@@ -7601,12 +7800,14 @@ export const customerIncomeRouter = router({
           }
           const aggregate = aggregatesByCustomer.get(customerId);
           const hasDebt = Boolean(aggregate?.hasDebt);
+
           if (input.debtFilter === 'with_debt') {
             return hasDebt;
           }
           if (input.debtFilter === 'without_debt') {
             return !hasDebt;
           }
+
           return true;
         }),
       );
@@ -7650,6 +7851,7 @@ export const customerIncomeRouter = router({
           const mergedCourses = profileCourseLabel && !aggregateCourses.includes(profileCourseLabel)
             ? [profileCourseLabel, ...aggregateCourses]
             : aggregateCourses;
+
           return {
             ...customer,
             totalDebtAmount: aggregate?.totalDebtAmount ?? 0,
@@ -7700,5 +7902,4 @@ export const customerIncomeRouter = router({
       };
     }),
 });
-
 

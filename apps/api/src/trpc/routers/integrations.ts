@@ -36,6 +36,7 @@ function normalizeBaseUrl(url?: string): string | null {
   if (!url) {
     return null;
   }
+
   return url.replace(/\/+$/, '');
 }
 
@@ -43,6 +44,7 @@ type AmoFailureReason = 'decrypt_failed' | 'token_invalid' | 'network_timeout' |
 
 function detectAmoFailureReason(error: unknown): AmoFailureReason {
   const message = String((error as any)?.message || '').toLowerCase();
+
   if (message.includes('failed to decrypt integration tokens')) {
     return 'decrypt_failed';
   }
@@ -58,6 +60,7 @@ function detectAmoFailureReason(error: unknown): AmoFailureReason {
   ) {
     return 'token_invalid';
   }
+
   return 'amo_unavailable';
 }
 
@@ -75,6 +78,7 @@ function amoFailureHelp(reason: AmoFailureReason): string | null {
   if (reason === 'network_timeout') {
     return "Tarmoq kechikishi kuzatildi. Qayta urining.";
   }
+
   return null;
 }
 
@@ -82,14 +86,17 @@ function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }
+
   return value as Record<string, unknown>;
 }
 
 function parseTelegramDailyReportCourseIds(config: unknown): string[] {
   const raw = asObject(config).telegramDailyReportCourseIds;
+
   if (!Array.isArray(raw)) {
     return [];
   }
+
   return Array.from(new Set(
     raw
       .map((value) => String(value || '').trim())
@@ -103,28 +110,34 @@ function telegramRecipientStorageErrorMessage(): string {
 
 function resolveTelegramBotToken(tokensEncrypted: string | null): string {
   let botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+
   if (!tokensEncrypted) return botToken;
   try {
     const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(tokensEncrypted);
+
     return String(tokens.botToken || tokens.token || botToken).trim();
   } catch (error) {
     if (!botToken) throw error;
+
     return botToken;
   }
 }
 
 function getPublicApiBaseUrl(): string {
   const explicit = normalizeBaseUrl(process.env.PUBLIC_API_URL || process.env.API_URL);
+
   if (explicit) {
     return explicit;
   }
 
   const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+
   if (railwayDomain) {
     return `https://${railwayDomain.replace(/\/+$/, '')}`;
   }
 
   const port = process.env.PORT || '3001';
+
   return `http://localhost:${port}`;
 }
 
@@ -142,33 +155,41 @@ function normalizeBranchWhitelist(branchWhitelist?: string[]): string[] {
   }
   const seen = new Set<string>();
   const normalized: string[] = [];
+
   for (const raw of branchWhitelist) {
     const branch = String(raw || '').trim();
+
     if (!branch) continue;
     const key = branch.toLowerCase();
+
     if (seen.has(key)) continue;
     seen.add(key);
     normalized.push(branch);
   }
+
   return normalized;
 }
 
 function normalizeUnmatchedUserPolicy(value: unknown): 'store' | 'ignore' {
   const normalized = String(value || '').trim().toLowerCase();
+
   return normalized === 'ignore' ? 'ignore' : 'store';
 }
 
 function parseFaceIdUserExternalMap(config: unknown): Record<string, string> {
   const raw = asObject(asObject(config).userExternalMap);
   const result: Record<string, string> = {};
+
   for (const [externalUserIdRaw, userIdRaw] of Object.entries(raw)) {
     const externalUserId = String(externalUserIdRaw || '').trim();
     const userId = String(userIdRaw || '').trim();
+
     if (!externalUserId || !userId) {
       continue;
     }
     result[externalUserId] = userId;
   }
+
   return result;
 }
 
@@ -177,6 +198,7 @@ function toTashkentDateKey(date: Date): string {
   const year = shifted.getUTCFullYear();
   const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
   const day = String(shifted.getUTCDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
@@ -186,6 +208,7 @@ async function fetchAmoCRMAccountByToken(accessToken: string, baseUrl: string) {
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
+
   try {
     response = await fetch(`${baseUrl}/api/v4/account`, {
       headers: {
@@ -246,11 +269,13 @@ export const integrationsRouter = router({
     .input(amocrmConnectSchema)
     .mutation(async ({ input, ctx }) => {
       const resolvedBaseUrl = normalizeBaseUrl(input.baseUrl || process.env.AMOCRM_BASE_URL || 'https://www.amocrm.ru');
+
       if (!resolvedBaseUrl) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid AmoCRM base URL' });
       }
 
       let accountInfo: Awaited<ReturnType<typeof fetchAmoCRMAccountByToken>>;
+
       try {
         accountInfo = await fetchAmoCRMAccountByToken(input.longLivedToken.trim(), resolvedBaseUrl);
       } catch (error: any) {
@@ -258,12 +283,14 @@ export const integrationsRouter = router({
           throw error;
         }
         const reason = detectAmoFailureReason(error);
+
         throw new TRPCError({
           code: reason === 'network_timeout' ? 'TIMEOUT' : 'BAD_REQUEST',
           message: amoFailureMessage('AmoCRM ulanishini tekshirib bo‘lmadi', reason),
         });
       }
       const accountId = accountInfo.id ? String(accountInfo.id) : null;
+
       if (!accountId) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'AmoCRM account id was not returned' });
       }
@@ -349,6 +376,7 @@ export const integrationsRouter = router({
   getAmoCRMPipelines: adminProcedure.query(async ({ ctx }) => {
     let amoContext: Awaited<ReturnType<typeof getTenantAmoCRMContext>> = null;
     let contextError: unknown = null;
+
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
@@ -364,6 +392,7 @@ export const integrationsRouter = router({
     if (contextError) {
       const reason = detectAmoFailureReason(contextError);
       const help = amoFailureHelp(reason);
+
       console.warn('[AmoCRM][Pipelines] Context load failed', {
         tenantId: ctx.tenantId,
         reason,
@@ -383,6 +412,7 @@ export const integrationsRouter = router({
     }
 
     let pipelinesResponse: Awaited<ReturnType<typeof amocrmService.fetchPipelines>>;
+
     try {
       pipelinesResponse = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
     } catch (firstError: any) {
@@ -390,6 +420,7 @@ export const integrationsRouter = router({
         pipelinesResponse = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
       } catch (secondError: any) {
         const reason = detectAmoFailureReason(secondError || firstError);
+
         console.warn('[AmoCRM][Pipelines] Fetch failed', {
           tenantId: ctx.tenantId,
           reason,
@@ -397,6 +428,7 @@ export const integrationsRouter = router({
           error: String((secondError as any)?.message || (firstError as any)?.message || secondError || firstError),
         });
         const help = amoFailureHelp(reason);
+
         throw new TRPCError({
           code: reason === 'network_timeout' ? 'TIMEOUT' : 'BAD_REQUEST',
           message: [amoFailureMessage("AmoCRM pipeline'larini yuklab bo'lmadi", reason), help].filter(Boolean).join('. '),
@@ -425,6 +457,7 @@ export const integrationsRouter = router({
     .input(z.object({ pipelineIds: z.array(z.string()) }))
     .mutation(async ({ input, ctx }) => {
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
+
       if (!amoContext) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -520,11 +553,13 @@ export const integrationsRouter = router({
         where: { tenantId_type: { tenantId: ctx.tenantId, type: 'amocrm' } },
         select: { id: true, status: true, config: true },
       });
+
       if (input.source === 'amocrm' && integration?.status !== 'active') {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'AmoCRM integration is not connected.' });
       }
       if (integration) {
         const config = integration.config && typeof integration.config === 'object' ? (integration.config as Record<string, unknown>) : {};
+
         await ctx.db.integration.update({
           where: { id: integration.id },
           data: { config: { ...config, [CALLS_SOURCE_CONFIG_KEY]: input.source } },
@@ -550,6 +585,7 @@ export const integrationsRouter = router({
 
   syncAmoCallsNow: adminProcedure.mutation(async ({ ctx }) => {
     void triggerTenantAmoCallsSync(ctx.tenantId).catch(() => undefined);
+
     return { started: true };
   }),
 
@@ -558,6 +594,7 @@ export const integrationsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { telegramService } = await import('../../services/integrations/telegram');
       const verification = await telegramService.verifyBotToken(input.botToken);
+
       if (!verification.isValid || !verification.bot) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid Telegram bot token' });
       }
@@ -565,6 +602,7 @@ export const integrationsRouter = router({
       const webhookSecret = crypto.randomBytes(24).toString('hex');
       const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/telegram`;
       const webhookResult = await telegramService.setWebhook(input.botToken, webhookUrl, webhookSecret);
+
       if (!webhookResult?.ok) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Failed to register Telegram webhook' });
       }
@@ -642,6 +680,7 @@ export const integrationsRouter = router({
         integrationId: integration.id,
         db: ctx.db,
       });
+
       integration = await ctx.db.integration.update({
         where: { id: integration.id },
         data: {
@@ -745,6 +784,7 @@ export const integrationsRouter = router({
     let recipientStorageReady = true;
     let recipientError: string | null = null;
     let storedRecipients: Awaited<ReturnType<typeof listTelegramRecipients>> = [];
+
     try {
       storedRecipients = await listTelegramRecipients({
         tenantId: ctx.tenantId,
@@ -796,6 +836,7 @@ export const integrationsRouter = router({
     const expectedWebhookUrl = `${getPublicApiBaseUrl()}/webhooks/telegram`;
     const onlineGroupCount = getOnlineTelegramGroupIds().length;
     const offlineGroupCount = getOfflineTelegramGroupIds().length;
+
     if (!integration || integration.status !== 'active') {
       return {
         connected: false,
@@ -824,6 +865,7 @@ export const integrationsRouter = router({
     let latestRecipient: { lastSeenAt: Date | null; lastUpdateId: string | null } | null = null;
     let recipientStorageReady = true;
     let recipientError: string | null = null;
+
     try {
       [recipientCount, latestRecipient] = await Promise.all([
         ctx.db.telegramRecipient.count({
@@ -843,6 +885,7 @@ export const integrationsRouter = router({
 
     try {
       const botToken = resolveTelegramBotToken(integration.tokensEncrypted);
+
       if (!botToken) throw new Error('Telegram bot token is missing.');
       const live = await telegramService.getWebhookInfo(botToken);
       const liveWebhookUrl = String(live.url || '').trim() || null;
@@ -850,6 +893,7 @@ export const integrationsRouter = router({
       const lastErrorAt = live.last_error_date
         ? new Date(live.last_error_date * 1000).toISOString()
         : null;
+
       return {
         connected: true,
         healthy: webhookMatches && !live.last_error_message && recipientStorageReady,
@@ -899,21 +943,25 @@ export const integrationsRouter = router({
       where: { tenantId_type: { tenantId: ctx.tenantId, type: 'telegram' } },
       select: { id: true, status: true, config: true, tokensEncrypted: true },
     });
+
     if (!integration || integration.status !== 'active') {
       throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram integration is not connected.' });
     }
 
     try {
       const botToken = resolveTelegramBotToken(integration.tokensEncrypted);
+
       if (!botToken) throw new Error('Telegram bot token is missing.');
       const config = asObject(integration.config);
       const webhookSecret = String(config.webhookSecret || '').trim() || crypto.randomBytes(24).toString('hex');
       const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/telegram`;
       const result = await telegramService.setWebhook(botToken, webhookUrl, webhookSecret);
+
       if (!result?.ok) {
         throw new Error(String(result?.description || 'Telegram webhook registration failed.'));
       }
       const repairedAt = new Date();
+
       await ctx.db.integration.update({
         where: { id: integration.id },
         data: {
@@ -937,6 +985,7 @@ export const integrationsRouter = router({
           metadata: { webhookUrl },
         },
       });
+
       return { success: true, webhookUrl, repairedAt: repairedAt.toISOString() };
     } catch (error: any) {
       throw new TRPCError({
@@ -969,6 +1018,7 @@ export const integrationsRouter = router({
       }
 
       let selectedChatIds: string[];
+
       try {
         selectedChatIds = await updateTelegramRecipientSelection({
           tenantId: ctx.tenantId,
@@ -995,6 +1045,7 @@ export const integrationsRouter = router({
         });
         const availableCourseIds = new Set(availableCourses.map((course) => course.id));
         const unknownCourseId = selectedDailyReportCourseIds.find((courseId) => !availableCourseIds.has(courseId));
+
         if (unknownCourseId) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
@@ -1012,6 +1063,7 @@ export const integrationsRouter = router({
         ...applyTelegramRecipientsToConfig(integration.config, recipients),
         telegramDailyReportCourseIds: selectedDailyReportCourseIds,
       };
+
       await ctx.db.integration.update({
         where: { id: integration.id },
         data: { config: configWithCourseSelection as any },
@@ -1042,6 +1094,7 @@ export const integrationsRouter = router({
   sendTelegramTodayReportNow: adminProcedure.mutation(async ({ ctx }) => {
     try {
       const result = await sendImmediateTodayReportForTenant(ctx.tenantId);
+
       return result;
     } catch (error: any) {
       throw new TRPCError({
@@ -1097,6 +1150,7 @@ export const integrationsRouter = router({
       const accessToken = input.accessToken.trim();
       const adAccountId = normalizeMetaAdAccountId(input.adAccountId);
       const account = await validateMetaAdAccount(accessToken, adAccountId);
+
       if (!account?.id) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Meta Ad Account was not returned.' });
       }
@@ -1189,6 +1243,7 @@ export const integrationsRouter = router({
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     let rowsLast30d = 0;
     const metaTableMissing = false;
+
     rowsLast30d = await ctx.db.metaAdInsight.count({
       where: {
         tenantId: ctx.tenantId,
@@ -1211,6 +1266,7 @@ export const integrationsRouter = router({
     }
 
     const config = asObject(integration.config);
+
     return {
       connected: true,
       hasToken: Boolean(integration.tokensEncrypted),
@@ -1240,6 +1296,7 @@ export const integrationsRouter = router({
 
       try {
         const result = await syncMetaAdInsightsForTenant(ctx.tenantId, dateFrom, dateTo, ctx.db);
+
         await ctx.db.auditLog.create({
           data: {
             tenantId: ctx.tenantId,
@@ -1254,6 +1311,7 @@ export const integrationsRouter = router({
             },
           },
         });
+
         return { success: true, ...result };
       } catch (error: any) {
         await ctx.db.integration.updateMany({
@@ -1518,6 +1576,7 @@ export const integrationsRouter = router({
     const mappings = Object.entries(externalMap)
       .map(([externalUserId, userId]) => {
         const user = userById.get(userId);
+
         return {
           externalUserId,
           userId,
@@ -1569,6 +1628,7 @@ export const integrationsRouter = router({
         },
         select: { id: true },
       });
+
       if (!user) {
         throw new TRPCError({
           code: 'NOT_FOUND',
@@ -1579,6 +1639,7 @@ export const integrationsRouter = router({
       const externalUserId = String(input.externalUserId || '').trim();
       const existingMap = parseFaceIdUserExternalMap(integration.config);
       const existingMappedUserId = existingMap[externalUserId];
+
       if (existingMappedUserId && existingMappedUserId !== input.userId) {
         throw new TRPCError({
           code: 'CONFLICT',
@@ -1654,11 +1715,13 @@ export const integrationsRouter = router({
 
       const externalUserId = String(input.externalUserId || '').trim();
       const existingMap = parseFaceIdUserExternalMap(integration.config);
+
       if (!existingMap[externalUserId]) {
         return { success: true, removed: false };
       }
 
       const nextMap = { ...existingMap };
+
       delete nextMap[externalUserId];
 
       const nextConfig = {
@@ -1705,6 +1768,7 @@ export const integrationsRouter = router({
           },
         },
       });
+
       if (!integration) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',

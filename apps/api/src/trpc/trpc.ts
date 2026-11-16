@@ -38,6 +38,7 @@ function isPrismaSchemaMismatchError(error: unknown): boolean {
   }
 
   const message = String((error as any)?.message || '').toLowerCase();
+
   return (
     message.includes('does not exist in the current database')
     || (message.includes('column') && message.includes('does not exist'))
@@ -49,11 +50,14 @@ function isPrismaSchemaMismatchError(error: unknown): boolean {
 const performanceMiddleware = t.middleware(async (opts) => {
   const startedAt = Date.now();
   let ok = false;
+
   try {
     const result = await opts.next();
+
     ok = result.ok;
     const durationMs = Date.now() - startedAt;
     const responseSize = result.ok ? getApproxResponseSize(result.data) : undefined;
+
     if (durationMs >= Number(process.env.TRPC_SLOW_PROCEDURE_MS || 750)) {
       log(LogLevel.WARN, 'Slow tRPC procedure', {
         procedureName: opts.path,
@@ -75,6 +79,7 @@ const performanceMiddleware = t.middleware(async (opts) => {
         ok,
       });
     }
+
     return result;
   } catch (error) {
     log(LogLevel.WARN, 'tRPC procedure failed', {
@@ -134,6 +139,7 @@ export const protectedProcedure = baseProcedure.use(async (opts) => {
     },
     select: { id: true },
   });
+
   if (!activeUser) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
@@ -170,6 +176,7 @@ export const managerProcedure = protectedProcedure.use(async (opts) => {
   const { ctx } = opts;
 
   const roles = ctx.user?.roles || [];
+
   if (!roles.includes('Admin') && !roles.includes('Manager') && !roles.includes('TeamLeader')) {
     throw new TRPCError({
       code: 'FORBIDDEN',

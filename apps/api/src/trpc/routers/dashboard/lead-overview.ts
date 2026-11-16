@@ -19,14 +19,18 @@ type LeadPeriod = {
 function leadCreatedAt(value: unknown): Date | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const parsed = new Date(value > 1_000_000_000_000 ? value : value * 1000);
+
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
   if (typeof value === 'string') {
     const numeric = Number(value);
+
     if (Number.isFinite(numeric)) return leadCreatedAt(numeric);
     const parsed = new Date(value);
+
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
+
   return null;
 }
 
@@ -49,8 +53,10 @@ export function calculateLeadPeriods(params: {
   const weekly = emptyPeriod();
   const monthly = emptyPeriod();
   const earliestStart = params.weekStart < params.monthStart ? params.weekStart : params.monthStart;
+
   for (const lead of params.leads) {
     const createdAt = leadCreatedAt(lead.created_at);
+
     if (!createdAt || createdAt < earliestStart || createdAt > params.now) continue;
 
     const reasonValue = extractLeadValue(lead, params.reasonFieldKey);
@@ -72,6 +78,7 @@ export function calculateLeadPeriods(params: {
       if (nonQualified) period.nonQualified += 1;
     }
   }
+
   return { daily, weekly, monthly };
 }
 
@@ -79,6 +86,7 @@ export const leadOverviewProcedures = {
   leadOverview: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();
     const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+
     if (scope.isScoped && !scope.responsibleUserId) {
       return {
         available: false,
@@ -93,6 +101,7 @@ export const leadOverviewProcedures = {
       ctx.db.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } }),
       getTenantAmoCRMContext(ctx.tenantId, ctx.db),
     ]);
+
     if (!amoContext) {
       return {
         available: false,
@@ -140,9 +149,11 @@ export const leadOverviewProcedures = {
         nonQualifiedValues,
         qualifiedStageIds,
       });
+
       return { available: true, reason: null, daily, weekly, monthly };
     } catch (error: any) {
       const message = String(error?.message || error).toLowerCase();
+
       return {
         available: false,
         reason: message.includes('timeout') ? 'timeout' as const : 'fetch_failed' as const,

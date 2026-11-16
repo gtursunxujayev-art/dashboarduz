@@ -8,9 +8,11 @@ import { managerProcedure, router } from '../trpc';
 
 function normalizeTelegramSecret(value: string | null | undefined): string | null {
   const normalized = String(value || '').trim();
+
   if (!normalized) {
     return null;
   }
+
   return normalized.replace(/\r?\n/g, '').trim();
 }
 
@@ -29,10 +31,12 @@ async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient):
   });
 
   let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
+
   if (integration?.status === 'active' && integration.tokensEncrypted) {
     try {
       const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
       const integrationBotToken = normalizeTelegramSecret(tokens.botToken || tokens.token);
+
       botToken = integrationBotToken || botToken;
     } catch (error) {
       console.warn('[TelegramBot] Failed to decrypt integration bot token, fallback to TELEGRAM_BOT_TOKEN', {
@@ -103,6 +107,7 @@ export const telegramBotRouter = router({
       users: users.map((user) => {
         const telegramChatId = String(user.telegramId || '').trim() || null;
         const recipient = telegramChatId ? recipientsByChatId.get(telegramChatId) || null : null;
+
         return {
           id: user.id,
           name: user.name,
@@ -130,6 +135,7 @@ export const telegramBotRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db);
+
       if (!botToken) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -138,6 +144,7 @@ export const telegramBotRouter = router({
       }
 
       const text = input.text.trim();
+
       if (!text) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -177,6 +184,7 @@ export const telegramBotRouter = router({
 
       const failed: Array<{ userId: string; chatId: string; error: string }> = [];
       let delivered = 0;
+
       for (const target of targets) {
         try {
           await telegramService.sendMessage(botToken, target.chatId, text, {

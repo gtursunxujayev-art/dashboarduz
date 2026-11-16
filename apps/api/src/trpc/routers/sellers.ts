@@ -21,6 +21,7 @@ const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const sellerRangeSchema = z.enum(['today', 'week', 'month', 'last30days', 'custom']);
+
 type SellerRange = z.infer<typeof sellerRangeSchema>;
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 const SELLERS_LIST_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -86,21 +87,25 @@ function asString(value: unknown): string | null {
     return null;
   }
   const normalized = String(value).trim();
+
   return normalized.length > 0 ? normalized : null;
 }
 
 function parseAmoDate(value: unknown): Date {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const millis = value > 1_000_000_000_000 ? value : value * 1000;
+
     return new Date(millis);
   }
 
   if (typeof value === 'string') {
     const asNumber = Number(value);
+
     if (!Number.isNaN(asNumber)) {
       return parseAmoDate(asNumber);
     }
     const parsed = new Date(value);
+
     if (!Number.isNaN(parsed.getTime())) {
       return parsed;
     }
@@ -124,6 +129,7 @@ function getRangeStart(range: SellerRange, now: Date): Date {
   if (range === 'week') {
     const day = shiftedNow.getUTCDay();
     const daysSinceMonday = (day + 6) % 7;
+
     return new Date(Date.UTC(year, month, date - daysSinceMonday) - offsetMs);
   }
 
@@ -141,6 +147,7 @@ function parseCustomDate(input: string, endOfDay: boolean): Date {
 
   const timestamp = `${input}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
   const parsed = new Date(timestamp);
+
   if (Number.isNaN(parsed.getTime())) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid custom date: ${input}` });
   }
@@ -165,6 +172,7 @@ function resolveDateRange(range: SellerRange, now: Date, dateFrom?: string, date
 
   const rangeStart = parseCustomDate(dateFrom, false);
   const rangeEnd = parseCustomDate(dateTo, true);
+
   if (rangeEnd < rangeStart) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'dateTo must be greater than or equal to dateFrom.' });
   }
@@ -174,15 +182,18 @@ function resolveDateRange(range: SellerRange, now: Date, dateFrom?: string, date
 
 function getDealAmount(lead: AmoCRMLead): number {
   const maybePrice = (lead as Record<string, unknown>).price;
+
   if (typeof maybePrice === 'number' && Number.isFinite(maybePrice)) {
     return maybePrice;
   }
   if (typeof maybePrice === 'string') {
     const parsed = Number(maybePrice);
+
     if (!Number.isNaN(parsed)) {
       return parsed;
     }
   }
+
   return 0;
 }
 
@@ -199,11 +210,13 @@ function normalizeTelegramSecret(rawValue: string | undefined): string | null {
     return null;
   }
   const normalized = rawValue.replace(/^['"`]+|['"`]+$/g, '').trim();
+
   return normalized || null;
 }
 
 function resolveSellerIncomeCategory(source: SellerIncomeMetricSource): 'online' | 'offline' | 'intensive' | null {
   const category = classifyIncomeCategory(source.course);
+
   return category === 'online' || category === 'offline' || category === 'intensive' ? category : null;
 }
 
@@ -216,7 +229,9 @@ async function excludeTechnicalSellerIncomes<T extends { id?: string; type: stri
     .filter((row): row is T & { id: string } => Boolean(row.id))
     .map((row) => ({ ...row, type: row.type || '' }));
   const technicalSaleIds = await loadTechnicalSaleIdsForRows(tenantId, refs, db);
+
   if (!technicalSaleIds.size) return rows;
+
   return rows.filter((row) => !row.id || !isRowLinkedToTechnicalSale({
     rowType: row.type || '',
     rowId: row.id,
@@ -227,9 +242,11 @@ async function excludeTechnicalSellerIncomes<T extends { id?: string; type: stri
 
 function getInclusiveRangeDayCount(rangeStart: Date, rangeEnd: Date): number {
   const millis = rangeEnd.getTime() - rangeStart.getTime();
+
   if (millis <= 0) {
     return 1;
   }
+
   return Math.max(1, Math.ceil(millis / (24 * 60 * 60 * 1000)));
 }
 
@@ -345,6 +362,7 @@ function buildSellerReportPdf(params: SellerReportPayload): Buffer {
         .replace(/\(/g, '\\(')
         .replace(/\)/g, '\\)')
         .replace(/[^\x20-\x7E]/g, '?');
+
       return `BT /F1 12 Tf 50 ${780 - index * 20} Td (${escaped}) Tj ET`;
     })
     .join('\n');
@@ -359,18 +377,21 @@ function buildSellerReportPdf(params: SellerReportPayload): Buffer {
 
   let pdf = '%PDF-1.4\n';
   const offsets: number[] = [0];
+
   for (const object of objects) {
     offsets.push(Buffer.byteLength(pdf, 'utf8'));
     pdf += object;
   }
 
   const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+
   pdf += `xref\n0 ${objects.length + 1}\n`;
   pdf += '0000000000 65535 f \n';
   for (let index = 1; index < offsets.length; index += 1) {
     pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
   }
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
   return Buffer.from(pdf, 'utf8');
 }
 
@@ -388,9 +409,11 @@ async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient):
   });
 
   let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
+
   if (integration?.tokensEncrypted) {
     try {
       const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
+
       botToken = normalizeTelegramSecret(tokens.botToken || tokens.token || undefined) || botToken;
     } catch (error) {
       log(LogLevel.WARN, 'Failed to decrypt Telegram integration token for sellers report', {
@@ -405,10 +428,12 @@ async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient):
 
 function isAllowedUtelManagerExtension(value: unknown): boolean {
   const digits = normalizeDigits(value);
+
   if (!digits) {
     return false;
   }
   const parsed = Number.parseInt(digits, 10);
+
   return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
 }
 
@@ -420,12 +445,14 @@ function isSchemaCompatibilityError(error: unknown, hints: string[] = []): boole
     || message.includes('p2022')
     || message.includes('relation')
     || message.includes('column');
+
   if (!isMissingSchema) {
     return false;
   }
   if (!hints.length) {
     return true;
   }
+
   return hints.some((hint) => message.includes(hint.toLowerCase()));
 }
 
@@ -435,11 +462,13 @@ function toManagerRole(user: AmoCRMUser): string[] {
 
 async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
   const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
   }
 
   let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
+
   try {
     currentUser = await db.user.findFirst({
       where: {
@@ -472,12 +501,14 @@ async function computeLeadResponseTimes(params: {
   rangeEnd: Date;
 }): Promise<Map<string, { avgResponseSeconds: number; medianResponseSeconds: number; respondedCount: number; totalCount: number }>> {
   const result = new Map<string, { avgResponseSeconds: number; medianResponseSeconds: number; respondedCount: number; totalCount: number }>();
+
   if (!params.newLeads.length || !params.managerIds.length) {
     return result;
   }
 
   // Fetch events (notes, status changes, etc.) for leads in the period
   let events: Array<Record<string, unknown>> = [];
+
   try {
     events = await amocrmService.fetchAllEvents(
       params.accessToken,
@@ -497,21 +528,26 @@ async function computeLeadResponseTimes(params: {
 
   // Map entity_id -> earliest event timestamp (seconds)
   const firstEventByLead = new Map<string, number>();
+
   for (const event of events) {
     const entityId = String(event.entity_id ?? '').trim();
+
     if (!entityId) continue;
     const createdAt = event.created_at;
     let eventTs: number | null = null;
+
     if (typeof createdAt === 'number' && Number.isFinite(createdAt)) {
       eventTs = createdAt > 1_000_000_000_000 ? createdAt / 1000 : createdAt;
     } else if (typeof createdAt === 'string') {
       const asNum = Number(createdAt);
+
       if (!Number.isNaN(asNum)) {
         eventTs = asNum > 1_000_000_000_000 ? asNum / 1000 : asNum;
       }
     }
     if (eventTs === null) continue;
     const existing = firstEventByLead.get(entityId);
+
     if (!existing || eventTs < existing) {
       firstEventByLead.set(entityId, eventTs);
     }
@@ -520,10 +556,13 @@ async function computeLeadResponseTimes(params: {
   // Group new leads by responsible manager
   const leadsByManager = new Map<string, AmoCRMLead[]>();
   const managerIdSet = new Set(params.managerIds);
+
   for (const lead of params.newLeads) {
     const managerId = asString(lead.responsible_user_id);
+
     if (!managerId || !managerIdSet.has(managerId)) continue;
     const current = leadsByManager.get(managerId) || [];
+
     current.push(lead);
     leadsByManager.set(managerId, current);
   }
@@ -531,17 +570,21 @@ async function computeLeadResponseTimes(params: {
   // Calculate response times per manager
   for (const [managerId, leads] of leadsByManager.entries()) {
     const responseTimes: number[] = [];
+
     for (const lead of leads) {
       const leadId = asString(lead.id);
+
       if (!leadId) continue;
       const leadCreatedAt = parseAmoDate(lead.created_at).getTime() / 1000;
       const firstEvent = firstEventByLead.get(leadId);
+
       if (firstEvent !== undefined && firstEvent > leadCreatedAt) {
         responseTimes.push(firstEvent - leadCreatedAt);
       }
     }
     const totalCount = leads.length;
     const respondedCount = responseTimes.length;
+
     if (respondedCount === 0) {
       result.set(managerId, { avgResponseSeconds: 0, medianResponseSeconds: 0, respondedCount: 0, totalCount });
       continue;
@@ -552,6 +595,7 @@ async function computeLeadResponseTimes(params: {
     const median = sorted.length % 2 === 0
       ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
       : (sorted[mid] ?? 0);
+
     result.set(managerId, {
       avgResponseSeconds: Math.round(avg),
       medianResponseSeconds: Math.round(median as number),
@@ -670,6 +714,7 @@ function buildStatusFilters(
 
   for (const pipeline of pipelines) {
     const pipelineId = asString(pipeline.id);
+
     if (!pipelineId || !selected.has(pipelineId)) {
       continue;
     }
@@ -687,6 +732,7 @@ function buildStatusFilters(
       }
 
       const key = `${pipelineId}:${statusId}`;
+
       if (unique.has(key)) {
         continue;
       }
@@ -705,9 +751,11 @@ function buildStatusFilterSet(filters: Array<{ pipelineId: string; statusId: str
 function isLeadInStatusSet(lead: AmoCRMLead, statusSet: Set<string>) {
   const pipelineId = asString(lead.pipeline_id);
   const statusId = asString(lead.status_id);
+
   if (!pipelineId || !statusId) {
     return false;
   }
+
   return statusSet.has(`${pipelineId}:${statusId}`);
 }
 
@@ -726,6 +774,7 @@ async function fetchLeadsByStatusFilters(
   }
 
   const statusSet = buildStatusFilterSet(statusFilters);
+
   try {
     return await amocrmService.fetchAllLeads(
       accessToken,
@@ -753,6 +802,7 @@ async function fetchLeadsByStatusFilters(
       },
       baseUrl,
     );
+
     return fallback.filter((lead) => {
       if (!isLeadInStatusSet(lead, statusSet)) {
         return false;
@@ -761,6 +811,7 @@ async function fetchLeadsByStatusFilters(
         return true;
       }
       const createdAt = parseAmoDate(lead.created_at);
+
       return createdAt >= rangeStart && createdAt <= rangeEnd;
     });
   }
@@ -785,13 +836,16 @@ async function getManagerExtensionsMap(tenantId: string, managerIds: string[], d
   });
 
   const byManager = new Map<string, Set<string>>();
+
   for (const mappedUser of mappedUsers as Array<{ amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>) {
     const managerId = asString(mappedUser.amocrmResponsibleUserId);
     const extension = normalizeDigits(mappedUser.utelManagerExternalId || '');
+
     if (!managerId || !isAllowedUtelManagerExtension(extension)) {
       continue;
     }
     const current = byManager.get(managerId) || new Set<string>();
+
     current.add(extension);
     byManager.set(managerId, current);
   }
@@ -803,13 +857,16 @@ async function getManagerExtensionsMap(tenantId: string, managerIds: string[], d
 
 function resolveCallExtension(call: { from: string; to: string }): string | null {
   const fromExtension = normalizeDigits(call.from);
+
   if (isAllowedUtelManagerExtension(fromExtension)) {
     return fromExtension;
   }
   const toExtension = normalizeDigits(call.to);
+
   if (isAllowedUtelManagerExtension(toExtension)) {
     return toExtension;
   }
+
   return null;
 }
 
@@ -849,10 +906,12 @@ export const sellersRouter = router({
     const range = input?.range || 'last30days';
     const { rangeStart, rangeEnd } = resolveDateRange(range, now, input?.dateFrom, input?.dateTo);
     const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+
     timings.scopeMs = Date.now() - startedAtMs;
 
     const amoContextStartedMs = Date.now();
     const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
+
     timings.amoContextMs = Date.now() - amoContextStartedMs;
 
     if (!amoContext) {
@@ -865,14 +924,18 @@ export const sellersRouter = router({
     const amocrmUsersPromise = (async () => {
       const stepStartedMs = Date.now();
       const result = await amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl);
+
       timings.amocrmUsersMs = Date.now() - stepStartedMs;
+
       return result;
     })();
 
     const pipelinesPromise = (async () => {
       const stepStartedMs = Date.now();
       const result = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+
       timings.amocrmPipelinesMs = Date.now() - stepStartedMs;
+
       return result;
     })();
 
@@ -887,6 +950,7 @@ export const sellersRouter = router({
         if (!scope.isScoped) {
           return true;
         }
+
         return asString(user.id) === scope.responsibleUserId;
       });
 
@@ -895,10 +959,12 @@ export const sellersRouter = router({
         .map((manager) => asString(manager.id))
         .filter(Boolean) as string[],
     );
+
     timings.managerPreparationMs = Date.now() - managerPreparationStartedMs;
 
     const managerIdList = Array.from(managerIds);
     let corporateRevision: { _max: { updatedAt: Date | null } } = { _max: { updatedAt: null } };
+
     try {
       corporateRevision = await ctx.db.corporateCallDuration.aggregate({
         where: { tenantId: ctx.tenantId },
@@ -926,6 +992,7 @@ export const sellersRouter = router({
       input?.dateTo,
     );
     const cached = sellersListCache.get(listCacheKey);
+
     if (cached && cached.expiresAt > Date.now()) {
       timings.totalMs = Date.now() - startedAtMs;
       log(LogLevel.INFO, 'Sellers list timings', {
@@ -936,6 +1003,7 @@ export const sellersRouter = router({
         cacheHit: true,
         timings,
       });
+
       return cached.data;
     }
 
@@ -951,8 +1019,10 @@ export const sellersRouter = router({
         },
         amoContext.baseUrl,
       );
+
       return allPipelineLeads.filter((lead) => {
         const statusId = asString(lead.status_id);
+
         return statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID;
       });
     })();
@@ -1006,6 +1076,7 @@ export const sellersRouter = router({
       extensionsByManagerPromise,
       userMappingsPromise,
     ]);
+
     timings.amocrmLeadsMs = Date.now() - leadsFetchStartedMs;
     timings.activityFetchMs = Date.now() - activityFetchStartedMs;
     timings.extensionMappingMs = Date.now() - extensionMappingStartedMs;
@@ -1022,28 +1093,35 @@ export const sellersRouter = router({
 
     const leadsGroupingStartedMs = Date.now();
     const activeLeadsByManager = new Map<string, AmoCRMLead[]>();
+
     for (const lead of activeLeads) {
       const responsibleUserId = getLeadResponsibleId(lead);
+
       if (!responsibleUserId || !managerIds.has(responsibleUserId)) {
         continue;
       }
       const current = activeLeadsByManager.get(responsibleUserId) || [];
+
       current.push(lead);
       activeLeadsByManager.set(responsibleUserId, current);
     }
     const newLeadsByManager = new Map<string, AmoCRMLead[]>();
+
     for (const lead of newLeadsInRange) {
       const responsibleUserId = getLeadResponsibleId(lead);
+
       if (!responsibleUserId || !managerIds.has(responsibleUserId)) {
         continue;
       }
       const current = newLeadsByManager.get(responsibleUserId) || [];
+
       current.push(lead);
       newLeadsByManager.set(responsibleUserId, current);
     }
     timings.leadsGroupingMs = Date.now() - leadsGroupingStartedMs;
 
     const managerByExtension = new Map<string, string>();
+
     for (const [managerId, extensions] of extensionsByManager.entries()) {
       for (const extension of extensions) {
         managerByExtension.set(extension, managerId);
@@ -1051,12 +1129,15 @@ export const sellersRouter = router({
     }
 
     const managerUserIdsByAmoId = new Map<string, string[]>();
+
     for (const mapping of userMappings as Array<{ id: string; amocrmResponsibleUserId: string | null }>) {
       const managerId = asString(mapping.amocrmResponsibleUserId);
+
       if (!managerId) {
         continue;
       }
       const current = managerUserIdsByAmoId.get(managerId) || [];
+
       current.push(mapping.id);
       managerUserIdsByAmoId.set(managerId, current);
     }
@@ -1064,6 +1145,7 @@ export const sellersRouter = router({
     const callsFetchStartedMs = Date.now();
     const extensionValues = Array.from(new Set(Array.from(extensionsByManager.values()).flat()));
     let calls: Array<{ from: string; to: string; duration: number | null; direction: string; status: string; startedAt: Date | null }> = [];
+
     if (extensionValues.length > 0) {
       try {
         calls = await ctx.db.call.findMany({
@@ -1141,6 +1223,7 @@ export const sellersRouter = router({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
               });
+
               return await ctx.db.income.findMany({
                 where: {
                   tenantId: ctx.tenantId,
@@ -1199,6 +1282,7 @@ export const sellersRouter = router({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
               });
+
               return [];
             }
           })()
@@ -1231,6 +1315,7 @@ export const sellersRouter = router({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
               });
+
               return await ctx.db.income.findMany({
                 where: {
                   tenantId: ctx.tenantId,
@@ -1280,6 +1365,7 @@ export const sellersRouter = router({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
               });
+
               return await ctx.db.income.findMany({
                 where: {
                   tenantId: ctx.tenantId,
@@ -1303,25 +1389,30 @@ export const sellersRouter = router({
         : [],
     ]);
     const incomes = await excludeTechnicalSellerIncomes(ctx.tenantId, incomesRaw, ctx.db);
+
     timings.incomeFetchMs = Date.now() - incomeFetchStartedMs;
 
     const callsGroupingStartedMs = Date.now();
     const callsByManager = new Map<string, Array<{ duration: number | null; direction: string; status: string; startedAt: Date | null }>>();
+
     for (const call of calls) {
       const extension = resolveCallExtension({
         from: call.from,
         to: call.to,
       });
+
       if (!extension) {
         continue;
       }
 
       const managerId = managerByExtension.get(extension);
+
       if (!managerId) {
         continue;
       }
 
       const current = callsByManager.get(managerId) || [];
+
       current.push({
         duration: call.duration,
         direction: call.direction,
@@ -1335,12 +1426,14 @@ export const sellersRouter = router({
     const incomeGroupingStartedMs = Date.now();
     const incomesByManager = new Map<string, SellerIncomeMetricSource[]>();
     const managerIdByUserId = new Map<string, string>();
+
     for (const [managerId, userIds] of managerUserIdsByAmoId.entries()) {
       for (const userId of userIds) {
         managerIdByUserId.set(userId, managerId);
       }
     }
     let corporateDurationByUserId = new Map<string, number>();
+
     try {
       corporateDurationByUserId = await getCorporateCallDurationByManager({
         tenantId: ctx.tenantId,
@@ -1360,8 +1453,10 @@ export const sellersRouter = router({
       corporateDurationByUserId = new Map<string, number>();
     }
     const corporateDurationByManager = new Map<string, number>();
+
     for (const [userId, durationSeconds] of corporateDurationByUserId.entries()) {
       const managerId = managerIdByUserId.get(userId);
+
       if (!managerId) {
         continue;
       }
@@ -1373,10 +1468,12 @@ export const sellersRouter = router({
 
     for (const income of incomes) {
       const managerId = managerIdByUserId.get(income.managerUserId || '');
+
       if (!managerId) {
         continue;
       }
       const current = incomesByManager.get(managerId) || [];
+
       current.push({
         type: income.type,
         paymentAmount: income.paymentAmount,
@@ -1387,8 +1484,10 @@ export const sellersRouter = router({
     }
     // Group refund requests by manager
     const refundsByManager = new Map<string, number>();
+
     for (const req of refundRequests) {
       const managerId = managerIdByUserId.get(req.income.managerUserId || '');
+
       if (!managerId) continue;
       refundsByManager.set(managerId, (refundsByManager.get(managerId) || 0) + 1);
     }
@@ -1396,6 +1495,7 @@ export const sellersRouter = router({
     // New vs Repeat customers: find which customerIds had purchases before rangeStart
     const allCustomerIds = [...new Set(incomesWithCustomer.map((i) => i.customerId))];
     const repeatCustomerIds = new Set<string>();
+
     if (allCustomerIds.length > 0) {
       const priorIncomes = await ctx.db.income.findMany({
         where: {
@@ -1407,6 +1507,7 @@ export const sellersRouter = router({
         select: { customerId: true },
         distinct: ['customerId'],
       });
+
       for (const pi of priorIncomes) {
         repeatCustomerIds.add(pi.customerId);
       }
@@ -1415,10 +1516,13 @@ export const sellersRouter = router({
     const newCustomersByManager = new Map<string, number>();
     const repeatCustomersByManager = new Map<string, number>();
     const seenCustomerByManager = new Map<string, Set<string>>();
+
     for (const inc of incomesWithCustomer) {
       const managerId = managerIdByUserId.get(inc.managerUserId || '');
+
       if (!managerId) continue;
       const seen = seenCustomerByManager.get(managerId) || new Set();
+
       if (seen.has(inc.customerId)) continue;
       seen.add(inc.customerId);
       seenCustomerByManager.set(managerId, seen);
@@ -1432,8 +1536,10 @@ export const sellersRouter = router({
     // Payment deadline adherence by manager
     const deadlineMetByManager = new Map<string, number>();
     const deadlineTotalByManager = new Map<string, number>();
+
     for (const inc of incomesWithDeadline) {
       const managerId = managerIdByUserId.get(inc.managerUserId || '');
+
       if (!managerId || !inc.deadline) continue;
       deadlineTotalByManager.set(managerId, (deadlineTotalByManager.get(managerId) || 0) + 1);
       if (inc.remainingDebtAmount <= 0 || inc.entryDate <= inc.deadline) {
@@ -1505,6 +1611,7 @@ export const sellersRouter = router({
         || (b.metrics.totalCallDuration - a.metrics.totalCallDuration)
         || a.name.localeCompare(b.name)
       ));
+
     timings.buildResponseMs = Date.now() - buildResponseStartedMs;
     timings.totalMs = Date.now() - startedAtMs;
 
@@ -1539,6 +1646,7 @@ export const sellersRouter = router({
     )
     .query(async ({ input, ctx }) => {
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+
       if (scope.isScoped && input.id !== scope.responsibleUserId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
@@ -1547,6 +1655,7 @@ export const sellersRouter = router({
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
 
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
+
       if (!amoContext) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -1604,6 +1713,7 @@ export const sellersRouter = router({
       ]);
 
       const sellerUser = amocrmUsers.find((user) => asString(user.id) === input.id);
+
       if (!sellerUser) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
@@ -1665,6 +1775,7 @@ export const sellersRouter = router({
         : [];
 
       let mappedManagerUserIds: string[] = [];
+
       mappedManagerUserIds = (
         await ctx.db.user.findMany({
           where: {
@@ -1859,6 +1970,7 @@ export const sellersRouter = router({
       const detailCustomerIds = [...new Set(detailIncomesWithCustomer.map((i) => i.customerId))];
       let detailNewCustomers = 0;
       let detailRepeatCustomers = 0;
+
       if (detailCustomerIds.length > 0) {
         const detailPriorCustomers = await ctx.db.income.findMany({
           where: {
@@ -1871,6 +1983,7 @@ export const sellersRouter = router({
           distinct: ['customerId'],
         });
         const detailRepeatSet = new Set(detailPriorCustomers.map((p) => p.customerId));
+
         for (const cid of detailCustomerIds) {
           if (detailRepeatSet.has(cid)) {
             detailRepeatCustomers++;
@@ -1887,6 +2000,7 @@ export const sellersRouter = router({
       // Payment deadline adherence
       let detailDeadlineTotal = 0;
       let detailDeadlineMet = 0;
+
       for (const inc of detailIncomesWithDeadline) {
         if (!inc.deadline) continue;
         detailDeadlineTotal++;
@@ -1952,11 +2066,13 @@ export const sellersRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+
       if (scope.isScoped && input.id !== scope.responsibleUserId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 
       const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db);
+
       if (!botToken) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram bot token topilmadi.' });
       }
@@ -1987,6 +2103,7 @@ export const sellersRouter = router({
       const adminChatIds = adminUsers
         .map((user) => String(user.telegramId || '').trim())
         .filter(Boolean);
+
       if (!adminChatIds.length) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram chat id bilan admin topilmadi.' });
       }
@@ -2011,6 +2128,7 @@ export const sellersRouter = router({
       );
 
       const sellerUser = amocrmUsers.find((user) => asString(user.id) === input.id);
+
       if (!sellerUser) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }

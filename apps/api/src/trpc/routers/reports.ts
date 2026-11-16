@@ -35,8 +35,10 @@ function isAgentOnly(roles: string[]): boolean {
 
 function buildDateRange(filters: ReportFilters): Prisma.DateTimeFilter | undefined {
   const range: Prisma.DateTimeFilter = {};
+
   if (filters.dateFrom) range.gte = parseCustomDate(filters.dateFrom, false);
   if (filters.dateTo) range.lte = parseCustomDate(filters.dateTo, true);
+
   return range.gte || range.lte ? range : undefined;
 }
 
@@ -53,6 +55,7 @@ async function loadChainMetrics(tenantId: string, sales: SaleChainSaleRow[], lif
     },
     select: { id: true, relatedDebtIncomeId: true, paymentAmount: true, entryDate: true },
   });
+
   return buildSaleChainMetricsBySaleId({ sales, chainRows });
 }
 
@@ -61,6 +64,7 @@ const courseSelect = { select: { id: true, name: true } } as const;
 export const reportsRouter = router({
   access: protectedProcedure.query(({ ctx }) => {
     const scope = getAdjustmentRoleScope(ctx.user.roles);
+
     return {
       canSeeRefunds: !scope.typeGuard || scope.typeGuard === 'refund',
       canSeeTariffChanges: !scope.typeGuard || scope.typeGuard === 'tariff_change',
@@ -90,6 +94,7 @@ export const reportsRouter = router({
         },
       }),
     ]);
+
     return {
       managers: managers.map((manager) => ({ id: manager.id, label: resolvePersonLabel(manager) })),
       courses,
@@ -157,12 +162,14 @@ export const reportsRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const scope = getAdjustmentRoleScope(ctx.user.roles);
+
       if (scope.typeGuard && scope.typeGuard !== input.type) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'You do not have access to this request type.' });
       }
 
       const createdAt = buildDateRange(input);
       const and: Prisma.IncomeAdjustmentRequestWhereInput[] = [];
+
       if (!scope.canSeeAll) {
         and.push({
           OR: [
@@ -232,10 +239,12 @@ export const reportsRouter = router({
       });
 
       const rootSaleById = new Map<string, SaleChainSaleRow & { course: { name: string } | null; tariff: { name: string } | null }>();
+
       for (const request of requests) {
         const rootSale = request.income.type === 'repayment' && request.income.relatedDebtIncome
           ? request.income.relatedDebtIncome
           : request.income;
+
         rootSaleById.set(resolveRootSaleId(request.income), rootSale);
       }
       const chainMetricsBySaleId = await loadChainMetrics(ctx.tenantId, [...rootSaleById.values()], CHAIN_LIFECYCLES_ALL, ctx.db);
@@ -247,6 +256,7 @@ export const reportsRouter = router({
         const hasSnapshot = Boolean(request.previousCourse || request.previousTariff);
         // Approved tariff changes overwrite the income's course, so it is only a valid source when not yet applied.
         const sourceKnown = hasSnapshot || input.type === 'refund' || request.status !== 'approved';
+
         return {
           id: request.id,
           status: request.status,

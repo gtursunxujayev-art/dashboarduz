@@ -26,9 +26,11 @@ export function parseTelegramDailyReportCourseIds(config: unknown): string[] {
   const raw = config && typeof config === 'object' && !Array.isArray(config)
     ? (config as Record<string, unknown>).telegramDailyReportCourseIds
     : null;
+
   if (!Array.isArray(raw)) {
     return [];
   }
+
   return Array.from(new Set(
     raw
       .map((value) => String(value || '').trim())
@@ -41,6 +43,7 @@ function resolveSelectedCourseCategory(
   name: string | null | undefined,
 ): SelectedCourseCategory | null {
   const classified = classifyCourseCategoryFromField(category || name);
+
   return classified === 'online' || classified === 'offline' || classified === 'intensive'
     ? classified
     : null;
@@ -136,6 +139,7 @@ export async function loadSelectedReportCourses(tenantId: string, db: DbClient):
       })
     : [];
   const paidBySaleId = new Map(selectedCourseSales.map((sale) => [sale.id, sale.paymentAmount || 0]));
+
   for (const row of repayments) {
     if (!row.relatedDebtIncomeId) continue;
     paidBySaleId.set(row.relatedDebtIncomeId, (paidBySaleId.get(row.relatedDebtIncomeId) || 0) + (row.paymentAmount || 0));
@@ -145,6 +149,7 @@ export async function loadSelectedReportCourses(tenantId: string, db: DbClient):
   const debtorsCountById = new Map<string, number>();
   const agreementAmountById = new Map<string, number>();
   const tariffSalesCountByKey = new Map<string, number>();
+
   for (const sale of selectedCourseSales) {
     if (!sale.courseId) continue;
     salesCountById.set(sale.courseId, (salesCountById.get(sale.courseId) || 0) + 1);
@@ -156,16 +161,21 @@ export async function loadSelectedReportCourses(tenantId: string, db: DbClient):
       debtorsCountById.set(sale.courseId, (debtorsCountById.get(sale.courseId) || 0) + 1);
     }
     const tariffKey = `${sale.courseId}:${sale.tariffId || 'none'}`;
+
     tariffSalesCountByKey.set(tariffKey, (tariffSalesCountByKey.get(tariffKey) || 0) + 1);
   }
 
   const selectedCoursesById = new Map(selectedCourses.map((course) => [course.id, course]));
+
   return selectedCourseIds.flatMap((courseId) => {
     const course = selectedCoursesById.get(courseId);
+
     if (!course) return [];
     const dashboardCategory = resolveSelectedCourseCategory(course.category, course.name);
+
     if (!dashboardCategory) return [];
     const category = String(course.category || '').trim();
+
     return [{
       courseId: course.id,
       name: course.name,

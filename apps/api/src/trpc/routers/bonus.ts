@@ -103,6 +103,7 @@ function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }
+
   return value as Record<string, unknown>;
 }
 
@@ -118,6 +119,7 @@ function getCategoryLabel(category: BonusRuleCategory): string {
   if (category === 'online') return 'Online';
   if (category === 'offline') return 'Offline';
   if (category === 'intensive') return 'Intensiv';
+
   return "Qo'shimcha xizmat";
 }
 
@@ -127,19 +129,23 @@ function toFiniteNumber(value: unknown, fallback = 0): number {
   }
   if (typeof value === 'string') {
     const parsed = Number.parseFloat(value.trim());
+
     return Number.isFinite(parsed) ? parsed : fallback;
   }
+
   return fallback;
 }
 
 function normalizePercentage(value: unknown): number {
   const parsed = toFiniteNumber(value, 0);
+
   if (parsed <= 0) {
     return 0;
   }
   if (parsed >= 100) {
     return 100;
   }
+
   return Number(parsed.toFixed(2));
 }
 
@@ -152,12 +158,14 @@ function normalizeTier(raw: unknown): BonusRuleTier | null {
       ? null
       : Math.floor(toFiniteNumber(maxValue, 0));
   const percent = normalizePercentage(row.percent);
+
   if (minSales <= 0 || percent <= 0) {
     return null;
   }
   if (maxSales !== null && maxSales < minSales) {
     return null;
   }
+
   return { minSales, maxSales, percent };
 }
 
@@ -168,6 +176,7 @@ function validateTierRules(tiers: BonusRuleTier[]): string | null {
 
   for (let index = 0; index < tiers.length; index += 1) {
     const current = tiers[index];
+
     if (!current) {
       return "Bonus diapazoni noto'g'ri.";
     }
@@ -185,10 +194,12 @@ function validateTierRules(tiers: BonusRuleTier[]): string | null {
     }
     if (index > 0) {
       const prev = tiers[index - 1];
+
       if (!prev) {
         return "Bonus diapazonlari tartibi noto'g'ri.";
       }
       const prevMax = prev.maxSales ?? Number.MAX_SAFE_INTEGER;
+
       if (current.minSales <= prevMax) {
         return "Bonus diapazonlari bir-birini kesib o'tmasligi kerak.";
       }
@@ -223,6 +234,7 @@ function sanitizeCategoryRule(rawRule: unknown, fallbackPercent: unknown): Salar
 
   if (mode === 'tiered') {
     const validationError = validateTierRules(tiers);
+
     if (!validationError) {
       return {
         mode: 'tiered',
@@ -245,9 +257,11 @@ function parseFixedSalaries(settings: unknown): FixedSalaryRow[] {
       const row = asObject(raw);
       const userId = typeof row.userId === 'string' ? row.userId.trim() : '';
       const amount = Math.max(0, Math.round(toFiniteNumber(row.amount, 0)));
+
       if (!userId || amount <= 0) {
         return null;
       }
+
       return { userId, amount };
     })
     .filter((row): row is FixedSalaryRow => Boolean(row));
@@ -300,6 +314,7 @@ function parseAttendancePenaltySettings(settings: unknown): AttendancePenaltySet
 
 function parseThreshold(raw: unknown): KpiThreshold {
   const row = asObject(raw);
+
   return {
     full: Math.max(0, toFiniteNumber(row.full, 0)),
     half: Math.max(0, toFiniteNumber(row.half, 0)),
@@ -338,6 +353,7 @@ function parseKpiSettings(settings: unknown): KpiSettings {
 
   const thresholds = KPI_METRIC_KEYS.reduce((acc, metric) => {
     acc[metric] = parseThreshold(legacyMetricMap[metric]);
+
     return acc;
   }, {} as Record<KpiMetricKey, KpiThreshold>);
 
@@ -406,12 +422,15 @@ function parsePlanBonuses(settings: unknown): BonusPlan[] {
   const rawPlans = Array.isArray(salarySettings.planBonuses) ? salarySettings.planBonuses : [];
 
   const plans: BonusPlan[] = [];
+
   for (const rawPlan of rawPlans) {
     const plan = sanitizePlan(rawPlan);
+
     if (plan) {
       plans.push(plan);
     }
   }
+
   return plans;
 }
 
@@ -421,6 +440,7 @@ function mergeSalarySettings(params: {
 }): Record<string, unknown> {
   const settingsObject = asObject(params.currentSettings);
   const salarySettings = asObject(settingsObject.salary);
+
   return {
     ...settingsObject,
     salary: {
@@ -473,10 +493,12 @@ async function validatePlanScope(params: {
         category: true,
       },
     });
+
     if (!course) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: "Tanlangan kurs topilmadi." });
     }
     const normalizedCategory = String(course.category || '').trim().toLowerCase();
+
     if (normalizedCategory && normalizedCategory !== params.courseCategory) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -496,6 +518,7 @@ async function validatePlanScope(params: {
         id: true,
       },
     });
+
     if (!tariff) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: "Tanlangan tarif topilmadi." });
     }
@@ -512,6 +535,7 @@ async function validatePlanScope(params: {
         id: true,
       },
     });
+
     if (!subTariff) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: "Tanlangan subtarif topilmadi." });
     }
@@ -533,6 +557,7 @@ async function validatePlanScope(params: {
     });
 
     const hasMatch = courseSubTariffs.some((item) => normalizeName(item.name) === normalizedSubTariffName);
+
     if (!hasMatch) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -652,11 +677,13 @@ export const bonusRouter = router({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
+
     if (!tenant) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
     }
 
     const parsed = parseBonusRules(tenant.settings);
+
     return {
       bonusMode: parsed.bonusMode,
       bonusRules: parsed.bonusRules,
@@ -687,6 +714,7 @@ export const bonusRouter = router({
         select: { id: true, name: true, category: true, isActive: true },
       }),
     ]);
+
     return {
       currentMonth: getTashkentMonthKey(now),
       selectedMonth: getTashkentMonthKey(requestedMonth),
@@ -703,11 +731,13 @@ export const bonusRouter = router({
   savePolicyVersion: adminProcedure.input(saveBonusPolicyInput).mutation(async ({ ctx, input }) => {
     const effectiveMonth = getTashkentMonthStart(input.effectiveMonth);
     const currentMonth = getTashkentMonthStart(new Date());
+
     if (effectiveMonth < currentMonth) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: "O'tgan oy bonus siyosatini o'zgartirib bo'lmaydi." });
     }
     for (const category of BONUS_RULE_CATEGORIES) {
       const rule = input.bonusRules[category];
+
       if (rule.mode !== 'tiered') continue;
       const tiers = rule.tiers.map((tier) => ({
         minSales: Math.max(1, Math.floor(tier.minSales)),
@@ -715,14 +745,17 @@ export const bonusRouter = router({
         percent: normalizePercentage(tier.percent),
       })).sort((left, right) => left.minSales - right.minSales);
       const validationError = validateTierRules(tiers);
+
       if (validationError) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: `${getCategoryLabel(category)}: ${validationError}` });
       }
     }
     for (const [courseId, override] of Object.entries(input.courseOverrides)) {
       const sorted = [...override.tiers].sort((left, right) => left.minAmount - right.minAmount);
+
       for (let index = 0; index < sorted.length; index += 1) {
         const tier = sorted[index]!;
+
         if (tier.maxAmount !== null && tier.maxAmount < tier.minAmount) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: `${courseId}: bonus diapazoni noto'g'ri.` });
         }
@@ -731,6 +764,7 @@ export const bonusRouter = router({
         }
         if (index > 0) {
           const previous = sorted[index - 1]!;
+
           if (previous.maxAmount === null || tier.minAmount <= previous.maxAmount) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: `${courseId}: tierlar kesishmasligi kerak.` });
           }
@@ -741,6 +775,7 @@ export const bonusRouter = router({
       }
     }
     const tenant = await ctx.db.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } });
+
     if (!tenant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
     const normalizedRules: SalaryBonusRules = {
       online: sanitizeCategoryRule(input.bonusRules.online, input.bonusRules.online.simplePercent),
@@ -756,8 +791,10 @@ export const bonusRouter = router({
     }, tenant.settings);
     const settingsObject = asObject(tenant.settings);
     const salarySettings = asObject(settingsObject.salary);
+
     await ctx.db.$transaction(async (tx) => {
       const count = await tx.bonusPolicyVersion.count({ where: { tenantId: ctx.tenantId } });
+
       if (count === 0) {
         await tx.bonusPolicyVersion.create({
           data: {
@@ -793,6 +830,7 @@ export const bonusRouter = router({
         },
       });
     });
+
     return { success: true, effectiveMonth: input.effectiveMonth, policy };
   }),
 
@@ -817,6 +855,7 @@ export const bonusRouter = router({
         include: { audits: { orderBy: { createdAt: 'desc' }, take: 5 }, snapshot: { select: { month: true } } },
       }),
     ]);
+
     return {
       snapshots: snapshots.map((snapshot) => ({ ...snapshot, month: getTashkentMonthKey(snapshot.month) })),
       adjustments: adjustments.map((adjustment) => ({
@@ -829,12 +868,14 @@ export const bonusRouter = router({
 
   previewBonusMonth: adminProcedure.input(bonusMonthInput).mutation(async ({ ctx, input }) => {
     const result = await calculateBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month), db: ctx.db });
+
     return { ...result, month: getTashkentMonthKey(result.month) };
   }),
 
   finalizeBonusMonth: adminProcedure.input(bonusMonthInput).mutation(async ({ ctx, input }) => {
     try {
       const result = await finalizeBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month), userId: ctx.user.userId, db: ctx.db });
+
       return { ...result, month: getTashkentMonthKey(result.month) };
     } catch (error) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: error instanceof Error ? error.message : 'Bonus month could not be finalized.' });
@@ -859,8 +900,10 @@ export const bonusRouter = router({
 
   updateBonusRules: adminProcedure.input(updateBonusRulesInput).mutation(async ({ ctx, input }) => {
     const categories = BONUS_RULE_CATEGORIES as readonly BonusRuleCategory[];
+
     for (const category of categories) {
       const rule = input.bonusRules[category];
+
       if (!rule) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: `${category} bonus qoidasi topilmadi.` });
       }
@@ -873,6 +916,7 @@ export const bonusRouter = router({
           }))
           .sort((a, b) => a.minSales - b.minSales);
         const validationError = validateTierRules(tiers);
+
         if (validationError) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
@@ -886,6 +930,7 @@ export const bonusRouter = router({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
+
     if (!tenant) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
     }
@@ -946,6 +991,7 @@ export const bonusRouter = router({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
+
     if (!tenant) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
     }
@@ -1004,6 +1050,7 @@ export const bonusRouter = router({
     .input(updateKpiSettingsInput)
     .mutation(async ({ ctx, input }) => {
       const selectedMetrics = Array.from(new Set(input.selectedMetrics));
+
       if (!selectedMetrics.length) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: "Kamida bitta KPI ko'rsatkichini tanlang." });
       }
@@ -1013,15 +1060,18 @@ export const bonusRouter = router({
 
       const normalizedThresholds = KPI_METRIC_KEYS.reduce((acc, metric) => {
         const raw = input.thresholds[metric];
+
         acc[metric] = {
           full: Math.max(0, Number(raw?.full ?? 0)),
           half: Math.max(0, Number(raw?.half ?? 0)),
         };
+
         return acc;
       }, {} as Record<KpiMetricKey, KpiThreshold>);
 
       for (const metric of selectedMetrics) {
         const threshold = normalizedThresholds[metric];
+
         if (!threshold || threshold.full <= 0 || threshold.half <= 0) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
@@ -1034,6 +1084,7 @@ export const bonusRouter = router({
         where: { id: ctx.tenantId },
         select: { settings: true },
       });
+
       if (!tenant) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
       }
@@ -1080,6 +1131,7 @@ export const bonusRouter = router({
         where: { id: ctx.tenantId },
         select: { settings: true },
       });
+
       if (!tenant) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
       }
@@ -1133,6 +1185,7 @@ export const bonusRouter = router({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
+
     if (!tenant) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
     }
@@ -1195,6 +1248,7 @@ export const bonusRouter = router({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
+
     if (!tenant) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
     }
@@ -1261,12 +1315,14 @@ export const bonusRouter = router({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
+
     if (!tenant) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
     }
 
     const currentPlans = parsePlanBonuses(tenant.settings);
     const targetIndex = currentPlans.findIndex((plan) => plan.id === input.id);
+
     if (targetIndex < 0) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Bonus plan not found.' });
     }
@@ -1306,6 +1362,7 @@ export const bonusRouter = router({
     });
 
     const nextPlans = [...currentPlans];
+
     nextPlans[targetIndex] = normalizedNextPlan;
 
     const settingsPayload = mergeSalarySettings({
@@ -1344,12 +1401,14 @@ export const bonusRouter = router({
         where: { id: ctx.tenantId },
         select: { settings: true },
       });
+
       if (!tenant) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
       }
 
       const currentPlans = parsePlanBonuses(tenant.settings);
       const deletedPlan = currentPlans.find((plan) => plan.id === input.id);
+
       if (!deletedPlan) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Bonus plan not found.' });
       }

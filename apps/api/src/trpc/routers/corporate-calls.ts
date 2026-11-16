@@ -63,21 +63,25 @@ function normalizeTelegramSecret(rawValue: string | undefined): string | null {
     return null;
   }
   const normalized = rawValue.replace(/^['"`]+|['"`]+$/g, '').trim();
+
   return normalized || null;
 }
 
 function buildTelegramChatIdCandidates(groupId: string): string[] {
   const normalized = String(groupId || '').trim();
+
   if (!normalized) {
     return [];
   }
 
   const candidates = new Set<string>([normalized]);
+
   if (/^-100\d+$/.test(normalized)) {
     candidates.add(`-${normalized.slice(4)}`);
   } else if (/^-\d+$/.test(normalized) && !normalized.startsWith('-100')) {
     candidates.add(`-100${normalized.slice(1)}`);
   }
+
   return Array.from(candidates);
 }
 
@@ -107,10 +111,12 @@ async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient):
   });
 
   let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
+
   if (integration?.status === 'active' && integration.tokensEncrypted) {
     try {
       const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
       const integrationBotToken = normalizeTelegramSecret(tokens.botToken || tokens.token);
+
       botToken = integrationBotToken || botToken;
     } catch (error) {
       console.warn('[CorporateCalls][Telegram] Failed to decrypt integration token, using TELEGRAM_BOT_TOKEN fallback.', {
@@ -133,11 +139,13 @@ async function sendCorporateCallAddedTelegram(params: {
   const { db } = params;
 
   const groupIds = parseTelegramGroupIdsFromEnvKeys(CORPORATE_GROUP_ENV_KEYS);
+
   if (!groupIds.length) {
     return { sent: false, reason: 'group_missing' as const };
   }
 
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+
   if (!botToken) {
     return { sent: false, reason: 'token_missing' as const };
   }
@@ -247,6 +255,7 @@ export const corporateCallsRouter = router({
 
       const admin = isAdmin(ctx.user.roles || []);
       const callDate = parseReportDateInput(input.date);
+
       if (!admin && !isTodayOrYesterdayInReportTz(callDate)) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -363,6 +372,7 @@ export const corporateCallsRouter = router({
 
       const dateFrom = parseReportDateInput(input?.dateFrom || defaultDateFrom);
       const dateTo = parseReportDateInput(input?.dateTo || defaultDateTo);
+
       if (dateTo < dateFrom) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: "Sana oralig'i noto'g'ri." });
       }

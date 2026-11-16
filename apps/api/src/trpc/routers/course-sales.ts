@@ -28,9 +28,11 @@ function parseCustomDate(input: string, endOfDay: boolean): Date {
 
   const timestamp = `${input}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
   const parsed = new Date(timestamp);
+
   if (Number.isNaN(parsed.getTime())) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Noto'g'ri sana: ${input}` });
   }
+
   return parsed;
 }
 
@@ -48,6 +50,7 @@ function getRangeStart(range: CourseSalesRange, now: Date): Date {
   if (range === 'week') {
     const day = shiftedNow.getUTCDay();
     const daysSinceMonday = (day + 6) % 7;
+
     return new Date(Date.UTC(year, month, date - daysSinceMonday) - offsetMs);
   }
 
@@ -99,6 +102,7 @@ async function findSaleIdsBySubTariff(
       customer: { select: { profileCourseId: true, profileTariffId: true, profileSubTariffId: true } },
     },
   });
+
   return candidates.filter((sale) => resolveSaleSubTariffId(sale) === subTariffId).map((sale) => sale.id);
 }
 
@@ -107,19 +111,23 @@ function extractSaleSubTariffId(meta: unknown): string | null {
     return null;
   }
   const candidate = (meta as Record<string, unknown>)[SALE_SUB_TARIFF_META_KEY];
+
   if (typeof candidate !== 'string') {
     return null;
   }
   const normalized = candidate.trim();
+
   return normalized.length > 0 ? normalized : null;
 }
 
 function buildCategoryLabel(category: string): string {
   const key = String(category || '').trim().toLowerCase();
+
   if (key === 'online') return 'Online';
   if (key === 'offline') return 'Offline';
   if (key === 'intensive') return 'Intensiv';
   if (key === 'additional_service') return "Qo'shimcha xizmat";
+
   return "Noma'lum";
 }
 
@@ -155,6 +163,7 @@ function buildCustomerCoursesByCustomer(
   chainMetricsBySaleId?: Map<string, { currentDebtAmount: number }>,
 ): Map<string, CustomerCourseEntry[]> {
   const map = new Map<string, CustomerCourseEntry[]>();
+
   for (const sale of activeSales) {
     const saleSubTariffId = extractSaleSubTariffId(sale.legacyImportMeta);
     const isCurrentProfileSale = Boolean(
@@ -171,6 +180,7 @@ function buildCustomerCoursesByCustomer(
     const labelParts = [sale.course?.name || null, sale.tariff?.name || null, subTariffName].filter(Boolean);
     const label = labelParts.length ? labelParts.join(' / ') : "Noma'lum kurs";
     const rows = map.get(sale.customerId) || [];
+
     rows.push({
       saleIncomeId: sale.id,
       courseId: sale.course?.id || null,
@@ -245,16 +255,19 @@ export function buildTechnicalSaleIdSetByAgreement(params: {
   chainMetricsBySaleId: Map<string, { agreementAmount: number }>;
 }) {
   const saleIds = new Set<string>();
+
   for (const sale of params.sales) {
     if (sale.type && sale.type !== 'new_sale') {
       continue;
     }
     const chainAgreement = params.chainMetricsBySaleId.get(sale.id)?.agreementAmount;
     const fallbackAgreement = resolveEffectiveAgreementAmount(sale);
+
     if (Number(chainAgreement ?? 0) === 1 || Number(fallbackAgreement ?? 0) === 1) {
       saleIds.add(sale.id);
     }
   }
+
   return saleIds;
 }
 
@@ -384,6 +397,7 @@ export const courseSalesRouter = router({
         select: { id: true, name: true },
       });
       const categoryCourseIds = categoryCourses.map((course) => course.id);
+
       if (categoryCourseIds.length === 0) {
         return {
           category: input.category,
@@ -411,6 +425,7 @@ export const courseSalesRouter = router({
       }
 
       const scopedFilters: Record<string, unknown>[] = [];
+
       if (input.courseId) {
         if (!categoryCourseIds.includes(input.courseId)) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: "Kurs tanlangan turga tegishli emas." });
@@ -487,6 +502,7 @@ export const courseSalesRouter = router({
       ).size;
       let movedInCount = 0;
       const movedInSaleIdSet = new Set<string>();
+
       if (nonTechnicalSaleIdSet.size > 0) {
         const [relinkLogs, tariffChangeRequests, saleUpdateLogs] = await Promise.all([
           ctx.db.auditLog.findMany({
@@ -525,16 +541,19 @@ export const courseSalesRouter = router({
           }),
         ]);
         const movedCustomerIds = new Set<string>();
+
         for (const log of relinkLogs) {
           const metadata = (log.metadata && typeof log.metadata === 'object')
             ? (log.metadata as Record<string, unknown>)
             : null;
+
           if (!metadata) {
             continue;
           }
           const targetSaleIncomeId = typeof metadata.targetSaleIncomeId === 'string'
             ? metadata.targetSaleIncomeId
             : '';
+
           if (!targetSaleIncomeId || !nonTechnicalSaleIdSet.has(targetSaleIncomeId)) {
             continue;
           }
@@ -542,6 +561,7 @@ export const courseSalesRouter = router({
           const customerId = typeof metadata.customerId === 'string'
             ? metadata.customerId
             : (nonTechnicalSaleCustomerById.get(targetSaleIncomeId) || '');
+
           if (customerId) {
             movedCustomerIds.add(customerId);
           }
@@ -557,6 +577,7 @@ export const courseSalesRouter = router({
             : null;
           const newCourseId = typeof metadata?.newCourseId === 'string' ? metadata.newCourseId : '';
           const newTariffId = typeof metadata?.newTariffId === 'string' ? metadata.newTariffId : '';
+
           if (input.courseId && newCourseId && newCourseId !== input.courseId) {
             continue;
           }
@@ -568,6 +589,7 @@ export const courseSalesRouter = router({
           }
           movedInSaleIdSet.add(saleId);
           const customerId = nonTechnicalSaleCustomerById.get(saleId) || '';
+
           if (customerId) {
             movedCustomerIds.add(customerId);
           }
@@ -581,11 +603,13 @@ export const courseSalesRouter = router({
       let paidAmount = 0;
       let fullyPaidCount = 0;
       let debtorsCount = 0;
+
       for (const sale of filteredNonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
         const agreement = metric?.agreementAmount ?? resolveSaleAgreementAmount(sale);
         const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
         const paid = metric?.paidAmount ?? (sale.paymentAmount ?? 0);
+
         agreementAmount += agreement;
         remainingDebtAmount += debt;
         paidAmount += paid;
@@ -668,6 +692,7 @@ export const courseSalesRouter = router({
         select: { id: true },
       });
       const categoryCourseIds = categoryCourses.map((course) => course.id);
+
       if (categoryCourseIds.length === 0) {
         return {
           page: input.page,
@@ -679,6 +704,7 @@ export const courseSalesRouter = router({
       }
 
       const scopedFilters: Record<string, unknown>[] = [];
+
       if (input.courseId) {
         if (!categoryCourseIds.includes(input.courseId)) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: "Kurs tanlangan turga tegishli emas." });
@@ -924,6 +950,7 @@ export const courseSalesRouter = router({
           const resolvedSubTariffName = saleSubTariffId
             ? subTariffNameById.get(saleSubTariffId) || null
             : profileSubTariffName;
+
           return {
             saleId: sale.id,
             customerId: sale.customerId,
@@ -965,6 +992,7 @@ export const courseSalesRouter = router({
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
       const scopedFilters: Record<string, unknown>[] = [];
+
       if (input.courseId) {
         scopedFilters.push({ courseId: input.courseId });
       }
@@ -1057,6 +1085,7 @@ export const courseSalesRouter = router({
         )
           ? sale.customer.profileSubTariffId || null
           : null;
+
         return {
           ...sale,
           resolvedSubTariffId: saleSubTariffId || profileMatchedSubTariffId || null,
@@ -1085,6 +1114,7 @@ export const courseSalesRouter = router({
       const saleIdSet = new Set(saleIds);
       const rangeIncomeBySaleId = new Map<string, number>();
       const currentIncomeBySaleId = new Map<string, number>();
+
       if (saleIds.length > 0) {
         const [rangeIncomes, allIncomes] = await Promise.all([
           ctx.db.income.findMany({
@@ -1125,6 +1155,7 @@ export const courseSalesRouter = router({
 
         for (const income of rangeIncomes) {
           const saleId = income.relatedDebtIncomeId || income.id;
+
           if (!saleIdSet.has(saleId)) {
             continue;
           }
@@ -1133,6 +1164,7 @@ export const courseSalesRouter = router({
 
         for (const income of allIncomes) {
           const saleId = income.relatedDebtIncomeId || income.id;
+
           if (!saleIdSet.has(saleId)) {
             continue;
           }
@@ -1143,10 +1175,12 @@ export const courseSalesRouter = router({
       let rangeAgreementAmount = 0;
       let currentAgreementAmount = 0;
       let currentDebtAmount = 0;
+
       for (const sale of filteredNonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
         const agreement = metric?.agreementAmount ?? resolveSaleAgreementAmount(sale);
         const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
+
         currentAgreementAmount += agreement;
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
           rangeAgreementAmount += agreement;
@@ -1156,11 +1190,13 @@ export const courseSalesRouter = router({
       const rangeIncomeAmount = Array.from(rangeIncomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
       const currentIncomeAmount = filteredNonTechnicalSales.reduce((sum, sale) => {
         const metric = chainMetricsBySaleId.get(sale.id);
+
         return sum + (metric?.paidAmount ?? currentIncomeBySaleId.get(sale.id) ?? 0);
       }, 0);
       const currentCustomerCount = new Set(filteredNonTechnicalSales.map((sale) => sale.customerId)).size;
 
       const tariffCustomerSets = new Map<string, Set<string>>();
+
       for (const tariff of course.tariffs) {
         tariffCustomerSets.set(tariff.id, new Set());
       }
@@ -1168,6 +1204,7 @@ export const courseSalesRouter = router({
         ? course.tariffs.find((tariff) => tariff.id === input.tariffId) || null
         : null;
       const subTariffCustomerSets = new Map<string, Set<string>>();
+
       if (selectedTariff) {
         for (const subTariff of selectedTariff.subTariffs || []) {
           subTariffCustomerSets.set(subTariff.id, new Set());
@@ -1175,15 +1212,18 @@ export const courseSalesRouter = router({
       }
       for (const sale of filteredNonTechnicalSales) {
         const effectiveTariffId = sale.tariffId;
+
         if (!effectiveTariffId) {
           continue;
         }
         const set = tariffCustomerSets.get(effectiveTariffId);
+
         if (set) {
           set.add(sale.customerId);
         }
         if (selectedTariff && effectiveTariffId === selectedTariff.id && sale.resolvedSubTariffId) {
           const subTariffSet = subTariffCustomerSets.get(sale.resolvedSubTariffId);
+
           if (subTariffSet) {
             subTariffSet.add(sale.customerId);
           }
@@ -1252,6 +1292,7 @@ export const courseSalesRouter = router({
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const scopedFilters: Record<string, unknown>[] = [];
+
       if (input.courseId) {
         scopedFilters.push({ courseId: input.courseId });
       }
@@ -1496,6 +1537,7 @@ export const courseSalesRouter = router({
           const resolvedSubTariffName = saleSubTariffId
             ? subTariffNameById.get(saleSubTariffId) || null
             : profileSubTariffName;
+
           return {
             saleId: sale.id,
             customerId: sale.customerId,
@@ -1537,6 +1579,7 @@ export const courseSalesRouter = router({
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
       const scopedFilters: Record<string, unknown>[] = [];
+
       if (input.courseId) {
         scopedFilters.push({ courseId: input.courseId });
       }
@@ -1691,8 +1734,10 @@ export const courseSalesRouter = router({
       );
       const incomeBySaleId = new Map<string, number>();
       const currentIncomeBySaleId = new Map<string, number>();
+
       for (const income of rangeIncomes) {
         const saleId = income.relatedDebtIncomeId || income.id;
+
         if (!saleIdSet.has(saleId)) {
           continue;
         }
@@ -1700,6 +1745,7 @@ export const courseSalesRouter = router({
       }
       for (const income of allIncomes) {
         const saleId = income.relatedDebtIncomeId || income.id;
+
         if (!saleIdSet.has(saleId)) {
           continue;
         }
@@ -1712,10 +1758,12 @@ export const courseSalesRouter = router({
       let rangeSalesPaidAmount = 0;
       let currentAgreementAmount = 0;
       let currentDebtAmount = 0;
+
       for (const sale of nonTechnicalSales) {
         const metric = chainMetricsBySaleId.get(sale.id);
         const agreement = metric?.agreementAmount ?? resolveSaleAgreementAmount(sale);
         const debt = metric?.currentDebtAmount ?? (sale.remainingDebtAmount ?? 0);
+
         currentAgreementAmount += agreement;
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
           rangeAgreementAmount += agreement;
@@ -1750,6 +1798,7 @@ export const courseSalesRouter = router({
       const rangeIncomeAmount = Array.from(incomeBySaleId.values()).reduce((sum, value) => sum + value, 0);
       const currentIncomeAmount = nonTechnicalSales.reduce((sum, sale) => {
         const metric = chainMetricsBySaleId.get(sale.id);
+
         return sum + (metric?.paidAmount ?? currentIncomeBySaleId.get(sale.id) ?? 0);
       }, 0);
       // Share of the agreements made in this period that has been paid so far. Payments on older sales used to be
@@ -1770,6 +1819,7 @@ export const courseSalesRouter = router({
           incomeAmount: number;
         }
       >();
+
       for (const tariff of course.tariffs) {
         tariffRowMap.set(tariff.id, {
           tariffId: tariff.id,
@@ -1799,6 +1849,7 @@ export const courseSalesRouter = router({
       const ensureTariffRow = (tariffId: string | null) => {
         const key = tariffId ?? NO_TARIFF_ROW_KEY;
         let row = tariffRowMap.get(key);
+
         if (!row) {
           row = {
             tariffId: key,
@@ -1811,11 +1862,14 @@ export const courseSalesRouter = router({
           };
           tariffRowMap.set(key, row);
         }
+
         return row;
       };
+
       for (const sale of nonTechnicalSales) {
         // Sales on a deactivated tariff, or with no tariff, used to be dropped from this table.
         const tariffRow = ensureTariffRow(sale.tariffId);
+
         tariffRow.saleIds.push(sale.id);
         tariffRow.customerIds.add(sale.customerId);
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
@@ -1834,6 +1888,7 @@ export const courseSalesRouter = router({
           debtAmount: 0,
           incomeAmount: 0,
         };
+
         managerRow.saleCount += 1;
         managerRow.customerIds.add(sale.customerId);
         if (sale.entryDate >= rangeStart && sale.entryDate <= rangeEnd) {
@@ -1848,11 +1903,13 @@ export const courseSalesRouter = router({
 
       for (const [saleId, amount] of incomeBySaleId.entries()) {
         const sale = saleById.get(saleId);
+
         if (!sale) {
           continue;
         }
         ensureTariffRow(sale.tariffId).incomeAmount += amount;
         const managerRow = managerMap.get(sale.managerUserId);
+
         if (managerRow) {
           managerRow.incomeAmount += amount;
         }
@@ -1862,6 +1919,7 @@ export const courseSalesRouter = router({
         const collectionPercentByTariff = row.agreementAmount > 0
           ? Number(((row.incomeAmount / row.agreementAmount) * 100).toFixed(1))
           : 0;
+
         return {
           tariffId: row.tariffId,
           tariffName: row.tariffName,
@@ -1880,6 +1938,7 @@ export const courseSalesRouter = router({
           const collectionPercentByManager = row.agreementAmount > 0
             ? Number(((row.incomeAmount / row.agreementAmount) * 100).toFixed(1))
             : 0;
+
           return {
             managerUserId: row.managerUserId,
             managerLabel: row.managerLabel,

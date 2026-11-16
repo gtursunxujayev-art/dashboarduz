@@ -88,6 +88,7 @@ function startOfTashkentDay(date: Date): Date {
   const y = shifted.getUTCFullYear();
   const m = shifted.getUTCMonth();
   const d = shifted.getUTCDate();
+
   return new Date(Date.UTC(y, m, d) - 5 * 60 * 60 * 1000);
 }
 
@@ -102,6 +103,7 @@ function getCurrentMonthWindow(now: Date): { dateFrom: string; dateTo: string } 
   const y = shifted.getUTCFullYear();
   const m = shifted.getUTCMonth();
   const monthStart = new Date(Date.UTC(y, m, 1) - 5 * 60 * 60 * 1000);
+
   return { dateFrom: toDateOnly(monthStart), dateTo: toDateOnly(now) };
 }
 
@@ -111,6 +113,7 @@ function getLastMonthWindow(now: Date): { dateFrom: string; dateTo: string } {
   const m = shifted.getUTCMonth();
   const start = new Date(Date.UTC(y, m - 1, 1) - 5 * 60 * 60 * 1000);
   const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999) - 5 * 60 * 60 * 1000);
+
   return { dateFrom: toDateOnly(start), dateTo: toDateOnly(end) };
 }
 
@@ -119,8 +122,10 @@ function getCurrentWeekWindow(now: Date): { dateFrom: string; dateTo: string } {
   const day = localDay.getUTCDay();
   const daysSinceMonday = (day + 6) % 7;
   const monday = new Date(localDay);
+
   monday.setUTCDate(localDay.getUTCDate() - daysSinceMonday);
   const mondayUtc = new Date(Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate()) - 5 * 60 * 60 * 1000);
+
   return { dateFrom: toDateOnly(mondayUtc), dateTo: toDateOnly(now) };
 }
 
@@ -129,14 +134,18 @@ function getLastWeekWindow(now: Date): { dateFrom: string; dateTo: string } {
   const day = localDay.getUTCDay();
   const daysSinceMonday = (day + 6) % 7;
   const currentMonday = new Date(localDay);
+
   currentMonday.setUTCDate(localDay.getUTCDate() - daysSinceMonday);
   const lastMonday = new Date(currentMonday);
+
   lastMonday.setUTCDate(currentMonday.getUTCDate() - 7);
   const lastSunday = new Date(currentMonday);
+
   lastSunday.setUTCDate(currentMonday.getUTCDate() - 1);
 
   const fromUtc = new Date(Date.UTC(lastMonday.getUTCFullYear(), lastMonday.getUTCMonth(), lastMonday.getUTCDate()) - 5 * 60 * 60 * 1000);
   const toUtc = new Date(Date.UTC(lastSunday.getUTCFullYear(), lastSunday.getUTCMonth(), lastSunday.getUTCDate(), 23, 59, 59, 999) - 5 * 60 * 60 * 1000);
+
   return { dateFrom: toDateOnly(fromUtc), dateTo: toDateOnly(toUtc) };
 }
 
@@ -150,12 +159,14 @@ function detectDateWindowFromMessage(message: string, now: Date): { dateFrom: st
   const between = text.match(/(\d{4}-\d{2}-\d{2})\s*(?:to|dan|gacha|-|–|—)\s*(\d{4}-\d{2}-\d{2})/i);
   const betweenStart = between?.[1];
   const betweenEnd = between?.[2];
+
   if (betweenStart && betweenEnd) {
     return normalizeDatePair(betweenStart, betweenEnd);
   }
 
   const singleDate = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
   const singleDateValue = singleDate?.[1];
+
   if (singleDateValue) {
     return { dateFrom: singleDateValue, dateTo: singleDateValue };
   }
@@ -174,8 +185,10 @@ function detectDateWindowFromMessage(message: string, now: Date): { dateFrom: st
   }
   if (text.includes('bugun') || text.includes('today')) {
     const today = toDateOnly(startOfTashkentDay(now));
+
     return { dateFrom: today, dateTo: today };
   }
+
   return null;
 }
 
@@ -185,6 +198,7 @@ function resolveDateWindow(
   now: Date,
 ): DateWindow {
   const fromMessage = detectDateWindowFromMessage(message, now);
+
   if (fromMessage) {
     return { ...fromMessage, reason: 'message_explicit' };
   }
@@ -198,8 +212,10 @@ function resolveDateWindow(
   }
 
   const rangeMode = String(pageContext?.rangeMode || '').trim().toLowerCase();
+
   if (rangeMode === 'today') {
     const today = toDateOnly(startOfTashkentDay(now));
+
     return { dateFrom: today, dateTo: today, reason: 'page_context' };
   }
   if (rangeMode === 'week') {
@@ -217,6 +233,7 @@ function resolveDateWindow(
 
 function resolveAiProvider(): AiProviderConfig {
   const explicitProvider = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
+
   if (explicitProvider === 'deepseek' || (!explicitProvider && process.env.DEEPSEEK_API_KEY)) {
     return {
       provider: 'deepseek',
@@ -224,6 +241,7 @@ function resolveAiProvider(): AiProviderConfig {
       model: process.env.DEEPSEEK_MODEL || process.env.AI_MODEL || 'deepseek-v4-pro',
     };
   }
+
   return {
     provider: 'openai',
     apiKey: process.env.OPENAI_API_KEY || '',
@@ -236,6 +254,7 @@ function extractOpenAiText(body: any): string {
     return body.output_text;
   }
   const chunks: string[] = [];
+
   for (const block of body?.output || []) {
     for (const part of block?.content || []) {
       if (typeof part?.text === 'string') {
@@ -243,6 +262,7 @@ function extractOpenAiText(body: any): string {
       }
     }
   }
+
   return chunks.join('\n').trim();
 }
 
@@ -252,6 +272,7 @@ function extractDeepSeekText(body: any): string {
 
 async function loadHelperPrompt(): Promise<string> {
   const now = Date.now();
+
   if (promptCache && now - promptCache.loadedAt < PROMPT_CACHE_TTL_MS) {
     return promptCache.value;
   }
@@ -266,8 +287,10 @@ async function loadHelperPrompt(): Promise<string> {
     try {
       const raw = await fs.readFile(candidate, 'utf-8');
       const text = raw.trim();
+
       if (text.length > 0) {
         promptCache = { value: text, loadedAt: now };
+
         return text;
       }
     } catch {
@@ -277,11 +300,13 @@ async function loadHelperPrompt(): Promise<string> {
 
   console.warn('[aiHelper] AI_HELPER_PROMPT.md not found/readable. Fallback prompt is used.');
   promptCache = { value: FALLBACK_HELPER_PROMPT, loadedAt: now };
+
   return FALLBACK_HELPER_PROMPT;
 }
 
 function chooseFocus(message: string): 'sales' | 'lead_quality' | 'meta_targeting' | 'agents' | 'courses' {
   const text = message.toLowerCase();
+
   if (text.includes('meta') || text.includes('ctr') || text.includes('cpl') || text.includes('cpql') || text.includes('ads')) {
     return 'meta_targeting';
   }
@@ -294,6 +319,7 @@ function chooseFocus(message: string): 'sales' | 'lead_quality' | 'meta_targetin
   if (text.includes('kurs') || text.includes('course') || text.includes('tarif') || text.includes('subtarif')) {
     return 'courses';
   }
+
   return 'sales';
 }
 
@@ -318,11 +344,13 @@ function levenshteinDistance(a: string, b: string): number {
 
   const v0 = new Array(b.length + 1).fill(0);
   const v1 = new Array(b.length + 1).fill(0);
+
   for (let i = 0; i <= b.length; i += 1) v0[i] = i;
   for (let i = 0; i < a.length; i += 1) {
     v1[0] = i + 1;
     for (let j = 0; j < b.length; j += 1) {
       const cost = a[i] === b[j] ? 0 : 1;
+
       v1[j + 1] = Math.min(
         v1[j] + 1,
         v0[j + 1] + 1,
@@ -331,13 +359,16 @@ function levenshteinDistance(a: string, b: string): number {
     }
     for (let j = 0; j <= b.length; j += 1) v0[j] = v1[j];
   }
+
   return v1[b.length];
 }
 
 function similarityScore(a: string, b: string): number {
   const maxLen = Math.max(a.length, b.length);
+
   if (maxLen === 0) return 1;
   const dist = levenshteinDistance(a, b);
+
   return Math.max(0, 1 - dist / maxLen);
 }
 
@@ -346,17 +377,20 @@ function extractLikelyCourseToken(message: string): string | null {
   const courseRegex = /(\d+\s*-?\s*[a-zа-яo'g`'‘]+(?:\s*[a-zа-яo'g`'‘]+)?)/i;
   const match = text.match(courseRegex);
   const token = (match?.[1] || '').trim();
+
   if (token.length >= 3) {
     return token;
   }
   if (text.includes('kurs') || text.includes('tarif') || text.includes('coching') || text.includes('couching')) {
     return text.trim().slice(0, 64);
   }
+
   return null;
 }
 
 function shouldPreferCourseDirectAnswer(message: string): boolean {
   const text = message.toLowerCase();
+
   return (
     text.includes('kurs')
     || text.includes('coching')
@@ -391,6 +425,7 @@ function buildCourseSuggestionAnswer(courseHint: CourseHintSummary): string | nu
   if (!courseHint.matchedCourseName || courseHint.similarity < 0.45) {
     return null;
   }
+
   return `Savolda yozuv xatolik bo'lishi mumkin. Balki "${courseHint.matchedCourseName}" ni nazarda tutdingizmi?`;
 }
 
@@ -402,6 +437,7 @@ async function buildCourseHintSummary(
   db: DbClient,
 ): Promise<CourseHintSummary | null> {
   const requestedToken = extractLikelyCourseToken(message);
+
   if (!requestedToken) {
     return null;
   }
@@ -410,16 +446,20 @@ async function buildCourseHintSummary(
     where: { tenantId, isActive: true },
     select: { id: true, name: true },
   });
+
   if (!courses.length) {
     return null;
   }
 
   const normalizedRequested = normalizeLooseText(requestedToken);
   let best: { id: string; name: string; score: number } | null = null;
+
   for (const course of courses) {
     const normalizedCourse = normalizeLooseText(course.name || '');
+
     if (!normalizedCourse) continue;
     const score = similarityScore(normalizedRequested, normalizedCourse);
+
     if (!best || score > best.score) {
       best = { id: course.id, name: course.name, score };
     }
@@ -481,9 +521,11 @@ async function buildCourseHintSummary(
   const repayments = excludeTechnicalRows(repaymentsRaw, technicalSaleIds);
 
   const tariffMap = new Map<string, { salesCount: number; agreementAmount: number; incomeAmount: number; debtAmount: number }>();
+
   for (const sale of sales) {
     const key = sale.tariff?.name || 'Tarifsiz';
     const row = tariffMap.get(key) || { salesCount: 0, agreementAmount: 0, incomeAmount: 0, debtAmount: 0 };
+
     row.salesCount += 1;
     row.agreementAmount += resolveSaleAgreementAmount(sale);
     row.incomeAmount += Number(sale.paymentAmount || 0);
@@ -493,6 +535,7 @@ async function buildCourseHintSummary(
   for (const repayment of repayments) {
     const key = repayment.tariff?.name || 'Tarifsiz';
     const row = tariffMap.get(key) || { salesCount: 0, agreementAmount: 0, incomeAmount: 0, debtAmount: 0 };
+
     row.incomeAmount += Number(repayment.paymentAmount || 0);
     tariffMap.set(key, row);
   }
@@ -558,12 +601,14 @@ async function generateAssistantText(
     });
 
     const body = await response.json().catch(() => ({}));
+
     if (!response.ok) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: String(body?.error?.message || `DeepSeek so'rovida xatolik: ${response.status}`),
       });
     }
+
     return extractDeepSeekText(body);
   }
 
@@ -590,12 +635,14 @@ async function generateAssistantText(
     }),
   });
   const body = await response.json().catch(() => ({}));
+
   if (!response.ok) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: String(body?.error?.message || `OpenAI so'rovida xatolik: ${response.status}`),
     });
   }
+
   return extractOpenAiText(body);
 }
 
@@ -605,6 +652,7 @@ export const aiHelperRouter = router({
     .mutation(async ({ ctx, input }) => {
       const roles = ctx.user.roles || [];
       const allowed = roles.includes('Admin') || roles.includes('Manager');
+
       if (!allowed) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'AI yordamchidan faqat Admin va Manager foydalanishi mumkin.' });
       }
@@ -615,6 +663,7 @@ export const aiHelperRouter = router({
       const rangeEnd = parseCustomDate(resolved.dateTo, true);
       const focus = chooseFocus(input.message);
       const courseHint = await buildCourseHintSummary(ctx.tenantId, rangeStart, rangeEnd, input.message, ctx.db);
+
       if (courseHint && shouldPreferCourseDirectAnswer(input.message)) {
         if (courseHint.matchedCourseName && courseHint.similarity >= 0.55) {
           return {
@@ -627,6 +676,7 @@ export const aiHelperRouter = router({
         }
 
         const suggestion = buildCourseSuggestionAnswer(courseHint);
+
         if (suggestion) {
           return {
             answer: suggestion,

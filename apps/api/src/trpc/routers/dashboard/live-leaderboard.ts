@@ -44,6 +44,7 @@ function canReadLiveLeaderboard(
 ): boolean {
   if (!Array.isArray(roles)) return false;
   if (roles.some((role) => LIVE_LEADERBOARD_MANAGER_ROLES.has(role))) return true;
+
   return group === 'online'
     ? roles.length === 1 && roles[0] === 'Dashboard'
     : roles.length === 1 && roles[0] === 'OfflineDashboard';
@@ -52,6 +53,7 @@ function canReadLiveLeaderboard(
 export function resolveAgentGroup(roles: readonly string[]): AgentGroup | null {
   if (roles.includes('OnlineAgent')) return 'online';
   if (roles.includes('OfflineAgent') || roles.includes('TeamLeader')) return 'offline';
+
   return null;
 }
 
@@ -67,10 +69,12 @@ function groupAgentRoles(group: AgentGroup): string[] {
 export function sumBonusByAgent(items: BonusCalculationItem[], agentIds: string[]): Map<string, number> {
   const wanted = new Set(agentIds);
   const totals = new Map<string, number>();
+
   for (const item of items) {
     if (!wanted.has(item.agentUserId)) continue;
     totals.set(item.agentUserId, (totals.get(item.agentUserId) || 0) + item.bonusAmount);
   }
+
   return totals;
 }
 
@@ -81,6 +85,7 @@ export function sumCourseBonusByAgent(
   courseIds: string[],
 ): Map<string, number> {
   const courses = new Set(courseIds);
+
   return sumBonusByAgent(items.filter((item) => item.courseId !== null && courses.has(item.courseId)), agentIds);
 }
 
@@ -110,6 +115,7 @@ export function summarizeLeaderboardAgents(params: {
   const income = new Map<string, number>();
   const todayIncome = new Map<string, number>();
   const salesCount = new Map<string, number>();
+
   for (const row of params.rows) {
     if (!wanted.has(row.managerUserId)) continue;
     income.set(row.managerUserId, (income.get(row.managerUserId) || 0) + (row.paymentAmount || 0));
@@ -120,6 +126,7 @@ export function summarizeLeaderboardAgents(params: {
       salesCount.set(row.managerUserId, (salesCount.get(row.managerUserId) || 0) + 1);
     }
   }
+
   return { income, todayIncome, salesCount };
 }
 
@@ -179,14 +186,18 @@ export function summarizeAgreementBonusAndDebt(params: {
   const sales = params.sales.filter((sale) => wanted.has(sale.managerUserId));
   const teamAgreementByCourse = new Map<string, number>();
   const salesCountByAgentCategory = new Map<string, number>();
+
   for (const sale of sales) {
     const agreement = resolveSaleAgreementAmount(sale);
+
     if (sale.courseId) {
       teamAgreementByCourse.set(sale.courseId, (teamAgreementByCourse.get(sale.courseId) || 0) + agreement);
     }
     const category = classifyCourseCategoryFromField(sale.course?.category || sale.course?.name);
+
     if (category !== 'other') {
       const key = `${sale.managerUserId}:${category}`;
+
       salesCountByAgentCategory.set(key, (salesCountByAgentCategory.get(key) || 0) + 1);
     }
   }
@@ -196,13 +207,16 @@ export function summarizeAgreementBonusAndDebt(params: {
   const bonusPending = new Map<string, number>();
   const debt = new Map<string, number>();
   const openSales: OpenSale[] = [];
+
   for (const sale of sales) {
     const agreement = resolveSaleAgreementAmount(sale);
     const paid = Math.min(agreement, params.paidBySaleId.get(sale.id) || 0);
     const remaining = agreement - paid;
+
     debt.set(sale.managerUserId, (debt.get(sale.managerUserId) || 0) + remaining);
 
     const category = classifyCourseCategoryFromField(sale.course?.category || sale.course?.name);
+
     if (category === 'other') continue;
     const override = sale.courseId ? params.policy.courseOverrides[sale.courseId] : undefined;
     const percent = override
@@ -211,6 +225,7 @@ export function summarizeAgreementBonusAndDebt(params: {
           params.policy.bonusRules[category],
           salesCountByAgentCategory.get(`${sale.managerUserId}:${category}`) || 0,
         );
+
     bonus.set(sale.managerUserId, (bonus.get(sale.managerUserId) || 0) + Math.round(agreement * percent / 100));
     if (remaining === 0) {
       bonusFact.set(sale.managerUserId, (bonusFact.get(sale.managerUserId) || 0) + Math.round(agreement * percent / 100));
@@ -219,9 +234,11 @@ export function summarizeAgreementBonusAndDebt(params: {
       openSales.push({ managerUserId: sale.managerUserId, courseId: sale.courseId, category, agreement, remaining });
       const paidOnClosure = Boolean(override) || params.policy.bonusMode === 'on_debt_closed';
       const pending = Math.round((paidOnClosure ? agreement : remaining) * percent / 100);
+
       bonusPending.set(sale.managerUserId, (bonusPending.get(sale.managerUserId) || 0) + pending);
     }
   }
+
   return { bonus, bonusFact, bonusPending, debt, openSales };
 }
 
@@ -254,6 +271,7 @@ export function projectMonthlyKutilma(params: {
   const add = (agentId: string, value: number) => result.set(agentId, (result.get(agentId) || 0) + value);
 
   const teamAmountByCourse = new Map<string, number>();
+
   for (const item of params.monthItems) {
     if (item.calculationMode === 'course_team_income' && item.courseId) {
       teamAmountByCourse.set(item.courseId, (teamAmountByCourse.get(item.courseId) || 0) + item.baseAmount);
@@ -274,6 +292,7 @@ export function projectMonthlyKutilma(params: {
       ...plainItems.filter((item) => item.courseId !== null && courses.has(item.courseId)).map((item) => item.category),
       ...openPlain.map((sale) => sale.category),
     ]);
+
     for (const category of categories) {
       // Tier count: what payroll counts this month (closures in every course of the category) plus the open sales.
       const closedCount = plainItems
@@ -285,19 +304,23 @@ export function projectMonthlyKutilma(params: {
         .filter((item) => item.category === category && item.courseId !== null && courses.has(item.courseId))
         .reduce((sum, item) => sum + item.baseAmount, 0)
         + openInCategory.reduce((sum, sale) => sum + openBase(sale), 0);
+
       add(agentId, Math.round(base * percent / 100));
     }
     for (const courseId of params.courseIds) {
       const override = params.policy.courseOverrides[courseId];
+
       if (!override) continue;
       const percent = resolveCourseIncomePercent(override, teamAmountByCourse.get(courseId) || 0).percent;
       const base = items
         .filter((item) => item.calculationMode === 'course_team_income' && item.courseId === courseId)
         .reduce((sum, item) => sum + item.baseAmount, 0)
         + open.filter((sale) => sale.courseId === courseId).reduce((sum, sale) => sum + sale.agreement, 0);
+
       add(agentId, Math.round(base * percent / 100));
     }
   }
+
   return result;
 }
 
@@ -353,10 +376,12 @@ async function loadAgreementBonusAndDebt(params: {
       })
     : [];
   const paidBySaleId = new Map(sales.map((sale) => [sale.id, sale.paymentAmount || 0]));
+
   for (const row of repayments) {
     if (!row.relatedDebtIncomeId) continue;
     paidBySaleId.set(row.relatedDebtIncomeId, (paidBySaleId.get(row.relatedDebtIncomeId) || 0) + (row.paymentAmount || 0));
   }
+
   return summarizeAgreementBonusAndDebt({
     agentIds: params.agentIds,
     sales,
@@ -375,10 +400,13 @@ export function pickPreviousCourseIds(
   isEligible: (courseId: string) => boolean,
 ): string[] {
   const current = new Set(currentCourseIds);
+
   for (const selection of historyNewestFirst) {
     const previous = selection.filter((courseId) => !current.has(courseId) && isEligible(courseId));
+
     if (previous.length) return previous;
   }
+
   return [];
 }
 
@@ -394,6 +422,7 @@ async function loadPreviousOnlineCourses(tenantId: string, currentCourseIds: str
       && Array.isArray((log.metadata as Record<string, unknown>).telegramDailyReportCourseIds))
     .map((log) => parseTelegramDailyReportCourseIds(log.metadata));
   const historyIds = Array.from(new Set(history.flat()));
+
   if (!historyIds.length) return [];
   const courses = await db.course.findMany({
     where: { tenantId, id: { in: historyIds } },
@@ -402,6 +431,7 @@ async function loadPreviousOnlineCourses(tenantId: string, currentCourseIds: str
   const onlineById = new Map(courses
     .filter((course) => classifyCourseCategoryFromField(course.category || course.name) === 'online')
     .map((course) => [course.id, course]));
+
   return pickPreviousCourseIds(history, currentCourseIds, (courseId) => onlineById.has(courseId))
     .map((courseId) => onlineById.get(courseId)!);
 }
@@ -420,6 +450,7 @@ export const liveLeaderboardProcedures = {
     .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
     .query(async ({ ctx, input }) => {
       const requestedGroup: AgentGroup = input?.group || 'online';
+
       if (!canReadLiveLeaderboard(ctx.user.roles, requestedGroup)) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -499,6 +530,7 @@ export const liveLeaderboardProcedures = {
     const previousCourseIds = previousCourses.map((course) => course.id);
 
     let winner: ReturnType<typeof pickLeaderboardWinner> = null;
+
     if (previousCourseIds.length && agentIds.length) {
       const [rowsRaw, previous] = await Promise.all([
         ctx.db.income.findMany({
@@ -515,6 +547,7 @@ export const liveLeaderboardProcedures = {
       ]);
       const rows = excludeTechnicalRows(rowsRaw, await loadTechnicalSaleIdsForRows(ctx.tenantId, rowsRaw, ctx.db));
       const stats = summarizeLeaderboardAgents({ agentIds, rows, todayStart: now });
+
       winner = pickLeaderboardWinner(groupedAgents, stats, previous.bonus);
     }
 
@@ -535,6 +568,7 @@ export const liveLeaderboardProcedures = {
     .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
     .query(async ({ ctx, input }) => {
       const requestedGroup: AgentGroup = input?.group || 'online';
+
       if (!canReadLiveLeaderboard(ctx.user.roles, requestedGroup)) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -563,8 +597,10 @@ export const liveLeaderboardProcedures = {
       const groupedAgents = agents.filter((agent) => resolveAgentGroup(agent.roles) === requestedGroup);
       const agentIds = groupedAgents.map((agent) => agent.id);
       const extensionToAgentId = new Map<string, string>();
+
       for (const agent of groupedAgents) {
         const extension = normalizeDigits(agent.utelManagerExternalId);
+
         if (isAllowedUtelManagerExtension(extension) && !extensionToAgentId.has(extension)) {
           extensionToAgentId.set(extension, agent.id);
         }
@@ -603,9 +639,11 @@ export const liveLeaderboardProcedures = {
 
       const callCountByAgentId = new Map<string, number>();
       const callDurationByAgentId = new Map<string, number>();
+
       for (const call of calls) {
         const extension = resolveCallExtension(call);
         const agentId = extension ? extensionToAgentId.get(extension) : null;
+
         if (!agentId) {
           continue;
         }
@@ -631,6 +669,7 @@ export const liveLeaderboardProcedures = {
     .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
     .query(async ({ ctx, input }) => {
       const requestedGroup: AgentGroup = input?.group || 'online';
+
       if (!canReadLiveLeaderboard(ctx.user.roles, requestedGroup)) {
         throw new TRPCError({
           code: 'FORBIDDEN',

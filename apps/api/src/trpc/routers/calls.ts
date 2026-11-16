@@ -20,6 +20,7 @@ const clickToCallSchema = z.object({
   recording: z.boolean().optional().default(true),
 });
 const callsRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
+
 type CallsRange = z.infer<typeof callsRangeSchema>;
 
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
@@ -35,10 +36,12 @@ function normalizeDigits(value: unknown): string {
 
 function isAllowedUtelManagerExtension(value: unknown): boolean {
   const digits = normalizeDigits(value);
+
   if (!digits) {
     return false;
   }
   const parsed = Number.parseInt(digits, 10);
+
   return Number.isFinite(parsed) && parsed >= UTEL_MIN_EXTENSION && parsed <= UTEL_MAX_EXTENSION;
 }
 
@@ -46,6 +49,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
+
   return value as Record<string, unknown>;
 }
 
@@ -55,11 +59,13 @@ function textFromUnknown(value: unknown): string | null {
   }
   if (typeof value === 'string') {
     const normalized = value.trim();
+
     return normalized.length > 0 ? normalized : null;
   }
   if (typeof value === 'number' && Number.isFinite(value)) {
     return String(value);
   }
+
   return null;
 }
 
@@ -69,6 +75,7 @@ function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): 
   }
 
   const normalizedKey = key.toLowerCase();
+
   for (const [entryKey, entryValue] of Object.entries(source)) {
     if (entryKey.toLowerCase() === normalizedKey) {
       return entryValue;
@@ -85,10 +92,12 @@ function parseDuration(value: unknown): number | null {
 
   if (typeof value === 'string') {
     const normalized = value.trim();
+
     if (!normalized) {
       return null;
     }
     const parsed = Number.parseInt(normalized, 10);
+
     if (!Number.isNaN(parsed)) {
       return Math.max(0, parsed);
     }
@@ -103,20 +112,24 @@ function resolveCallDuration(duration: number | null, metadata: unknown): number
   }
 
   const metadataObject = asObject(metadata);
+
   if (!metadataObject) {
     return 0;
   }
 
   const candidates: Record<string, unknown>[] = [metadataObject];
   const rawHistory = asObject(metadataObject.raw_call_history);
+
   if (rawHistory) {
     candidates.push(rawHistory);
   }
 
   const keys = ['normalized_duration', 'duration', 'billsec', 'conversation', 'talk_duration'];
+
   for (const candidate of candidates) {
     for (const key of keys) {
       const parsed = parseDuration(getCaseInsensitiveValue(candidate, key));
+
       if (parsed !== null) {
         return parsed;
       }
@@ -149,6 +162,7 @@ function resolveCallExtension(call: {
     || metadata?.internal
     || metadata?.line,
   );
+
   if (isAllowedUtelManagerExtension(metadataExtension)) {
     return metadataExtension;
   }
@@ -169,6 +183,7 @@ function resolveCallExtension(call: {
 
   if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
   if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
+
   return null;
 }
 
@@ -183,6 +198,7 @@ function getTashkentDayKey(date: Date): string {
   const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
   const month = parts.find((part) => part.type === 'month')?.value ?? '01';
   const day = parts.find((part) => part.type === 'day')?.value ?? '01';
+
   return `${year}-${month}-${day}`;
 }
 
@@ -201,6 +217,7 @@ function getRangeStart(range: CallsRange, now: Date): Date {
   if (range === 'week') {
     const day = shiftedNow.getUTCDay();
     const daysSinceMonday = (day + 6) % 7;
+
     return new Date(Date.UTC(year, month, date - daysSinceMonday) - offsetMs);
   }
 
@@ -214,6 +231,7 @@ function parseCustomDate(input: string, endOfDay: boolean): Date {
 
   const timestamp = `${input}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
   const parsed = new Date(timestamp);
+
   if (Number.isNaN(parsed.getTime())) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid custom date: ${input}` });
   }
@@ -238,6 +256,7 @@ function resolveDateRange(range: CallsRange, now: Date, dateFrom?: string, dateT
 
   const rangeStart = parseCustomDate(dateFrom, false);
   const rangeEnd = parseCustomDate(dateTo, true);
+
   if (rangeEnd < rangeStart) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'dateTo must be greater than or equal to dateFrom.' });
   }
@@ -247,11 +266,13 @@ function resolveDateRange(range: CallsRange, now: Date, dateFrom?: string, dateT
 
 async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
   const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
   }
 
   let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
+
   try {
     currentUser = await db.user.findFirst({
       where: {
@@ -280,6 +301,7 @@ export const callsRouter = router({
     .input(callsListSchema)
     .query(async ({ input, ctx }) => {
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+
       if (scope.isScoped && !scope.responsibleUserId) {
         return {
           data: [],
@@ -428,6 +450,7 @@ export const callsRouter = router({
     const mappedAgents = agentUsers
       .map((user) => {
         const extension = normalizeDigits(user.utelManagerExternalId || '');
+
         return {
           id: user.id,
           name: textFromUnknown(user.name) || textFromUnknown(user.username) || extension || 'Agent',
@@ -437,6 +460,7 @@ export const callsRouter = router({
       .filter((user) => isAllowedUtelManagerExtension(user.extension));
 
     const extensionToAgent = new Map<string, { id: string; name: string; extension: string }>();
+
     for (const agent of mappedAgents) {
       if (!extensionToAgent.has(agent.extension)) {
         extensionToAgent.set(agent.extension, agent);
@@ -490,16 +514,19 @@ export const callsRouter = router({
         direction: call.direction,
         metadata: call.metadata,
       });
+
       if (!extension) {
         continue;
       }
 
       const mappedAgent = extensionToAgent.get(extension);
+
       if (!mappedAgent) {
         continue;
       }
 
       const stat = byAgent.get(mappedAgent.id);
+
       if (!stat) {
         continue;
       }
@@ -513,6 +540,7 @@ export const callsRouter = router({
       stat.totalDurationSeconds += resolveCallDuration(call.duration, call.metadata);
 
       const dayKey = getTashkentDayKey(call.startedAt);
+
       stat.activeDayKeys.add(dayKey);
       if (dayKey === todayKey) {
         stat.callsToday += 1;

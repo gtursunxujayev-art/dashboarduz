@@ -23,6 +23,7 @@ function rolesNeedManagerMapping(roles: UserRole[]): boolean {
 function isTelegramMappingConflictError(error: unknown): boolean {
   const errorCode = String((error as any)?.code || '');
   const message = String((error as any)?.message || '').toLowerCase();
+
   return (
     (errorCode === 'P2002' && message.includes('telegramid'))
     || message.includes('users_telegramid_key')
@@ -40,11 +41,13 @@ function normalizeDigits(value: unknown): string {
 
 function normalizePhone(value: unknown): string | null {
   const digits = normalizeDigits(value);
+
   return digits.length > 0 ? digits : null;
 }
 
 function validateNormalizedPhoneOrThrow(rawPhone: string | undefined): string | null {
   const normalized = normalizePhone(rawPhone);
+
   if (!normalized) {
     return null;
   }
@@ -54,15 +57,18 @@ function validateNormalizedPhoneOrThrow(rawPhone: string | undefined): string | 
       message: 'Telefon raqam noto‘g‘ri formatda. 9-15 ta raqam kiriting.',
     });
   }
+
   return normalized;
 }
 
 function isAllowedUtelManagerExtension(value: unknown): boolean {
   const digits = normalizeDigits(value);
+
   if (!digits) {
     return false;
   }
   const parsed = Number.parseInt(digits, 10);
+
   return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
 }
 
@@ -97,6 +103,7 @@ function extractUtelManagerFromMetadata(metadata: unknown): { key: string; label
 
   const key = extensionDigits;
   const label = managerName ? `${managerName} (${extensionDigits})` : extensionDigits;
+
   return {
     key,
     label,
@@ -117,10 +124,13 @@ function generatePassword(length = 12) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
   const bytes = crypto.randomBytes(length);
   let result = '';
+
   for (let i = 0; i < length; i += 1) {
     const byte = bytes[i] ?? 0;
+
     result += alphabet[byte % alphabet.length];
   }
+
   return result;
 }
 
@@ -134,6 +144,7 @@ async function generateUniqueLogin(seed: string, db: DbClient) {
       where: { username: candidate },
       select: { id: true },
     });
+
     if (!exists) {
       return candidate;
     }
@@ -145,6 +156,7 @@ async function generateUniqueLogin(seed: string, db: DbClient) {
 export const usersRouter = router({
   amocrmManagers: managerProcedure.query(async ({ ctx }) => {
     const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
+
     if (!amoContext) {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
@@ -153,6 +165,7 @@ export const usersRouter = router({
     }
 
     const users = await amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl);
+
     return users
       .map((user) => ({
         id: String(user.id || ''),
@@ -178,8 +191,10 @@ export const usersRouter = router({
     });
 
     const uniqueManagers = new Map<string, string>();
+
     for (const call of calls) {
       const extracted = extractUtelManagerFromMetadata(call.metadata);
+
       if (!extracted) {
         continue;
       }
@@ -203,11 +218,13 @@ export const usersRouter = router({
 
     for (const user of mappedUsers) {
       const extensionDigits = normalizeDigits(user.utelManagerExternalId || '');
+
       if (!isAllowedUtelManagerExtension(extensionDigits)) {
         continue;
       }
       if (!uniqueManagers.has(extensionDigits)) {
         const labelSource = toNormalizedText(user.name || user.username || '');
+
         uniqueManagers.set(extensionDigits, labelSource ? `${labelSource} (${extensionDigits})` : extensionDigits);
       }
     }
@@ -288,6 +305,7 @@ export const usersRouter = router({
       const passwordHash = await hashPassword(plainPassword);
 
       const role = input.role as UserRole;
+
       if (roleNeedsManagerMapping(role) && !input.amocrmResponsibleUserId) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -313,6 +331,7 @@ export const usersRouter = router({
           },
           select: { id: true },
         });
+
         if (existingByPhone?.id) {
           throw new TRPCError({
             code: 'CONFLICT',
@@ -328,6 +347,7 @@ export const usersRouter = router({
       createData.telegramId = input.telegramChatId || null;
 
       let created: { id: string; username: string | null; name: string | null; roles: string[] };
+
       try {
         created = await ctx.db.user.create({
           data: createData,
@@ -412,6 +432,7 @@ export const usersRouter = router({
           },
           select: { id: true },
         });
+
         if (existingByPhone?.id) {
           throw new TRPCError({
             code: 'CONFLICT',
@@ -553,12 +574,14 @@ export const usersRouter = router({
           id: true,
         },
       });
+
       if (!user) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
       }
 
       let previousAmoResponsibleUserId: string | null = null;
       let previousUtelManagerExternalId: string | null = null;
+
       if (rolesNeedManagerMapping(input.roles as UserRole[])) {
         const mappingSource = await ctx.db.user.findFirst({
           where: {
@@ -570,6 +593,7 @@ export const usersRouter = router({
             utelManagerExternalId: true,
           },
         });
+
         previousAmoResponsibleUserId = mappingSource?.amocrmResponsibleUserId || null;
         previousUtelManagerExternalId = mappingSource?.utelManagerExternalId || null;
       }
@@ -577,6 +601,7 @@ export const usersRouter = router({
       const updateData: any = {
         roles: input.roles as UserRole[],
       };
+
       if (rolesNeedManagerMapping(input.roles as UserRole[])) {
         updateData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || previousAmoResponsibleUserId || null;
         updateData.utelManagerExternalId = input.utelManagerExternalId || previousUtelManagerExternalId || null;
@@ -597,6 +622,7 @@ export const usersRouter = router({
         lastLoginAt: Date | null;
         createdAt: Date;
       };
+
       try {
         updated = await ctx.db.user.update({
           where: { id: user.id },
@@ -671,6 +697,7 @@ export const usersRouter = router({
       }
 
       const normalizedUsername = input.username?.trim().toLowerCase();
+
       if (normalizedUsername && normalizedUsername !== user.username) {
         const duplicate = await ctx.db.user.findFirst({
           where: {
@@ -679,12 +706,14 @@ export const usersRouter = router({
           },
           select: { id: true },
         });
+
         if (duplicate) {
           throw new TRPCError({ code: 'CONFLICT', message: 'Login already in use.' });
         }
       }
 
       let nextPassword = input.password;
+
       if (input.generatePassword) {
         nextPassword = generatePassword(12);
       }

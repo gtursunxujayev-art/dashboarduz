@@ -57,6 +57,7 @@ async function sumIncomeSplit(params: {
   });
 
   const split: IncomeSplit = { online: 0, offline: 0 };
+
   for (const row of rows) {
     if (isRowLinkedToTechnicalSale({
       rowType: row.type,
@@ -71,12 +72,14 @@ async function sumIncomeSplit(params: {
       ? classifyCourseCategoryFromField(course.category)
       : classifyCourseCategoryFromField(course?.name);
     const amount = row.paymentAmount ?? 0;
+
     if (category === 'online') {
       split.online += amount;
     } else if (category === 'offline') {
       split.offline += amount;
     }
   }
+
   return split;
 }
 
@@ -130,8 +133,10 @@ export const incomeOverviewProcedures = {
     };
 
     const selectedCourses = await loadSelectedReportCourses(ctx.tenantId, ctx.db);
+
     for (const course of selectedCourses) {
       const category: SelectedCourseCategory = course.dashboardCategory;
+
       if (result[category]) continue;
       result[category] = {
         courseId: course.courseId,

@@ -18,6 +18,7 @@ export const notificationsRouter = router({
       const skip = (page - 1) * limit;
 
       const where: any = { tenantId: ctx.tenantId };
+
       if (status) {
         where.status = status;
       }
@@ -55,6 +56,7 @@ export const notificationsRouter = router({
           tenantId: ctx.tenantId,
         },
       });
+
       if (!notification) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Notification not found' });
       }

@@ -27,6 +27,7 @@ export const authRouter = router({
         windowMs: 15 * 60 * 1000,
         keyPrefix: 'password-register',
       });
+
       if (!rateLimit.allowed) {
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Too many attempts. Try again later.' });
       }
@@ -69,6 +70,7 @@ export const authRouter = router({
             roles: true,
           },
         });
+
         userId = updatedUser.id;
         tenantId = updatedUser.tenantId;
         roles = updatedUser.roles;
@@ -131,6 +133,7 @@ export const authRouter = router({
         windowMs: 15 * 60 * 1000,
         keyPrefix: 'password-login',
       });
+
       if (!rateLimit.allowed) {
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Too many login attempts. Try again later.' });
       }
@@ -162,6 +165,7 @@ export const authRouter = router({
       }
 
       const passwordOk = await verifyPassword(input.password, user.passwordHash);
+
       if (!passwordOk) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid credentials' });
       }
@@ -211,6 +215,7 @@ export const authRouter = router({
           windowMs: 15 * 60 * 1000,
           keyPrefix: 'otp',
         });
+
         if (!otpLimit.allowed) {
           throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Too many OTP requests. Try again later.' });
         }
@@ -249,6 +254,7 @@ export const authRouter = router({
           windowMs: 15 * 60 * 1000,
           keyPrefix: 'otp',
         });
+
         if (!verifyLimit.allowed) {
           throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Too many OTP attempts. Try again later.' });
         }
@@ -438,11 +444,13 @@ export const authRouter = router({
       }
 
       const passwordOk = await verifyPassword(input.currentPassword, user.passwordHash);
+
       if (!passwordOk) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Current password is incorrect.' });
       }
 
       const nextLogin = input.newLogin?.trim().toLowerCase();
+
       if (nextLogin && nextLogin !== user.username) {
         const duplicate = await ctx.db.user.findFirst({
           where: {
@@ -451,12 +459,14 @@ export const authRouter = router({
           },
           select: { id: true },
         });
+
         if (duplicate) {
           throw new TRPCError({ code: 'CONFLICT', message: 'Login already in use.' });
         }
       }
 
       const nextPasswordHash = input.newPassword ? await hashPassword(input.newPassword) : null;
+
       if (!nextLogin && !nextPasswordHash) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No changes provided.' });
       }

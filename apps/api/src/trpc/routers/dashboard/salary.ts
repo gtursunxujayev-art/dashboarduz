@@ -86,10 +86,12 @@ function extractBonusDetailSubTariffId(meta: unknown): string | null {
     return null;
   }
   const candidate = (meta as Record<string, unknown>).saleSubTariffId;
+
   if (typeof candidate !== 'string') {
     return null;
   }
   const normalized = candidate.trim();
+
   return normalized || null;
 }
 
@@ -98,11 +100,13 @@ function scoreKpi(value: number, threshold: KpiThreshold, higherIsBetter: boolea
   if (higherIsBetter) {
     if (value >= threshold.full) return 1;
     if (value >= threshold.half) return 0.5;
+
     return 0;
   }
   // lower is better (not used currently, but safe)
   if (value <= threshold.full) return 1;
   if (value <= threshold.half) return 0.5;
+
   return 0;
 }
 
@@ -117,14 +121,17 @@ function toLocalDateKey(date: Date): string {
   const year = shifted.getUTCFullYear();
   const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
   const day = String(shifted.getUTCDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
 function parseLocalDateKey(value: string): { year: number; month: number; day: number } | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+
   if (!match) {
     return null;
   }
+
   return {
     year: Number.parseInt(match[1] || '0', 10),
     month: Number.parseInt(match[2] || '0', 10),
@@ -138,18 +145,22 @@ function formatLocalDateKey(year: number, month: number, day: number): string {
 
 function getDayOfWeekFromLocalDateKey(value: string): number {
   const parsed = parseLocalDateKey(value);
+
   if (!parsed) {
     return 0;
   }
+
   return new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day)).getUTCDay();
 }
 
 function addOneDayToLocalDateKey(value: string): string {
   const parsed = parseLocalDateKey(value);
+
   if (!parsed) {
     return value;
   }
   const next = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day + 1));
+
   return formatLocalDateKey(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate());
 }
 
@@ -160,8 +171,10 @@ function buildRequiredWorkdaysByMonth(rangeStart: Date, rangeEnd: Date): Map<str
 
   while (cursor <= end) {
     const dayOfWeek = getDayOfWeekFromLocalDateKey(cursor);
+
     if (dayOfWeek !== 0) {
       const monthKey = cursor.slice(0, 7);
+
       result.set(monthKey, (result.get(monthKey) || 0) + 1);
     }
     cursor = addOneDayToLocalDateKey(cursor);
@@ -190,6 +203,7 @@ const salarySummary = protectedProcedure
       m: input?.managerUserId,
       p: input?.prorateFixedSalary ? '1' : '0',
     });
+
     return getOrSet(cacheKey, 120, async () => {
     const now = new Date();
     const hasExplicitRange = Boolean(input);
@@ -344,33 +358,40 @@ const salarySummary = protectedProcedure
     }
 
     const bonusRange = await calculateBonusRange({ tenantId: ctx.tenantId, rangeStart, rangeEnd, db: ctx.db });
+
     for (const item of bonusRange.items) {
       const salaryRow = salaryByAgent.get(item.agentUserId);
+
       if (!salaryRow) continue;
       salaryRow.bonusAmount += item.bonusAmount;
       salaryRow.bonusBreakdown[item.category] += item.bonusAmount;
     }
     const approvedAdjustments = await getApprovedAdjustmentsForMonth(ctx.tenantId, rangeEnd, ctx.db);
     const adjustmentRangeMonthStart = getTashkentMonthStart(rangeStart);
+
     for (const adjustment of approvedAdjustments) {
       const salaryRow = salaryByAgent.get(adjustment.agentUserId);
+
       if (!salaryRow || !adjustment.payoutMonth || adjustment.payoutMonth < adjustmentRangeMonthStart) continue;
       salaryRow.approvedAdjustmentAmount += adjustment.outstandingAmount;
       salaryRow.outstandingAdjustmentBalance += adjustment.outstandingAmount;
     }
 
     const activePlanBonuses = salarySettings.planBonuses.filter((plan) => plan.isActive);
+
     if (activePlanBonuses.length > 0) {
       const closures = await loadSaleClosures({ tenantId: ctx.tenantId, rangeEnd, db: ctx.db });
       const profileSubTariffIds = Array.from(new Set(
         closures.map((closure) => closure.profileSubTariffId).filter((value): value is string => Boolean(value)),
       ));
       const subTariffNameById = new Map<string, string>();
+
       if (profileSubTariffIds.length > 0) {
         const subTariffs = await ctx.db.subTariff.findMany({
           where: { tenantId: ctx.tenantId, id: { in: profileSubTariffIds } },
           select: { id: true, name: true },
         });
+
         for (const subTariff of subTariffs) {
           subTariffNameById.set(subTariff.id, normalizeSubTariffName(subTariff.name));
         }
@@ -384,8 +405,10 @@ const salarySummary = protectedProcedure
         rangeEnd,
         subTariffNameById,
       });
+
       for (const salaryRow of salaryByAgent.values()) {
         const planProgress = progressByAgent.get(salaryRow.userId) ?? [];
+
         salaryRow.planProgress = planProgress;
         salaryRow.planBonusAmount = planProgress.reduce((sum, item) => sum + item.earnedAmount, 0);
       }
@@ -393,9 +416,11 @@ const salarySummary = protectedProcedure
 
     // ── KPI Scoring ──
     const kpi = salarySettings.kpiSettings;
+
     if (kpi.enabled && kpi.monthlyBudget > 0) {
       // Fetch agent -> AmoCRM mapping + extensions
       let agentAmoMappings: Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }> = [];
+
       agentAmoMappings = await ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -412,6 +437,7 @@ const salarySummary = protectedProcedure
       const agentAmoIdMap = new Map<string, string>(); // agentId -> amoId
       const amoIdToAgentId = new Map<string, string>(); // amoId -> agentId
       const agentExtensions = new Map<string, string[]>(); // agentId -> extensions
+
       for (const mapping of agentAmoMappings) {
         if (mapping.amocrmResponsibleUserId) {
           agentAmoIdMap.set(mapping.id, mapping.amocrmResponsibleUserId);
@@ -419,8 +445,10 @@ const salarySummary = protectedProcedure
         }
         if (mapping.utelManagerExternalId) {
           const ext = mapping.utelManagerExternalId.replace(/[^\d]/g, '');
+
           if (ext.length >= 2) {
             const existing = agentExtensions.get(mapping.id) || [];
+
             existing.push(ext);
             agentExtensions.set(mapping.id, existing);
           }
@@ -499,9 +527,11 @@ const salarySummary = protectedProcedure
 
       // Group new leads by AmoCRM manager -> count per agent
       const newLeadCountByAgent = new Map<string, number>();
+
       for (const lead of newLeads) {
         const amoId = String(lead.responsible_user_id ?? '').trim();
         const agentId = amoIdToAgentId.get(amoId);
+
         if (agentId) {
           newLeadCountByAgent.set(agentId, (newLeadCountByAgent.get(agentId) || 0) + 1);
         }
@@ -509,6 +539,7 @@ const salarySummary = protectedProcedure
 
       // Group calls by agent -> total duration
       const extensionToAgent = new Map<string, string>();
+
       for (const [agentId, exts] of agentExtensions.entries()) {
         for (const ext of exts) {
           extensionToAgent.set(ext, agentId);
@@ -517,10 +548,12 @@ const salarySummary = protectedProcedure
       const callDurationByAgent = new Map<string, number>();
       const callCountByAgent = new Map<string, number>();
       const callDaysByAgent = new Map<string, Set<string>>();
+
       for (const call of calls) {
         const fromExt = (call.from || '').replace(/[^\d]/g, '');
         const toExt = (call.to || '').replace(/[^\d]/g, '');
         const agentId = extensionToAgent.get(fromExt) || extensionToAgent.get(toExt);
+
         if (!agentId) continue;
         callDurationByAgent.set(agentId, (callDurationByAgent.get(agentId) || 0) + (call.duration || 0));
         callCountByAgent.set(agentId, (callCountByAgent.get(agentId) || 0) + 1);
@@ -528,6 +561,7 @@ const salarySummary = protectedProcedure
           // Working day in Tashkent time, not the UTC date.
           const dayKey = new Date(call.startedAt.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
           const days = callDaysByAgent.get(agentId) || new Set<string>();
+
           days.add(dayKey);
           callDaysByAgent.set(agentId, days);
         }
@@ -537,8 +571,10 @@ const salarySummary = protectedProcedure
       const paidByAgent = new Map<string, number>();
       const agreementByAgent = new Map<string, number>();
       const salesCountByAgent = new Map<string, number>();
+
       for (const inc of kpiIncomes) {
         const agentId = inc.managerUserId;
+
         paidByAgent.set(agentId, (paidByAgent.get(agentId) || 0) + (inc.paymentAmount || 0));
         if (inc.type === 'new_sale') {
           agreementByAgent.set(agentId, (agreementByAgent.get(agentId) || 0) + resolveSaleAgreementAmount(inc));
@@ -551,6 +587,7 @@ const salarySummary = protectedProcedure
       // Score each agent
       const selectedKpiMetrics = kpi.selectedMetrics.filter((metric): metric is KpiMetricKey => KPI_METRIC_KEYS.includes(metric));
       const metricCount = selectedKpiMetrics.length;
+
       if (metricCount === 0) {
         for (const salaryRow of salaryByAgent.values()) {
           salaryRow.kpiAmount = 0;
@@ -558,6 +595,7 @@ const salarySummary = protectedProcedure
         }
       }
       const perKpiBudget = metricCount > 0 ? kpi.monthlyBudget / metricCount : 0;
+
       for (const salaryRow of salaryByAgent.values()) {
         const agentId = salaryRow.userId;
         const amoId = agentAmoIdMap.get(agentId);
@@ -600,6 +638,7 @@ const salarySummary = protectedProcedure
           const higherIsBetter = metric !== 'avgLeadResponseTime';
           const score = scoreKpi(value, threshold, higherIsBetter);
           const amount = Math.round(score * perKpiBudget);
+
           kpiBreakdown[metric] = {
             value,
             score,
@@ -644,8 +683,10 @@ const salarySummary = protectedProcedure
       const aggregate = new Map<string, { lateMinutes: number; missingSeconds: number }>();
       const presenceByUserMonth = new Map<string, { weekdayDates: Set<string>; sundayDates: Set<string> }>();
       const requiredWorkdaysByMonth = buildRequiredWorkdaysByMonth(rangeStart, rangeEnd);
+
       for (const row of summaries) {
         const existing = aggregate.get(row.userId) ?? { lateMinutes: 0, missingSeconds: 0 };
+
         existing.lateMinutes += Math.max(0, row.lateMinutes ?? 0);
         existing.missingSeconds += Math.max(0, row.missingSeconds ?? 0);
         aggregate.set(row.userId, existing);
@@ -655,6 +696,7 @@ const salarySummary = protectedProcedure
           const key = `${row.userId}|${monthKey}`;
           const monthPresence = presenceByUserMonth.get(key) ?? { weekdayDates: new Set<string>(), sundayDates: new Set<string>() };
           const dayOfWeek = getDayOfWeekFromLocalDateKey(row.summaryDate);
+
           if (dayOfWeek === 0) {
             monthPresence.sundayDates.add(row.summaryDate);
           } else {
@@ -670,6 +712,7 @@ const salarySummary = protectedProcedure
         const rawMissingHourPenalty = Math.round((metrics.missingSeconds / 3600) * attendancePenaltySettings.missingHourPenaltyUZS);
         const monthlyFixedSalary = salarySettings.fixedSalaries.get(salaryRow.userId) ?? salaryRow.fixedSalary;
         let rawAbsencePenalty = 0;
+
         if (monthlyFixedSalary > 0 && attendancePenaltySettings.absenceDayPenaltyUZS > 0) {
           for (const [monthKey, requiredWorkdays] of requiredWorkdaysByMonth.entries()) {
             if (requiredWorkdays <= 0) {
@@ -680,10 +723,12 @@ const salarySummary = protectedProcedure
             const sundayCredits = monthPresence?.sundayDates.size ?? 0;
             const creditedDays = weekdayAttended + sundayCredits;
             const missingDays = Math.max(requiredWorkdays - creditedDays, 0);
+
             if (missingDays <= 0) {
               continue;
             }
             const perDayPenalty = Math.round(monthlyFixedSalary / requiredWorkdays);
+
             rawAbsencePenalty += perDayPenalty * missingDays;
           }
         }
@@ -693,8 +738,10 @@ const salarySummary = protectedProcedure
           : Number.MAX_SAFE_INTEGER;
         let remainingCap = cap;
         const cappedLatePenalty = Math.min(rawLatePenalty, remainingCap);
+
         remainingCap -= cappedLatePenalty;
         const cappedMissingHourPenalty = Math.min(rawMissingHourPenalty, remainingCap);
+
         remainingCap -= cappedMissingHourPenalty;
         const cappedAbsencePenalty = Math.min(rawAbsencePenalty, remainingCap);
 
@@ -707,10 +754,13 @@ const salarySummary = protectedProcedure
           }
           if (target === 'fixed') {
             const allowed = Math.max(0, salaryRow.fixedSalary - fixedPenalty);
+
             fixedPenalty += Math.min(amount, allowed);
+
             return;
           }
           const allowed = Math.max(0, salaryRow.kpiAmount - kpiPenalty);
+
           kpiPenalty += Math.min(amount, allowed);
         };
 
@@ -955,6 +1005,7 @@ async function loadBonusIncomeDetails({
 
       if (options.rejectAboveLimit) {
         const totalCount = await ctx.db.income.count({ where: incomeWhere });
+
         if (isBonusDetailExportOverLimit(totalCount, options.rejectAboveLimit)) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
@@ -1079,18 +1130,22 @@ async function loadBonusIncomeDetails({
       });
 
       const agreementAmountBySaleId = new Map<string, number>();
+
       for (const sale of filteredActiveSalesForBonus) {
         agreementAmountBySaleId.set(sale.id, resolveSaleAgreementAmount(sale));
       }
 
       const debtAfterPaymentByRowId = new Map<string, number>();
       const chainRowsBySaleId = new Map<string, typeof bonusChainRows>();
+
       for (const row of bonusChainRows) {
         const saleId = row.type === 'new_sale' ? row.id : row.relatedDebtIncomeId;
+
         if (!saleId) {
           continue;
         }
         const existing = chainRowsBySaleId.get(saleId) ?? [];
+
         existing.push(row);
         chainRowsBySaleId.set(saleId, existing);
       }
@@ -1098,19 +1153,24 @@ async function loadBonusIncomeDetails({
         const agreementAmount = agreementAmountBySaleId.get(saleId) ?? 0;
         const sorted = [...chainRows].sort((a, b) => {
           const dateDiff = a.entryDate.getTime() - b.entryDate.getTime();
+
           if (dateDiff !== 0) {
             return dateDiff;
           }
           const createdDiff = a.createdAt.getTime() - b.createdAt.getTime();
+
           if (createdDiff !== 0) {
             return createdDiff;
           }
+
           return a.id.localeCompare(b.id);
         });
         let runningPaid = 0;
+
         for (const row of sorted) {
           runningPaid += Number(row.paymentAmount ?? 0);
           const remaining = Math.max(agreementAmount - runningPaid, 0);
+
           debtAfterPaymentByRowId.set(row.id, remaining);
         }
       }
@@ -1230,10 +1290,12 @@ async function loadBonusIncomeDetails({
 
       for (const group of incomeByManager) {
         const summary = agentSummaryMap.get(group.managerUserId);
+
         if (summary) summary.incomeAmount += Number(group._sum.paymentAmount || 0);
       }
       for (const item of visibleBonusItems) {
         const summary = agentSummaryMap.get(item.agentUserId);
+
         if (!summary) continue;
         summary.totalBonusAmount += item.bonusAmount;
         summary.bonusByCategory[item.category] += item.bonusAmount;
@@ -1241,6 +1303,7 @@ async function loadBonusIncomeDetails({
 
       for (const closure of closuresInRange) {
         const summary = agentSummaryMap.get(closure.closerUserId);
+
         if (summary) summary.closedAgreementAmount += closure.agreementAmount;
       }
 
@@ -1257,6 +1320,7 @@ async function loadBonusIncomeDetails({
           acc.bonusByCategory.offline += row.bonusByCategory.offline;
           acc.bonusByCategory.intensive += row.bonusByCategory.intensive;
           acc.bonusByCategory.additional_service += row.bonusByCategory.additional_service;
+
           return acc;
         },
         {

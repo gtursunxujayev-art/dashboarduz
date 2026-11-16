@@ -70,6 +70,7 @@ function createSummarySourceStatus(): SummarySourceStatus {
 
 function detectSummarySourceReason(error: unknown, fallback: string): string {
   const message = String((error as Error | undefined)?.message || '');
+
   if (message.includes('Failed to decrypt integration tokens')) {
     return 'decrypt_failed';
   }
@@ -77,9 +78,11 @@ function detectSummarySourceReason(error: unknown, fallback: string): string {
     return 'timeout';
   }
   const lower = message.toLowerCase();
+
   if (!lower.startsWith('failed to fetch amocrm') && (lower.includes('network') || lower.includes('fetch failed'))) {
     return 'network_error';
   }
+
   return fallback;
 }
 
@@ -101,6 +104,7 @@ async function runSummarySourceWithRetry<T>(params: {
   run: () => Promise<T>;
 }): Promise<T> {
   const { key, status, logContext, reasonFallback, fallback, run } = params;
+
   try {
     return await run();
   } catch (firstError) {
@@ -109,6 +113,7 @@ async function runSummarySourceWithRetry<T>(params: {
       return await run();
     } catch (secondError) {
       const reason = detectSummarySourceReason(secondError || firstError, reasonFallback);
+
       status[key].ok = false;
       status[key].reason = reason;
       status[key].state = reason === 'timeout' ? 'timeout' : 'unavailable';
@@ -117,6 +122,7 @@ async function runSummarySourceWithRetry<T>(params: {
         reason,
         error: String((secondError as Error | undefined)?.message || (firstError as Error | undefined)?.message || secondError || firstError),
       });
+
       return fallback;
     }
   }
@@ -151,6 +157,7 @@ export const summaryProcedures = {
         refresh: input.refreshKey === undefined ? undefined : String(input.refreshKey),
         cr: corporateRevisionKey,
       });
+
       return getOrSet(cacheKey, 120, async () => {
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
@@ -191,6 +198,7 @@ export const summaryProcedures = {
         fallback: null as Awaited<ReturnType<typeof getTenantAmoCRMContext>>,
         run: async () => withTimeout(getTenantAmoCRMContext(ctx.tenantId, ctx.db), 2500, 'amo_context_timeout'),
       });
+
       if (!amoContext) {
         sourceStatus.amoContext.ok = false;
         sourceStatus.amoContext.reason = sourceStatus.amoContext.reason || 'amo_not_connected';
@@ -207,6 +215,7 @@ export const summaryProcedures = {
             run: async () => withTimeout(collectCatalogFieldOptions(ctx.tenantId, ctx.db), 2500, 'catalog_timeout'),
           })
         : [];
+
       if (!amoContext) {
         sourceStatus.catalog.ok = false;
         sourceStatus.catalog.reason = 'amo_unavailable';
@@ -219,6 +228,7 @@ export const summaryProcedures = {
         : (amoContext?.selectedPipelineIds ?? null);
       let leadsDataAvailable = false;
       let leads: any[] = [];
+
       if (amoContext && (!scope.isScoped || scope.responsibleUserId)) {
         leads = await runSummarySourceWithRetry({
           key: 'leads',
@@ -242,6 +252,7 @@ export const summaryProcedures = {
               3000,
               'amo_leads_timeout',
             );
+
             return fetched as any[];
           },
         });
@@ -372,6 +383,7 @@ export const summaryProcedures = {
         amocrmResponsibleUserId: string | null;
         utelManagerExternalId: string | null;
       }> = [];
+
       agentUsers = await ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -424,6 +436,7 @@ export const summaryProcedures = {
             ),
           })
         : new Map();
+
       if (!amoContext) {
         sourceStatus.activity.ok = false;
         sourceStatus.activity.reason = 'amo_unavailable';
@@ -435,6 +448,7 @@ export const summaryProcedures = {
       } else if (sourceStatus.activity.ok) {
         const activitySources = Object.values(activityDiagnostics);
         const failedSources = activitySources.filter((source) => !source.ok);
+
         if (failedSources.length > 0) {
           sourceStatus.activity.ok = false;
           sourceStatus.activity.reason = failedSources.map((source) => source.reason).filter(Boolean).join(',') || 'partial';
@@ -487,6 +501,7 @@ export const summaryProcedures = {
 
         if (sourceFieldKey) {
           const sourceValue = extractLeadValue(lead, sourceFieldKey) || 'Unknown source';
+
           sourceCounts.set(sourceValue, (sourceCounts.get(sourceValue) ?? 0) + 1);
         }
       }
@@ -504,11 +519,13 @@ export const summaryProcedures = {
 
       for (const income of newSalesIncomes) {
         const agreementAmount = resolveSaleAgreementAmount(income);
+
         newSalesAgreementAmount += agreementAmount;
 
         const category = income.course?.category
           ? classifyCourseCategoryFromField(income.course.category)
           : classifyCourseCategoryFromField(income.course?.name);
+
         if (category === 'online') {
           onlineSalesCount += 1;
           onlineSalesAgreementAmount += agreementAmount;
@@ -533,15 +550,18 @@ export const summaryProcedures = {
       const totalIncomeAmount = incomesForSellers.reduce((sum, income) => sum + (income.paymentAmount ?? 0), 0);
 
       const leadsByResponsibleUser = new Map<string, { newLeads: number; qualifiedLeads: number }>();
+
       if (leadsDataAvailable) {
         for (const lead of leads) {
           const responsibleUserId = lead.responsible_user_id !== null && lead.responsible_user_id !== undefined
             ? String(lead.responsible_user_id)
             : '';
+
           if (!responsibleUserId) {
             continue;
           }
           const current = leadsByResponsibleUser.get(responsibleUserId) || { newLeads: 0, qualifiedLeads: 0 };
+
           current.newLeads += 1;
 
           const reasonValue = extractLeadValue(lead, reasonFieldKey);
@@ -550,6 +570,7 @@ export const summaryProcedures = {
           const isQualifiedLead = qualifiedStageIds.length > 0
             ? isQualifiedByStage
             : isMappedValue(reasonValue, qualifiedValues);
+
           if (isQualifiedLead) {
             current.qualifiedLeads += 1;
           }
@@ -559,11 +580,13 @@ export const summaryProcedures = {
       }
 
       const salesByManager = new Map<string, { sales: number; agreementsAmount: number; incomeAmount: number }>();
+
       for (const income of incomesForSellers) {
         const category = income.course?.category
           ? classifyCourseCategoryFromField(income.course.category)
           : classifyCourseCategoryFromField(income.course?.name);
         const paymentAmount = income.paymentAmount ?? 0;
+
         if (category === 'online') {
           onlineSalesIncomeAmount += paymentAmount;
         } else if (category === 'offline') {
@@ -589,6 +612,7 @@ export const summaryProcedures = {
 
       const talkSecondsByAgent = new Map<string, number>();
       const callCountByAgent = new Map<string, number>();
+
       for (const agent of agentUsers) {
         const keyByUtel = normalizeTextToken(agent.utelManagerExternalId);
         const extensionByUtel = normalizeDigits(agent.utelManagerExternalId);
@@ -606,6 +630,7 @@ export const summaryProcedures = {
 
         let talkSeconds = 0;
         let callCount = 0;
+
         for (const call of callsForSellers) {
           const callLeadResponsibleId = normalizeTextToken(call.lead?.responsibleUserId);
           const metadataKey = extractUtelManagerKey(call.metadata);
@@ -625,6 +650,7 @@ export const summaryProcedures = {
             callCount += 1;
             // Same duration rule as the live leaderboard: fall back to the duration stored in call metadata.
             const callDuration = resolveCallDuration(call.duration, call.metadata);
+
             talkSeconds += callDuration;
           }
         }
@@ -640,6 +666,7 @@ export const summaryProcedures = {
       const unmappedSellerNames = agentUsers
         .filter((agent) => !String(agent.amocrmResponsibleUserId || '').trim())
         .map((agent) => agent.name || agent.username || agent.id);
+
       if (amoContext && activityManagerIds.length > 0 && unmappedSellerNames.length > 0) {
         sourceStatus.activity.ok = false;
         sourceStatus.activity.state = 'partial';
@@ -710,9 +737,11 @@ export const summaryProcedures = {
         .sort((a, b) => {
           const aDuration = a.talkedSeconds ?? -1;
           const bDuration = b.talkedSeconds ?? -1;
+
           if (bDuration !== aDuration) {
             return bDuration - aDuration;
           }
+
           return a.name.localeCompare(b.name, 'uz');
         });
 
@@ -801,6 +830,7 @@ export const summaryProcedures = {
         c: input.courseId,
         m: input.managerUserId,
       });
+
       return getOrSet(financeCacheKey, 120, async () => {
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
@@ -1092,6 +1122,7 @@ export const summaryProcedures = {
           currentMonthToDateIncome += amount;
           const localDate = shiftToReportTimezone(income.entryDate);
           const day = localDate.getUTCDate();
+
           monthDailyMap.set(day, (monthDailyMap.get(day) || 0) + amount);
         }
 
@@ -1107,6 +1138,7 @@ export const summaryProcedures = {
           currentYearToDateIncome += amount;
           const localDate = shiftToReportTimezone(income.entryDate);
           const monthIndex = localDate.getUTCMonth();
+
           yearMonthlyMap.set(monthIndex, (yearMonthlyMap.get(monthIndex) || 0) + amount);
         }
 
@@ -1147,6 +1179,7 @@ export const summaryProcedures = {
         }
 
         const paymentAmount = income.paymentAmount || 0;
+
         totals.totalIncomeAmount += paymentAmount;
 
         const courseName = income.course?.name || 'No course';
@@ -1155,6 +1188,7 @@ export const summaryProcedures = {
           amount: 0,
           agreementAmount: 0,
         };
+
         byCourse.count += 1;
         byCourse.amount += paymentAmount;
         if (income.type === 'new_sale') {
@@ -1167,6 +1201,7 @@ export const summaryProcedures = {
           count: 0,
           amount: 0,
         };
+
         byAgent.count += 1;
         byAgent.amount += paymentAmount;
         incomeByAgent.set(agentLabel, byAgent);
@@ -1174,6 +1209,7 @@ export const summaryProcedures = {
         if (income.type === 'new_sale') {
           totals.newSalesCount += 1;
           const chainDebt = activeSaleChainMetricsBySaleId.get(income.id)?.currentDebtAmount ?? income.remainingDebtAmount;
+
           if (chainDebt > 0) {
             debtorCustomers.add(income.customerId);
             totals.totalDebtAmount += chainDebt;
@@ -1192,6 +1228,7 @@ export const summaryProcedures = {
       const monthElapsedDays = Math.max(1, currentDay);
       const monthRunRatePerDay = currentMonthToDateIncome > 0 ? currentMonthToDateIncome / monthElapsedDays : 0;
       const monthForecastSeries: Array<{ label: string; actual: number | null; forecast: number }> = [];
+
       for (let day = 1; day <= currentMonthTotalDays; day += 1) {
         monthCumulativeActual += monthDailyMap.get(day) || 0;
         monthForecastSeries.push({
@@ -1212,6 +1249,7 @@ export const summaryProcedures = {
       const yearRunRatePerDay = currentYearToDateIncome > 0 ? currentYearToDateIncome / yearElapsedDays : 0;
       let yearCumulativeActual = 0;
       const yearForecastSeries: Array<{ label: string; actual: number | null; forecast: number }> = [];
+
       for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
         yearCumulativeActual += yearMonthlyMap.get(monthIndex) || 0;
         yearForecastSeries.push({

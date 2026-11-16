@@ -41,8 +41,10 @@ export const layoutProcedures = {
         new Set(input.visibleWidgetIds.map((item) => item.trim()).filter(Boolean)),
       );
       const customWidgetById = new Map<string, DashboardCustomSalesWidget>();
+
       for (const item of input.customSalesWidgets) {
         const id = item.id.trim();
+
         if (!id) {
           continue;
         }
@@ -57,6 +59,7 @@ export const layoutProcedures = {
 
       const settings = asObject(tenant.settings) || {};
       const dashboardUserLayouts = asObject(settings?.dashboardUserLayouts) || {};
+
       dashboardUserLayouts[ctx.user.userId] = {
         visibleWidgetIds: uniqueVisibleWidgetIds,
         customSalesWidgets: Array.from(customWidgetById.values()),

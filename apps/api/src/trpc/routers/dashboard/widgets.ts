@@ -129,6 +129,7 @@ export const widgetProcedures = {
           && (!widget.tariffId || sale.tariffId === widget.tariffId)
           && (!widget.subTariffId || resolveSaleSubTariffId(sale) === widget.subTariffId)
         ));
+
         return {
           id: widget.id,
           salesCount: matching.length,

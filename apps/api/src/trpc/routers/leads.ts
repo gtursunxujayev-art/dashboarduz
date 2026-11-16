@@ -14,11 +14,13 @@ const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 
 async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
   const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
   }
 
   let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
+
   try {
     currentUser = await db.user.findFirst({
       where: {
@@ -45,16 +47,19 @@ async function getAgentResponsibleScope(tenantId: string, userId: string, roles:
 function parseAmoTimestamp(value: unknown): Date {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const millis = value > 1_000_000_000_000 ? value : value * 1000;
+
     return new Date(millis);
   }
 
   if (typeof value === 'string') {
     const asNumber = Number(value);
+
     if (!Number.isNaN(asNumber)) {
       return parseAmoTimestamp(asNumber);
     }
 
     const parsed = new Date(value);
+
     if (!Number.isNaN(parsed.getTime())) {
       return parsed;
     }
@@ -66,6 +71,7 @@ function parseAmoTimestamp(value: unknown): Date {
 function getPrimaryContact(lead: AmoCRMLead): { name: string | null; phone: string | null; email: string | null } | null {
   const contacts = Array.isArray(lead._embedded?.contacts) ? lead._embedded?.contacts : [];
   const firstContact = asObject(contacts[0]);
+
   if (!firstContact) {
     return null;
   }
@@ -83,6 +89,7 @@ function buildStatusMap(pipelines: Awaited<ReturnType<typeof amocrmService.fetch
 
   for (const pipeline of pipelineList) {
     const statuses = Array.isArray(pipeline._embedded?.statuses) ? pipeline._embedded.statuses : [];
+
     for (const status of statuses) {
       if (status.id !== null && status.id !== undefined) {
         statusMap.set(String(status.id), String(status.name || status.id));
@@ -131,6 +138,7 @@ export const leadsRouter = router({
     .input(leadQuerySchema)
     .query(async ({ input, ctx }) => {
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+
       if (scope.isScoped && !scope.responsibleUserId) {
         return {
           data: [],
@@ -144,6 +152,7 @@ export const leadsRouter = router({
       }
 
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
+
       if (!amoContext) {
         return {
           data: [],
@@ -203,11 +212,13 @@ export const leadsRouter = router({
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ input, ctx }) => {
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+
       if (scope.isScoped && !scope.responsibleUserId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Lead not found' });
       }
 
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
+
       if (!amoContext) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -229,12 +240,14 @@ export const leadsRouter = router({
         const responsibleUserId = lead.responsible_user_id !== null && lead.responsible_user_id !== undefined
           ? String(lead.responsible_user_id)
           : null;
+
         if (!responsibleUserId || responsibleUserId !== scope.responsibleUserId) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Lead not found' });
         }
       }
 
       const pipelineId = lead.pipeline_id !== null && lead.pipeline_id !== undefined ? String(lead.pipeline_id) : null;
+
       if (amoContext.selectedPipelineIds && (!pipelineId || !amoContext.selectedPipelineIds.includes(pipelineId))) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Lead not found' });
       }

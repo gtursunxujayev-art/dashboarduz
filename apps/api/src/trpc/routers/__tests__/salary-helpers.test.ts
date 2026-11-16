@@ -67,6 +67,7 @@ describe('toPositiveInteger', () => {
 describe('createZeroBreakdown', () => {
   it('returns all zero categories', () => {
     const result = createZeroBreakdown();
+
     expect(result).toEqual({ online: 0, offline: 0, intensive: 0, additional_service: 0 });
   });
 });
@@ -84,11 +85,13 @@ describe('normalizeSalaryTier', () => {
 
   it('parses valid tier', () => {
     const result = normalizeSalaryTier({ minSales: 5, maxSales: 10, percent: 15 });
+
     expect(result).toEqual({ minSales: 5, maxSales: 10, percent: 15 });
   });
 
   it('allows null maxSales (unbounded)', () => {
     const result = normalizeSalaryTier({ minSales: 5, maxSales: null, percent: 20 });
+
     expect(result).toEqual({ minSales: 5, maxSales: null, percent: 20 });
   });
 });
@@ -100,6 +103,7 @@ describe('isValidTierSequence', () => {
 
   it('returns true for single tier with null maxSales', () => {
     const tiers: SalaryRuleTier[] = [{ minSales: 1, maxSales: null, percent: 10 }];
+
     expect(isValidTierSequence(tiers)).toBe(true);
   });
 
@@ -109,6 +113,7 @@ describe('isValidTierSequence', () => {
       { minSales: 6, maxSales: 10, percent: 10 },
       { minSales: 11, maxSales: null, percent: 15 },
     ];
+
     expect(isValidTierSequence(tiers)).toBe(true);
   });
 
@@ -117,6 +122,7 @@ describe('isValidTierSequence', () => {
       { minSales: 1, maxSales: null, percent: 5 },
       { minSales: 6, maxSales: 10, percent: 10 },
     ];
+
     expect(isValidTierSequence(tiers)).toBe(false);
   });
 
@@ -125,6 +131,7 @@ describe('isValidTierSequence', () => {
       { minSales: 1, maxSales: 10, percent: 5 },
       { minSales: 8, maxSales: null, percent: 10 },
     ];
+
     expect(isValidTierSequence(tiers)).toBe(false);
   });
 });
@@ -132,6 +139,7 @@ describe('isValidTierSequence', () => {
 describe('normalizeCategoryBonusRule', () => {
   it('returns simple rule for null input', () => {
     const result = normalizeCategoryBonusRule(null, 10);
+
     expect(result.mode).toBe('simple');
     expect(result.simplePercent).toBe(10);
   });
@@ -145,6 +153,7 @@ describe('normalizeCategoryBonusRule', () => {
         { minSales: 6, maxSales: null, percent: 10 },
       ],
     }, 5);
+
     expect(result.mode).toBe('tiered');
     expect(result.tiers).toHaveLength(2);
   });
@@ -155,6 +164,7 @@ describe('normalizeCategoryBonusRule', () => {
       simplePercent: 8,
       tiers: [],
     }, 8);
+
     expect(result.mode).toBe('simple');
   });
 });
@@ -162,6 +172,7 @@ describe('normalizeCategoryBonusRule', () => {
 describe('resolveBonusPercent', () => {
   it('returns simplePercent for simple mode', () => {
     const rule = { mode: 'simple' as const, simplePercent: 12, tiers: [] };
+
     expect(resolveBonusPercent(rule, 5)).toBe(12);
   });
 
@@ -171,6 +182,7 @@ describe('resolveBonusPercent', () => {
       simplePercent: 2,
       tiers: [{ minSales: 1, maxSales: null, percent: 10 }],
     };
+
     expect(resolveBonusPercent(rule, 0)).toBe(2);
   });
 
@@ -184,6 +196,7 @@ describe('resolveBonusPercent', () => {
         { minSales: 11, maxSales: null, percent: 15 },
       ],
     };
+
     expect(resolveBonusPercent(rule, 3)).toBe(5);
     expect(resolveBonusPercent(rule, 8)).toBe(10);
     expect(resolveBonusPercent(rule, 20)).toBe(15);
@@ -195,6 +208,7 @@ describe('resolveBonusPercent', () => {
       simplePercent: 1,
       tiers: [{ minSales: 1, maxSales: 3, percent: 3 }],
     };
+
     expect(resolveBonusPercent(rule, 1)).toBe(3);
     expect(resolveBonusPercent(rule, 3)).toBe(3);
   });
@@ -297,6 +311,7 @@ describe('role checks', () => {
 describe('extractSalarySettings', () => {
   it('returns defaults for null/empty input', () => {
     const result = extractSalarySettings(null);
+
     expect(result.bonusMode).toBe('on_income');
     expect(result.bonusPercentages).toEqual({ online: 0, offline: 0, intensive: 0, additional_service: 0 });
     expect(result.fixedSalaries.size).toBe(0);
@@ -325,6 +340,7 @@ describe('extractSalarySettings', () => {
         ],
       },
     });
+
     expect(result.bonusMode).toBe('on_debt_closed');
     expect(result.bonusPercentages.online).toBe(10);
     expect(result.bonusPercentages.offline).toBe(15);

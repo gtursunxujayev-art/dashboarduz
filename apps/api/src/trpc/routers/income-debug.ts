@@ -23,11 +23,13 @@ function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
+
   return value as Record<string, unknown>;
 }
 
 function resolveUserLabel(user: { name: string | null; username: string | null; id: string } | null | undefined): string {
   if (!user) return "qo'lda";
+
   return user.name || user.username || user.id;
 }
 
@@ -102,9 +104,11 @@ function normalizeText(value: unknown): string {
 function parseSnapshotDate(value: string | null): Date | null {
   if (!value) return null;
   const raw = String(value).trim();
+
   if (!raw) return null;
   const iso = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : raw.slice(0, 10);
   const parsed = new Date(`${iso}T12:00:00+05:00`);
+
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
@@ -113,15 +117,18 @@ async function getActiveSnapshot(tenantId: string, db: DbClient): Promise<Active
     where: { id: tenantId },
     select: { settings: true },
   });
+
   if (!tenant) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Ish maydoni topilmadi.' });
   }
   const settings = asSettingsObject(tenant.settings);
   const incomeProblems = asSettingsObject(settings.incomeProblems);
   const activeSnapshot = incomeProblems.activeSnapshot;
+
   if (!activeSnapshot || typeof activeSnapshot !== 'object' || Array.isArray(activeSnapshot)) {
     return null;
   }
+
   return activeSnapshot as ActiveSnapshot;
 }
 
@@ -195,9 +202,11 @@ async function recomputeSaleChainState(tx: Prisma.TransactionClient, params: {
     })),
   ].sort((left, right) => {
     const byDate = left.entryDate.getTime() - right.entryDate.getTime();
+
     if (byDate !== 0) {
       return byDate;
     }
+
     return left.createdAt.getTime() - right.createdAt.getTime();
   });
 
@@ -224,6 +233,7 @@ async function recomputeSaleChainState(tx: Prisma.TransactionClient, params: {
 
   for (const repayment of chain.slice(1)) {
     const debtAmount = rollingDebt;
+
     rollingDebt = Math.max(debtAmount - repayment.paymentAmount, 0);
 
     await tx.income.update({
@@ -340,9 +350,11 @@ async function recomputeSaleChainStateFully(tx: Prisma.TransactionClient, params
     })),
   ].sort((left, right) => {
     const byDate = left.entryDate.getTime() - right.entryDate.getTime();
+
     if (byDate !== 0) {
       return byDate;
     }
+
     return left.createdAt.getTime() - right.createdAt.getTime();
   });
 
@@ -374,6 +386,7 @@ async function recomputeSaleChainStateFully(tx: Prisma.TransactionClient, params
 
   for (const repayment of chain.slice(1)) {
     const debtAmount = rollingDebt;
+
     rollingDebt = Math.max(debtAmount - repayment.paymentAmount, 0);
 
     await tx.income.update({
@@ -437,6 +450,7 @@ async function refreshCustomerProfileFromLatestActiveSaleForDebug(tx: Prisma.Tra
       tariffId: true,
     },
   });
+
   await tx.customer.update({
     where: { id: params.customerId },
     data: {
@@ -535,23 +549,28 @@ function findSnapshotMatch(params: {
   const scored = params.snapshotRows
     .filter((row) => {
       const rowKey = `${row.normalizedPhone || row.normalizedName}:${row.rowIndex}`;
+
       if (params.usedRowKeys.has(rowKey)) {
         return false;
       }
       const sameIdentity = normalizedPhone
         ? row.normalizedPhone === normalizedPhone
         : row.normalizedName === normalizedNameValue;
+
       return sameIdentity && Math.round(row.paymentAmount || 0) === amount;
     })
     .map((row) => {
       let score = 0;
+
       if (normalizedPhone && row.normalizedPhone === normalizedPhone) score += 100;
       if (normalizedNameValue && row.normalizedName === normalizedNameValue) score += 20;
       if (managerNeedle && normalizeText(row.managerLabel) === managerNeedle) score += 15;
       const financeCourseHaystack = normalizeText(`${row.courseName} ${row.tariffName} ${row.subTariffName}`);
+
       if (courseNeedle && financeCourseHaystack.includes(courseNeedle)) score += 10;
       if (tariffNeedle && financeCourseHaystack.includes(tariffNeedle)) score += 10;
       if (Math.round(row.remainingDebtAmount || 0) === debt) score += 5;
+
       return {
         row,
         score,
@@ -565,6 +584,7 @@ function findSnapshotMatch(params: {
 
   const best = scored[0]!;
   const second = scored[1];
+
   if (second && second.score === best.score) {
     return {
       status: 'ambiguous' as const,
@@ -583,9 +603,11 @@ function findSnapshotMatch(params: {
 function extractRelinkedRepaymentIds(metadata: unknown): string[] {
   const obj = asObject(metadata);
   const raw = obj?.relinkedRepaymentIds;
+
   if (!Array.isArray(raw)) {
     return [];
   }
+
   return raw
     .map((value) => String(value || '').trim())
     .filter((value) => /^[0-9a-f-]{36}$/i.test(value));
@@ -762,6 +784,7 @@ export const incomeDebugRouter = router({
       ]);
 
       const exactRelinkLogByIncomeId = new Map<string, (typeof exactRelinkLogs)[number]>();
+
       for (const log of exactRelinkLogs) {
         for (const repaymentId of extractRelinkedRepaymentIds(log.metadata)) {
           if (!exactRelinkLogByIncomeId.has(repaymentId)) {
@@ -781,6 +804,7 @@ export const incomeDebugRouter = router({
         : 0;
 
       const createLogByIncomeId = new Map<string, (typeof incomeCreateLogs)[number]>();
+
       for (const log of incomeCreateLogs) {
         if (log.resourceId && !createLogByIncomeId.has(log.resourceId)) {
           createLogByIncomeId.set(log.resourceId, log);
@@ -795,12 +819,14 @@ export const incomeDebugRouter = router({
         const isFutureDated = income.entryDate.getTime() > now.getTime();
 
         let matchedRelinkLog: (typeof relinkLogs)[number] | (typeof exactRelinkLogs)[number] | null = exactRelinkLogByIncomeId.get(income.id) || null;
+
         if (!matchedRelinkLog && !isImported && !createLog && income.type === 'repayment' && income.relatedDebtIncomeId) {
           matchedRelinkLog = relinkLogs.find((log) => {
             const metadata = asObject(log.metadata);
             const targetSaleIncomeId = String(metadata?.targetSaleIncomeId || '').trim();
             const transferAmountRaw = Number(metadata?.transferAmount || 0);
             const createdAtDiffMs = Math.abs(log.createdAt.getTime() - income.createdAt.getTime());
+
             return (
               targetSaleIncomeId === income.relatedDebtIncomeId
               && createdAtDiffMs <= 30 * 60 * 1000
@@ -976,8 +1002,10 @@ export const incomeDebugRouter = router({
         chainRows,
       });
       const chainRowsBySaleId = new Map<string, typeof chainRows>();
+
       for (const row of chainRows) {
         const saleId = row.relatedDebtIncomeId || row.id;
+
         if (!chainRowsBySaleId.has(saleId)) {
           chainRowsBySaleId.set(saleId, []);
         }
@@ -994,6 +1022,7 @@ export const incomeDebugRouter = router({
         const expectedPaid = metric?.paidAmount ?? Number(sale.paymentAmount || 0);
         const storedDebt = Number(sale.remainingDebtAmount || 0);
         const mismatch = !consistency.ok;
+
         return {
           saleIncomeId: sale.id,
           customerNumber: sale.customer?.customerNumber || '',
@@ -1010,6 +1039,7 @@ export const incomeDebugRouter = router({
         };
       });
       const mismatchRows = rows.filter((row) => row.mismatch);
+
       return {
         scannedCount: sales.length,
         mismatchCount: mismatchRows.length,
@@ -1024,6 +1054,7 @@ export const incomeDebugRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const activeSnapshot = await getActiveSnapshot(ctx.tenantId, ctx.db);
+
       if (!activeSnapshot || !Array.isArray(activeSnapshot.rows) || activeSnapshot.rows.length === 0) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -1107,6 +1138,7 @@ export const incomeDebugRouter = router({
         }
 
         const snapshotDate = parseSnapshotDate(match.row.paymentDate);
+
         if (!snapshotDate) {
           results.push({
             incomeId: income.id,
@@ -1120,6 +1152,7 @@ export const incomeDebugRouter = router({
         }
 
         const snapshotRowKey = `${match.row.normalizedPhone || match.row.normalizedName}:${match.row.rowIndex}`;
+
         usedRowKeys.add(snapshotRowKey);
 
         const oldDate = income.entryDate.toISOString().slice(0, 10);
@@ -1154,6 +1187,7 @@ export const incomeDebugRouter = router({
                 tenantId: ctx.tenantId,
                 saleId,
               });
+
               canonicalSaleIncomeId = recomputed.canonicalSaleId;
               didReorder = recomputed.didReorder;
             }
@@ -1259,6 +1293,7 @@ export const incomeDebugRouter = router({
             saleId: sale.id,
             db: ctx.db,
           });
+
           if (!before) {
             results.push({
               saleIncomeId: sale.id,
@@ -1407,6 +1442,7 @@ export const incomeDebugRouter = router({
           remainingDebtAmount: true,
         },
       });
+
       if (!sourceSale || !targetSale) {
         throw new TRPCError({
           code: 'NOT_FOUND',
@@ -1438,6 +1474,7 @@ export const incomeDebugRouter = router({
             paymentAmount: true,
           },
         });
+
         if (!sourceChain.length) {
           return {
             deletedCount: 0,
@@ -1462,11 +1499,13 @@ export const incomeDebugRouter = router({
             remainingDebtAmount: true,
           },
         });
+
         if (!refreshedTarget) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Maqsad kurs topilmadi.' });
         }
 
         const transferAmount = sourceChain.reduce((sum, row) => sum + Math.max(Number(row.paymentAmount || 0), 0), 0);
+
         if (transferAmount > Math.max(Number(refreshedTarget.remainingDebtAmount || 0), 0)) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
@@ -1476,12 +1515,15 @@ export const incomeDebugRouter = router({
 
         let runningRemainingDebt = Math.max(Number(refreshedTarget.remainingDebtAmount || 0), 0);
         let createdRepaymentsCount = 0;
+
         for (const row of sourceChain) {
           const paymentAmount = Math.max(Number(row.paymentAmount || 0), 0);
+
           if (paymentAmount <= 0) {
             continue;
           }
           const debtBeforePayment = runningRemainingDebt;
+
           runningRemainingDebt = Math.max(runningRemainingDebt - paymentAmount, 0);
           await tx.income.create({
             data: {

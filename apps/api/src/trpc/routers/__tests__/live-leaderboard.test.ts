@@ -19,6 +19,7 @@ describe('live leaderboard numbers', () => {
 
   it('shows the same bonus as the salary page because both read the bonus engine', async () => {
     const onlineCourse = { id: 'course-online', name: 'Online-Iyul', category: 'online' };
+
     jest.spyOn(prisma.user, 'findMany').mockResolvedValue([
       { id: 'agent-a', roles: ['OnlineAgent'] },
       { id: 'agent-b', roles: ['OnlineAgent'] },
@@ -40,6 +41,7 @@ describe('live leaderboard numbers', () => {
 
     // The salary page adds item.bonusAmount per item.agentUserId; the leaderboard must give identical totals.
     const salaryPageTotals = new Map<string, number>();
+
     for (const item of month.items) {
       salaryPageTotals.set(item.agentUserId, (salaryPageTotals.get(item.agentUserId) || 0) + item.bonusAmount);
     }
@@ -59,6 +61,7 @@ describe('live leaderboard numbers', () => {
         { managerUserId: 'someone-else', type: 'new_sale', paymentAmount: 9_000_000, entryDate: new Date('2026-09-30T10:00:00+05:00') },
       ],
     });
+
     expect(stats.income.get('online-agent')).toBe(5_000_000);
     expect(stats.todayIncome.get('online-agent')).toBe(4_000_000);
     expect(stats.salesCount.get('online-agent')).toBe(1);
@@ -77,6 +80,7 @@ describe('live leaderboard numbers', () => {
       bonusItem('agent-b', 'course-selected', 50_000, '2026-10-04T05:00:00Z'),
     ];
     const bonus = sumCourseBonusByAgent(items, ['agent-a'], ['course-selected']);
+
     expect(bonus.get('agent-a')).toBe(350_000);
     expect(bonus.has('agent-b')).toBe(false);
   });
@@ -99,6 +103,7 @@ describe('live leaderboard numbers', () => {
         { managerUserId: 'agent-a', type: 'repayment', paymentAmount: 3_000_000, entryDate: new Date('2026-10-31T10:00:00+05:00') },
       ],
     });
+
     expect(stats.income.get('agent-a')).toBe(5_000_000);
     expect(stats.todayIncome.get('agent-a')).toBe(3_000_000);
     expect(stats.salesCount.get('agent-a')).toBe(1);
@@ -118,6 +123,7 @@ describe('live leaderboard numbers', () => {
         { managerUserId: 'b', type: 'new_sale', paymentAmount: 7_000_000, entryDate: new Date('2026-08-01T10:00:00+05:00') },
       ],
     });
+
     expect(pickLeaderboardWinner(agents, stats, new Map([['b', 300_000]]))).toEqual({
       userId: 'b', name: 'Bobur', salesCount: 1, income: 7_000_000, bonus: 300_000,
     });
@@ -130,6 +136,7 @@ describe('live leaderboard numbers', () => {
       { userId: 'a', name: 'Agent', income: 100, salesCount: 1 },
       { userId: 'c', name: 'Zilola', income: 200, salesCount: 0 },
     ];
+
     expect([...agents].sort(compareLeaderboardAgents).map((agent) => agent.userId)).toEqual(['c', 'a', 'b']);
   });
 
@@ -146,6 +153,7 @@ describe('live leaderboard numbers', () => {
       ],
       paidBySaleId: new Map([['s1', 7_000_000], ['s2', 6_000_000], ['s3', 0]]),
     });
+
     expect(result.bonus.get('a')).toBe(800_000);
     // Fakt: only s2 is paid in full (6M); s1 still owes 3M.
     expect(result.bonusFact.get('a')).toBe(300_000);
@@ -158,12 +166,14 @@ describe('live leaderboard numbers', () => {
   it('finds the course selected before the current one', () => {
     const online = new Set(['oct', 'sep', 'nov']);
     const history = [['nov'], ['nov', 'offline-1'], ['oct', 'offline-1'], ['sep']];
+
     expect(pickPreviousCourseIds(history, ['nov'], (id) => online.has(id))).toEqual(['oct']);
     expect(pickPreviousCourseIds([['nov']], ['nov'], (id) => online.has(id))).toEqual([]);
   });
 
   it('projects Kutilma at the tier the agent reaches once every open debt closes this month', () => {
     const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed' } });
+
     policy.bonusRules.offline = {
       mode: 'tiered',
       simplePercent: 5,
@@ -187,6 +197,7 @@ describe('live leaderboard numbers', () => {
     const kutilma = projectMonthlyKutilma({
       agentIds: ['m'], policy, monthItems: [closed('a'), closed('b')], courseIds: ['c'], openSales,
     });
+
     // 2 closed + 6 open = 8 closures, so 5% on all 8 agreements (80M), not the 2% paid today.
     expect(kutilma.get('m')).toBe(4_000_000);
   });

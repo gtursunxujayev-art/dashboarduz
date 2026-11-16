@@ -75,6 +75,7 @@ function toDateOnly(date: Date): string {
 
 function round(value: number, digits = 2): number {
   const multiplier = 10 ** digits;
+
   return Math.round(value * multiplier) / multiplier;
 }
 
@@ -82,6 +83,7 @@ function safeRate(numerator: number, denominator: number): number {
   if (denominator <= 0) {
     return 0;
   }
+
   return round((numerator / denominator) * 100, 2);
 }
 
@@ -93,6 +95,7 @@ function safeJsonObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }
+
   return value as Record<string, unknown>;
 }
 
@@ -107,10 +110,13 @@ function extractAttributionTokens(metadata: unknown): string[] {
     data.source,
     data.fbclid,
   ];
+
   for (const candidate of candidates) {
     const value = String(candidate || '').trim().toLowerCase();
+
     if (value) tokens.add(value);
   }
+
   return Array.from(tokens);
 }
 
@@ -187,6 +193,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
     leads: number;
   }> = [];
   const metaTableMissing = false;
+
   metaRows = await db.metaAdInsight.findMany({
     where: {
       tenantId,
@@ -217,10 +224,13 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
   const sourceCounts = new Map<string, number>();
   const attributionTokens = new Set<string>();
   let qualifiedLeads = 0;
+
   for (const lead of leads) {
     const source = String(lead.source || 'unknown').trim() || 'unknown';
+
     sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1);
     const status = String(lead.status || '').toLowerCase();
+
     if (status.includes('qualified') || status.includes('sifatli') || status.includes('kelishuv') || status.includes('sale')) {
       qualifiedLeads += 1;
     }
@@ -239,9 +249,11 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
   const currentDebtFromRows = sum(incomes.filter((income) => income.type === 'new_sale').map((income) => Math.max(income.remainingDebtAmount || 0, 0)));
 
   const categoryMap = new Map<string, { sales: number; income: number; agreement: number }>();
+
   for (const income of incomes) {
     const category = classifyCourseCategoryFromField(income.course?.category || income.course?.name || 'other');
     const row = categoryMap.get(category) || { sales: 0, income: 0, agreement: 0 };
+
     row.income += income.paymentAmount || 0;
     if (income.type === 'new_sale') {
       row.sales += 1;
@@ -271,12 +283,14 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
       leads: 0,
       matchedLeadSignals: 0,
     };
+
     campaign.spend += row.spend || 0;
     campaign.clicks += row.clicks || 0;
     campaign.impressions += row.impressions || 0;
     campaign.leads += row.leads || 0;
     const nameToken = String(row.campaignName || '').toLowerCase();
     const idToken = String(row.campaignId || '').toLowerCase();
+
     campaign.matchedLeadSignals += Array.from(attributionTokens).some((token) => token && (token === idToken || token === nameToken || nameToken.includes(token)))
       ? 1
       : 0;
@@ -339,6 +353,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
 
 function fallbackAnalysis(inputSummary: Awaited<ReturnType<typeof collectAnalyticsInput>>, reason: string) {
   const findings = [];
+
   if (inputSummary.meta.spend > 0 && inputSummary.totals.newSales === 0) {
     findings.push({
       title: 'Meta spend exists but sales attribution is weak',
@@ -361,6 +376,7 @@ function fallbackAnalysis(inputSummary: Awaited<ReturnType<typeof collectAnalyti
       confidence: 'medium',
     });
   }
+
   return {
     summary: `AI model was not used: ${reason}. Showing rule-based analysis from available metrics.`,
     top_findings: findings,
@@ -375,6 +391,7 @@ function extractOutputText(response: any): string {
     return response.output_text;
   }
   const parts: string[] = [];
+
   for (const item of response?.output || []) {
     for (const content of item?.content || []) {
       if (typeof content?.text === 'string') {
@@ -382,6 +399,7 @@ function extractOutputText(response: any): string {
       }
     }
   }
+
   return parts.join('\n').trim();
 }
 
@@ -391,6 +409,7 @@ function extractChatCompletionText(response: any): string {
 
 function parseAiJson(text: string): unknown {
   const trimmed = text.trim();
+
   if (!trimmed) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'AI provider returned empty content.' });
   }
@@ -398,6 +417,7 @@ function parseAiJson(text: string): unknown {
     return JSON.parse(trimmed);
   } catch {
     const match = trimmed.match(/\{[\s\S]*\}/);
+
     if (match) {
       return JSON.parse(match[0]);
     }
@@ -407,6 +427,7 @@ function parseAiJson(text: string): unknown {
 
 function resolveAiProvider() {
   const explicitProvider = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
+
   if (explicitProvider === 'deepseek' || (!explicitProvider && process.env.DEEPSEEK_API_KEY)) {
     return {
       provider: 'deepseek' as const,
@@ -414,6 +435,7 @@ function resolveAiProvider() {
       model: process.env.DEEPSEEK_MODEL || process.env.AI_MODEL || 'deepseek-v4-pro',
     };
   }
+
   return {
     provider: 'openai' as const,
     apiKey: process.env.OPENAI_API_KEY || '',
@@ -444,6 +466,7 @@ async function generateWithDeepSeek(inputSummary: Awaited<ReturnType<typeof coll
   });
 
   const body = await response.json().catch(() => ({}));
+
   if (!response.ok) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -506,6 +529,7 @@ async function generateWithOpenAIResponses(inputSummary: Awaited<ReturnType<type
   });
 
   const body = await response.json().catch(() => ({}));
+
   if (!response.ok) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -514,13 +538,16 @@ async function generateWithOpenAIResponses(inputSummary: Awaited<ReturnType<type
   }
 
   const text = extractOutputText(body);
+
   return parseAiJson(text);
 }
 
 async function generateWithAiProvider(inputSummary: Awaited<ReturnType<typeof collectAnalyticsInput>>) {
   const provider = resolveAiProvider();
+
   if (!provider.apiKey) {
     const missingKey = provider.provider === 'deepseek' ? 'DEEPSEEK_API_KEY is not configured.' : 'OPENAI_API_KEY is not configured.';
+
     return { result: fallbackAnalysis(inputSummary, missingKey), model: null, provider: provider.provider, usedAi: false };
   }
 
@@ -541,6 +568,7 @@ export const analyticsAiRouter = router({
     .query(async ({ input, ctx }) => {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, new Date(), input.dateFrom, input.dateTo);
       const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, 'meta_targeting', ctx.db);
+
       return inputSummary.meta;
     }),
 
@@ -567,6 +595,7 @@ export const analyticsAiRouter = router({
           result: generated.result as any,
         },
       });
+
       reportId = report.id;
 
       return {
