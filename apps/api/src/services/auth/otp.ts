@@ -62,7 +62,6 @@ class FirebaseOTPProvider implements OTPProvider {
       logger.info({ phone }, 'Sending OTP via Firebase');
       
       // In production, this would use Firebase Admin SDK
-      // const result = await this.admin.auth().generateSignInWithPhoneNumber(phone, {});
       
       // For now, simulate successful OTP send
       const verificationId = `firebase-${Date.now()}-${phone}`;
@@ -99,7 +98,6 @@ class FirebaseOTPProvider implements OTPProvider {
       logger.info({ phone }, 'Verifying OTP via Firebase');
       
       // In production, this would verify with Firebase
-      // const result = await this.admin.auth().verifyPhoneNumber(verificationId, code);
       
       // For now, simulate verification by checking against stored sessions
       const verified = await this.checkVerificationCode(phone, code);
