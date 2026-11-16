@@ -54,7 +54,6 @@ model Tenant {
   bonusAdjustmentAudits BonusAdjustmentAudit[]
   bonusAdjustmentApplications BonusAdjustmentApplication[]
 
-  @@index([subdomain])
   @@map("tenants")
 }
 
@@ -96,14 +95,11 @@ model User {
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
-  @@index([tenantId])
   @@index([tenantId, isActive])
   @@index([tenantId, amocrmResponsibleUserId])
   @@index([tenantId, utelManagerExternalId])
-  @@index([username])
   @@index([email])
   @@index([phone])
-  @@index([telegramId])
   @@index([googleId])
   @@index([amocrmResponsibleUserId])
   @@index([utelManagerExternalId])
@@ -148,7 +144,6 @@ model Integration {
   telegramRecipients TelegramRecipient[]
 
   @@unique([tenantId, type])
-  @@index([tenantId])
   @@index([type, status])
   @@map("integrations")
 }
@@ -174,7 +169,6 @@ model TelegramRecipient {
   integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
 
   @@unique([integrationId, chatId])
-  @@index([tenantId])
   @@index([tenantId, started])
   @@index([tenantId, selectedForReports])
   @@map("telegram_recipients")
@@ -206,8 +200,6 @@ model MetaAdInsight {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, date, accountId, campaignId, adSetId, adId], map: "meta_ad_insights_tenant_date_account_campaign_adset_ad_key")
-  @@index([tenantId])
-  @@index([tenantId, date])
   @@index([tenantId, accountId, date])
   @@index([date])
   @@index([accountId])
@@ -264,7 +256,6 @@ model Lead {
   contact Contact? @relation(fields: [contactId], references: [id])
   calls   Call[]
 
-  @@index([tenantId])
   @@index([amocrmId])
   @@unique([tenantId, amocrmId])
   @@index([contactId])
@@ -289,7 +280,6 @@ model Contact {
   leads  Lead[]
   calls  Call[]
 
-  @@index([tenantId])
   @@index([tenantId, phone])
   @@index([tenantId, email])
   @@index([phone])
@@ -324,7 +314,6 @@ model Call {
   lead   Lead?  @relation(fields: [leadId], references: [id])
   contact Contact? @relation(fields: [contactId], references: [id])
 
-  @@index([tenantId])
   @@index([tenantId, provider, startedAt])
   @@index([tenantId, startedAt])
   @@index([provider])
@@ -359,7 +348,6 @@ model Notification {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, status])
   @@index([tenantId, status, createdAt])
   @@index([status, nextRetryAt])
   @@index([createdAt])
@@ -386,7 +374,6 @@ model WebhookEvent {
 
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId])
   @@index([source, processed])
   @@index([source, idempotencyKey])
   @@unique([tenantId, source, idempotencyKey])
@@ -449,7 +436,6 @@ model Customer {
   incomeAdjustmentRequests IncomeAdjustmentRequest[]
 
   @@unique([tenantId, customerNumber])
-  @@index([tenantId])
   @@index([tenantId, createdAt])
   @@index([tenantId, profileCourseId])
   @@index([tenantId, profileTariffId])
@@ -483,7 +469,6 @@ model Course {
   profileCustomers Customer[] @relation("CustomerProfileCourse")
 
   @@unique([tenantId, name])
-  @@index([tenantId])
   @@map("courses")
 }
 
@@ -505,7 +490,6 @@ model Tariff {
   profileCustomers Customer[] @relation("CustomerProfileTariff")
 
   @@unique([tenantId, courseId, name])
-  @@index([tenantId])
   @@index([courseId])
   @@map("tariffs")
 }
@@ -524,7 +508,6 @@ model SubTariff {
   profileCustomers Customer[] @relation("CustomerProfileSubTariff")
 
   @@unique([tenantId, tariffId, name])
-  @@index([tenantId])
   @@index([tariffId])
   @@map("sub_tariffs")
 }
@@ -563,7 +546,6 @@ model Income {
   relatedDebtIncome Income? @relation("DebtRepaymentSource", fields: [relatedDebtIncomeId], references: [id], onDelete: SetNull)
   repayments        Income[] @relation("DebtRepaymentSource")
 
-  @@index([tenantId])
   @@index([tenantId, entryDate])
   @@index([tenantId, lifecycleStatus, entryDate])
   @@index([tenantId, type, lifecycleStatus, entryDate])
@@ -673,7 +655,6 @@ model BonusPolicyVersion {
   snapshots BonusMonthSnapshot[]
 
   @@unique([tenantId, effectiveMonth])
-  @@index([tenantId, effectiveMonth])
   @@map("bonus_policy_versions")
 }
 
@@ -835,7 +816,6 @@ model CorporateCallDuration {
   manager  User   @relation("CorporateCallDurationManager", fields: [managerUserId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, managerUserId, callDate])
-  @@index([tenantId])
   @@index([managerUserId])
   @@index([callDate])
   @@map("corporate_call_durations")
@@ -870,7 +850,6 @@ model AttendanceEvent {
   adjustments AttendanceAdjustment[]
 
   @@unique([tenantId, idempotencyKey])
-  @@index([tenantId])
   @@index([userId])
   @@index([localDate])
   @@index([eventAt])
@@ -902,7 +881,6 @@ model AttendanceDaySummary {
   user   User   @relation("AttendanceDaySummaryUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, userId, summaryDate])
-  @@index([tenantId])
   @@index([userId])
   @@index([summaryDate])
   @@index([tenantId, summaryDate])
