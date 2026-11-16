@@ -21,7 +21,7 @@ import * as path from 'path';
 const REPO_ROOT = path.resolve(__dirname, '..');
 const ROUTERS_DIR = path.resolve(REPO_ROOT, 'apps/api/src/trpc/routers');
 // Services that took over query code from routers when the routers were split into folders.
-const SERVICE_DIRS = ['customer-income', 'sellers', 'integration-settings'].map((dir) => path.resolve(REPO_ROOT, 'apps/api/src/services', dir));
+const SERVICE_DIRS = ['customer-income', 'sellers', 'integration-settings', 'course-sales'].map((dir) => path.resolve(REPO_ROOT, 'apps/api/src/services', dir));
 const SCAN_DIRS = [ROUTERS_DIR, ...SERVICE_DIRS];
 const BASELINE_PATH = path.resolve(__dirname, 'audit-tenant-filter.baseline.json');
 const SKIP_FILES = new Set(['calls.ts', 'index.ts']);

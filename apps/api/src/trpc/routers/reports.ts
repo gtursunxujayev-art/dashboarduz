@@ -5,6 +5,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { parseCustomDate } from '../../lib/dates';
+import { buildTechnicalSaleIdSetByAgreement } from '../../services/course-sales/helpers';
 import { getAdjustmentRoleScope } from '../../services/customer-income/roles';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
 import {
@@ -14,8 +15,6 @@ import {
   selectDebtorSales,
 } from '../../services/reports/report-rows';
 import { protectedProcedure, router } from '../trpc';
-
-import { buildTechnicalSaleIdSetByAgreement } from './course-sales';
 
 const REPORT_ROW_LIMIT = 20_000;
 const CHAIN_LIFECYCLES_ALL = ['active', 'pending_refund', 'refunded'];

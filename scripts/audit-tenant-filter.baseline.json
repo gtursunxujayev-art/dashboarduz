@@ -17,9 +17,13 @@
   "apps/api/src/trpc/routers/corporate-calls.ts": {
     "corporateCallDuration.findMany": 1
   },
-  "apps/api/src/trpc/routers/course-sales.ts": {
-    "income.count": 2,
-    "income.findMany": 2
+  "apps/api/src/trpc/routers/course-sales/customers.ts": {
+    "income.count": 1,
+    "income.findMany": 1
+  },
+  "apps/api/src/trpc/routers/course-sales/type-customers.ts": {
+    "income.count": 1,
+    "income.findMany": 1
   },
   "apps/api/src/trpc/routers/customer-income/adjustments.ts": {
     "incomeAdjustmentRequest.count": 3,
