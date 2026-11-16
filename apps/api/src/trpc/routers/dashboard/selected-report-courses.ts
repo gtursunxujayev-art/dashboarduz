@@ -16,6 +16,8 @@ export type SelectedReportCourse = {
   group: 'online' | 'offline';
   salesCount: number;
   agreementAmount: number;
+  /** Customers of the course whose agreement is not yet fully paid (first payment plus every repayment). */
+  debtorsCount: number;
   tariffs: Array<{ tariffId: string | null; name: string; salesCount: number }>;
 };
 
@@ -122,7 +124,24 @@ export async function loadSelectedReportCourses(tenantId: string): Promise<Selec
     technicalSaleIds,
   }));
 
+  const repayments = selectedCourseSales.length
+    ? await prisma.income.findMany({
+        where: {
+          tenantId,
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          relatedDebtIncomeId: { in: selectedCourseSales.map((sale) => sale.id) },
+        },
+        select: { relatedDebtIncomeId: true, paymentAmount: true },
+      })
+    : [];
+  const paidBySaleId = new Map(selectedCourseSales.map((sale) => [sale.id, sale.paymentAmount || 0]));
+  for (const row of repayments) {
+    if (!row.relatedDebtIncomeId) continue;
+    paidBySaleId.set(row.relatedDebtIncomeId, (paidBySaleId.get(row.relatedDebtIncomeId) || 0) + (row.paymentAmount || 0));
+  }
+
   const salesCountById = new Map<string, number>();
+  const debtorsCountById = new Map<string, number>();
   const agreementAmountById = new Map<string, number>();
   const tariffSalesCountByKey = new Map<string, number>();
   for (const sale of selectedCourseSales) {
@@ -132,6 +151,9 @@ export async function loadSelectedReportCourses(tenantId: string): Promise<Selec
       sale.courseId,
       (agreementAmountById.get(sale.courseId) || 0) + resolveSaleAgreementAmount(sale),
     );
+    if (resolveSaleAgreementAmount(sale) - (paidBySaleId.get(sale.id) || 0) > 0) {
+      debtorsCountById.set(sale.courseId, (debtorsCountById.get(sale.courseId) || 0) + 1);
+    }
     const tariffKey = `${sale.courseId}:${sale.tariffId || 'none'}`;
     tariffSalesCountByKey.set(tariffKey, (tariffSalesCountByKey.get(tariffKey) || 0) + 1);
   }
@@ -151,6 +173,7 @@ export async function loadSelectedReportCourses(tenantId: string): Promise<Selec
       group: dashboardCategory === 'online' ? 'online' as const : 'offline' as const,
       salesCount: salesCountById.get(course.id) || 0,
       agreementAmount: agreementAmountById.get(course.id) || 0,
+      debtorsCount: debtorsCountById.get(course.id) || 0,
       tariffs: [
         ...course.tariffs.map((tariff) => ({
           tariffId: tariff.id,
