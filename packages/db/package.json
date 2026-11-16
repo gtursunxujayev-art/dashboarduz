@@ -1,33 +1,28 @@
 {
-    "name":  "@dashboarduz/db",
-    "version":  "1.0.0",
-    "private":  true,
-    "engines":  {
-                    "node":  ">=20 <25"
-                },
-    "main":  "./dist/index.js",
-    "types":  "./dist/index.d.ts",
-    "scripts":  {
-                    "generate":  "prisma generate",
-                    "migrate":  "prisma migrate dev",
-                    "migrate:deploy":  "prisma migrate deploy",
-                    "migrate:status":  "tsx scripts/migrate.ts status",
-                    "backup":  "tsx scripts/backup.ts create",
-                    "backup:s3":  "tsx scripts/backup.ts create --s3",
-                    "restore":  "tsx scripts/restore.ts restore",
-                    "restore:list":  "tsx scripts/restore.ts list",
-                    "studio":  "prisma studio",
-                    "db:push":  "prisma db push",
-                    "type-check":  "npm run generate && tsc --noEmit",
-                    "build":  "npm run generate && tsc --project tsconfig.json"
-                },
-    "dependencies":  {
-                         "@prisma/client":  "^5.9.1",
-                         "@aws-sdk/client-s3":  "^3.490.0"
-                     },
-    "devDependencies":  {
-                            "prisma":  "^5.9.1",
-                            "tsx":  "^4.7.0",
-                            "typescript":  "^5.3.3"
-                        }
+    "name": "@dashboarduz/db",
+    "version": "1.0.0",
+    "private": true,
+    "engines": {
+        "node": ">=20 <25"
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "scripts": {
+        "generate": "prisma generate",
+        "migrate": "prisma migrate dev",
+        "migrate:deploy": "prisma migrate deploy",
+        "migrate:status": "tsx scripts/migrate.ts status",
+        "studio": "prisma studio",
+        "db:push": "prisma db push",
+        "type-check": "npm run generate && tsc --noEmit",
+        "build": "npm run generate && tsc --project tsconfig.json"
+    },
+    "dependencies": {
+        "@prisma/client": "^5.9.1"
+    },
+    "devDependencies": {
+        "prisma": "^5.9.1",
+        "tsx": "^4.7.0",
+        "typescript": "^5.3.3"
+    }
 }
