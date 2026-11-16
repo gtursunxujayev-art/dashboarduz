@@ -5,6 +5,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { asObjectOrEmpty } from '../../lib/object';
+import { parseTelegramDailyReportCourseIds } from '../../lib/telegram';
 import {
   AMOCRM_CALL_PROVIDER,
   CALLS_SOURCE_CONFIG_KEY,
@@ -83,20 +84,6 @@ function amoFailureHelp(reason: AmoFailureReason): string | null {
   }
 
   return null;
-}
-
-function parseTelegramDailyReportCourseIds(config: unknown): string[] {
-  const raw = asObjectOrEmpty(config).telegramDailyReportCourseIds;
-
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-
-  return Array.from(new Set(
-    raw
-      .map((value) => String(value || '').trim())
-      .filter(Boolean),
-  )).slice(0, 3);
 }
 
 function telegramRecipientStorageErrorMessage(): string {

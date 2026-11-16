@@ -1,9 +1,7 @@
 import { systemPrisma as prisma } from '@dashboarduz/db';
 
-import {
-  loadSelectedReportCourses,
-  parseTelegramDailyReportCourseIds,
-} from '../dashboard/selected-report-courses';
+import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
+import { loadSelectedReportCourses } from '../dashboard/selected-report-courses';
 
 describe('selected report courses', () => {
   afterEach(() => {

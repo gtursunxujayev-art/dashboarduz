@@ -1,13 +1,13 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { AGENT_ROLES, normalizeDigits } from '@dashboarduz/shared';
 
+import { buildLooseTelegramChatIdCandidates, normalizeTelegramSecret, sendMessageToTelegramChat } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';
 import { getCallsProvider } from '../calls-source';
 import { getCorporateCallDurationByManager } from '../corporate-call-durations';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
 import { type AmoCRMTask, amocrmService } from '../integrations/amocrm';
 import { getTenantAmoCRMContext } from '../integrations/amocrm-live';
-import { telegramService } from '../integrations/telegram';
 import { LogLevel, log } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
@@ -91,43 +91,6 @@ function formatDurationUz(totalSeconds: number): string {
   const seconds = safe % 60;
 
   return `${hours} soat ${minutes} daqiqa ${seconds} soniya`;
-}
-
-function normalizeTelegramSecret(value: string | undefined | null): string | null {
-  const normalized = String(value || '').trim();
-
-  return normalized.length > 0 ? normalized : null;
-}
-
-function buildTelegramChatIdCandidates(chatId: string): string[] {
-  const normalized = String(chatId || '').trim();
-
-  if (!normalized) {
-    return [];
-  }
-
-  const candidates = new Set<string>();
-
-  candidates.add(normalized);
-
-  const digitsOnly = normalized.replace(/[^\d-]/g, '');
-
-  if (digitsOnly && digitsOnly !== normalized) {
-    candidates.add(digitsOnly);
-  }
-
-  const unsignedDigits = digitsOnly.replace(/-/g, '');
-
-  if (unsignedDigits) {
-    if (!normalized.startsWith('-100')) {
-      candidates.add(`-100${unsignedDigits}`);
-    }
-    if (!normalized.startsWith('-') && !normalized.startsWith('@')) {
-      candidates.add(unsignedDigits);
-    }
-  }
-
-  return Array.from(candidates);
 }
 
 function resolveNoonWindow(nowUtc: Date): NoonWindow | null {
@@ -424,30 +387,6 @@ async function collectAgentMetricsForTenant(params: {
   }));
 }
 
-async function sendMessageToTelegramChat(botToken: string, chatId: string, text: string): Promise<void> {
-  const candidates = buildTelegramChatIdCandidates(chatId);
-
-  if (candidates.length === 0) {
-    throw new Error('Telegram chat id is empty');
-  }
-
-  let lastError = '';
-
-  for (const candidate of candidates) {
-    try {
-      await telegramService.sendMessage(botToken, candidate, text, {
-        disable_web_page_preview: true,
-      });
-
-      return;
-    } catch (error) {
-      lastError = String((error as any)?.message || error);
-    }
-  }
-
-  throw new Error(lastError || 'Failed to send Telegram message');
-}
-
 async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<void> {
   const integrations = await systemPrisma.integration.findMany({
     where: {
@@ -503,7 +442,10 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
         const message = buildAgentMessage(row);
 
         try {
-          await sendMessageToTelegramChat(botToken, row.telegramId, message);
+          await sendMessageToTelegramChat(botToken, row.telegramId, message, {
+            buildCandidates: buildLooseTelegramChatIdCandidates,
+            emptyChatIdMessage: 'Telegram chat id is empty',
+          });
           sentCount += 1;
         } catch (error: any) {
           log(LogLevel.WARN, 'Noon agent performance: failed to send message to agent', {

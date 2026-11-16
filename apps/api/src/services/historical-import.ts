@@ -2,6 +2,8 @@ import { createHash } from 'crypto';
 
 import { normalizeDigits } from '@dashboarduz/shared';
 
+import { sanitizeTelegramUsername } from '../lib/telegram';
+
 export type HistoricalCourseCategory = 'online' | 'offline' | 'intensive' | 'additional_service';
 export type HistoricalRawCell = string | number | boolean | null;
 export type HistoricalRawRow = Record<string, HistoricalRawCell>;
@@ -156,10 +158,6 @@ function normalizeKey(value: string): string {
     .toLowerCase()
     .replace(/['"`’]/g, '')
     .replace(/[^a-z0-9]+/g, '');
-}
-
-function sanitizeTelegramUsername(value: string): string {
-  return String(value || '').replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
 }
 
 function collapseWhitespace(value: string): string {

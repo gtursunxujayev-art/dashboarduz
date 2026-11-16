@@ -1,6 +1,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { normalizeDigits } from '@dashboarduz/shared';
 
+import { parseTelegramDailyReportCourseIds } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension } from '../../lib/utel';
 import { getCallsProvider, getCallsProviderFilter } from '../calls-source';
 import { getCorporateCallDurationByManager, getCorporateCallDurationTotal } from '../corporate-call-durations';
@@ -172,22 +173,6 @@ function formatDurationHoursMinutes(totalSeconds: number): string {
   const minutes = Math.floor((safe % 3600) / 60);
 
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-}
-
-function parseTelegramDailyReportCourseIds(config: unknown): string[] {
-  const raw = config && typeof config === 'object' && !Array.isArray(config)
-    ? (config as Record<string, unknown>).telegramDailyReportCourseIds
-    : null;
-
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-
-  return Array.from(new Set(
-    raw
-      .map((value) => String(value || '').trim())
-      .filter(Boolean),
-  )).slice(0, 3);
 }
 
 function formatSelectedCourseLine(row: ReportMetrics['selectedCourseRows'][number]): string {

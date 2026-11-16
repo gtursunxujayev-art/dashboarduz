@@ -1,6 +1,7 @@
 import type { DbClient } from '@dashboarduz/db';
 import { normalizeDigits } from '@dashboarduz/shared';
 
+import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
 import {
   calculateBonusRange,
@@ -24,7 +25,7 @@ import {
   TRPCError,
   z,
 } from './helpers';
-import { loadSelectedReportCourses, parseTelegramDailyReportCourseIds } from './selected-report-courses';
+import { loadSelectedReportCourses } from './selected-report-courses';
 
 const LIVE_LEADERBOARD_MANAGER_ROLES = new Set(['Admin', 'Manager']);
 

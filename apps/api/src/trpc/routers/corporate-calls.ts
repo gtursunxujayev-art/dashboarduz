@@ -1,10 +1,9 @@
 import type { DbClient } from '@dashboarduz/db';
+import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
-import { decryptIntegrationTokens } from '../../services/security/encryption';
-import { telegramService } from '../../services/integrations/telegram';
-import { protectedProcedure, router } from '../trpc';
+
+import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import {
   formatDurationToHms,
   formatReportDate,
@@ -12,6 +11,15 @@ import {
   parseDurationToSeconds,
   parseReportDateInput,
 } from '../../services/corporate-call-durations';
+import { telegramService } from '../../services/integrations/telegram';
+import { parseTelegramGroupIdsFromEnvKeys } from '../../services/integrations/telegram-groups';
+import { protectedProcedure, router } from '../trpc';
+
+const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
+  requireActiveIntegration: true,
+  secret: { stripWrappingQuotes: true },
+  decryptFailureMessage: '[CorporateCalls][Telegram] Failed to decrypt integration token, using TELEGRAM_BOT_TOKEN fallback.',
+};
 
 const MANAGER_LIKE_ROLES = [...AGENT_ROLES, 'Manager', 'TeamLeader'] as const;
 const CORPORATE_GROUP_ENV_KEYS = [
@@ -34,101 +42,6 @@ function canUseCorporateCalls(roles: string[]): boolean {
     || hasAgentRole(roles);
 }
 
-function parseTelegramGroupIds(rawValue: string | undefined): string[] {
-  if (!rawValue) {
-    return [];
-  }
-
-  const stripWrappingQuotes = (value: string): string => value.replace(/^['"`]+|['"`]+$/g, '').trim();
-
-  return Array.from(
-    new Set(
-      rawValue
-        .split(/[,\n;]+/g)
-        .map((value) => stripWrappingQuotes(value))
-        .map((value) => value.replace(/\s+/g, ''))
-        .filter(Boolean),
-    ),
-  );
-}
-
-function parseTelegramGroupIdsFromEnvKeys(keys: readonly string[]): string[] {
-  return Array.from(
-    new Set(keys.flatMap((key) => parseTelegramGroupIds(process.env[key]))),
-  );
-}
-
-function normalizeTelegramSecret(rawValue: string | undefined): string | null {
-  if (!rawValue) {
-    return null;
-  }
-  const normalized = rawValue.replace(/^['"`]+|['"`]+$/g, '').trim();
-
-  return normalized || null;
-}
-
-function buildTelegramChatIdCandidates(groupId: string): string[] {
-  const normalized = String(groupId || '').trim();
-
-  if (!normalized) {
-    return [];
-  }
-
-  const candidates = new Set<string>([normalized]);
-
-  if (/^-100\d+$/.test(normalized)) {
-    candidates.add(`-${normalized.slice(4)}`);
-  } else if (/^-\d+$/.test(normalized) && !normalized.startsWith('-100')) {
-    candidates.add(`-100${normalized.slice(1)}`);
-  }
-
-  return Array.from(candidates);
-}
-
-function toHashtag(value: string | null | undefined): string {
-  const normalized = String(value || '')
-    .normalize('NFKD')
-    .replace(/['`]/g, '')
-    .replace(/[^\w\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '_');
-
-  return normalized ? `#${normalized}` : '#manager';
-}
-
-async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient): Promise<string | null> {
-  const integration = await db.integration.findUnique({
-    where: {
-      tenantId_type: {
-        tenantId,
-        type: 'telegram',
-      },
-    },
-    select: {
-      status: true,
-      tokensEncrypted: true,
-    },
-  });
-
-  let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
-
-  if (integration?.status === 'active' && integration.tokensEncrypted) {
-    try {
-      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
-      const integrationBotToken = normalizeTelegramSecret(tokens.botToken || tokens.token);
-
-      botToken = integrationBotToken || botToken;
-    } catch (error) {
-      console.warn('[CorporateCalls][Telegram] Failed to decrypt integration token, using TELEGRAM_BOT_TOKEN fallback.', {
-        tenantId,
-        error: String((error as any)?.message || error),
-      });
-    }
-  }
-
-  return botToken;
-}
-
 async function sendCorporateCallAddedTelegram(params: {
   tenantId: string;
   date: string;
@@ -144,7 +57,7 @@ async function sendCorporateCallAddedTelegram(params: {
     return { sent: false, reason: 'group_missing' as const };
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
     return { sent: false, reason: 'token_missing' as const };
@@ -153,7 +66,7 @@ async function sendCorporateCallAddedTelegram(params: {
   const message = [
     params.date,
     '#korporativ',
-    toHashtag(params.managerName),
+    toHashtag(params.managerName) ?? '#manager',
     "✅ Qo'shildi",
     '',
     `"${params.duration}"`,

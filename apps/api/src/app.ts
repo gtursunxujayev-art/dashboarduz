@@ -1,18 +1,20 @@
-import express from 'express';
+import { systemPrisma } from '@dashboarduz/db';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { trpcMiddleware } from './trpc/server';
-import webhookRouter from './webhooks';
+import express from 'express';
+
+import { applyObservabilityMiddleware } from './middleware/observability';
+import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from './services/integrations/amocrm-call-sync';
+import { telegramService } from './services/integrations/telegram';
+import { parseTelegramGroupIds } from './services/integrations/telegram-groups';
 import { initSentry, log, LogLevel } from './services/observability';
 import { checkRedisHealth } from './services/queue/redis-client';
-import { applyObservabilityMiddleware } from './middleware/observability';
-import { systemPrisma } from '@dashboarduz/db';
-import { decryptIntegrationTokens } from './services/security/encryption';
-import { telegramService } from './services/integrations/telegram';
-import { startTelegramReportScheduler, stopTelegramReportScheduler } from './services/reports/telegram-report-scheduler';
 import { startTelegramAgentPerformanceScheduler, stopTelegramAgentPerformanceScheduler } from './services/reports/telegram-agent-performance-scheduler';
 import { startTelegramGroupSummaryScheduler, stopTelegramGroupSummaryScheduler } from './services/reports/telegram-group-summary-scheduler';
-import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from './services/integrations/amocrm-call-sync';
+import { startTelegramReportScheduler, stopTelegramReportScheduler } from './services/reports/telegram-report-scheduler';
+import { decryptIntegrationTokens } from './services/security/encryption';
+import { trpcMiddleware } from './trpc/server';
+import webhookRouter from './webhooks';
 
 dotenv.config();
 
@@ -212,22 +214,6 @@ app.get('/health/schedulers', async (_req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
-
-function parseTelegramGroupIds(rawValue: string | undefined): string[] {
-  if (!rawValue) {
-    return [];
-  }
-
-  return Array.from(
-    new Set(
-      rawValue
-        .split(/[,\n;]+/g)
-        .map((value) => value.replace(/^['"`]+|['"`]+$/g, '').trim())
-        .map((value) => value.replace(/\s+/g, ''))
-        .filter(Boolean),
-    ),
-  );
-}
 
 function isTelegramDebugAuthorized(req: express.Request): boolean {
   const configuredKey = (process.env.TELEGRAM_DEBUG_KEY || '').trim();

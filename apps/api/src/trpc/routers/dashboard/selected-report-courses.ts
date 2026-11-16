@@ -1,7 +1,9 @@
 import type { DbClient } from '@dashboarduz/db';
 
-import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
+import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
 import { resolveSaleAgreementAmount } from '../../../services/income-facts';
+import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
+
 import {
   classifyCourseCategoryFromField,
   INCOME_LIFECYCLE_ACTIVE,
@@ -21,22 +23,6 @@ export type SelectedReportCourse = {
   debtorsCount: number;
   tariffs: Array<{ tariffId: string | null; name: string; salesCount: number }>;
 };
-
-export function parseTelegramDailyReportCourseIds(config: unknown): string[] {
-  const raw = config && typeof config === 'object' && !Array.isArray(config)
-    ? (config as Record<string, unknown>).telegramDailyReportCourseIds
-    : null;
-
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-
-  return Array.from(new Set(
-    raw
-      .map((value) => String(value || '').trim())
-      .filter(Boolean),
-  )).slice(0, 3);
-}
 
 function resolveSelectedCourseCategory(
   category: string | null | undefined,

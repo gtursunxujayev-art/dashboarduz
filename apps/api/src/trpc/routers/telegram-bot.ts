@@ -1,53 +1,17 @@
-import type { DbClient } from '@dashboarduz/db';
+
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { listTelegramRecipients } from '../../services/integrations/telegram-recipient-store';
+
+import { resolveTelegramBotTokenForTenant, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import { telegramService } from '../../services/integrations/telegram';
-import { decryptIntegrationTokens } from '../../services/security/encryption';
+import { listTelegramRecipients } from '../../services/integrations/telegram-recipient-store';
 import { managerProcedure, router } from '../trpc';
 
-function normalizeTelegramSecret(value: string | null | undefined): string | null {
-  const normalized = String(value || '').trim();
-
-  if (!normalized) {
-    return null;
-  }
-
-  return normalized.replace(/\r?\n/g, '').trim();
-}
-
-async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient): Promise<string | null> {
-  const integration = await db.integration.findUnique({
-    where: {
-      tenantId_type: {
-        tenantId,
-        type: 'telegram',
-      },
-    },
-    select: {
-      status: true,
-      tokensEncrypted: true,
-    },
-  });
-
-  let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
-
-  if (integration?.status === 'active' && integration.tokensEncrypted) {
-    try {
-      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
-      const integrationBotToken = normalizeTelegramSecret(tokens.botToken || tokens.token);
-
-      botToken = integrationBotToken || botToken;
-    } catch (error) {
-      console.warn('[TelegramBot] Failed to decrypt integration bot token, fallback to TELEGRAM_BOT_TOKEN', {
-        tenantId,
-        error: String((error as any)?.message || error),
-      });
-    }
-  }
-
-  return botToken;
-}
+const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
+  requireActiveIntegration: true,
+  secret: { removeNewlines: true },
+  decryptFailureMessage: '[TelegramBot] Failed to decrypt integration bot token, fallback to TELEGRAM_BOT_TOKEN',
+};
 
 export const telegramBotRouter = router({
   recipients: managerProcedure.query(async ({ ctx }) => {
@@ -134,7 +98,7 @@ export const telegramBotRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db);
+      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
       if (!botToken) {
         throw new TRPCError({

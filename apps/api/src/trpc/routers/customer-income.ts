@@ -13,15 +13,11 @@ import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, sanitizeTelegramUsername, sendMessageToTelegramChat, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import { reconcileFinalizedBonusMonths } from '../../services/bonus-engine';
 import {
-  buildHistoricalInitialProgress,
-  prepareHistoricalImportPreview,
   type HistoricalCatalogItemPreview,
-  type HistoricalImportFailure,
-  type HistoricalPreparedCustomerRow,
   type HistoricalPreparedIncomeRow,
-  type HistoricalRawRow,
 } from '../../services/historical-import';
 import {
   buildSaleChainMetricsBySaleId,
@@ -31,8 +27,14 @@ import {
 } from '../../services/income-chain';
 import { NON_TECHNICAL_SALE_WHERE } from '../../services/income-facts';
 import { telegramService } from '../../services/integrations/telegram';
-import { decryptIntegrationTokens } from '../../services/security/encryption';
+import { parseTelegramGroupIdsFromEnvKeys } from '../../services/integrations/telegram-groups';
 import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
+
+const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
+  requireActiveIntegration: false,
+  secret: { stripWrappingQuotes: true },
+  decryptFailureMessage: '[Income][Telegram] Failed to decrypt integration bot token, using TELEGRAM_BOT_TOKEN fallback if provided.',
+};
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent'] as const;
 const SALES_MANAGER_ROLE_TOKENS = new Set(
@@ -862,39 +864,6 @@ function parseCustomDateInReportTimezone(input: string, endOfDay: boolean): Date
   return date;
 }
 
-function parseTelegramGroupIds(rawValue: string | undefined): string[] {
-  if (!rawValue) {
-    return [];
-  }
-
-  const stripWrappingQuotes = (value: string): string => value.replace(/^['"`]+|['"`]+$/g, '').trim();
-
-  return Array.from(
-    new Set(
-      rawValue
-        .split(/[,\n;]+/g)
-        .map((value) => stripWrappingQuotes(value))
-        .map((value) => value.replace(/\s+/g, ''))
-        .filter(Boolean),
-    ),
-  );
-}
-
-function normalizeTelegramSecret(rawValue: string | undefined): string | null {
-  if (!rawValue) {
-    return null;
-  }
-  const normalized = rawValue.replace(/^['"`]+|['"`]+$/g, '').trim();
-
-  return normalized || null;
-}
-
-function parseTelegramGroupIdsFromEnvKeys(keys: readonly string[]): string[] {
-  return Array.from(
-    new Set(keys.flatMap((key) => parseTelegramGroupIds(process.env[key]))),
-  );
-}
-
 function resolveRefundGroupIds(): string[] {
   const preferred = parseTelegramGroupIdsFromEnvKeys(['REFUND_GROUP_ID', 'REFUND_GROUP_IDS']);
 
@@ -962,39 +931,6 @@ async function fetchLatestResponsibleManagerByCustomer(params: {
   return result;
 }
 
-function buildTelegramChatIdCandidates(groupId: string): string[] {
-  const normalized = String(groupId || '').trim();
-
-  if (!normalized) {
-    return [];
-  }
-
-  const candidates = new Set<string>([normalized]);
-
-  if (/^-100\d+$/.test(normalized)) {
-    candidates.add(`-${normalized.slice(4)}`);
-  } else if (/^-\d+$/.test(normalized) && !normalized.startsWith('-100')) {
-    candidates.add(`-100${normalized.slice(1)}`);
-  }
-
-  return Array.from(candidates);
-}
-
-function toHashtag(value: string | null | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-
-  const normalized = value
-    .normalize('NFKD')
-    .replace(/['`]/g, '')
-    .replace(/[^\w\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '_');
-
-  return normalized ? `#${normalized}` : null;
-}
-
 function formatAmountUz(value: number | null | undefined): string {
   return `${Number(value || 0).toLocaleString('ru-RU')} UZS`;
 }
@@ -1029,38 +965,6 @@ function resolvePaymentGroupEnvKeysByCategory(category: string | null | undefine
   return null;
 }
 
-async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient): Promise<string | null> {
-  const integration = await db.integration.findUnique({
-    where: {
-      tenantId_type: {
-        tenantId,
-        type: 'telegram',
-      },
-    },
-    select: {
-      tokensEncrypted: true,
-    },
-  });
-
-  let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
-
-  if (integration?.tokensEncrypted) {
-    try {
-      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
-      const integrationBotToken = normalizeTelegramSecret(tokens.botToken || tokens.token);
-
-      botToken = integrationBotToken || botToken;
-    } catch (error) {
-      console.warn('[Income][Telegram] Failed to decrypt integration bot token, using TELEGRAM_BOT_TOKEN fallback if provided.', {
-        tenantId,
-        error: String((error as any)?.message || error),
-      });
-    }
-  }
-
-  return botToken;
-}
-
 async function sendOfflineOrIntensivePaymentTelegram(params: {
   tenantId: string;
   incomeId: string;
@@ -1078,7 +982,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     errors?: string[];
   };
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
     console.warn('[Income][Telegram] Bot token is missing. Connect Telegram integration or set TELEGRAM_BOT_TOKEN.');
@@ -1502,7 +1406,7 @@ async function sendTariffChangeRequestedTelegram(params: {
     return;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
     return;
@@ -1635,7 +1539,7 @@ async function sendTariffChangeApprovedTelegram(params: {
     return;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
     return;
@@ -1699,7 +1603,7 @@ async function sendRefundApprovedTelegram(params: {
     return;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
     console.warn('[Income][Telegram] Bot token is missing for refund message.');
@@ -1823,7 +1727,7 @@ async function sendRefundRequestedTelegram(params: {
     return;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
     console.warn('[Income][Telegram] Bot token is missing for refund request message.');
@@ -1985,35 +1889,6 @@ function buildRefundDetailsBlock(params: {
   return details.join('\n');
 }
 
-async function sendMessageToTelegramChat(
-  botToken: string,
-  chatId: string,
-  text: string,
-): Promise<void> {
-  const normalized = String(chatId || '').trim();
-
-  if (!normalized) {
-    throw new Error('Empty Telegram chat id');
-  }
-
-  const candidates = buildTelegramChatIdCandidates(normalized);
-  let lastError = '';
-
-  for (const candidate of candidates) {
-    try {
-      await telegramService.sendMessage(botToken, candidate, text, {
-        disable_web_page_preview: true,
-      });
-
-      return;
-    } catch (error) {
-      lastError = String((error as any)?.message || error);
-    }
-  }
-
-  throw new Error(lastError || 'Failed to send Telegram message');
-}
-
 async function notifyFinanceUsersRefundRequested(params: {
   tenantId: string;
   requestId: string;
@@ -2022,7 +1897,7 @@ async function notifyFinanceUsersRefundRequested(params: {
 }) {
   const { db } = params;
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
     return;
@@ -2136,7 +2011,7 @@ async function notifyRefundRequesterReviewResult(params: {
 }) {
   const { db } = params;
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
     return;
@@ -2323,10 +2198,6 @@ function normalizeStringValue(value: BulkIncomeCell | undefined): string {
   }
 
   return '';
-}
-
-function sanitizeTelegramUsername(value: string): string {
-  return value.replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
 }
 
 function parseAmountValue(value: BulkIncomeCell | undefined): number {

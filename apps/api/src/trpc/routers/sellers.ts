@@ -3,6 +3,7 @@ import { hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { resolveTelegramBotTokenForTenant, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension, resolveExtensionFromCallParties } from '../../lib/utel';
 import { getCallsProvider } from '../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
@@ -16,8 +17,13 @@ import {
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { telegramService } from '../../services/integrations/telegram';
 import { log, LogLevel } from '../../services/observability';
-import { decryptIntegrationTokens } from '../../services/security/encryption';
 import { router, protectedProcedure } from '../trpc';
+
+const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
+  requireActiveIntegration: false,
+  secret: { stripWrappingQuotes: true },
+  decryptFailureMessage: 'Failed to decrypt Telegram integration token for sellers report',
+};
 
 const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
@@ -203,15 +209,6 @@ function getLeadResponsibleId(lead: AmoCRMLead): string | null {
   return asString(lead.responsible_user_id);
 }
 
-function normalizeTelegramSecret(rawValue: string | undefined): string | null {
-  if (!rawValue) {
-    return null;
-  }
-  const normalized = rawValue.replace(/^['"`]+|['"`]+$/g, '').trim();
-
-  return normalized || null;
-}
-
 function resolveSellerIncomeCategory(source: SellerIncomeMetricSource): 'online' | 'offline' | 'intensive' | null {
   const category = classifyIncomeCategory(source.course);
 
@@ -391,37 +388,6 @@ function buildSellerReportPdf(params: SellerReportPayload): Buffer {
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
 
   return Buffer.from(pdf, 'utf8');
-}
-
-async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient): Promise<string | null> {
-  const integration = await db.integration.findUnique({
-    where: {
-      tenantId_type: {
-        tenantId,
-        type: 'telegram',
-      },
-    },
-    select: {
-      tokensEncrypted: true,
-    },
-  });
-
-  let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN || undefined);
-
-  if (integration?.tokensEncrypted) {
-    try {
-      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
-
-      botToken = normalizeTelegramSecret(tokens.botToken || tokens.token || undefined) || botToken;
-    } catch (error) {
-      log(LogLevel.WARN, 'Failed to decrypt Telegram integration token for sellers report', {
-        tenantId,
-        error: String((error as Error)?.message || error),
-      });
-    }
-  }
-
-  return botToken;
 }
 
 function isSchemaCompatibilityError(error: unknown, hints: string[] = []): boolean {
@@ -2043,7 +2009,7 @@ export const sellersRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 
-      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db);
+      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
       if (!botToken) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram bot token topilmadi.' });

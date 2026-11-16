@@ -9,7 +9,6 @@
     "@typescript-eslint/no-var-requires": 1,
     "@typescript-eslint/require-await": 1,
     "import/no-named-as-default-member": 3,
-    "import/order": 15,
     "no-console": 2
   },
   "src/config/env-validator.ts": {
@@ -150,8 +149,8 @@
     "import/order": 1
   },
   "src/services/reports/telegram-agent-performance-scheduler.ts": {
-    "@typescript-eslint/no-explicit-any": 6,
-    "@typescript-eslint/no-unsafe-member-access": 7
+    "@typescript-eslint/no-explicit-any": 5,
+    "@typescript-eslint/no-unsafe-member-access": 6
   },
   "src/services/reports/telegram-group-summary-scheduler.ts": {
     "@typescript-eslint/no-explicit-any": 5,
@@ -228,10 +227,9 @@
     "@typescript-eslint/require-await": 1
   },
   "src/trpc/routers/corporate-calls.ts": {
-    "@typescript-eslint/no-explicit-any": 3,
+    "@typescript-eslint/no-explicit-any": 2,
     "@typescript-eslint/no-unsafe-assignment": 1,
-    "@typescript-eslint/no-unsafe-member-access": 3,
-    "import/order": 4
+    "@typescript-eslint/no-unsafe-member-access": 2
   },
   "src/trpc/routers/course-sales.ts": {
     "@typescript-eslint/no-unused-vars": 1,
@@ -239,13 +237,13 @@
     "object-shorthand": 3
   },
   "src/trpc/routers/customer-income.ts": {
-    "@typescript-eslint/no-explicit-any": 25,
+    "@typescript-eslint/no-explicit-any": 23,
     "@typescript-eslint/no-unnecessary-type-assertion": 1,
     "@typescript-eslint/no-unsafe-argument": 4,
     "@typescript-eslint/no-unsafe-assignment": 5,
-    "@typescript-eslint/no-unsafe-member-access": 39,
+    "@typescript-eslint/no-unsafe-member-access": 37,
     "@typescript-eslint/no-unsafe-return": 4,
-    "@typescript-eslint/no-unused-vars": 21,
+    "@typescript-eslint/no-unused-vars": 16,
     "@typescript-eslint/require-await": 6
   },
   "src/trpc/routers/dashboard/helpers.ts": {
@@ -273,9 +271,6 @@
     "@typescript-eslint/no-unused-vars": 5,
     "import/order": 15,
     "object-shorthand": 3
-  },
-  "src/trpc/routers/dashboard/selected-report-courses.ts": {
-    "import/order": 2
   },
   "src/trpc/routers/dashboard/summary.ts": {
     "@typescript-eslint/no-explicit-any": 3,
@@ -326,9 +321,8 @@
     "@typescript-eslint/no-unsafe-return": 1
   },
   "src/trpc/routers/telegram-bot.ts": {
-    "@typescript-eslint/no-explicit-any": 2,
-    "@typescript-eslint/no-unsafe-member-access": 2,
-    "import/order": 2
+    "@typescript-eslint/no-explicit-any": 1,
+    "@typescript-eslint/no-unsafe-member-access": 1
   },
   "src/trpc/routers/tenant.ts": {
     "@typescript-eslint/no-unsafe-assignment": 2,
