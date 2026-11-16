@@ -7,7 +7,7 @@ import { asObjectOrEmpty } from '../../lib/object';
 import { normalizeMatchText } from '../../lib/text';
 import { adminProcedure, router } from '../trpc';
 
-type SnapshotMapping = {
+export type SnapshotMapping = {
   paymentDate: number | null;
   customerPhone: number | null;
   customerName: number | null;
@@ -23,7 +23,7 @@ type SnapshotMapping = {
   deadline: number | null;
 };
 
-type FinanceSnapshotRow = {
+export type FinanceSnapshotRow = {
   rowIndex: number;
   paymentDate: string | null;
   customerPhone: string;
@@ -47,7 +47,7 @@ type ProjectComparisonRow = FinanceSnapshotRow & {
   lifecycleStatus: string;
 };
 
-type ActiveSnapshot = {
+export type ActiveSnapshot = {
   version: 1;
   workbookName: string;
   sheetName: string;
@@ -266,7 +266,8 @@ async function writeTenantSettings(tenantId: string, settings: Record<string, un
   });
 }
 
-async function getActiveSnapshot(tenantId: string, db: DbClient): Promise<ActiveSnapshot | null> {
+/** The finance spreadsheet snapshot activated for the tenant, if any. */
+export async function getActiveSnapshot(tenantId: string, db: DbClient): Promise<ActiveSnapshot | null> {
   const settings = await readTenantSettings(tenantId, db);
   const incomeProblems = asObjectOrEmpty(settings.incomeProblems);
   const activeSnapshot = incomeProblems.activeSnapshot;

@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { asObject, asObjectOrEmpty } from '../../lib/object';
+import { asObject } from '../../lib/object';
 import { normalizeMatchText, type MatchTextOptions } from '../../lib/text';
 import {
   buildSaleChainMetricsBySaleId,
@@ -12,6 +12,8 @@ import {
   getSaleAgreementAmount,
 } from '../../services/income-chain';
 import { adminProcedure, router } from '../trpc';
+
+import { getActiveSnapshot, type FinanceSnapshotRow } from './income-problems';
 
 const NAME_MATCH: MatchTextOptions = { collapseWhitespace: true, unifyApostrophes: true };
 const LOOSE_TEXT_MATCH: MatchTextOptions = { ...NAME_MATCH, hyphensToSpaces: true };
@@ -28,51 +30,6 @@ function resolveUserLabel(user: { name: string | null; username: string | null; 
   return user.name || user.username || user.id;
 }
 
-type SnapshotMapping = {
-  paymentDate: number | null;
-  customerPhone: number | null;
-  customerName: number | null;
-  telegramUsername: number | null;
-  managerLabel: number | null;
-  courseName: number | null;
-  tariffName: number | null;
-  subTariffName: number | null;
-  paymentType: number | null;
-  agreementAmount: number | null;
-  paymentAmount: number | null;
-  remainingDebtAmount: number | null;
-  deadline: number | null;
-};
-
-type FinanceSnapshotRow = {
-  rowIndex: number;
-  paymentDate: string | null;
-  customerPhone: string;
-  customerName: string;
-  telegramUsername: string;
-  managerLabel: string;
-  courseName: string;
-  tariffName: string;
-  subTariffName: string;
-  paymentType: string;
-  agreementAmount: number;
-  paymentAmount: number;
-  remainingDebtAmount: number;
-  deadline: string | null;
-  normalizedPhone: string;
-  normalizedName: string;
-};
-
-type ActiveSnapshot = {
-  version: 1;
-  workbookName: string;
-  sheetName: string;
-  activatedAt: string;
-  mapping: SnapshotMapping;
-  rowCount: number;
-  rows: FinanceSnapshotRow[];
-};
-
 function parseSnapshotDate(value: string | null): Date | null {
   if (!value) return null;
   const raw = String(value).trim();
@@ -82,26 +39,6 @@ function parseSnapshotDate(value: string | null): Date | null {
   const parsed = new Date(`${iso}T12:00:00+05:00`);
 
   return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-async function getActiveSnapshot(tenantId: string, db: DbClient): Promise<ActiveSnapshot | null> {
-  const tenant = await db.tenant.findUnique({
-    where: { id: tenantId },
-    select: { settings: true },
-  });
-
-  if (!tenant) {
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'Ish maydoni topilmadi.' });
-  }
-  const settings = asObjectOrEmpty(tenant.settings);
-  const incomeProblems = asObjectOrEmpty(settings.incomeProblems);
-  const activeSnapshot = incomeProblems.activeSnapshot;
-
-  if (!activeSnapshot || typeof activeSnapshot !== 'object' || Array.isArray(activeSnapshot)) {
-    return null;
-  }
-
-  return activeSnapshot as ActiveSnapshot;
 }
 
 async function recomputeSaleChainState(tx: Prisma.TransactionClient, params: {

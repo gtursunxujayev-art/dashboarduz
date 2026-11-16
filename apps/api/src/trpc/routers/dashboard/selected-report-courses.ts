@@ -1,13 +1,11 @@
 import type { DbClient } from '@dashboarduz/db';
 
 import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
+import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 
-import {
-  classifyCourseCategoryFromField,
-  INCOME_LIFECYCLE_ACTIVE,
-} from './helpers';
+import { classifyCourseCategoryFromField } from './helpers';
 
 export type SelectedCourseCategory = 'online' | 'offline' | 'intensive';
 

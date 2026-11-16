@@ -23,9 +23,12 @@ import {
   type HistoricalPreparedIncomeRow,
 } from '../../services/historical-import';
 import {
-  buildSaleChainMetricsBySaleId,
+  buildActiveSaleChainMetrics,
   evaluateSaleChainConsistency,
+  extractSaleSubTariffId,
   getSaleAgreementAmount,
+  INCOME_LIFECYCLE_ACTIVE,
+  SALE_SUB_TARIFF_META_KEY,
   type SaleChainSaleRow,
 } from '../../services/income-chain';
 import { NON_TECHNICAL_SALE_WHERE } from '../../services/income-facts';
@@ -55,7 +58,6 @@ const SALES_MANAGER_ROLE_TOKENS = new Set(
 const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'Manager', 'TeamLeader', 'Organizator', 'Organizer', 'Tashkiliy']);
 const APPROVER_ROLES_REFUND = new Set(['Admin', 'Finance']);
-const INCOME_LIFECYCLE_ACTIVE = 'active';
 const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
 const INCOME_LIFECYCLE_REFUNDED = 'refunded';
 const ADJUSTMENT_TYPE_REFUND = 'refund';
@@ -66,7 +68,6 @@ const ADJUSTMENT_STATUS_REJECTED = 'rejected';
 const REFUND_CARD_NUMBER_REGEX = /^\d{16}$/;
 const CUSTOMER_NUMBER_REGEX = /^\d+$/;
 const TELEGRAM_USERNAME_REGEX = /^@?[A-Za-z0-9_]+$/;
-const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
 const OFFLINE_PAYMENT_GROUP_ENV_KEY = 'OFLINE_GROUP_ID';
 const OFFLINE_PAYMENT_GROUP_ENV_KEY_LEGACY = 'OFFLINE_GROUP_ID';
 const OFFLINE_PAYMENT_GROUP_ENV_KEYS = [
@@ -161,20 +162,6 @@ function throwIncomeImportDisabledByPolicy(): never {
   });
 }
 
-function extractSaleSubTariffId(meta: Prisma.JsonValue | null | undefined): string | null {
-  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
-    return null;
-  }
-  const candidate = (meta as Record<string, unknown>)[SALE_SUB_TARIFF_META_KEY];
-
-  if (typeof candidate !== 'string') {
-    return null;
-  }
-  const normalized = candidate.trim();
-
-  return normalized.length > 0 ? normalized : null;
-}
-
 function resolveManagerLabel(
   manager: { id?: string | null; name?: string | null; username?: string | null } | null | undefined,
   fallbackId?: string | null,
@@ -203,46 +190,6 @@ function withSaleSubTariffMeta(
   }
 
   return Object.keys(nextMeta).length > 0 ? (nextMeta as Prisma.InputJsonValue) : Prisma.JsonNull;
-}
-
-async function buildActiveSaleChainMetrics(params: {
-  tenantId: string;
-  sales: SaleChainSaleRow[];
-  db: DbClient;
-}) {
-  const { db } = params;
-
-  if (params.sales.length === 0) {
-    return new Map<string, {
-      agreementAmount: number;
-      paidAmount: number;
-      currentDebtAmount: number;
-      lastActivityAt: Date;
-    }>();
-  }
-
-  const saleIds = params.sales.map((sale) => sale.id);
-  const chainRows = await db.income.findMany({
-    where: {
-      tenantId: params.tenantId,
-      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-      OR: [
-        { id: { in: saleIds } },
-        { relatedDebtIncomeId: { in: saleIds } },
-      ],
-    },
-    select: {
-      id: true,
-      relatedDebtIncomeId: true,
-      paymentAmount: true,
-      entryDate: true,
-    },
-  });
-
-  return buildSaleChainMetricsBySaleId({
-    sales: params.sales,
-    chainRows,
-  });
 }
 
 async function refreshCustomerProfileFromLatestActiveSale(

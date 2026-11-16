@@ -1,13 +1,9 @@
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
+import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 
-import {
-  z,
-  protectedProcedure,
-  dashboardRangeSchema,
-  INCOME_LIFECYCLE_ACTIVE,
-} from './helpers';
+import { z, protectedProcedure, dashboardRangeSchema } from './helpers';
 
 export const widgetProcedures = {
   widgetCatalogOptions: protectedProcedure.query(async ({ ctx }) => {

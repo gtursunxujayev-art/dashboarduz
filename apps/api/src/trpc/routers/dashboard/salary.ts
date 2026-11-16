@@ -12,7 +12,7 @@ import {
 import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthStart, loadSaleClosures, resolveEffectiveBonusPolicy } from '../../../services/bonus-engine';
 import { buildCacheKey, getOrSet } from '../../../services/cache';
 import { getCallsProvider } from '../../../services/calls-source';
-import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
+import { buildSaleChainMetricsBySaleId, INCOME_LIFECYCLE_ACTIVE, normalizeSubTariffName } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
@@ -23,7 +23,6 @@ import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../se
 import {
   TRPCError,
   protectedProcedure,
-  INCOME_LIFECYCLE_ACTIVE,
   isTashkiliyOnly,
   getCurrentMonthRange,
   dashboardRangeSchema,
@@ -31,7 +30,6 @@ import {
   classifyCourseCategoryFromField,
   extractSalarySettings,
   createZeroBreakdown,
-  normalizeSubTariffName,
   type SalaryBreakdown,
   type SalaryCategory,
   type PlanBonusPeriodMode,

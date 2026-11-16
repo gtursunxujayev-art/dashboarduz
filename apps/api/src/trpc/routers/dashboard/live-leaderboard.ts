@@ -13,12 +13,12 @@ import {
 } from '../../../services/bonus-engine';
 import { getCallsProvider } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
+import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { buildTechnicalSaleIdSet } from '../../../services/technical-income';
 
 import {
   classifyCourseCategoryFromField,
-  INCOME_LIFECYCLE_ACTIVE,
   protectedProcedure,
   resolveBonusPercent,
   type SalaryCategory,

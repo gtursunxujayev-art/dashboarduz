@@ -2,9 +2,10 @@ import type { DbClient } from '@dashboarduz/db';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { getRangeStart } from '../../../lib/dates';
+import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 
-import { classifyCourseCategoryFromField, INCOME_LIFECYCLE_ACTIVE, protectedProcedure } from './helpers';
+import { classifyCourseCategoryFromField, protectedProcedure } from './helpers';
 import { loadSelectedReportCourses, type SelectedCourseCategory } from './selected-report-courses';
 
 type IncomeSplit = { online: number; offline: number };

@@ -1,3 +1,5 @@
+import type { DbClient } from '@dashboarduz/db';
+
 export type SaleChainSaleRow = {
   id: string;
   entryDate: Date;
@@ -173,4 +175,67 @@ export function evaluateSaleChainConsistency(params: {
     chainLength: chain.length,
     issues: Array.from(new Set(issues)),
   };
+}
+
+export const INCOME_LIFECYCLE_ACTIVE = 'active';
+export const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
+export const INCOME_LIFECYCLE_REFUNDED = 'refunded';
+
+/** Key in `Income.legacyImportMeta` that records the sub-tariff chosen for a sale. */
+export const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
+
+/** The sub-tariff id stored in a sale's meta JSON, trimmed, or `null`. */
+export function extractSaleSubTariffId(meta: unknown): string | null {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return null;
+  }
+  const candidate = (meta as Record<string, unknown>)[SALE_SUB_TARIFF_META_KEY];
+
+  if (typeof candidate !== 'string') {
+    return null;
+  }
+  const normalized = candidate.trim();
+
+  return normalized.length > 0 ? normalized : null;
+}
+
+/** Sub-tariff names are compared trimmed and lower-cased. */
+export function normalizeSubTariffName(value: unknown): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+/** Chain metrics (agreement, paid, debt, last activity) per sale, from the sale and its active debt payments. */
+export async function buildActiveSaleChainMetrics(params: {
+  tenantId: string;
+  sales: SaleChainSaleRow[];
+  db: DbClient;
+}) {
+  const { db } = params;
+
+  if (params.sales.length === 0) {
+    return new Map<string, SaleChainMetrics>();
+  }
+
+  const saleIds = params.sales.map((sale) => sale.id);
+  const chainRows = await db.income.findMany({
+    where: {
+      tenantId: params.tenantId,
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      OR: [
+        { id: { in: saleIds } },
+        { relatedDebtIncomeId: { in: saleIds } },
+      ],
+    },
+    select: {
+      id: true,
+      relatedDebtIncomeId: true,
+      paymentAmount: true,
+      entryDate: true,
+    },
+  });
+
+  return buildSaleChainMetricsBySaleId({
+    sales: params.sales,
+    chainRows,
+  });
 }

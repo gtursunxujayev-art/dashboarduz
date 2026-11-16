@@ -46,9 +46,6 @@ export const SALARY_RULE_MODES = ['simple', 'tiered'] as const;
 export const PLAN_BONUS_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 export const PLAN_BONUS_PERIOD_MODES = ['monthly', 'all_time'] as const;
 export const REPORT_MONTH_LABELS_UZ = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'] as const;
-export const INCOME_LIFECYCLE_ACTIVE = 'active';
-export const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
-export const INCOME_LIFECYCLE_REFUNDED = 'refunded';
 
 export type SalaryCategory = (typeof SALARY_CATEGORIES)[number];
 export type SalaryRuleMode = (typeof SALARY_RULE_MODES)[number];
@@ -523,10 +520,6 @@ export function toPositiveInteger(value: unknown): number {
   const parsed = Math.floor(toFiniteNumber(value, 0));
 
   return parsed > 0 ? parsed : 0;
-}
-
-export function normalizeSubTariffName(value: unknown): string {
-  return String(value || '').trim().toLowerCase();
 }
 
 export function normalizePlanBonus(raw: unknown): SalaryPlanBonus | null {

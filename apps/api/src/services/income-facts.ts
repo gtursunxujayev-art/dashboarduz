@@ -3,8 +3,10 @@
  * Do not re-implement these formulas inline; import them from here.
  */
 import { systemPrisma, type DbClient } from '@dashboarduz/db';
+
 import { classifyCourseCategoryFromField } from '../trpc/routers/dashboard/helpers';
-import { getSaleAgreementAmount } from './income-chain';
+
+import { extractSaleSubTariffId, getSaleAgreementAmount } from './income-chain';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from './technical-income';
 
 export { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale };
@@ -81,18 +83,6 @@ export const NON_TECHNICAL_SALE_WHERE = {
     ],
   },
 };
-
-const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
-
-function extractSaleSubTariffId(meta: unknown): string | null {
-  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
-  const candidate = (meta as Record<string, unknown>)[SALE_SUB_TARIFF_META_KEY];
-
-  if (typeof candidate !== 'string') return null;
-  const normalized = candidate.trim();
-
-  return normalized.length > 0 ? normalized : null;
-}
 
 export type SubTariffResolvableSale = {
   courseId: string | null;

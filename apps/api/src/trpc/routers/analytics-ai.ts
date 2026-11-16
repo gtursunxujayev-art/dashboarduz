@@ -5,10 +5,11 @@ import { z } from 'zod';
 
 import { resolveDateRange } from '../../lib/dates';
 import { getCallsProviderFilter } from '../../services/calls-source';
+import { INCOME_LIFECYCLE_ACTIVE } from '../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import { protectedProcedure, router } from '../trpc';
 
-import { classifyCourseCategoryFromField, dashboardRangeSchema, INCOME_LIFECYCLE_ACTIVE } from './dashboard/helpers';
+import { classifyCourseCategoryFromField, dashboardRangeSchema } from './dashboard/helpers';
 
 const ANALYTICS_AI_PROMPT_VERSION = 'sales-intelligence-v1';
 

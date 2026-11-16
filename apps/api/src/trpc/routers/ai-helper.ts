@@ -7,11 +7,11 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { parseCustomDate } from '../../lib/dates';
+import { INCOME_LIFECYCLE_ACTIVE } from '../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import { protectedProcedure, router } from '../trpc';
 
 import { collectAnalyticsInput } from './analytics-ai';
-import { INCOME_LIFECYCLE_ACTIVE } from './dashboard/helpers';
 
 const aiHelperMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),

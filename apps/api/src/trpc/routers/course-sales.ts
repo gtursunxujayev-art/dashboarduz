@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { isAgentOnly } from '../../lib/access';
 import { resolveDateRange, type DateRangeMessages } from '../../lib/dates';
-import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
+import { INCOME_LIFECYCLE_ACTIVE, buildActiveSaleChainMetrics, extractSaleSubTariffId, normalizeSubTariffName, type SaleChainSaleRow } from '../../services/income-chain';
 import { resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../services/income-facts';
 import { buildTariffBreakdown, type TariffBreakdownRow } from '../../services/tariff-breakdown';
 import { resolveEffectiveAgreementAmount } from '../../services/technical-income';
@@ -19,12 +19,6 @@ const COURSE_SALES_DATE_MESSAGES: DateRangeMessages = {
 
 const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
-const INCOME_LIFECYCLE_ACTIVE = 'active';
-const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
-
-function normalizeSubTariffName(value: unknown): string {
-  return String(value || '').trim().toLowerCase();
-}
 
 async function findSaleIdsBySubTariff(
   tenantId: string,
@@ -44,20 +38,6 @@ async function findSaleIdsBySubTariff(
   });
 
   return candidates.filter((sale) => resolveSaleSubTariffId(sale) === subTariffId).map((sale) => sale.id);
-}
-
-function extractSaleSubTariffId(meta: unknown): string | null {
-  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
-    return null;
-  }
-  const candidate = (meta as Record<string, unknown>)[SALE_SUB_TARIFF_META_KEY];
-
-  if (typeof candidate !== 'string') {
-    return null;
-  }
-  const normalized = candidate.trim();
-
-  return normalized.length > 0 ? normalized : null;
 }
 
 function buildCategoryLabel(category: string): string {
@@ -142,46 +122,6 @@ function buildCustomerCoursesByCustomer(
   }
 
   return map;
-}
-
-async function buildActiveSaleChainMetrics(params: {
-  tenantId: string;
-  sales: SaleChainSaleRow[];
-  db: DbClient;
-}) {
-  const { db } = params;
-
-  if (params.sales.length === 0) {
-    return new Map<string, {
-      agreementAmount: number;
-      paidAmount: number;
-      currentDebtAmount: number;
-      lastActivityAt: Date;
-    }>();
-  }
-
-  const saleIds = params.sales.map((sale) => sale.id);
-  const chainRows = await db.income.findMany({
-    where: {
-      tenantId: params.tenantId,
-      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-      OR: [
-        { id: { in: saleIds } },
-        { relatedDebtIncomeId: { in: saleIds } },
-      ],
-    },
-    select: {
-      id: true,
-      relatedDebtIncomeId: true,
-      paymentAmount: true,
-      entryDate: true,
-    },
-  });
-
-  return buildSaleChainMetricsBySaleId({
-    sales: params.sales,
-    chainRows,
-  });
 }
 
 export function buildTechnicalSaleIdSetByAgreement(params: {

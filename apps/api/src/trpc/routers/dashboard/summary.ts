@@ -8,7 +8,7 @@ import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtensio
 import { getOrSet, buildCacheKey } from '../../../services/cache';
 import { getCallsProvider } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
-import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
+import { buildSaleChainMetricsBySaleId, INCOME_LIFECYCLE_ACTIVE, INCOME_LIFECYCLE_REFUNDED } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 
@@ -28,8 +28,6 @@ import {
   log,
   protectedProcedure,
   dashboardRangeSchema,
-  INCOME_LIFECYCLE_ACTIVE,
-  INCOME_LIFECYCLE_REFUNDED,
   REPORT_MONTH_LABELS_UZ,
   normalizeTextToken,
   extractUtelManagerKey,

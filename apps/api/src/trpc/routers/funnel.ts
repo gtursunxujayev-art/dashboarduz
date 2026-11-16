@@ -33,6 +33,7 @@ import {
   type FunnelStageRef,
   type LeadBuckets,
 } from '../../services/funnel-metrics';
+import { INCOME_LIFECYCLE_ACTIVE } from '../../services/income-chain';
 import {
   excludeTechnicalRows,
   loadTechnicalSaleIdsForRows,
@@ -43,7 +44,6 @@ import {
   amocrmService,
   dashboardRangeSchema,
   getTenantAmoCRMContext,
-  INCOME_LIFECYCLE_ACTIVE,
   isTashkiliyOnly,
   log,
   LogLevel,
