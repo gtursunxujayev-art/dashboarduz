@@ -1,8 +1,9 @@
-import type { DbClient } from '@dashboarduz/db';
-import { createLeadSchema, updateLeadSchema, leadQuerySchema, hasAgentRole } from '@dashboarduz/shared';
+
+import { createLeadSchema, updateLeadSchema, leadQuerySchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { getAgentResponsibleScope } from '../../lib/access';
 import { asObject } from '../../lib/object';
 import { amocrmService, type AmoCRMLead } from '../../services/integrations/amocrm';
 import {
@@ -10,40 +11,6 @@ import {
   getTenantAmoCRMContext,
 } from '../../services/integrations/amocrm-live';
 import { router, protectedProcedure } from '../trpc';
-
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
-
-async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
-  const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
-
-  if (!isAgentOnly) {
-    return { isScoped: false, responsibleUserId: null as string | null };
-  }
-
-  let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
-
-  try {
-    currentUser = await db.user.findFirst({
-      where: {
-        id: userId,
-        tenantId,
-        isActive: true,
-      },
-      select: {
-        amocrmResponsibleUserId: true,
-      },
-    });
-  } catch (error: any) {
-    if (!String(error?.message || '').includes('amocrmResponsibleUserId')) {
-      throw error;
-    }
-  }
-
-  return {
-    isScoped: true,
-    responsibleUserId: currentUser?.amocrmResponsibleUserId || null,
-  };
-}
 
 function parseAmoTimestamp(value: unknown): Date {
   if (typeof value === 'number' && Number.isFinite(value)) {

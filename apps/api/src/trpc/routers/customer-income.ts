@@ -6,7 +6,6 @@ import {
   createIncomeSchema,
   createTariffSchema,
   customerSearchSchema,
-  hasAgentRole,
   normalizeDigits,
   TASHKENT_OFFSET_MS,
 } from '@dashboarduz/shared';
@@ -14,6 +13,7 @@ import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { isAgentOnly } from '../../lib/access';
 import { DATE_RANGE_MESSAGES_EN, parseCustomDate, type ParseCustomDateOptions } from '../../lib/dates';
 import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, sanitizeTelegramUsername, sendMessageToTelegramChat, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import { reconcileFinalizedBonusMonths } from '../../services/bonus-engine';
@@ -52,7 +52,6 @@ const SALES_MANAGER_ROLE_TOKENS = new Set(
   SALES_MANAGER_ROLES.map((role) => String(role).trim().toLowerCase()),
 );
 const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive', 'additional_service'] as const;
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'Manager', 'TeamLeader', 'Organizator', 'Organizer', 'Tashkiliy']);
 const APPROVER_ROLES_REFUND = new Set(['Admin', 'Finance']);
 const INCOME_LIFECYCLE_ACTIVE = 'active';
@@ -775,10 +774,6 @@ async function fetchCourseOptionsSafe(tenantId: string, db: DbClient): Promise<A
     ...course,
     category: normalizeCourseCategoryValue(course.category),
   }));
-}
-
-function isAgentOnly(roles: string[]): boolean {
-  return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 }
 
 function shouldSelfScopeManagerActions(roles: string[]): boolean {

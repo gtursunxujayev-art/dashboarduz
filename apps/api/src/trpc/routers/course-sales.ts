@@ -1,8 +1,8 @@
 import type { DbClient } from '@dashboarduz/db';
-import { hasAgentRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { isAgentOnly } from '../../lib/access';
 import { resolveDateRange, type DateRangeMessages } from '../../lib/dates';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
 import { resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../services/income-facts';
@@ -20,12 +20,7 @@ const COURSE_SALES_DATE_MESSAGES: DateRangeMessages = {
 const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
 const INCOME_LIFECYCLE_ACTIVE = 'active';
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
-
-function isAgentOnly(roles: string[]): boolean {
-  return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
-}
 
 function normalizeSubTariffName(value: unknown): string {
   return String(value || '').trim().toLowerCase();

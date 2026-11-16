@@ -1,8 +1,9 @@
-import type { DbClient } from '@dashboarduz/db';
+
 import { AGENT_ROLES, hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { PRIVILEGED_ROLES, getAgentResponsibleScope } from '../../lib/access';
 import { resolveDateRange } from '../../lib/dates';
 import { textFromScalar } from '../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';
@@ -25,7 +26,6 @@ const clickToCallSchema = z.object({
 });
 const callsRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const AGENT_MOTIVATION_ABOVE = "Bugungi harakatlaringizga baraka bersin, ko'proq suhbat ko'proq savdo degani";
 const AGENT_MOTIVATION_BELOW = "Bugun qolganlardan ortda qolyapsiz, qo'ng'iroqlarni ko'paytiring, ko'proq bonus ko'proq harakat qilganlarga nasib qiladi ";
 
@@ -51,38 +51,6 @@ function getTashkentDayKey(date: Date): string {
   const day = parts.find((part) => part.type === 'day')?.value ?? '01';
 
   return `${year}-${month}-${day}`;
-}
-
-async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
-  const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
-
-  if (!isAgentOnly) {
-    return { isScoped: false, responsibleUserId: null as string | null };
-  }
-
-  let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
-
-  try {
-    currentUser = await db.user.findFirst({
-      where: {
-        id: userId,
-        tenantId,
-        isActive: true,
-      },
-      select: {
-        amocrmResponsibleUserId: true,
-      },
-    });
-  } catch (error: any) {
-    if (!String(error?.message || '').includes('amocrmResponsibleUserId')) {
-      throw error;
-    }
-  }
-
-  return {
-    isScoped: true,
-    responsibleUserId: currentUser?.amocrmResponsibleUserId || null,
-  };
 }
 
 export const callsRouter = router({

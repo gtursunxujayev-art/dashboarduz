@@ -2,6 +2,7 @@ import type { DbClient } from '@dashboarduz/db';
 import { AGENT_ROLES, shiftToTashkent, TASHKENT_OFFSET_MS, toTashkentDateKey, type UserRole } from '@dashboarduz/shared';
 import { z } from 'zod';
 
+import { isAgentOnly } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import {
   BONUS_DETAIL_EXPORT_LIMIT,
@@ -23,7 +24,6 @@ import {
   TRPCError,
   protectedProcedure,
   INCOME_LIFECYCLE_ACTIVE,
-  isAgentOnly,
   isTashkiliyOnly,
   getCurrentMonthRange,
   dashboardRangeSchema,

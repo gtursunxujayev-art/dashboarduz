@@ -1,3 +1,4 @@
+import { getAgentResponsibleScope } from '../../../lib/access';
 import { getRangeStart } from '../../../lib/dates';
 import { asObject } from '../../../lib/object';
 
@@ -5,7 +6,6 @@ import {
   amocrmService,
   asStringArray,
   extractLeadValue,
-  getAgentResponsibleScope,
   getTenantAmoCRMContext,
   isMappedValue,
   protectedProcedure,

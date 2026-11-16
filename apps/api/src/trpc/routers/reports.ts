@@ -1,9 +1,9 @@
 import type { DbClient } from '@dashboarduz/db';
-import { hasAgentRole } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { isAgentOnly } from '../../lib/access';
 import { parseCustomDate } from '../../lib/dates';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
 import {
@@ -18,7 +18,6 @@ import { buildTechnicalSaleIdSetByAgreement } from './course-sales';
 import { getAdjustmentRoleScope } from './customer-income';
 
 const REPORT_ROW_LIMIT = 20_000;
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const CHAIN_LIFECYCLES_ALL = ['active', 'pending_refund', 'refunded'];
 
 const reportFiltersSchema = z.object({
@@ -30,10 +29,6 @@ const reportFiltersSchema = z.object({
 });
 
 type ReportFilters = z.infer<typeof reportFiltersSchema>;
-
-function isAgentOnly(roles: string[]): boolean {
-  return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
-}
 
 function buildDateRange(filters: ReportFilters): Prisma.DateTimeFilter | undefined {
   const range: Prisma.DateTimeFilter = {};

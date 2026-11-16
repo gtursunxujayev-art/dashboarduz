@@ -40,7 +40,6 @@ export const PIE_COLORS = [
 
 export type DashboardRange = z.infer<typeof dashboardRangeSchema>;
 
-export const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 export const SALARY_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 export const SALARY_RULE_MODES = ['simple', 'tiered'] as const;
 export const PLAN_BONUS_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
@@ -188,38 +187,6 @@ export function extractUtelManagerKey(metadata: unknown): string | null {
   );
 
   return extension || managerName || null;
-}
-
-export async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
-  const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
-
-  if (!isAgentOnly) {
-    return { isScoped: false, responsibleUserId: null as string | null };
-  }
-
-  let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
-
-  try {
-    currentUser = await db.user.findFirst({
-      where: {
-        id: userId,
-        tenantId,
-        isActive: true,
-      },
-      select: {
-        amocrmResponsibleUserId: true,
-      },
-    });
-  } catch (error: any) {
-    if (!String(error?.message || '').includes('amocrmResponsibleUserId')) {
-      throw error;
-    }
-  }
-
-  return {
-    isScoped: true,
-    responsibleUserId: currentUser?.amocrmResponsibleUserId || null,
-  };
 }
 
 export function getDaysInReportLocalMonth(year: number, month: number): number {
@@ -424,10 +391,6 @@ export function classifyCourseCategoryFromField(
   }
 
   return classifyCourseCategory(category);
-}
-
-export function isAgentOnly(roles: string[]): boolean {
-  return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 }
 
 export function getCurrentMonthRange(now: Date) {

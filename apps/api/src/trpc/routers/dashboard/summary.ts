@@ -1,5 +1,6 @@
 import { AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent } from '@dashboarduz/shared';
 
+import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { asObject } from '../../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
@@ -31,7 +32,6 @@ import {
   REPORT_MONTH_LABELS_UZ,
   normalizeTextToken,
   extractUtelManagerKey,
-  getAgentResponsibleScope,
   isTashkiliyOnly,
   classifyCourseCategoryFromField,
   isMappedValue,

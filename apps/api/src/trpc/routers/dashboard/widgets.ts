@@ -1,3 +1,4 @@
+import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { buildTechnicalSaleIdSet, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 
@@ -6,7 +7,6 @@ import {
   protectedProcedure,
   dashboardRangeSchema,
   INCOME_LIFECYCLE_ACTIVE,
-  getAgentResponsibleScope,
 } from './helpers';
 
 export const widgetProcedures = {

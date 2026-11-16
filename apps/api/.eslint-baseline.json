@@ -210,9 +210,9 @@
     "@typescript-eslint/no-unsafe-assignment": 11
   },
   "src/trpc/routers/calls.ts": {
-    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-assignment": 2,
-    "@typescript-eslint/no-unsafe-member-access": 3,
+    "@typescript-eslint/no-unsafe-member-access": 2,
     "@typescript-eslint/require-await": 1
   },
   "src/trpc/routers/corporate-calls.ts": {
@@ -235,8 +235,6 @@
     "@typescript-eslint/require-await": 6
   },
   "src/trpc/routers/dashboard/helpers.ts": {
-    "@typescript-eslint/no-explicit-any": 1,
-    "@typescript-eslint/no-unsafe-member-access": 1,
     "no-duplicate-imports": 1
   },
   "src/trpc/routers/dashboard/index.ts": {
@@ -281,8 +279,6 @@
     "prefer-const": 1
   },
   "src/trpc/routers/leads.ts": {
-    "@typescript-eslint/no-explicit-any": 1,
-    "@typescript-eslint/no-unsafe-member-access": 1,
     "@typescript-eslint/require-await": 3
   },
   "src/trpc/routers/notifications.ts": {
@@ -292,9 +288,9 @@
     "import/order": 4
   },
   "src/trpc/routers/sellers.ts": {
-    "@typescript-eslint/no-explicit-any": 3,
+    "@typescript-eslint/no-explicit-any": 2,
     "@typescript-eslint/no-unnecessary-type-assertion": 2,
-    "@typescript-eslint/no-unsafe-member-access": 2,
+    "@typescript-eslint/no-unsafe-member-access": 1,
     "@typescript-eslint/no-unsafe-return": 1
   },
   "src/trpc/routers/telegram-bot.ts": {

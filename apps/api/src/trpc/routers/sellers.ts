@@ -1,8 +1,9 @@
 import type { DbClient } from '@dashboarduz/db';
-import { hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
+import { normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { getAgentResponsibleScope } from '../../lib/access';
 import { resolveDateRange } from '../../lib/dates';
 import { resolveTelegramBotTokenForTenant, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension, resolveExtensionFromCallParties } from '../../lib/utel';
@@ -28,7 +29,6 @@ const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
 
 const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const sellerRangeSchema = z.enum(['today', 'week', 'month', 'last30days', 'custom']);
 
 type SellerRange = z.infer<typeof sellerRangeSchema>;
@@ -345,38 +345,6 @@ function isSchemaCompatibilityError(error: unknown, hints: string[] = []): boole
 
 function toManagerRole(user: AmoCRMUser): string[] {
   return user.rights?.is_admin ? ['Manager'] : ['Agent'];
-}
-
-async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
-  const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
-
-  if (!isAgentOnly) {
-    return { isScoped: false, responsibleUserId: null as string | null };
-  }
-
-  let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
-
-  try {
-    currentUser = await db.user.findFirst({
-      where: {
-        id: userId,
-        tenantId,
-        isActive: true,
-      },
-      select: {
-        amocrmResponsibleUserId: true,
-      },
-    });
-  } catch (error: any) {
-    if (!String(error?.message || '').includes('amocrmResponsibleUserId')) {
-      throw error;
-    }
-  }
-
-  return {
-    isScoped: true,
-    responsibleUserId: currentUser?.amocrmResponsibleUserId || null,
-  };
 }
 
 async function computeLeadResponseTimes(params: {

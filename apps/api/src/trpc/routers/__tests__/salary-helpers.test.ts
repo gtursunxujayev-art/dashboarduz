@@ -1,3 +1,4 @@
+import { isAgentOnly } from '../../../lib/access';
 import { toFiniteNumber } from '../../../lib/object';
 import {
   normalizePercentage,
@@ -11,7 +12,6 @@ import {
   classifyCourseCategoryFromField,
   extractSalarySettings,
   toPositiveInteger,
-  isAgentOnly,
   isFinanceOnly,
   isTashkiliyOnly,
   type SalaryRuleTier,
