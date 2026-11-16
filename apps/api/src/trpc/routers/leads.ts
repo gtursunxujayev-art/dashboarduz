@@ -1,6 +1,6 @@
 import { router, protectedProcedure } from '../trpc';
 import { createLeadSchema, updateLeadSchema, leadQuerySchema, hasAgentRole } from '@dashboarduz/shared';
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { amocrmService, type AmoCRMLead } from '../../services/integrations/amocrm';
@@ -12,7 +12,7 @@ import {
 
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 
-async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
+async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
   const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
@@ -20,7 +20,7 @@ async function getAgentResponsibleScope(tenantId: string, userId: string, roles:
 
   let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
   try {
-    currentUser = await prisma.user.findFirst({
+    currentUser = await db.user.findFirst({
       where: {
         id: userId,
         tenantId,
@@ -130,7 +130,7 @@ export const leadsRouter = router({
   list: protectedProcedure
     .input(leadQuerySchema)
     .query(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
       if (scope.isScoped && !scope.responsibleUserId) {
         return {
           data: [],
@@ -143,7 +143,7 @@ export const leadsRouter = router({
         };
       }
 
-      const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+      const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       if (!amoContext) {
         return {
           data: [],
@@ -156,7 +156,7 @@ export const leadsRouter = router({
         };
       }
 
-      const tenant = await prisma.tenant.findUnique({
+      const tenant = await ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
         select: { settings: true },
       });
@@ -202,12 +202,12 @@ export const leadsRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
       if (scope.isScoped && !scope.responsibleUserId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Lead not found' });
       }
 
-      const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+      const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       if (!amoContext) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
