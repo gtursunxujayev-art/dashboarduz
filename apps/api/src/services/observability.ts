@@ -21,6 +21,7 @@ export function initSentry() {
             originalException: hint.originalException.toString(),
           };
         }
+
         return event;
       },
     });
@@ -34,6 +35,7 @@ export function setSentryUserContext(userId?: string, tenantId?: string, email?:
       id: userId,
       ip_address: '{{auto}}',
     };
+
     if (email) userContext.email = email;
     if (tenantId) userContext.tenant_id = tenantId;
     Sentry.setUser(userContext);
@@ -90,6 +92,7 @@ export function log(level: LogLevel, message: string, context?: LogContext) {
   // Send errors to Sentry
   if (level === LogLevel.ERROR && process.env.SENTRY_DSN) {
     const error = new Error(message);
+
     error.name = 'LoggedError';
     
     const sentryContext: Record<string, unknown> = {
@@ -100,6 +103,7 @@ export function log(level: LogLevel, message: string, context?: LogContext) {
         ...(context?.userId ? { userId: context.userId } : {}),
       },
     };
+
     if (context) {
       sentryContext.extra = context;
     }
@@ -153,17 +157,20 @@ export class Metrics {
 
   static increment(name: string, labels?: Record<string, string>, value = 1) {
     const key = this.getKey(name, labels);
+
     this.counters.set(key, (this.counters.get(key) || 0) + value);
   }
 
   static setGauge(name: string, value: number, labels?: Record<string, string>) {
     const key = this.getKey(name, labels);
+
     this.gauges.set(key, value);
   }
 
   static recordHistogram(name: string, value: number, labels?: Record<string, string>) {
     const key = this.getKey(name, labels);
     const values = this.histograms.get(key) || [];
+
     values.push(value);
     this.histograms.set(key, values);
   }
@@ -173,6 +180,7 @@ export class Metrics {
     const labelStr = Object.entries(labels)
       .map(([k, v]) => `${k}="${v}"`)
       .join(',');
+
     return `${name}{${labelStr}}`;
   }
 
@@ -184,6 +192,7 @@ export class Metrics {
     // Counters
     this.counters.forEach((value, key) => {
       const metricName = key.split('{')[0] || key;
+
       lines.push(`# TYPE ${metricName} counter`);
       lines.push(`${key} ${value} ${now}`);
     });
@@ -191,6 +200,7 @@ export class Metrics {
     // Gauges
     this.gauges.forEach((value, key) => {
       const metricName = key.split('{')[0] || key;
+
       lines.push(`# TYPE ${metricName} gauge`);
       lines.push(`${key} ${value} ${now}`);
     });
@@ -219,6 +229,7 @@ export class Metrics {
       
       buckets.forEach(bucket => {
         const count = bucketCounts.get(bucket) || 0;
+
         lines.push(`${metricName}_bucket${key.substring(metricName.length).replace('}', `,le="${bucket}"}`)} ${count} ${now}`);
       });
       

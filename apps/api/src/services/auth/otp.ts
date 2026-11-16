@@ -26,11 +26,11 @@ class FirebaseOTPProvider implements OTPProvider {
         // For now, we'll simulate the initialization
         this.admin = {
           auth: () => ({
-            generateSignInWithPhoneNumber: async (phone: string) => {
+            generateSignInWithPhoneNumber: async (_phone: string) => {
               // Simulate Firebase phone auth
               return { verificationId: `firebase-verification-${Date.now()}` };
             },
-            verifyPhoneNumber: async (verificationId: string, code: string) => {
+            verifyPhoneNumber: async (_verificationId: string, _code: string) => {
               // Simulate verification
               return { success: true };
             }
@@ -77,6 +77,7 @@ class FirebaseOTPProvider implements OTPProvider {
       };
     } catch (error: any) {
       logger.error({ error: error.message, phone }, 'Firebase OTP send error');
+
       return { 
         success: false, 
         error: error.message || 'Failed to send OTP' 
@@ -104,13 +105,16 @@ class FirebaseOTPProvider implements OTPProvider {
       
       if (verified) {
         logger.info({ phone }, 'OTP verified successfully via Firebase');
+
         return { success: true, verified: true };
       } else {
         logger.warn({ phone }, 'OTP verification failed via Firebase');
+
         return { success: true, verified: false };
       }
     } catch (error: any) {
       logger.error({ error: error.message, phone }, 'Firebase OTP verify error');
+
       return { 
         success: false, 
         verified: false,
@@ -122,6 +126,7 @@ class FirebaseOTPProvider implements OTPProvider {
   private isValidPhoneNumber(phone: string): boolean {
     // Basic phone validation - adjust based on your requirements
     const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+
     return phoneRegex.test(phone);
   }
 
@@ -149,12 +154,14 @@ class FirebaseOTPProvider implements OTPProvider {
     
     for (const verificationId in sessions) {
       const session = sessions[verificationId];
+
       if (session.phone === phone && 
           session.code === code && 
           session.expiresAt > Date.now()) {
         
         // Clean up session
         delete (global as any).firebaseSessions[verificationId];
+
         return true;
       }
     }
@@ -215,6 +222,7 @@ class TwilioOTPProvider implements OTPProvider {
 
       if (!response.ok) {
         const errorText = await response.text();
+
         logger.error({ phone, status: response.status, error: errorText }, 'Twilio OTP send failed');
         throw new Error(`Twilio API error: ${response.status} ${response.statusText}`);
       }
@@ -229,6 +237,7 @@ class TwilioOTPProvider implements OTPProvider {
       };
     } catch (error: any) {
       logger.error({ error: error.message, phone }, 'Twilio OTP send error');
+
       return { 
         success: false, 
         error: error.message || 'Failed to send OTP via Twilio' 
@@ -274,6 +283,7 @@ class TwilioOTPProvider implements OTPProvider {
         }
         
         logger.error({ phone, status: response.status, error: errorText }, 'Twilio OTP verify failed');
+
         return { 
           success: false, 
           verified: false,
@@ -296,6 +306,7 @@ class TwilioOTPProvider implements OTPProvider {
       };
     } catch (error: any) {
       logger.error({ error: error.message, phone }, 'Twilio OTP verify error');
+
       return { 
         success: false, 
         verified: false,
@@ -307,6 +318,7 @@ class TwilioOTPProvider implements OTPProvider {
   private isValidPhoneNumber(phone: string): boolean {
     // Basic E.164 format validation
     const e164Regex = /^\+[1-9]\d{1,14}$/;
+
     return e164Regex.test(phone);
   }
 }
@@ -324,6 +336,7 @@ function getOTPProvider(): OTPProvider {
       return new FirebaseOTPProvider();
     default:
       logger.warn({ provider }, 'Unknown OTP provider, defaulting to Twilio');
+
       return new TwilioOTPProvider();
   }
 }

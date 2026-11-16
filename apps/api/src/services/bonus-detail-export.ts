@@ -11,6 +11,7 @@ export function buildBonusDetailIncomeWhere(params: {
   technicalSaleIds?: string[];
 }): Prisma.IncomeWhereInput {
   const technicalSaleIds = params.technicalSaleIds || [];
+
   return {
     tenantId: params.tenantId,
     lifecycleStatus: 'active',

@@ -39,10 +39,12 @@ export function createAmoCRMActivityDiagnostics(): AmoCRMActivityDiagnostics {
 
 function failureReason(error: unknown): string {
   const message = String((error as Error | undefined)?.message || error || '').toLowerCase();
+
   if (message.includes('timeout')) return 'timeout';
   // Our own HTTP-status errors read "Failed to fetch AmoCRM ...: <status>" — those are API errors, not network errors.
   if (message.startsWith('failed to fetch amocrm')) return 'fetch_failed';
   if (message.includes('network') || message.includes('fetch failed')) return 'network_error';
+
   return 'fetch_failed';
 }
 
@@ -82,6 +84,7 @@ function toStringId(value: unknown): string {
   if (value === null || value === undefined) {
     return '';
   }
+
   return String(value).trim();
 }
 
@@ -89,15 +92,18 @@ function toDate(value: unknown): Date | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const millis = value > 1_000_000_000_000 ? value : value * 1000;
     const parsed = new Date(millis);
+
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   if (typeof value === 'string') {
     const asNumber = Number(value);
+
     if (!Number.isNaN(asNumber)) {
       return toDate(asNumber);
     }
     const parsed = new Date(value);
+
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
@@ -107,6 +113,7 @@ function toDate(value: unknown): Date | null {
 
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
+
     return (
       toDate(record.timestamp)
       || toDate(record.ts)
@@ -124,11 +131,13 @@ function isWithinRange(value: Date | null, start: Date, end: Date): boolean {
   if (!value) {
     return false;
   }
+
   return value >= start && value <= end;
 }
 
 function isCompletedTask(task: AmoCRMTask): boolean {
   const value = task.is_completed ?? (task as Record<string, unknown>).completed ?? (task as Record<string, unknown>).isCompleted;
+
   if (typeof value === 'boolean') {
     return value;
   }
@@ -136,29 +145,35 @@ function isCompletedTask(task: AmoCRMTask): boolean {
     return value === 1;
   }
   const normalized = toStringId(value).toLowerCase();
+
   if (!normalized) {
     return false;
   }
+
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'done';
 }
 
 function isLeadTask(task: AmoCRMTask): boolean {
   const entityType = toStringId(task.entity_type).toLowerCase();
+
   if (!entityType) {
     return true;
   }
+
   return entityType === 'lead' || entityType === 'leads';
 }
 
 function taskResponsibleUserId(task: AmoCRMTask): string {
   const source = task as Record<string, unknown>;
   const direct = toStringId(task.responsible_user_id);
+
   if (direct) {
     return direct;
   }
 
   const nestedResponsible = source.responsible_user as Record<string, unknown> | undefined;
   const nestedByEmbedded = (source._embedded as Record<string, unknown> | undefined)?.responsible_user as Record<string, unknown> | undefined;
+
   return (
     toStringId(nestedResponsible?.id)
     || toStringId(nestedResponsible?.user_id)
@@ -184,6 +199,7 @@ function getTashkentDayBounds(baseDate: Date): { start: Date; end: Date } {
   const day = shifted.getUTCDate();
   const start = new Date(Date.UTC(year, month, day) - offsetMs);
   const end = new Date(start.getTime() + (24 * 60 * 60 * 1000) - 1);
+
   return { start, end };
 }
 
@@ -197,6 +213,7 @@ function getTashkentWeekBounds(baseDate: Date): { start: Date; end: Date } {
   const daysSinceMonday = (weekDay + 6) % 7;
   const start = new Date(Date.UTC(year, month, day - daysSinceMonday) - offsetMs);
   const end = new Date(start.getTime() + (7 * 24 * 60 * 60 * 1000) - 1);
+
   return { start, end };
 }
 
@@ -207,6 +224,7 @@ function getTashkentMonthBounds(baseDate: Date): { start: Date; end: Date } {
   const month = shifted.getUTCMonth();
   const start = new Date(Date.UTC(year, month, 1) - offsetMs);
   const end = new Date(Date.UTC(year, month + 1, 1) - offsetMs - 1);
+
   return { start, end };
 }
 
@@ -216,6 +234,7 @@ function getPeriodFollowUpBounds(
   rangeEnd: Date,
 ): { start: Date; end: Date } {
   const now = new Date();
+
   if (rangeKind === 'week') {
     return getTashkentWeekBounds(now);
   }
@@ -225,16 +244,19 @@ function getPeriodFollowUpBounds(
   if (rangeKind === 'custom') {
     return { start: rangeStart, end: rangeEnd };
   }
+
   return getTashkentDayBounds(now);
 }
 
 function eventActorUserId(event: AmoCRMEvent): string {
   const objectEvent = event as Record<string, unknown>;
+
   return toStringId(objectEvent.created_by || objectEvent.user_id || objectEvent.responsible_user_id);
 }
 
 function eventDate(event: AmoCRMEvent): Date | null {
   const objectEvent = event as Record<string, unknown>;
+
   return toDate(objectEvent.created_at || objectEvent.createdAt || objectEvent.date_create);
 }
 
@@ -261,6 +283,7 @@ function hasText(value: unknown, token: string): boolean {
 function isNoteEvent(event: AmoCRMEvent): boolean {
   const objectEvent = event as Record<string, unknown>;
   const eventType = toStringId(objectEvent.type || objectEvent.event_type || objectEvent.name).toLowerCase();
+
   if (eventType.includes('note')) {
     return true;
   }
@@ -275,6 +298,7 @@ function isNoteEvent(event: AmoCRMEvent): boolean {
 function isStageChangeEvent(event: AmoCRMEvent): boolean {
   const objectEvent = event as Record<string, unknown>;
   const eventType = toStringId(objectEvent.type || objectEvent.event_type || objectEvent.name).toLowerCase();
+
   if (
     eventType.includes('status')
     || eventType.includes('stage')
@@ -302,6 +326,7 @@ function isStageChangeEvent(event: AmoCRMEvent): boolean {
         }
         continue;
       }
+
       return true;
     }
   }
@@ -348,8 +373,10 @@ export async function getAmoCRMActivityMetrics(params: {
 
   const cacheKey = buildCacheKey(params.tenantId, managerIds, params.rangeStart, params.rangeEnd);
   const cached = metricsCache.get(cacheKey);
+
   if (cached && cached.expiresAt > Date.now()) {
     copyDiagnostics(params.diagnostics, cached.diagnostics);
+
     return cloneMetricsMap(cached.value);
   }
 
@@ -358,6 +385,7 @@ export async function getAmoCRMActivityMetrics(params: {
   const diagnostics = createAmoCRMActivityDiagnostics();
 
   let tasks: AmoCRMTask[] = [];
+
   try {
     tasks = await amocrmService.fetchAllTasks(
       params.accessToken,
@@ -405,6 +433,7 @@ export async function getAmoCRMActivityMetrics(params: {
       continue;
     }
     const managerId = taskResponsibleUserId(task);
+
     if (!managerIdSet.has(managerId)) {
       continue;
     }
@@ -412,6 +441,7 @@ export async function getAmoCRMActivityMetrics(params: {
       continue;
     }
     const metrics = metricsByManager.get(managerId);
+
     if (!metrics) {
       continue;
     }
@@ -425,6 +455,7 @@ export async function getAmoCRMActivityMetrics(params: {
     params.rangeEnd,
   );
   let pendingTasks: AmoCRMTask[] = [];
+
   try {
     pendingTasks = await amocrmService.fetchAllTasks(
       params.accessToken,
@@ -470,14 +501,17 @@ export async function getAmoCRMActivityMetrics(params: {
       continue;
     }
     const managerId = taskResponsibleUserId(task);
+
     if (!managerIdSet.has(managerId)) {
       continue;
     }
     const dueDate = taskDueDate(task);
+
     if (!dueDate) {
       continue;
     }
     const metrics = metricsByManager.get(managerId);
+
     if (!metrics) {
       continue;
     }
@@ -492,6 +526,7 @@ export async function getAmoCRMActivityMetrics(params: {
   }
 
   let events: AmoCRMEvent[] = [];
+
   try {
     events = await amocrmService.fetchAllEvents(
       params.accessToken,
@@ -534,6 +569,7 @@ export async function getAmoCRMActivityMetrics(params: {
 
   for (const event of events) {
     const managerId = eventActorUserId(event);
+
     if (!managerIdSet.has(managerId)) {
       continue;
     }
@@ -541,6 +577,7 @@ export async function getAmoCRMActivityMetrics(params: {
       continue;
     }
     const metrics = metricsByManager.get(managerId);
+
     if (!metrics) {
       continue;
     }
@@ -572,6 +609,7 @@ export function summarizeAmoCRMActivityMetrics(
   metricsByManager: Map<string, AmoCRMActivityMetrics>,
 ): AmoCRMActivityMetrics {
   const totals = createEmptyMetrics();
+
   for (const metrics of metricsByManager.values()) {
     totals.followUpCount += metrics.followUpCount;
     totals.noteCount += metrics.noteCount;
@@ -579,5 +617,6 @@ export function summarizeAmoCRMActivityMetrics(
     totals.overdueFollowUpCount += metrics.overdueFollowUpCount;
     totals.todayFollowUpCount += metrics.todayFollowUpCount;
   }
+
   return totals;
 }

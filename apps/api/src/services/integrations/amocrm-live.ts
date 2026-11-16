@@ -27,6 +27,7 @@ export function normalizeIdentifier(input: unknown): string {
 
 export function humanizeKey(input: string): string {
   const normalized = input.replace(/[:_.]+/g, ' ').trim();
+
   if (!normalized) {
     return 'Unknown';
   }
@@ -42,11 +43,13 @@ export function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
+
   return value as Record<string, unknown>;
 }
 
 export function getSelectedPipelineIds(config: unknown): string[] | null {
   const source = asObject(config);
+
   if (!source || !Object.prototype.hasOwnProperty.call(source, 'selectedPipelineIds')) {
     return null;
   }
@@ -72,12 +75,14 @@ export function asStringArray(value: unknown): string[] {
 
 function readMetadataKey(sourceValue: unknown, keyPath: string): unknown {
   const source = asObject(sourceValue);
+
   if (!source) {
     return null;
   }
 
   const path = keyPath.replace(/^metadata:/, '').split('.').filter(Boolean);
   let current: unknown = source;
+
   for (const part of path) {
     if (!current || typeof current !== 'object' || Array.isArray(current)) {
       return null;
@@ -97,6 +102,7 @@ function readCustomFieldValue(sourceValue: unknown, customKey: string): unknown 
     const byCode = normalizeIdentifier(field.field_code);
     const byName = normalizeIdentifier(field.field_name);
     const byId = normalizeIdentifier(field.field_id);
+
     if (!target || (target !== byCode && target !== byName && target !== byId)) {
       continue;
     }
@@ -125,11 +131,13 @@ function toScalar(value: unknown): string | null {
     const normalized = value
       .map((item) => toScalar(item))
       .filter(Boolean) as string[];
+
     return normalized.length > 0 ? normalized.join(', ') : null;
   }
 
   if (typeof value === 'string') {
     const normalized = value.trim();
+
     return normalized.length > 0 ? normalized : null;
   }
 
@@ -191,6 +199,7 @@ export async function getTenantAmoCRMContext(
   }
 
   const tokens = decryptIntegrationTokens<{ access_token?: string }>(integration.tokensEncrypted);
+
   if (!tokens.access_token) {
     return null;
   }

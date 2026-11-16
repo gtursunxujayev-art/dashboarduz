@@ -17,6 +17,7 @@ export function signJWT(payload: JWTPayload): string {
 export function verifyJWT(token: string): JWTPayload {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+
     return decoded;
   } catch (error) {
     throw new Error('Invalid or expired token');

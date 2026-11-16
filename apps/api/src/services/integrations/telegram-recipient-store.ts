@@ -15,6 +15,7 @@ type RecipientUpsertInput = {
 
 function normalizeText(value: unknown): string | null {
   const normalized = typeof value === 'string' ? value.trim() : '';
+
   return normalized || null;
 }
 
@@ -25,6 +26,7 @@ function displayName(input: {
   lastName?: string | null;
 }): string {
   const fullName = [normalizeText(input.firstName), normalizeText(input.lastName)].filter(Boolean).join(' ');
+
   return fullName || (normalizeText(input.username) ? `@${normalizeText(input.username)}` : input.chatId);
 }
 
@@ -60,6 +62,7 @@ export async function importLegacyTelegramRecipients(params: {
 }): Promise<void> {
   const db = params.db ?? systemPrisma;
   const recipients = parseTelegramRecipients(params.config);
+
   if (!recipients.length) return;
 
   await db.telegramRecipient.createMany({
@@ -106,11 +109,13 @@ export async function listTelegramRecipients(params: {
       lastSeenAt: true,
     },
   });
+
   return rows.map(toRecord);
 }
 
 export async function upsertTelegramRecipientRecord(input: RecipientUpsertInput, db: DbClient = systemPrisma) {
   const chatId = normalizeText(input.chatId);
+
   if (!chatId) throw new Error('chatId is required to upsert Telegram recipient');
 
   const username = normalizeText(input.username);
@@ -168,6 +173,7 @@ export async function updateTelegramRecipientSelection(params: {
   });
   const availableSet = new Set(available.map((row) => row.chatId));
   const unknown = selectedChatIds.find((chatId) => !availableSet.has(chatId));
+
   if (unknown) throw new Error(`Unknown Telegram recipient chat id: ${unknown}`);
 
   await db.$transaction([
@@ -185,5 +191,6 @@ export async function updateTelegramRecipientSelection(params: {
       data: { selectedForReports: true },
     }),
   ]);
+
   return selectedChatIds;
 }

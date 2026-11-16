@@ -13,6 +13,7 @@ function normalizePhone(phone?: string | null): string {
   if (!phone) {
     return '';
   }
+
   return phone.replace(/[^\d+]/g, '');
 }
 
@@ -32,8 +33,10 @@ function textFromUnknown(value: unknown): string {
   if (typeof value === 'object' && !Array.isArray(value)) {
     const objectValue = value as Record<string, unknown>;
     const preferredKeys = ['name', 'title', 'label', 'value', 'status', 'state', 'code', 'text'];
+
     for (const key of preferredKeys) {
       const nested = textFromUnknown(objectValue[key]);
+
       if (nested) {
         return nested;
       }
@@ -45,16 +48,19 @@ function textFromUnknown(value: unknown): string {
 
 function extractAmoEntities(payload: any, key: 'leads' | 'contacts'): any[] {
   const direct = payload?.[key];
+
   if (Array.isArray(direct)) {
     return direct;
   }
 
   const add = payload?.[key]?.add;
+
   if (Array.isArray(add)) {
     return add;
   }
 
   const embedded = payload?._embedded?.[key];
+
   if (Array.isArray(embedded)) {
     return embedded;
   }
@@ -69,6 +75,7 @@ function extractContactField(contactData: any, code: string): string | null {
 
   const field = fields.find((item: any) => String(item?.field_code || item?.code || '').toUpperCase() === code);
   const value = field?.values?.[0]?.value;
+
   return typeof value === 'string' ? value : null;
 }
 
@@ -76,16 +83,19 @@ function parseAmoTimestamp(value: unknown): Date | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const millis = value > 1_000_000_000_000 ? value : value * 1000;
     const parsed = new Date(millis);
+
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   if (typeof value === 'string') {
     const asNumber = Number(value);
+
     if (!Number.isNaN(asNumber)) {
       return parseAmoTimestamp(asNumber);
     }
 
     const parsed = new Date(value);
+
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
@@ -100,16 +110,19 @@ function parseCallDate(value: unknown): Date | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const millis = value > 1_000_000_000_000 ? value : value * 1000;
     const parsed = new Date(millis);
+
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   if (typeof value === 'string') {
     const trimmed = value.trim();
+
     if (!trimmed) {
       return null;
     }
 
     const asNumber = Number(trimmed);
+
     if (!Number.isNaN(asNumber)) {
       return parseCallDate(asNumber);
     }
@@ -117,6 +130,7 @@ function parseCallDate(value: unknown): Date | null {
     // UTeL often sends local date_time without timezone in GMT+5.
     const normalized = trimmed.replace(' ', 'T');
     const localDateMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/);
+
     if (localDateMatch) {
       const [, y, m, d, hh, mm, ss] = localDateMatch;
       const utcMillis = Date.UTC(
@@ -128,10 +142,12 @@ function parseCallDate(value: unknown): Date | null {
         Number(ss),
       );
       const parsedFromLocal = new Date(utcMillis);
+
       return Number.isNaN(parsedFromLocal.getTime()) ? null : parsedFromLocal;
     }
 
     const parsed = new Date(trimmed);
+
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
@@ -159,6 +175,7 @@ function getObjectCandidates(entry: Record<string, unknown>): Record<string, unk
 
   while (queue.length > 0) {
     const current = queue.shift() as Record<string, unknown>;
+
     if (seen.has(current)) {
       continue;
     }
@@ -167,6 +184,7 @@ function getObjectCandidates(entry: Record<string, unknown>): Record<string, unk
 
     for (const nestedKey of nestedKeys) {
       const nested = current[nestedKey];
+
       if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
         queue.push(nested as Record<string, unknown>);
       }
@@ -182,6 +200,7 @@ function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): 
   }
 
   const normalizedKey = key.toLowerCase();
+
   for (const [currentKey, value] of Object.entries(source)) {
     if (currentKey.toLowerCase() === normalizedKey) {
       return value;
@@ -197,6 +216,7 @@ function pickVoipValue(entry: Record<string, unknown>, keys: string[]): unknown 
   for (const candidate of candidates) {
     for (const key of keys) {
       const value = getCaseInsensitiveValue(candidate, key);
+
       if (value !== null && value !== undefined && String(value).trim() !== '') {
         return value;
       }
@@ -208,20 +228,24 @@ function pickVoipValue(entry: Record<string, unknown>, keys: string[]): unknown 
 
 function isInternalNumber(value: string): boolean {
   const digits = value.replace(/\D/g, '');
+
   return digits.length > 0 && digits.length <= 6;
 }
 
 function isAllowedUtelManagerExtension(value: string): boolean {
   const digits = value.replace(/\D/g, '');
+
   if (!digits) {
     return false;
   }
   const parsed = Number.parseInt(digits, 10);
+
   return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
 }
 
 function isLikelyExternalPhone(value: string): boolean {
   const digits = value.replace(/\D/g, '');
+
   return digits.length >= 7;
 }
 
@@ -245,9 +269,11 @@ type NormalizedVoipCall = {
 
 function normalizeDirection(value: unknown): 'inbound' | 'outbound' {
   const normalized = String(value || '').trim().toLowerCase();
+
   if (['out', 'outbound', 'dial_out', 'outgoing'].includes(normalized)) {
     return 'outbound';
   }
+
   return 'inbound';
 }
 
@@ -280,12 +306,14 @@ function parseDurationSeconds(value: unknown): number | null {
 
   if (typeof value === 'string') {
     const trimmed = value.trim();
+
     if (!trimmed) {
       return null;
     }
 
     if (trimmed.includes(':')) {
       const parts = trimmed.split(':').map((part) => Number.parseInt(part, 10));
+
       if (parts.length >= 2 && parts.every((part) => Number.isFinite(part) && part >= 0)) {
         const hhOrMm = parts[0] ?? 0;
         const mmOrSs = parts[1] ?? 0;
@@ -293,11 +321,13 @@ function parseDurationSeconds(value: unknown): number | null {
         const seconds = parts.length === 2
           ? (hhOrMm * 60 + mmOrSs)
           : (hhOrMm * 3600 + mmOrSs * 60 + maybeSs);
+
         return Math.max(0, seconds);
       }
     }
 
     const parsed = Number.parseInt(trimmed, 10);
+
     if (!Number.isNaN(parsed)) {
       return Math.max(0, parsed);
     }
@@ -416,6 +446,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
 
   let direction = normalizeDirection(rawDirection);
   const hasExplicitDirection = rawDirection.length > 0;
+
   if (!from && !to) {
     from = direction === 'outbound' ? extension : phone;
     to = direction === 'outbound' ? phone : extension;
@@ -424,6 +455,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
   if (!hasExplicitDirection && from && to) {
     const fromInternal = isInternalNumber(from);
     const toInternal = isInternalNumber(to);
+
     if (fromInternal && !toInternal) {
       direction = 'outbound';
     } else if (!fromInternal && toInternal) {
@@ -470,10 +502,12 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
   const pickLikelyExternal = (values: unknown[]): string | null => {
     for (const value of values) {
       const candidate = normalizePhone(textFromUnknown(value) || '');
+
       if (isLikelyExternalPhone(candidate)) {
         return candidate;
       }
     }
+
     return null;
   };
 
@@ -556,10 +590,12 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     manager,
     recordingUrl: (() => {
       const value = pickVoipValue(entry, ['recording_url', 'record_url', 'record_url_mp3', 'recording_link']);
+
       return value ? String(value) : null;
     })(),
     recordingId: (() => {
       const value = pickVoipValue(entry, ['recording_id', 'record_id']);
+
       return value ? String(value) : null;
     })(),
     metadata: {
@@ -588,12 +624,15 @@ export async function processWebhookEvent(eventId: string) {
 
     if (event.processed) {
       log(LogLevel.WARN, 'Webhook event already processed', { eventId });
+
       return;
     }
 
     let tenantId = event.tenantId;
+
     if (!tenantId && event.source === 'amocrm') {
       const accountId = (event.rawPayload as any)?.account?.id ?? (event.rawPayload as any)?.account_id;
+
       if (accountId) {
         const integration = await systemPrisma.integration.findFirst({
           where: {
@@ -604,6 +643,7 @@ export async function processWebhookEvent(eventId: string) {
             },
           },
         });
+
         tenantId = integration?.tenantId || null;
       }
     }
@@ -616,6 +656,7 @@ export async function processWebhookEvent(eventId: string) {
           errorMessage: 'Cannot determine tenant',
         },
       });
+
       return;
     }
 
@@ -706,11 +747,13 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
 
   for (const leadData of leads) {
     const leadId = leadData?.id ? String(leadData.id) : null;
+
     if (!leadId) {
       continue;
     }
 
     const pipelineId = leadData?.pipeline_id ? String(leadData.pipeline_id) : null;
+
     if (selectedPipelineIds && (!pipelineId || !selectedPipelineIds.includes(pipelineId))) {
       continue;
     }
@@ -805,6 +848,7 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
     }),
   ]);
   const chatId = String(((tenant?.settings as any)?.notificationChatId || '')).trim() || undefined;
+
   if (telegramIntegration && chatId && leads.length > 0) {
     const notification = await systemPrisma.notification.create({
       data: {
@@ -817,6 +861,7 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
         status: 'pending',
       },
     });
+
     await queueService.addNotificationJob(notification.id, { priority: 2 });
   }
 }
@@ -827,6 +872,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
     .trim()
     .toLowerCase() || 'utel';
   const callEntries = extractVoipCallEntries(payload);
+
   if (!callEntries.length) {
     return;
   }
@@ -840,6 +886,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
     take: 5000,
   });
   let utelManagersByKey = new Map<string, string>();
+
   try {
     const mappedUsers = await systemPrisma.user.findMany({
       where: {
@@ -853,6 +900,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
         username: true,
       },
     });
+
     utelManagersByKey = new Map(
       (mappedUsers as Array<{ utelManagerExternalId: string | null; name: string | null; username: string | null }>)
         .filter((user) => Boolean(user.utelManagerExternalId))
@@ -872,6 +920,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
 
   for (let index = 0; index < callEntries.length; index += 1) {
     const entry = callEntries[index];
+
     if (!entry) {
       continue;
     }
@@ -917,6 +966,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
     } as any;
 
     let upsertedCall;
+
     if (existingCall) {
       const existingFrom = existingCall.from || '';
       const existingTo = existingCall.to || '';
@@ -968,6 +1018,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
 
     const matchedContact = (contacts as Array<{ id: string; phone: string | null }>).find((contact) => {
       const normalized = normalizePhone(contact.phone);
+
       return normalized && (
         normalized === normalizedCall.externalPhone
         || normalized === normalizedCall.from
@@ -999,6 +1050,7 @@ async function processTelegramWebhook(event: any, tenantId: string) {
   const integration = await systemPrisma.integration.findFirst({
     where: { tenantId, type: 'telegram' },
   });
+
   if (!integration) {
     return;
   }
@@ -1008,6 +1060,7 @@ async function processTelegramWebhook(event: any, tenantId: string) {
 
   if (recipient) {
     const seenAt = new Date();
+
     await upsertTelegramRecipientRecord({
       tenantId,
       integrationId: integration.id,
@@ -1062,6 +1115,7 @@ export async function processNotification(notificationId: string) {
     const notification = await systemPrisma.notification.findUnique({
       where: { id: notificationId },
     });
+
     if (!notification) {
       throw new Error(`Notification ${notificationId} not found`);
     }
@@ -1074,6 +1128,7 @@ export async function processNotification(notificationId: string) {
       windowMs: 60 * 1000,
       keyPrefix: 'notifications',
     });
+
     if (!rateLimit.allowed) {
       throw new Error('Per-tenant notification rate limit exceeded');
     }
@@ -1086,11 +1141,13 @@ export async function processNotification(notificationId: string) {
           status: 'active',
         },
       });
+
       if (!integration?.tokensEncrypted) {
         throw new Error('No active Telegram integration found');
       }
 
       const tokens = decryptIntegrationTokens<{ botToken?: string }>(integration.tokensEncrypted);
+
       if (!tokens.botToken) {
         throw new Error('Telegram bot token is missing');
       }
@@ -1117,6 +1174,7 @@ export async function processNotification(notificationId: string) {
     const notification = await systemPrisma.notification.findUnique({
       where: { id: notificationId },
     });
+
     if (!notification) {
       throw error;
     }

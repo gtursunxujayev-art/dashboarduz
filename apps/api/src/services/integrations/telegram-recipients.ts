@@ -14,6 +14,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
+
   return value as Record<string, unknown>;
 }
 
@@ -22,6 +23,7 @@ function normalizeString(value: unknown): string | null {
     return null;
   }
   const trimmed = value.trim();
+
   return trimmed.length > 0 ? trimmed : null;
 }
 
@@ -31,6 +33,7 @@ function normalizeBoolean(value: unknown, fallback = false): boolean {
   }
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
+
     if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
       return true;
     }
@@ -41,6 +44,7 @@ function normalizeBoolean(value: unknown, fallback = false): boolean {
   if (typeof value === 'number') {
     return value !== 0;
   }
+
   return fallback;
 }
 
@@ -51,12 +55,14 @@ function buildDisplayName(row: {
   lastName: string | null;
 }): string {
   const fullName = [row.firstName, row.lastName].filter(Boolean).join(' ').trim();
+
   if (fullName) {
     return fullName;
   }
   if (row.username) {
     return `@${row.username}`;
   }
+
   return row.chatId;
 }
 
@@ -69,11 +75,13 @@ export function parseTelegramRecipients(config: unknown): TelegramRecipientRecor
 
   for (const rawItem of recipientsRaw) {
     const row = asObject(rawItem);
+
     if (!row) {
       continue;
     }
 
     const chatId = normalizeString(row.chatId);
+
     if (!chatId) {
       continue;
     }
@@ -101,8 +109,10 @@ export function parseTelegramRecipients(config: unknown): TelegramRecipientRecor
     .sort((a, b) => {
       const left = `${a.displayName}`.toLowerCase();
       const right = `${b.displayName}`.toLowerCase();
+
       if (left < right) return -1;
       if (left > right) return 1;
+
       return 0;
     });
 }

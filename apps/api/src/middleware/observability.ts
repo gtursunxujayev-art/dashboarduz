@@ -49,6 +49,7 @@ function requestLoggingMiddleware(req: Request, res: Response, next: NextFunctio
 
   // Capture response details
   const originalSend = res.send;
+
   res.send = function(body: any) {
     const duration = Date.now() - startTime;
     
@@ -68,6 +69,7 @@ function requestLoggingMiddleware(req: Request, res: Response, next: NextFunctio
 
     // Record metrics
     const { Metrics } = require('../services/observability');
+
     Metrics.increment('http_requests_total', {
       method: req.method,
       path: req.path,
@@ -108,6 +110,7 @@ function errorLoggingMiddleware(
 
   // Record error metric
   const { Metrics } = require('../services/observability');
+
   Metrics.increment('http_errors_total', {
     method: req.method,
     path: req.path,
@@ -148,6 +151,7 @@ function metricsMiddleware(req: Request, res: Response, next: NextFunction) {
     
     res.setHeader('Content-Type', 'text/plain; version=0.0.4');
     res.send(Metrics.export());
+
     return;
   }
   next();
@@ -185,6 +189,7 @@ function healthCheckMiddleware(req: Request, res: Response, next: NextFunction) 
         error: error.message,
       });
     });
+
     return;
   }
   next();

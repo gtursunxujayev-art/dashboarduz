@@ -38,10 +38,29 @@ npm run dev:web
 
 ## Release Path (Canonical)
 1. `npm install`
-2. `npm run db:migrate:deploy`
+2. `npm run db:migrate:deploy` against the production database. This is a deliberate, manual release step:
+   CI does not apply migrations to any real database (it only migrates a throwaway Postgres container for tests).
+   Run it from a trusted machine with `DATABASE_URL` set to the target database, and check
+   `npm run migrate:status --workspace @dashboarduz/db` first.
 3. Roll out API
 4. Roll out worker
 5. Roll out web
+
+## Checks (what CI runs)
+- `npm run type-check`
+- `npm run lint`: `apps/api` keeps its strict rules; problems that already existed are recorded in
+  `apps/api/.eslint-baseline.json` and only new ones fail (`npm run lint:strict --workspace @dashboarduz/api`
+  shows all of them, `npm run lint:baseline:update --workspace @dashboarduz/api` tightens the baseline after a cleanup).
+- `npm run audit:tenant-filter`: fails on router queries without a `tenantId` filter that are not in
+  `scripts/audit-tenant-filter.baseline.json`.
+- `npm run test:coverage --workspaces --if-present` with coverage thresholds at the measured level.
+- API integration tests (`apps/api/src/__tests__/integration`) run real tRPC procedures against Postgres. They are
+  skipped unless `TEST_DATABASE_URL` points at a throwaway, already-migrated database whose name contains `test`:
+  ```bash
+  createdb dashboarduz_test
+  DATABASE_URL=postgresql://postgres@localhost:5432/dashboarduz_test npx prisma migrate deploy --schema=packages/db/prisma/schema.prisma
+  TEST_DATABASE_URL=postgresql://postgres@localhost:5432/dashboarduz_test npm test --workspace @dashboarduz/api
+  ```
 
 ## Required Env Contract
 

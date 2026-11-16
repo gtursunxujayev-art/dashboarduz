@@ -36,7 +36,9 @@ const loggerOptions: LoggerOptions = {
   timestamp: pino.stdTimeFunctions.isoTime,
 };
 
-if (process.env.NODE_ENV !== 'production') {
+// pino-pretty runs as a transport in a worker thread. Under Jest that thread keeps each test worker alive after its
+// suites finish ("A worker process has failed to exit gracefully"), so tests log plain JSON to stdout synchronously.
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   loggerOptions.transport = {
     target: 'pino-pretty',
     options: {
@@ -58,5 +60,6 @@ export const logger = pino(loggerOptions);
 export function maskPhone(phone: string | null | undefined): string | undefined {
   if (!phone) return undefined;
   const str = String(phone);
+
   return str.replace(/\d(?=\d{4})/g, '*');
 }

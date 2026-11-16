@@ -34,6 +34,7 @@ describe('income facts', () => {
       { id: 'real', type: 'new_sale', relatedDebtIncomeId: null },
       { id: 'rep-real', type: 'repayment', relatedDebtIncomeId: 'real' },
     ];
+
     expect(excludeTechnicalRows(rows, technical).map((row) => row.id)).toEqual(['real', 'rep-real']);
     expect(resolveRowSaleId(rows[1]!)).toBe('tech');
   });

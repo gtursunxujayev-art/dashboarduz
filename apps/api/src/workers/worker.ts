@@ -30,6 +30,7 @@ Promise.resolve().then(startWorkerService).catch((error: any) => {
     error: error?.message || String(error),
     stack: error?.stack || null,
   };
+
   log(LogLevel.ERROR, 'Failed to start worker service', details);
   console.error('[Worker] Startup failed:', details);
   process.exit(1);

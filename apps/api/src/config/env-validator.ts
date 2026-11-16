@@ -149,6 +149,7 @@ function constructDatabaseUrl(): string | undefined {
     const encodedPassword = encodeURIComponent(password);
     // Add SSL parameters for production environments
     const sslParam = ssl === 'true' || ssl === 'require' ? '?sslmode=require' : '';
+
     return `postgresql://${username}:${encodedPassword}@${host}:${port}/${name}${sslParam}`;
   }
   
@@ -173,6 +174,7 @@ export function validateEnv(): EnvConfig {
       PORT: '3001',
       SENTRY_ENVIRONMENT: 'development',
     } as EnvConfig;
+
     return validatedEnv;
   }
 
@@ -180,6 +182,7 @@ export function validateEnv(): EnvConfig {
     // First, check if we need to construct DATABASE_URL from individual components
     if (!process.env.DATABASE_URL) {
       const constructedUrl = constructDatabaseUrl();
+
       if (constructedUrl) {
         process.env.DATABASE_URL = constructedUrl;
         console.log('[Config] Constructed DATABASE_URL from individual components');
@@ -193,10 +196,12 @@ export function validateEnv(): EnvConfig {
     }
     
     validatedEnv = envSchema.parse(process.env);
+
     return validatedEnv;
   } catch (error) {
     if (error instanceof z.ZodError) {
       const missingVars = error.errors.map(e => `${e.path.join('.')}: ${e.message}`);
+
       throw new Error(
         `Environment validation failed:\n${missingVars.join('\n')}\n\n` +
         'Please check your environment variables configuration.'
@@ -229,11 +234,13 @@ export function validateFeatureRequirements(feature: string): void {
   };
 
   const required = requirements[feature];
+
   if (!required) {
     return;
   }
 
   const missing = required.filter(key => !process.env[key]);
+
   if (missing.length > 0) {
     console.warn(
       `[Env] Feature '${feature}' requires the following environment variables: ${missing.join(', ')}`
@@ -244,6 +251,7 @@ export function validateFeatureRequirements(feature: string): void {
 // Validate all features on startup
 export function validateAllFeatures(): void {
   const currentEnv = env();
+
   if (currentEnv.OTP_PROVIDER === 'twilio') {
     validateFeatureRequirements('otp_twilio');
   } else if (currentEnv.OTP_PROVIDER === 'firebase') {
@@ -260,6 +268,7 @@ export function validateAllFeatures(): void {
 // Get environment-specific configuration
 export function getEnvConfig() {
   const currentEnv = env();
+
   return {
     isDevelopment: currentEnv.NODE_ENV === 'development',
     isStaging: currentEnv.NODE_ENV === 'staging',

@@ -17,6 +17,7 @@ export class EncryptionService {
       } else {
         logger.warn('ENCRYPTION_KEY not set, encryption service disabled');
       }
+
       return;
     }
 
@@ -30,6 +31,7 @@ export class EncryptionService {
   encrypt(text: string): string | null {
     if (!this.initialized) {
       logger.error('Encryption service not initialized');
+
       return null;
     }
 
@@ -42,6 +44,7 @@ export class EncryptionService {
       
       // Encrypt the text
       let encrypted = cipher.update(text, 'utf8', 'hex');
+
       encrypted += cipher.final('hex');
       
       // Get authentication tag
@@ -59,6 +62,7 @@ export class EncryptionService {
       return Buffer.from(JSON.stringify(result)).toString('base64');
     } catch (error: any) {
       logger.error({ error: error.message }, 'Encryption failed');
+
       return null;
     }
   }
@@ -66,6 +70,7 @@ export class EncryptionService {
   decrypt(encryptedData: string): string | null {
     if (!this.initialized) {
       logger.error('Encryption service not initialized');
+
       return null;
     }
 
@@ -84,15 +89,18 @@ export class EncryptionService {
       
       // Create decipher
       const decipher = crypto.createDecipheriv(this.algorithm, this.key, iv) as crypto.DecipherGCM;
+
       decipher.setAuthTag(authTag);
       
       // Decrypt the text
       let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+
       decrypted += decipher.final('utf8');
       
       return decrypted;
     } catch (error: any) {
       logger.error({ error: error.message }, 'Decryption failed');
+
       return null;
     }
   }
@@ -100,9 +108,11 @@ export class EncryptionService {
   encryptJSON(data: any): string | null {
     try {
       const jsonString = JSON.stringify(data);
+
       return this.encrypt(jsonString);
     } catch (error: any) {
       logger.error({ error: error.message }, 'JSON encryption failed');
+
       return null;
     }
   }
@@ -110,11 +120,13 @@ export class EncryptionService {
   decryptJSON<T = any>(encryptedData: string): T | null {
     try {
       const decrypted = this.decrypt(encryptedData);
+
       if (!decrypted) return null;
       
       return JSON.parse(decrypted) as T;
     } catch (error: any) {
       logger.error({ error: error.message }, 'JSON decryption failed');
+
       return null;
     }
   }
@@ -127,17 +139,21 @@ export class EncryptionService {
   // Hash data (one-way, for verification)
   static hash(data: string, salt?: string): string {
     const hash = crypto.createHash('sha256');
+
     if (salt) {
       hash.update(salt);
     }
     hash.update(data);
+
     return hash.digest('hex');
   }
 
   // Generate HMAC signature
   static generateHMAC(data: string, secret: string): string {
     const hmac = crypto.createHmac('sha256', secret);
+
     hmac.update(data);
+
     return hmac.digest('hex');
   }
 
@@ -147,9 +163,11 @@ export class EncryptionService {
       const expectedSignature = this.generateHMAC(data, secret);
       const provided = Buffer.from(signature, 'hex');
       const expected = Buffer.from(expectedSignature, 'hex');
+
       if (provided.length !== expected.length) {
         return false;
       }
+
       return crypto.timingSafeEqual(provided, expected);
     } catch {
       return false;
@@ -162,16 +180,20 @@ export const encryptionService = new EncryptionService();
 
 export function encryptIntegrationTokens(tokens: Record<string, unknown>): string {
   const encrypted = encryptionService.encryptJSON(tokens);
+
   if (!encrypted) {
     throw new Error('Failed to encrypt integration tokens');
   }
+
   return encrypted;
 }
 
 export function decryptIntegrationTokens<T = Record<string, unknown>>(encryptedTokens: string): T {
   const decrypted = encryptionService.decryptJSON<T>(encryptedTokens);
+
   if (!decrypted) {
     throw new Error('Failed to decrypt integration tokens');
   }
+
   return decrypted;
 }

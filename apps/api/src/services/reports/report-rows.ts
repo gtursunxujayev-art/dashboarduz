@@ -2,6 +2,7 @@ export type ReportPersonLike = { id?: string | null; name?: string | null; usern
 
 export function resolvePersonLabel(person: ReportPersonLike, fallback = '-'): string {
   const candidate = person?.name || person?.username || person?.id || null;
+
   return candidate ? String(candidate) : fallback;
 }
 
@@ -10,6 +11,7 @@ export function resolveRootSaleId(income: { id: string; type?: string | null; re
   if (income.type === 'repayment' && income.relatedDebtIncomeId) {
     return income.relatedDebtIncomeId;
   }
+
   return income.id;
 }
 
@@ -17,6 +19,7 @@ export function computeResponseMinutes(createdAt: Date, reviewedAt: Date | null 
   if (!reviewedAt) {
     return null;
   }
+
   return Math.max(Math.round((reviewedAt.getTime() - createdAt.getTime()) / 60_000), 0);
 }
 
@@ -26,12 +29,14 @@ export function selectDebtorSales<T extends { id: string; remainingDebtAmount?: 
   technicalSaleIds: Set<string>;
 }): Array<{ sale: T; agreementAmount: number; paidAmount: number; debtAmount: number; lastActivityAt: Date | null }> {
   const rows: Array<{ sale: T; agreementAmount: number; paidAmount: number; debtAmount: number; lastActivityAt: Date | null }> = [];
+
   for (const sale of params.sales) {
     if (params.technicalSaleIds.has(sale.id)) {
       continue;
     }
     const metric = params.chainMetricsBySaleId.get(sale.id);
     const debtAmount = metric?.currentDebtAmount ?? Math.max(Number(sale.remainingDebtAmount ?? 0), 0);
+
     if (debtAmount <= 0) {
       continue;
     }
@@ -44,5 +49,6 @@ export function selectDebtorSales<T extends { id: string; remainingDebtAmount?: 
     });
   }
   rows.sort((left, right) => right.debtAmount - left.debtAmount);
+
   return rows;
 }

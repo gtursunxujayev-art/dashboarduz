@@ -70,10 +70,12 @@ describe('Telegram group summaries', () => {
     const selected = aggregateTelegramGroupSummaries({
       rows: [intensive], ancestors: [], selectedCourseIds: new Set(['intensive-course']),
     });
+
     expect(selected.offline.intensive).toEqual({ salesCount: 1, income: 2_000_000 });
     expect(selected.offline.coaching).toBeUndefined();
 
     const unselected = aggregateTelegramGroupSummaries({ rows: [intensive], ancestors: [], selectedCourseIds: new Set() });
+
     expect(unselected.offline.intensive).toBeUndefined();
   });
 
@@ -87,6 +89,7 @@ describe('Telegram group summaries', () => {
         ['intensive-course', 'intensive'],
       ]),
     });
+
     expect(metrics.offline.coaching).toEqual({ salesCount: 0, income: 0 });
     expect(metrics.offline.intensive).toEqual({ salesCount: 0, income: 0 });
   });
@@ -98,6 +101,7 @@ describe('Telegram group summaries', () => {
       courseId: null, course: null, coursePriceAmount: null, paymentAmount: 100,
     });
     const metrics = aggregateTelegramGroupSummaries({ rows: [technical, repayment], ancestors: [technical], selectedCourseIds: new Set() });
+
     expect(metrics.online).toEqual({ newSalesCount: 0, totalIncome: 0, newIncome: 0, debtIncome: 0 });
   });
 
@@ -126,6 +130,7 @@ describe('Telegram group summaries', () => {
     const before = new Date('2026-09-15T12:59:59.000Z'); // 17:59:59 Tashkent
     const after18 = new Date('2026-09-15T13:10:00.000Z');
     const after2359 = new Date('2026-09-15T18:59:20.000Z');
+
     expect(resolveDueTelegramGroupSummaryCutoffs(before)).toEqual([]);
     expect(resolveDueTelegramGroupSummaryCutoffs(after18)).toEqual(['18:00']);
     expect(resolveDueTelegramGroupSummaryCutoffs(after2359)).toEqual(['18:00', '23:59']);

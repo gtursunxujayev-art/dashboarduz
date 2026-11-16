@@ -31,6 +31,7 @@ describe('planChainRepair', () => {
       repayments: [row({ id: 'r1', paymentAmount: 3_000_000 })],
       hasPendingRefundRequest: false,
     });
+
     expect(plan.lifecycleUpdates).toEqual([{ id: 'r1', from: 'active', to: 'refunded' }]);
     expect(plan.debtUpdates).toEqual([]);
   });
@@ -41,6 +42,7 @@ describe('planChainRepair', () => {
       repayments: [row({ id: 'r1', lifecycleStatus: 'pending_refund', paymentAmount: 3_000_000 })],
       hasPendingRefundRequest: false,
     });
+
     expect(plan.lifecycleUpdates).toEqual([{ id: 'r1', from: 'pending_refund', to: 'active' }]);
     expect(plan.debtUpdates).toEqual([
       { id: 'r1', debtAmount: 8_000_000, remainingDebtAmount: 5_000_000 },
@@ -54,6 +56,7 @@ describe('planChainRepair', () => {
       repayments: [row({ id: 'r1', lifecycleStatus: 'pending_refund', paymentAmount: 3_000_000 })],
       hasPendingRefundRequest: true,
     });
+
     expect(plan).toEqual({ saleId: 'sale', lifecycleUpdates: [], debtUpdates: [] });
   });
 
@@ -66,6 +69,7 @@ describe('planChainRepair', () => {
       ],
       hasPendingRefundRequest: false,
     });
+
     expect(plan.debtUpdates).toEqual([
       { id: 'r1', debtAmount: 10_000_000, remainingDebtAmount: 7_000_000 },
       { id: 'r2', debtAmount: 7_000_000, remainingDebtAmount: 6_000_000 },

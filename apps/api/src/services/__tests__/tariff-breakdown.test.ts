@@ -15,6 +15,7 @@ describe('tariff breakdown', () => {
       ],
       subTariffNameById: new Map(),
     });
+
     expect(rows.map((row) => [row.name, row.salesCount])).toEqual([['Premium', 2], ['Talaba', 1], ['Tarifsiz', 1]]);
     expect(rows.reduce((sum, row) => sum + row.salesCount, 0)).toBe(4);
   });
@@ -25,6 +26,7 @@ describe('tariff breakdown', () => {
       subTariffNameById: new Map(),
       knownTariffs: [premium, vip],
     });
+
     expect(rows.map((row) => [row.name, row.salesCount])).toEqual([['Premium', 0], ['VIP', 1]]);
   });
 
@@ -38,6 +40,7 @@ describe('tariff breakdown', () => {
       ],
       subTariffNameById: new Map([['s-ertalab', 'Ertalabki']]),
     });
+
     expect(rows[0]!.subTariffs).toEqual([
       { subTariffId: 's-ertalab', name: 'Ertalabki', salesCount: 2 },
       { subTariffId: null, name: 'Subtarifsiz', salesCount: 1 },

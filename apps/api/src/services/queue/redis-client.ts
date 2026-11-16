@@ -13,13 +13,16 @@ export function getRedisClient(): Redis {
       maxRetriesPerRequest: null,
       retryStrategy: (times) => {
         const delay = Math.min(times * 50, 2000);
+
         return delay;
       },
       reconnectOnError: (err) => {
         const targetError = 'READONLY';
+
         if (err.message.includes(targetError)) {
           return true;
         }
+
         return false;
       },
     });
@@ -54,6 +57,7 @@ export async function checkRedisHealth(): Promise<{
   try {
     const start = Date.now();
     const client = getRedisClient();
+
     await client.ping();
     const latency = Date.now() - start;
 

@@ -53,9 +53,11 @@ describe('fetchPagesConcurrently', () => {
     const requested: number[] = [];
     const fetchPage = async (page: number) => {
       requested.push(page);
+
       return page < 6 ? [page, page] : page === 6 ? [page] : [];
     };
     const result = await fetchPagesConcurrently(fetchPage, { pageSize: 2, maxPages: 40, concurrency: 4 });
+
     expect(result.items).toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6]);
     expect(result.truncated).toBe(false);
     // page 1, then wave 2-5, then wave 6-9 (6 is short, so we stop)
@@ -65,12 +67,14 @@ describe('fetchPagesConcurrently', () => {
   it('stops after one request when the first page is short', async () => {
     const fetchPage = jest.fn(async () => [1]);
     const result = await fetchPagesConcurrently(fetchPage, { pageSize: 2, maxPages: 40, concurrency: 4 });
+
     expect(result.items).toEqual([1]);
     expect(fetchPage).toHaveBeenCalledTimes(1);
   });
 
   it('reports truncation at the page cap', async () => {
     const result = await fetchPagesConcurrently(async () => [1, 1], { pageSize: 2, maxPages: 3, concurrency: 4 });
+
     expect(result.items).toHaveLength(6);
     expect(result.truncated).toBe(true);
   });
@@ -117,6 +121,7 @@ describe('bucketLeadsByResponsible', () => {
       index,
       new Set(['1', '2', '4']),
     );
+
     expect(buckets.get('5')).toEqual({ assigned: 3, ishlangan: 2, taklif: 2 });
     expect(buckets.get('6')).toEqual({ assigned: 1, ishlangan: 1, taklif: 1 });
     expect(buckets.size).toBe(2);
@@ -129,6 +134,7 @@ describe('bucketLeadsByResponsible', () => {
       index,
       new Set(),
     );
+
     expect(buckets.get('5')).toEqual({ assigned: 1, ishlangan: 0, taklif: 0 });
   });
 });
@@ -153,6 +159,7 @@ describe('findAnsweredLeadIds', () => {
       [],
       { rangeEnd },
     );
+
     expect([...result]).toEqual(['100']);
   });
 
@@ -163,6 +170,7 @@ describe('findAnsweredLeadIds', () => {
       [{ entity_id: 901, note_type: 'call_in', created_at: at('2026-10-20T08:00:00Z'), params: { duration: '50' } }],
       { rangeEnd },
     );
+
     expect([...result]).toEqual(['101']);
   });
 
@@ -179,6 +187,7 @@ describe('findAnsweredLeadIds', () => {
       [],
       { rangeEnd },
     );
+
     expect(result.size).toBe(0);
   });
 });
@@ -192,8 +201,10 @@ describe('runWithConcurrency and chunk', () => {
       peak = Math.max(peak, active);
       await new Promise((resolve) => setTimeout(resolve, ms));
       active -= 1;
+
       return i;
     });
+
     expect(await runWithConcurrency(tasks, 2)).toEqual([0, 1, 2, 3, 4]);
     expect(peak).toBe(2);
     expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
@@ -222,6 +233,7 @@ describe('team ratios and lost revenue', () => {
 
   it('computes the four components and picks the biggest hole', () => {
     const result = computeLostRevenueRow(b, team);
+
     // Aktivlik = (100-40) * 0.06 * 500k = 1.8M
     expect(result.aktivlik).toBeCloseTo(60 * (12 / 200) * 500_000);
     // Taklif = (0.4 - 10/40) * 40 * 0.3 * 500k = 0.15*40*0.3*500k = 900k
@@ -237,12 +249,14 @@ describe('team ratios and lost revenue', () => {
   it('uses team average check when the manager has no sales; chek is 0', () => {
     const c = row({ assignedLeads: 50, ishlanganLeads: 10, taklifLeads: 0, sales: 0 });
     const result = computeLostRevenueRow(c, team);
+
     expect(result.aktivlik).toBeCloseTo(40 * team.leadToSale * team.avgCheck);
     expect(result.chek).toBe(0);
   });
 
   it('reports no hole when every component is <= 0', () => {
     const result = computeLostRevenueRow(row({}), team);
+
     expect(result.mainHole).toBeNull();
     expect(result.lostRevenue).toBe(0);
   });
@@ -250,8 +264,10 @@ describe('team ratios and lost revenue', () => {
   it('treats null lead counts as 0 and sums loss rows', () => {
     const nullRow = row({ assignedLeads: null, ishlanganLeads: null, taklifLeads: null, sales: 1, avgCheck: 100 });
     const result = computeLostRevenueRow(nullRow, team);
+
     expect(Number.isFinite(result.aktivlik)).toBe(true);
     const sums = sumLostRevenueRows([computeLostRevenueRow(a, team), computeLostRevenueRow(b, team)]);
+
     expect(sums.mainHole).toBeNull();
     expect(sums.lostRevenue).toBeGreaterThan(0);
   });

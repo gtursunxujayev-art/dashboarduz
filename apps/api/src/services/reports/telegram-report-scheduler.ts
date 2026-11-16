@@ -117,6 +117,7 @@ function formatLocalDate(date: Date): string {
   const year = local.getUTCFullYear();
   const month = String(local.getUTCMonth() + 1).padStart(2, '0');
   const day = String(local.getUTCDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
@@ -128,6 +129,7 @@ function formatLocalDateTime(date: Date): string {
   const hour = String(local.getUTCHours()).padStart(2, '0');
   const minute = String(local.getUTCMinutes()).padStart(2, '0');
   const second = String(local.getUTCSeconds()).padStart(2, '0');
+
   return `${year}-${month}-${day} ${hour}:${minute}:${second} ${REPORT_TIMEZONE_LABEL}`;
 }
 
@@ -138,6 +140,7 @@ function formatCurrency(value: number): string {
 function formatCompactCurrency(value: number): string {
   const rounded = Math.round(value);
   const abs = Math.abs(rounded);
+
   if (abs >= 1_000_000_000) {
     return `${(rounded / 1_000_000_000).toFixed(abs >= 10_000_000_000 ? 1 : 2)}B`;
   }
@@ -147,6 +150,7 @@ function formatCompactCurrency(value: number): string {
   if (abs >= 1_000) {
     return `${(rounded / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}K`;
   }
+
   return String(rounded);
 }
 
@@ -155,6 +159,7 @@ function formatDuration(totalSeconds: number): string {
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   const seconds = safe % 60;
+
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
@@ -162,6 +167,7 @@ function formatDurationHoursMinutes(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds));
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
+
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
@@ -169,9 +175,11 @@ function parseTelegramDailyReportCourseIds(config: unknown): string[] {
   const raw = config && typeof config === 'object' && !Array.isArray(config)
     ? (config as Record<string, unknown>).telegramDailyReportCourseIds
     : null;
+
   if (!Array.isArray(raw)) {
     return [];
   }
+
   return Array.from(new Set(
     raw
       .map((value) => String(value || '').trim())
@@ -186,6 +194,7 @@ function formatSelectedCourseLine(row: ReportMetrics['selectedCourseRows'][numbe
       .map((item) => `${item.label}: ${item.value}`)
       .join(' | ')
     : 'Tariflar: 0';
+
   return `${row.courseName}: Sotuv - ${row.salesCount} | ${tariffs}`;
 }
 
@@ -193,6 +202,7 @@ function normalizePercentage(value: number): number {
   if (!Number.isFinite(value) || value <= 0) {
     return 0;
   }
+
   return Number(value.toFixed(2));
 }
 
@@ -206,15 +216,18 @@ function normalizeDigits(value: unknown): string {
 
 function isAllowedUtelManagerExtension(value: unknown): boolean {
   const digits = normalizeDigits(value);
+
   if (!digits) {
     return false;
   }
   const parsed = Number.parseInt(digits, 10);
+
   return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
 }
 
 function getReportTenantName(value: string | null | undefined): string {
   const normalized = String(value || '').trim();
+
   return normalized || 'Workspace';
 }
 
@@ -241,15 +254,18 @@ class PdfCanvas {
 
   private get commands(): string[] {
     const page = this.pages[this.currentPageIndex];
+
     if (!page) {
       throw new Error(`PDF page ${this.currentPageIndex} does not exist`);
     }
+
     return page;
   }
 
   addPage(): number {
     this.pages.push([]);
     this.currentPageIndex = this.pages.length - 1;
+
     return this.currentPageIndex;
   }
 
@@ -303,6 +319,7 @@ class PdfCanvas {
     const color = options.color || ([0.11, 0.16, 0.24] as PdfColor);
     const escaped = escapePdfText(text);
     const baselineY = this.toPdfY(top) - size;
+
     this.commands.push('BT');
     this.commands.push(`${font === 'F2' ? '/F2' : '/F1'} ${this.fmt(size)} Tf`);
     this.commands.push(`${this.fmt(color[0])} ${this.fmt(color[1])} ${this.fmt(color[2])} rg`);
@@ -319,10 +336,12 @@ class PdfCanvas {
       '3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
       '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n',
     ];
+
     for (const [index, pageCommands] of this.pages.entries()) {
       const pageObjectId = pageObjectIds[index] as number;
       const contentObjectId = pageObjectId + 1;
       const contentStream = pageCommands.join('\n');
+
       objects.push(
         `${pageObjectId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.pageWidth} ${this.pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjectId} 0 R >>\nendobj\n`,
         `${contentObjectId} 0 obj\n<< /Length ${Buffer.byteLength(contentStream, 'utf8')} >>\nstream\n${contentStream}\nendstream\nendobj\n`,
@@ -331,18 +350,21 @@ class PdfCanvas {
 
     let pdf = '%PDF-1.4\n';
     const offsets: number[] = [0];
+
     for (const object of objects) {
       offsets.push(Buffer.byteLength(pdf, 'utf8'));
       pdf += object;
     }
 
     const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+
     pdf += `xref\n0 ${objects.length + 1}\n`;
     pdf += '0000000000 65535 f \n';
     for (let index = 1; index < offsets.length; index += 1) {
       pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
     }
     pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
     return Buffer.from(pdf, 'utf8');
   }
 }
@@ -351,10 +373,12 @@ function topBreakdownRows(entries: Array<{ label: string; value: number }>, fall
   if (!entries.length) {
     return [`${fallbackLabel}: 0`];
   }
+
   return entries.map((entry) => {
     const normalizedLabel = entry.label.trim().length > 0
       ? humanizeKey(entry.label)
       : fallbackLabel;
+
     return `${normalizedLabel}: ${entry.value}`;
   });
 }
@@ -369,6 +393,7 @@ function fitTwoColumnThreeRows(lines: string[]): { left: string[]; right: string
     if (columnItems.length <= 3) {
       return columnItems;
     }
+
     return [
       columnItems[0] || '-',
       columnItems[1] || '-',
@@ -391,6 +416,7 @@ export function getBreakdownLayout(entries: Array<{ label: string; value: number
   const lines = topBreakdownRows(entries, "Ma'lumot yo'q");
   const grid = fitTwoColumnThreeRows(lines);
   const rowCount = Math.max(1, grid.left.length, grid.right.length);
+
   return {
     ...grid,
     rowCount,
@@ -405,12 +431,14 @@ export function classifyManagerGroup(roles: readonly string[] | null | undefined
   if (roles?.includes('OfflineAgent')) {
     return 'offline';
   }
+
   return null;
 }
 
 export function compareManagerRows(a: ReportManagerRow, b: ReportManagerRow): number {
   if (b.sales !== a.sales) return b.sales - a.sales;
   if (b.leads !== a.leads) return b.leads - a.leads;
+
   return a.name.localeCompare(b.name);
 }
 
@@ -423,6 +451,7 @@ export function groupManagerRows(rows: ReportManagerRow[]): Array<{
     { group: 'online', label: 'Online agentlar' },
     { group: 'offline', label: 'Offline agentlar' },
   ];
+
   return groups
     .map((entry) => ({
       ...entry,
@@ -478,6 +507,7 @@ export function createStyledReportPdf(params: {
   const drawStandardCard = (row: number, col: number, title: string, value: string) => {
     const top = cardRowTop(row);
     const left = cardLeft(col);
+
     c.rect(top, left, 160, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
     c.text(top + 10, left + 10, title, { size: size(9), color: [0.4, 0.46, 0.56] });
     c.text(top + 27, left + 10, value, { font: 'F2', size: size(14), color: accent });
@@ -491,6 +521,7 @@ export function createStyledReportPdf(params: {
   // Tushum card with new-sale vs debt-repayment split.
   const incomeTop = cardRowTop(0);
   const incomeLeft = cardLeft(1);
+
   c.rect(incomeTop, incomeLeft, 160, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
   c.text(incomeTop + 9, incomeLeft + 10, 'Tushum', { size: size(9), color: [0.4, 0.46, 0.56] });
   c.text(incomeTop + 22, incomeLeft + 10, formatCurrency(params.metrics.incomeTotal), { font: 'F2', size: size(14), color: accent });
@@ -514,6 +545,7 @@ export function createStyledReportPdf(params: {
   c.text(splitTop + 27, splitLeft + 8, String(params.metrics.newLeads), { font: 'F2', size: size(12), color: accent });
 
   const salesLeft = splitLeft + splitWidth + splitGap;
+
   c.rect(splitTop, salesLeft, splitWidth, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
   c.text(splitTop + 8, salesLeft + 8, 'Sotuv', { size: size(8), color: [0.4, 0.46, 0.56] });
   c.text(splitTop + 20, salesLeft + 8, String(params.metrics.newSalesCount), { font: 'F2', size: size(10), color: accent });
@@ -532,6 +564,7 @@ export function createStyledReportPdf(params: {
 
   const summaryTop = cardRowTop(1) + cardHeight + 12;
   const summaryHeight = 72;
+
   c.rect(summaryTop, contentLeft, contentWidth, summaryHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
   const summaryRows = [
     {
@@ -550,8 +583,10 @@ export function createStyledReportPdf(params: {
       rightSize: 8.7,
     },
   ];
+
   for (const [index, row] of summaryRows.entries()) {
     const rowTop = summaryTop + 10 + index * 20;
+
     c.text(rowTop, 54, row.left, { font: 'F2', size: size(11.5), color: textDark });
     c.text(rowTop, 300, row.right, { size: size(row.rightSize), color: textDark });
   }
@@ -567,10 +602,12 @@ export function createStyledReportPdf(params: {
     c.rect(top, contentLeft, contentWidth, 22, { fill: dark });
     c.text(top + 4, 54, title, { font: 'F2', size: size(12), color: white });
     const layout = getBreakdownLayout(entries);
+
     for (let row = 0; row < layout.rowCount; row += 1) {
       const y = top + 28 + row * breakdownRowHeight;
       const left = layout.left[row];
       const right = layout.right[row];
+
       if (typeof left === 'string') {
         c.text(y, breakdownColLeftA, left, { size: size(9), color: textDark });
       }
@@ -578,10 +615,12 @@ export function createStyledReportPdf(params: {
         c.text(y, breakdownColLeftB, right, { size: size(9), color: textDark });
       }
     }
+
     return top + layout.height;
   };
 
   let cursor = summaryTop + summaryHeight + 12;
+
   cursor = drawBreakdownSection(cursor, 'Sifatsiz lid sabablari', params.metrics.reasonBreakdown);
   cursor = drawBreakdownSection(cursor, 'Lid manbalari', params.metrics.sourceBreakdown);
 
@@ -592,6 +631,7 @@ export function createStyledReportPdf(params: {
     c.rect(cursor, contentLeft, contentWidth, 22, { fill: dark });
     c.text(cursor + 4, 54, 'Tanlangan kurslar sotuvi', { font: 'F2', size: size(12), color: white });
     const courseContentTop = cursor + 28;
+
     selectedCourseRows.slice(0, 3).forEach((row, index) => {
       c.text(courseContentTop + index * 14, 54, formatSelectedCourseLine(row), { size: size(8.3), color: textDark });
     });
@@ -614,6 +654,7 @@ export function createStyledReportPdf(params: {
   const drawManagerColumnHeader = (top: number) => {
     c.rect(top, 54, tableWidth, 20, { fill: [0.92, 0.94, 0.98], stroke: lightBorder, lineWidth: 0.8 });
     let x = 56;
+
     for (const column of columns) {
       c.text(top + 5, x, column.title, { font: 'F2', size: size(7.4), color: textDark });
       x += column.width;
@@ -640,6 +681,7 @@ export function createStyledReportPdf(params: {
     ];
 
     let currentX = 56;
+
     for (const [colIndex, column] of columns.entries()) {
       c.text(top + 4, currentX, values[colIndex] || '-', { size: size(7.2), color: textDark });
       currentX += column.width;
@@ -657,10 +699,12 @@ export function createStyledReportPdf(params: {
     c.rect(86, contentLeft, contentWidth, 22, { fill: dark });
     c.text(90, 54, "Menejerlar bo'yicha sotuvlar (davomi)", { font: 'F2', size: size(12), color: white });
     drawFooter();
+
     return 114;
   };
 
   const managerGroups = groupManagerRows(params.metrics.managerRows);
+
   if (managerGroups.length > 0) {
     c.rect(cursor, contentLeft, contentWidth, 22, { fill: dark });
     c.text(cursor + 4, 54, "Menejerlar bo'yicha sotuvlar", { font: 'F2', size: size(12), color: white });
@@ -669,8 +713,10 @@ export function createStyledReportPdf(params: {
     for (const managerGroup of managerGroups) {
       let remainingRows = managerGroup.rows;
       let continuation = false;
+
       while (remainingRows.length > 0) {
         const minimumGroupHeight = 18 + 20 + 18;
+
         if (cursor + minimumGroupHeight > pageContentBottom) {
           cursor = drawContinuationPage();
         }
@@ -691,6 +737,7 @@ export function createStyledReportPdf(params: {
 
         const availableRows = Math.max(1, Math.floor((pageContentBottom - cursor) / 18));
         const pageRows = remainingRows.slice(0, availableRows);
+
         for (const [index, row] of pageRows.entries()) {
           drawManagerRow(cursor, row, index);
           cursor += 18;
@@ -710,7 +757,6 @@ export function createStyledReportPdf(params: {
   return c.build();
 }
 
-
 function isLostLeadStatus(value: unknown): boolean {
   return String(value || '').trim() === '143';
 }
@@ -726,10 +772,12 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
 
   // Daily report for yesterday at 08:00 local.
   const dailyDispatchAt = fromLocalParts(year, month, day, 8, 0, 0, 0);
+
   if (nowUtc >= dailyDispatchAt) {
     const todayStart = fromLocalParts(year, month, day, 0, 0, 0, 0);
     const periodStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
     const periodEnd = new Date(todayStart.getTime() - 1);
+
     windows.push({
       kind: 'daily',
       title: 'Kunlik hisobot (Kecha)',
@@ -743,9 +791,11 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
   if (weekday === 1) {
     const mondayStart = fromLocalParts(year, month, day, 0, 0, 0, 0);
     const weeklyDispatchAt = fromLocalParts(year, month, day, 7, 55, 0, 0);
+
     if (nowUtc >= weeklyDispatchAt) {
       const periodStart = new Date(mondayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
       const periodEnd = new Date(mondayStart.getTime() - 1);
+
       windows.push({
         kind: 'weekly',
         title: 'Haftalik hisobot (O`tgan hafta)',
@@ -760,6 +810,7 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
   if (day === 1) {
     const currentMonthStart = fromLocalParts(year, month, 1, 0, 0, 0, 0);
     const monthlyDispatchAt = fromLocalParts(year, month, 1, 7, 50, 0, 0);
+
     if (nowUtc >= monthlyDispatchAt) {
       const periodEnd = new Date(currentMonthStart.getTime() - 1);
       const previousMonthLocal = toLocalDate(new Date(currentMonthStart.getTime() - 24 * 60 * 60 * 1000));
@@ -772,6 +823,7 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
         0,
         0,
       );
+
       windows.push({
         kind: 'monthly',
         title: 'Oylik hisobot (O`tgan oy)',
@@ -1057,9 +1109,11 @@ async function collectMetrics(params: {
 
   const isMappedValue = (raw: string | null | undefined, mappedValues: string[]): boolean => {
     const normalized = String(raw || '').trim().toLowerCase();
+
     if (!normalized || mappedValues.length === 0) {
       return false;
     }
+
     return mappedValues.some((item) => String(item || '').trim().toLowerCase() === normalized);
   };
 
@@ -1087,6 +1141,7 @@ async function collectMetrics(params: {
 
   let usedLiveAmoLeads = false;
   let amoContext: Awaited<ReturnType<typeof getTenantAmoCRMContext>> = null;
+
   try {
     amoContext = await getTenantAmoCRMContext(params.tenantId);
   } catch (error: any) {
@@ -1115,26 +1170,31 @@ async function collectMetrics(params: {
         const statusId = String((lead as Record<string, unknown>).status_id || '').trim();
         const reasonValue = extractLeadValue(lead, reasonFieldKey);
         const { isQualified, isNonQualified } = classifyLeadOutcome(statusId, reasonValue);
+
         if (isQualified) {
           qualifiedLeads += 1;
         }
 
         if (isNonQualified) {
           const reasonBucket = reasonValue || "Sabab ko'rsatilmagan";
+
           reasonMap.set(reasonBucket, (reasonMap.get(reasonBucket) || 0) + 1);
         }
 
         const sourceValue = extractLeadValue(lead, sourceFieldKey);
+
         if (sourceValue) {
           sourceMap.set(sourceValue, (sourceMap.get(sourceValue) || 0) + 1);
         }
 
         const responsibleUserId = String((lead as Record<string, unknown>).responsible_user_id || '').trim();
+
         if (!responsibleUserId) {
           continue;
         }
 
         const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0, nonQualified: 0 };
+
         current.leads += 1;
         if (isQualified) {
           current.qualified += 1;
@@ -1182,21 +1242,26 @@ async function collectMetrics(params: {
       const reasonValue = extractLeadValue(lead.metadata, reasonFieldKey);
       const statusId = lead.status ? String(lead.status) : '';
       const { isQualified, isNonQualified } = classifyLeadOutcome(statusId, reasonValue);
+
       if (isNonQualified) {
         const reasonBucket = reasonValue || "Sabab ko'rsatilmagan";
+
         reasonMap.set(reasonBucket, (reasonMap.get(reasonBucket) || 0) + 1);
       }
 
       const sourceValue = extractLeadValue(lead.metadata, sourceFieldKey);
+
       if (sourceValue) {
         sourceMap.set(sourceValue, (sourceMap.get(sourceValue) || 0) + 1);
       }
 
       const responsibleUserId = String(lead.responsibleUserId || '').trim();
+
       if (!responsibleUserId) {
         continue;
       }
       const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0, nonQualified: 0 };
+
       current.leads += 1;
       if (isQualified) {
         current.qualified += 1;
@@ -1223,6 +1288,7 @@ async function collectMetrics(params: {
   const managerSalesByUserId = new Map<string, { sales: number; agreementAmount: number; incomeAmount: number }>();
   const selectedCourseIdSet = new Set(selectedReportCourses.map((course) => course.id));
   const selectedCourseStats = new Map<string, { salesCount: number; tariffCounts: Map<string, number> }>();
+
   for (const course of selectedReportCourses) {
     selectedCourseStats.set(course.id, { salesCount: 0, tariffCounts: new Map<string, number>() });
   }
@@ -1232,6 +1298,7 @@ async function collectMetrics(params: {
     }
     const courseStats = selectedCourseStats.get(income.courseId) || { salesCount: 0, tariffCounts: new Map<string, number>() };
     const tariffName = String(income.tariff?.name || "Tarif yo'q").trim() || "Tarif yo'q";
+
     courseStats.salesCount += 1;
     courseStats.tariffCounts.set(tariffName, (courseStats.tariffCounts.get(tariffName) || 0) + 1);
     selectedCourseStats.set(income.courseId, courseStats);
@@ -1239,6 +1306,7 @@ async function collectMetrics(params: {
 
   for (const income of incomes) {
     const paymentAmount = Number(income.paymentAmount || 0);
+
     incomeTotal += paymentAmount;
 
     // "Yangi tushum" = first payments of new sales; every repayment is "qarzdorlik tushumi".
@@ -1250,6 +1318,7 @@ async function collectMetrics(params: {
     }
 
     const managerStats = managerSalesByUserId.get(income.managerUserId) || { sales: 0, agreementAmount: 0, incomeAmount: 0 };
+
     managerStats.incomeAmount += paymentAmount;
 
     if (income.type !== 'new_sale') {
@@ -1259,12 +1328,14 @@ async function collectMetrics(params: {
 
     newSalesCount += 1;
     const agreementAmount = resolveSaleAgreementAmount(income);
+
     agreementTotal += agreementAmount;
     managerStats.sales += 1;
     managerStats.agreementAmount += agreementAmount;
     managerSalesByUserId.set(income.managerUserId, managerStats);
 
     const category = classifyIncomeCategory(income.course);
+
     if (category === 'online') {
       onlineSalesCount += 1;
       onlineAgreementTotal += agreementAmount;
@@ -1281,14 +1352,17 @@ async function collectMetrics(params: {
   const usersByAmoId = new Map<string, { id: string; name: string; group: ManagerGroup | null }>();
   const usersById = new Map<string, { id: string; name: string; group: ManagerGroup | null }>();
   const managerByExtension = new Map<string, string>();
+
   for (const user of users) {
     const displayName = (user.name || user.username || user.id).trim();
     const group = classifyManagerGroup(user.roles);
+
     usersById.set(user.id, { id: user.id, name: displayName, group });
     if (user.amocrmResponsibleUserId) {
       usersByAmoId.set(String(user.amocrmResponsibleUserId), { id: user.id, name: displayName, group });
     }
     const extension = normalizeDigits(user.utelManagerExternalId || '');
+
     if (isAllowedUtelManagerExtension(extension)) {
       managerByExtension.set(extension, user.id);
     }
@@ -1302,6 +1376,7 @@ async function collectMetrics(params: {
     rangeStart: params.periodStart,
     rangeEnd: params.periodEnd,
   });
+
   if (extensionValues.length > 0) {
     const managerCalls = await systemPrisma.call.findMany({
       where: {
@@ -1329,14 +1404,17 @@ async function collectMetrics(params: {
       const extension = isAllowedUtelManagerExtension(fromExtension)
         ? fromExtension
         : (isAllowedUtelManagerExtension(toExtension) ? toExtension : null);
+
       if (!extension) {
         continue;
       }
       const managerUserId = managerByExtension.get(extension);
+
       if (!managerUserId) {
         continue;
       }
       const currentDuration = managerCallDurationByUserId.get(managerUserId) || 0;
+
       managerCallDurationByUserId.set(managerUserId, currentDuration + Math.max(0, Number(call.duration || 0)));
     }
   }
@@ -1355,6 +1433,7 @@ async function collectMetrics(params: {
 
   for (const [amoId, leadStats] of managerLeadsByAmoId.entries()) {
     const mappedUser = usersByAmoId.get(amoId);
+
     if (!mappedUser) {
       continue;
     }
@@ -1369,6 +1448,7 @@ async function collectMetrics(params: {
       agreementAmount: 0,
       incomeAmount: 0,
     };
+
     existing.leads += leadStats.leads;
     existing.qualified += leadStats.qualified;
     existing.nonQualified += leadStats.nonQualified;
@@ -1389,6 +1469,7 @@ async function collectMetrics(params: {
       agreementAmount: 0,
       incomeAmount: 0,
     };
+
     existing.sales += salesStats.sales;
     existing.agreementAmount += salesStats.agreementAmount;
     existing.incomeAmount += salesStats.incomeAmount;
@@ -1433,10 +1514,12 @@ async function collectMetrics(params: {
   const selectedCourseRows = selectedCourseIds
     .map((courseId) => {
       const course = coursesById.get(courseId);
+
       if (!course) {
         return null;
       }
       const stats = selectedCourseStats.get(courseId) || { salesCount: 0, tariffCounts: new Map<string, number>() };
+
       return {
         courseId,
         courseName: course.name,
@@ -1504,6 +1587,7 @@ async function sendWindowToIntegration(
     integrationId: integration.id,
     startedOnly: true,
   })).filter((recipient) => recipient.selectedForReports);
+
   if (recipients.length === 0) {
     throw new Error('No Telegram recipients selected for reports');
   }
@@ -1526,6 +1610,7 @@ async function sendWindowToIntegration(
     : window.kind === 'monthly'
       ? MIN_MONTHLY_REPORT_PREP_MS
       : MIN_DAILY_REPORT_PREP_MS;
+
   if (elapsed < minWaitMs) {
     await sleep(minWaitMs - elapsed);
   }
@@ -1542,6 +1627,7 @@ async function sendWindowToIntegration(
   const caption = `${window.title}\n${formatLocalDate(window.periodStart)} - ${formatLocalDate(window.periodEnd)}`;
 
   const tokens = decryptIntegrationTokens<{ botToken?: string }>(integration.tokensEncrypted || '');
+
   if (!tokens.botToken) {
     throw new Error('Telegram bot token is missing');
   }
@@ -1588,12 +1674,14 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
         selectedForReports: true,
       },
     });
+
     if (!recipientsSelected) {
       continue;
     }
 
     const lockKey = `telegram-report:${window.kind}:${integration.tenantId}:${window.periodKey}`;
     const lockResult = await redis.set(lockKey, nowUtc.toISOString(), 'EX', LOCK_TTL_SECONDS, 'NX');
+
     if (lockResult !== 'OK') {
       continue;
     }
@@ -1657,6 +1745,7 @@ async function tickScheduler(): Promise<void> {
   try {
     const nowUtc = new Date();
     const dueWindows = resolveReportWindows(nowUtc);
+
     for (const window of dueWindows) {
       await dispatchWindow(window, nowUtc);
     }
@@ -1701,6 +1790,7 @@ export async function sendImmediateTodayReportForTenant(tenantId: string): Promi
   schedule: 'manual_today';
 }> {
   const result = await sendManualTelegramReportForTenant(tenantId, 'today');
+
   return {
     ...result,
     schedule: 'manual_today',
@@ -1747,6 +1837,7 @@ export async function sendManualTelegramReportForTenant(
     integrationId: integration.id,
     startedOnly: true,
   })).filter((recipient) => recipient.selectedForReports);
+
   if (recipients.length === 0) {
     throw new Error('No Telegram recipients selected for scheduled reports');
   }
@@ -1766,6 +1857,7 @@ export async function sendManualTelegramReportForTenant(
       : 'manual_today';
   const lockKey = `telegram-report:${schedule}:${tenantId}:${window.periodKey}:${minuteKey}`;
   const lockResult = await redis.set(lockKey, nowUtc.toISOString(), 'EX', 120, 'NX');
+
   if (lockResult !== 'OK') {
     throw new Error('A report was already sent in the last minute. Please wait and try again.');
   }

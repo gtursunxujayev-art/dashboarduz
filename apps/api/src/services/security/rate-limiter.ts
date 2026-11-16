@@ -23,6 +23,7 @@ export class RateLimiter {
 
   private warnFallback(error: unknown, op: string): void {
     const now = Date.now();
+
     if (now - this.lastFallbackWarnAt > 60_000) {
       this.lastFallbackWarnAt = now;
       logger.warn({ err: error, op }, 'RateLimiter: Redis unavailable, using in-memory fallback');
@@ -38,6 +39,7 @@ export class RateLimiter {
     const existing = this.memoryWindow.get(key) || [];
     // Drop entries outside the window
     const trimmed = existing.filter((ts) => ts > windowStart);
+
     trimmed.push(now);
     this.memoryWindow.set(key, trimmed);
     // Opportunistic cleanup: cap memory usage
@@ -48,6 +50,7 @@ export class RateLimiter {
         }
       }
     }
+
     return { count: trimmed.length };
   }
 
@@ -59,9 +62,11 @@ export class RateLimiter {
     const windowStart = now - finalConfig.windowMs;
     const existing = this.memoryWindow.get(key) || [];
     const trimmed = existing.filter((ts) => ts > windowStart);
+
     if (trimmed.length !== existing.length) {
       this.memoryWindow.set(key, trimmed);
     }
+
     return { count: trimmed.length };
   }
 
@@ -121,6 +126,7 @@ export class RateLimiter {
       // Redis unavailable: use per-process in-memory sliding window so we still throttle.
       const { count } = this.memoryCheck(key, now, finalConfig);
       const remaining = Math.max(0, finalConfig.maxRequests - count);
+
       return {
         allowed: count <= finalConfig.maxRequests,
         remaining,
@@ -166,6 +172,7 @@ export class RateLimiter {
 
       const { count } = this.memoryInfo(key, now, finalConfig);
       const remaining = Math.max(0, finalConfig.maxRequests - count);
+
       return {
         remaining,
         resetTime: now + finalConfig.windowMs,
@@ -208,13 +215,16 @@ export class RateLimiter {
       // Use cursor-based SCAN instead of KEYS to avoid blocking Redis on large key spaces.
       const keys: string[] = [];
       let cursor = '0';
+
       do {
         const [nextCursor, batch] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+
         cursor = nextCursor;
         keys.push(...batch);
       } while (cursor !== '0');
 
       const results = [];
+
       for (const key of keys) {
         const endpoint = key.split(':').pop() || 'unknown';
         const info = await this.getRateLimitInfo(tenantId, endpoint);
@@ -230,6 +240,7 @@ export class RateLimiter {
       return results;
     } catch (error: any) {
       this.warnFallback(error, 'getTenantRateLimits');
+
       return [];
     }
   }

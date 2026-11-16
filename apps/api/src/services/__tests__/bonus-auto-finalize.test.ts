@@ -17,6 +17,7 @@ describe('bonus auto-finalize', () => {
     jest.spyOn(prisma.tenant, 'findMany').mockResolvedValue([{ id: 't1' }, { id: 't2' }] as never);
     jest.spyOn(prisma.bonusMonthSnapshot, 'findMany').mockResolvedValue([{ tenantId: 't2' }] as never);
     const finalize = jest.spyOn(engine, 'finalizeBonusMonth').mockResolvedValue({} as never);
+
     await expect(autoFinalizePreviousBonusMonth(new Date('2026-10-01T10:00:00+05:00'))).resolves.toBe(1);
     expect(finalize).toHaveBeenCalledTimes(1);
     expect(finalize).toHaveBeenCalledWith({

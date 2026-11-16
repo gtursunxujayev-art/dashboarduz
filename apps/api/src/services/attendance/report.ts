@@ -69,11 +69,13 @@ export type AttendanceReportEmployeeSummary = {
 
 export function parseAttendanceReportDateKey(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
+
   if (!match) return null;
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
   const parsed = new Date(Date.UTC(year, month - 1, day));
+
   if (
     parsed.getUTCFullYear() !== year
     || parsed.getUTCMonth() !== month - 1
@@ -81,6 +83,7 @@ export function parseAttendanceReportDateKey(value: string): Date | null {
   ) {
     return null;
   }
+
   return parsed;
 }
 
@@ -98,6 +101,7 @@ export function isAttendanceReportDetailRowLimitExceeded(employeeCount: number, 
 
 export function enumerateAttendanceReportWorkdays(dateFrom: Date, dateTo: Date): string[] {
   const result: string[] = [];
+
   for (
     let cursor = new Date(dateFrom.getTime());
     cursor.getTime() <= dateTo.getTime();
@@ -106,6 +110,7 @@ export function enumerateAttendanceReportWorkdays(dateFrom: Date, dateTo: Date):
     if (cursor.getUTCDay() === 0) continue;
     result.push(cursor.toISOString().slice(0, 10));
   }
+
   return result;
 }
 
@@ -135,6 +140,7 @@ export function buildAttendancePeriodReport(params: {
   dailyRows: AttendanceReportDailyRow[];
 } {
   const usersById = new Map<string, AttendanceReportUser>();
+
   for (const user of params.users) {
     if (isAttendanceReportEligibleUser(user)) usersById.set(user.id, user);
   }
@@ -151,6 +157,7 @@ export function buildAttendancePeriodReport(params: {
 
   const dailyRows: AttendanceReportDailyRow[] = [];
   const employeeSummaries = new Map<string, AttendanceReportEmployeeSummary>();
+
   for (const user of users) {
     employeeSummaries.set(user.id, {
       userId: user.id,
@@ -195,9 +202,11 @@ export function buildAttendancePeriodReport(params: {
         unmatchedOutCount: stored?.unmatchedOutCount || 0,
         synthetic: !stored,
       };
+
       dailyRows.push(row);
 
       const total = employeeSummaries.get(user.id)!;
+
       if (status === 'present') total.presentDays += 1;
       if (status === 'absent') total.absentDays += 1;
       if (status === 'justified') total.justifiedDays += 1;
