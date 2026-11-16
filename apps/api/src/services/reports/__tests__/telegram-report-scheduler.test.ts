@@ -1,13 +1,13 @@
+import type { ManagerGroup } from '@dashboarduz/shared';
+
 import {
   classifyManagerGroup,
   compareManagerRows,
-  createStyledReportPdf,
   getBreakdownLayout,
   groupManagerRows,
-  type ManagerGroup,
-  type ReportManagerRow,
-  type ReportMetrics,
-} from '../telegram-report-scheduler';
+} from '../telegram-report/format';
+import { createStyledReportPdf } from '../telegram-report/report-pdf';
+import type { ReportManagerRow, ReportMetrics } from '../telegram-report/types';
 
 function createManagerRow(
   name: string,
