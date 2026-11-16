@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { adminProcedure, router } from '../trpc';
@@ -116,7 +116,7 @@ function normalizeHeader(value: unknown): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ')
-    .replace(/[’']/g, "'");
+    .replace(/[ï¿½']/g, "'");
 }
 
 function normalizePhone(value: unknown): string {
@@ -153,7 +153,7 @@ function parseDateRange(dateFrom: string, dateTo: string) {
   const from = new Date(`${dateFrom}T00:00:00+05:00`);
   const to = new Date(`${dateTo}T23:59:59.999+05:00`);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Davr sanalari noto‘g‘ri.' });
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Davr sanalari notoï¿½gï¿½ri.' });
   }
   return { from, to };
 }
@@ -251,29 +251,29 @@ function normalizeFinanceRows(rows: Array<Array<string | number | boolean | null
   return { normalizedRows, errors };
 }
 
-async function readTenantSettings(tenantId: string) {
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { settings: true } });
+async function readTenantSettings(tenantId: string, db: DbClient) {
+  const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { settings: true } });
   if (!tenant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ish maydoni topilmadi.' });
   return asSettingsObject(tenant.settings);
 }
 
-async function writeTenantSettings(tenantId: string, settings: Record<string, unknown>) {
-  await prisma.tenant.update({
+async function writeTenantSettings(tenantId: string, settings: Record<string, unknown>, db: DbClient) {
+  await db.tenant.update({
     where: { id: tenantId },
     data: { settings: JSON.parse(JSON.stringify(settings)) },
   });
 }
 
-async function getActiveSnapshot(tenantId: string): Promise<ActiveSnapshot | null> {
-  const settings = await readTenantSettings(tenantId);
+async function getActiveSnapshot(tenantId: string, db: DbClient): Promise<ActiveSnapshot | null> {
+  const settings = await readTenantSettings(tenantId, db);
   const incomeProblems = asSettingsObject(settings.incomeProblems);
   const activeSnapshot = incomeProblems.activeSnapshot;
   if (!activeSnapshot || typeof activeSnapshot !== 'object' || Array.isArray(activeSnapshot)) return null;
   return activeSnapshot as ActiveSnapshot;
 }
 
-async function loadProjectRows(tenantId: string, from: Date, to: Date): Promise<ProjectComparisonRow[]> {
-  const incomes = await prisma.income.findMany({
+async function loadProjectRows(tenantId: string, from: Date, to: Date, db: DbClient): Promise<ProjectComparisonRow[]> {
+  const incomes = await db.income.findMany({
     where: { tenantId, entryDate: { gte: from, lte: to } },
     orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }],
     include: {
@@ -292,7 +292,7 @@ async function loadProjectRows(tenantId: string, from: Date, to: Date): Promise<
 
   const subTariffNameById = new Map<string, string>();
   if (subTariffIds.length > 0) {
-    const subTariffs = await prisma.subTariff.findMany({
+    const subTariffs = await db.subTariff.findMany({
       where: { tenantId, id: { in: subTariffIds } },
       select: { id: true, name: true },
     });
@@ -508,7 +508,7 @@ function summarizeComparisons(dbGroups: Map<string, GroupSummary>, financeGroups
 
 export const incomeProblemsRouter = router({
   getActiveSnapshot: adminProcedure.query(async ({ ctx }) => {
-    const snapshot = await getActiveSnapshot(ctx.tenantId);
+    const snapshot = await getActiveSnapshot(ctx.tenantId, ctx.db);
     return snapshot
       ? {
           exists: true,
@@ -570,7 +570,7 @@ export const incomeProblemsRouter = router({
     .input(z.object({ workbookName: z.string().min(1).max(240), sheetName: z.string().min(1).max(120), rows: snapshotMatrixSchema, mapping: mappingSchema }))
     .mutation(async ({ ctx, input }) => {
       const { normalizedRows, errors } = normalizeFinanceRows(input.rows.slice(detectHeaderRow(input.rows) + 1), input.mapping);
-      const settings = await readTenantSettings(ctx.tenantId);
+      const settings = await readTenantSettings(ctx.tenantId, ctx.db);
       await writeTenantSettings(ctx.tenantId, {
         ...settings,
         incomeProblems: {
@@ -585,17 +585,17 @@ export const incomeProblemsRouter = router({
             rows: normalizedRows,
           },
         },
-      });
+      }, ctx.db);
       return { rowCount: normalizedRows.length, errors: errors.slice(0, 20) };
     }),
 
   compare: adminProcedure
     .input(z.object({ dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), search: z.string().trim().max(120).optional(), status: compareStatusSchema.optional() }))
     .query(async ({ ctx, input }) => {
-      const snapshot = await getActiveSnapshot(ctx.tenantId);
+      const snapshot = await getActiveSnapshot(ctx.tenantId, ctx.db);
       if (!snapshot) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Faol moliya snapshot yuklanmagan.' });
       const { from, to } = parseDateRange(input.dateFrom, input.dateTo);
-      const projectRows = await loadProjectRows(ctx.tenantId, from, to);
+      const projectRows = await loadProjectRows(ctx.tenantId, from, to, ctx.db);
       const financeRows = snapshot.rows.filter((row) => row.paymentDate && row.paymentDate >= input.dateFrom && row.paymentDate <= input.dateTo);
       const compared = summarizeComparisons(groupRows(projectRows), groupRows(financeRows));
       const search = normalizeName(input.search || '');
@@ -619,10 +619,10 @@ export const incomeProblemsRouter = router({
   customerDrilldown: adminProcedure
     .input(z.object({ dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), dbGroupKeys: z.array(z.string()).max(20), financeGroupKeys: z.array(z.string()).max(20) }))
     .query(async ({ ctx, input }) => {
-      const snapshot = await getActiveSnapshot(ctx.tenantId);
+      const snapshot = await getActiveSnapshot(ctx.tenantId, ctx.db);
       if (!snapshot) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Faol moliya snapshot yuklanmagan.' });
       const { from, to } = parseDateRange(input.dateFrom, input.dateTo);
-      const projectRows = await loadProjectRows(ctx.tenantId, from, to);
+      const projectRows = await loadProjectRows(ctx.tenantId, from, to, ctx.db);
       const dbMap = groupRows(projectRows);
       const financeMap = groupRows(snapshot.rows.filter((row) => row.paymentDate && row.paymentDate >= input.dateFrom && row.paymentDate <= input.dateTo));
       return {
