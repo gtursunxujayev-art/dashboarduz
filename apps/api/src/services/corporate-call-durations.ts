@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma, type DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 
 const REPORT_TZ_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
@@ -88,7 +88,9 @@ export async function getCorporateCallDurationByManager(params: {
   managerUserIds: string[];
   rangeStart: Date;
   rangeEnd: Date;
+  db?: DbClient;
 }): Promise<Map<string, number>> {
+  const db = params.db ?? systemPrisma;
   const result = new Map<string, number>();
   if (!params.managerUserIds.length) {
     return result;
@@ -97,7 +99,7 @@ export async function getCorporateCallDurationByManager(params: {
   const dayStart = getReportDayStart(params.rangeStart);
   const dayEnd = getReportDayStart(params.rangeEnd);
 
-  const grouped = await prisma.corporateCallDuration.groupBy({
+  const grouped = await db.corporateCallDuration.groupBy({
     by: ['managerUserId'],
     where: {
       tenantId: params.tenantId,
@@ -123,11 +125,13 @@ export async function getCorporateCallDurationTotal(params: {
   tenantId: string;
   rangeStart: Date;
   rangeEnd: Date;
+  db?: DbClient;
 }): Promise<number> {
+  const db = params.db ?? systemPrisma;
   const dayStart = getReportDayStart(params.rangeStart);
   const dayEnd = getReportDayStart(params.rangeEnd);
 
-  const aggregate = await prisma.corporateCallDuration.aggregate({
+  const aggregate = await db.corporateCallDuration.aggregate({
     where: {
       tenantId: params.tenantId,
       callDate: {

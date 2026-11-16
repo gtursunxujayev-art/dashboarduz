@@ -1,16 +1,13 @@
 import dotenv from 'dotenv';
 import app from './app';
 import { log, LogLevel } from './services/observability';
-import { ensureSchemaCompatibility } from './services/db/schema-compatibility';
 
 dotenv.config();
 
 const PORT = process.env.PORT || 3001;
 const HOST = '0.0.0.0';
 
-async function startApiServer() {
-  await ensureSchemaCompatibility();
-
+function startApiServer(): void {
   app.listen(Number(PORT), HOST, () => {
     const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
     const publicUrl = railwayDomain ? `https://${railwayDomain}` : process.env.PUBLIC_API_URL;
@@ -24,7 +21,7 @@ async function startApiServer() {
   });
 }
 
-startApiServer().catch((error: any) => {
+Promise.resolve().then(startApiServer).catch((error: any) => {
   log(LogLevel.ERROR, 'Failed to start API server', {
     error: error?.message || String(error),
   });

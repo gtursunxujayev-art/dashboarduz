@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { hasAgentRole } from '@dashboarduz/shared';
@@ -87,8 +87,9 @@ async function findSaleIdsBySubTariff(
   tenantId: string,
   subTariffId: string,
   filters: Record<string, unknown>[],
+  db: DbClient,
 ): Promise<string[]> {
-  const candidates = await prisma.income.findMany({
+  const candidates = await db.income.findMany({
     where: { tenantId, type: 'new_sale', ...(filters.length ? { AND: filters } : {}) },
     select: {
       id: true,
@@ -196,7 +197,10 @@ function buildCustomerCoursesByCustomer(
 async function buildActiveSaleChainMetrics(params: {
   tenantId: string;
   sales: SaleChainSaleRow[];
+  db: DbClient;
 }) {
+  const { db } = params;
+
   if (params.sales.length === 0) {
     return new Map<string, {
       agreementAmount: number;
@@ -207,7 +211,7 @@ async function buildActiveSaleChainMetrics(params: {
   }
 
   const saleIds = params.sales.map((sale) => sale.id);
-  const chainRows = await prisma.income.findMany({
+  const chainRows = await db.income.findMany({
     where: {
       tenantId: params.tenantId,
       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -256,7 +260,7 @@ export function buildTechnicalSaleIdSetByAgreement(params: {
 
 export const courseSalesRouter = router({
   options: protectedProcedure.query(async ({ ctx }) => {
-    const courses = await prisma.course.findMany({
+    const courses = await ctx.db.course.findMany({
       where: {
         tenantId: ctx.tenantId,
         isActive: true,
@@ -310,7 +314,7 @@ export const courseSalesRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const courses = await prisma.course.findMany({
+      const courses = await ctx.db.course.findMany({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
@@ -371,7 +375,7 @@ export const courseSalesRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
-      const categoryCourses = await prisma.course.findMany({
+      const categoryCourses = await ctx.db.course.findMany({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
@@ -420,7 +424,7 @@ export const courseSalesRouter = router({
         scopedFilters.push({ tariffId: input.tariffId });
       }
 
-      const matchedSales = await prisma.income.findMany({
+      const matchedSales = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
@@ -464,6 +468,7 @@ export const courseSalesRouter = router({
       const allChainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
         sales: filteredSales as SaleChainSaleRow[],
+        db: ctx.db,
       });
       const technicalSaleIds = buildTechnicalSaleIdSetByAgreement({
         sales: filteredSales,
@@ -484,7 +489,7 @@ export const courseSalesRouter = router({
       const movedInSaleIdSet = new Set<string>();
       if (nonTechnicalSaleIdSet.size > 0) {
         const [relinkLogs, tariffChangeRequests, saleUpdateLogs] = await Promise.all([
-          prisma.auditLog.findMany({
+          ctx.db.auditLog.findMany({
             where: {
               tenantId: ctx.tenantId,
               action: { in: ['customer_course_relink', 'income_debug_destructive_relink'] },
@@ -493,7 +498,7 @@ export const courseSalesRouter = router({
               metadata: true,
             },
           }),
-          prisma.incomeAdjustmentRequest.findMany({
+          ctx.db.incomeAdjustmentRequest.findMany({
             where: {
               tenantId: ctx.tenantId,
               type: 'tariff_change',
@@ -507,7 +512,7 @@ export const courseSalesRouter = router({
               customerId: true,
             },
           }),
-          prisma.auditLog.findMany({
+          ctx.db.auditLog.findMany({
             where: {
               tenantId: ctx.tenantId,
               action: 'customer_course_sale_update',
@@ -596,10 +601,10 @@ export const courseSalesRouter = router({
       ));
       const [breakdownSubTariffs, selectedCourseTariffs] = await Promise.all([
         breakdownSubTariffIds.length
-          ? prisma.subTariff.findMany({ where: { tenantId: ctx.tenantId, id: { in: breakdownSubTariffIds } }, select: { id: true, name: true } })
+          ? ctx.db.subTariff.findMany({ where: { tenantId: ctx.tenantId, id: { in: breakdownSubTariffIds } }, select: { id: true, name: true } })
           : Promise.resolve([] as Array<{ id: string; name: string }>),
         input.courseId && !input.tariffId
-          ? prisma.tariff.findMany({
+          ? ctx.db.tariff.findMany({
               where: { tenantId: ctx.tenantId, courseId: input.courseId, isActive: true },
               orderBy: { name: 'asc' },
               select: { id: true, name: true },
@@ -654,7 +659,7 @@ export const courseSalesRouter = router({
       const query = input.query?.trim();
       const skip = (input.page - 1) * input.limit;
 
-      const categoryCourses = await prisma.course.findMany({
+      const categoryCourses = await ctx.db.course.findMany({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
@@ -687,7 +692,7 @@ export const courseSalesRouter = router({
       }
       if (input.subTariffId) {
         scopedFilters.push({
-          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters]) },
+          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters], ctx.db) },
         });
       }
 
@@ -710,8 +715,8 @@ export const courseSalesRouter = router({
       };
 
       const [total, sales] = await Promise.all([
-        prisma.income.count({ where }),
-        prisma.income.findMany({
+        ctx.db.income.count({ where }),
+        ctx.db.income.findMany({
           where,
           orderBy: [{ entryDate: 'desc' }, { id: 'desc' }],
           skip,
@@ -791,7 +796,7 @@ export const courseSalesRouter = router({
 
       const [subTariffs, profileCourses, profileTariffs, allActiveSalesByCustomer] = await Promise.all([
         combinedSubTariffIds.length > 0
-          ? prisma.subTariff.findMany({
+          ? ctx.db.subTariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 id: { in: combinedSubTariffIds },
@@ -803,7 +808,7 @@ export const courseSalesRouter = router({
             })
           : Promise.resolve([]),
         profileCourseIds.length > 0
-          ? prisma.course.findMany({
+          ? ctx.db.course.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 id: { in: profileCourseIds },
@@ -815,7 +820,7 @@ export const courseSalesRouter = router({
             })
           : Promise.resolve([]),
         profileTariffIds.length > 0
-          ? prisma.tariff.findMany({
+          ? ctx.db.tariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 id: { in: profileTariffIds },
@@ -827,7 +832,7 @@ export const courseSalesRouter = router({
             })
           : Promise.resolve([]),
         customerIds.length > 0
-          ? prisma.income.findMany({
+          ? ctx.db.income.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 customerId: { in: customerIds },
@@ -868,10 +873,12 @@ export const courseSalesRouter = router({
       const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
         sales: sales,
+        db: ctx.db,
       });
       const allCustomerChainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
         sales: allActiveSalesByCustomer as SaleChainSaleRow[],
+        db: ctx.db,
       });
       const customerCoursesByCustomer = buildCustomerCoursesByCustomer(
         allActiveSalesByCustomer as Array<{
@@ -966,12 +973,12 @@ export const courseSalesRouter = router({
       }
       if (input.subTariffId) {
         scopedFilters.push({
-          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters]) },
+          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters], ctx.db) },
         });
       }
 
       const [course, matchedSales, profileSubTariffs] = await Promise.all([
-        prisma.course.findFirst({
+        ctx.db.course.findFirst({
           where: {
             tenantId: ctx.tenantId,
             id: input.courseId,
@@ -999,7 +1006,7 @@ export const courseSalesRouter = router({
             },
           },
         }),
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             type: 'new_sale',
@@ -1027,7 +1034,7 @@ export const courseSalesRouter = router({
           },
         }),
         input.subTariffId
-          ? prisma.subTariff.findMany({
+          ? ctx.db.subTariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 id: input.subTariffId,
@@ -1062,6 +1069,7 @@ export const courseSalesRouter = router({
       const allChainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
         sales: filteredSales as SaleChainSaleRow[],
+        db: ctx.db,
       });
       const technicalSaleIds = buildTechnicalSaleIdSetByAgreement({
         sales: filteredSales,
@@ -1079,7 +1087,7 @@ export const courseSalesRouter = router({
       const currentIncomeBySaleId = new Map<string, number>();
       if (saleIds.length > 0) {
         const [rangeIncomes, allIncomes] = await Promise.all([
-          prisma.income.findMany({
+          ctx.db.income.findMany({
             where: {
               tenantId: ctx.tenantId,
               lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -1098,7 +1106,7 @@ export const courseSalesRouter = router({
               paymentAmount: true,
             },
           }),
-          prisma.income.findMany({
+          ctx.db.income.findMany({
             where: {
               tenantId: ctx.tenantId,
               lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -1252,7 +1260,7 @@ export const courseSalesRouter = router({
       }
       if (input.subTariffId) {
         scopedFilters.push({
-          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters]) },
+          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters], ctx.db) },
         });
       }
 
@@ -1279,8 +1287,8 @@ export const courseSalesRouter = router({
       };
 
       const [total, sales] = await Promise.all([
-        prisma.income.count({ where }),
-        prisma.income.findMany({
+        ctx.db.income.count({ where }),
+        ctx.db.income.findMany({
           where,
           orderBy: [{ entryDate: 'desc' }, { id: 'desc' }],
           skip,
@@ -1360,7 +1368,7 @@ export const courseSalesRouter = router({
 
       const [subTariffs, profileCourses, profileTariffs, allActiveSalesByCustomer] = await Promise.all([
         combinedSubTariffIds.length > 0
-          ? prisma.subTariff.findMany({
+          ? ctx.db.subTariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 id: { in: combinedSubTariffIds },
@@ -1372,7 +1380,7 @@ export const courseSalesRouter = router({
             })
           : Promise.resolve([]),
         profileCourseIds.length > 0
-          ? prisma.course.findMany({
+          ? ctx.db.course.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 id: { in: profileCourseIds },
@@ -1384,7 +1392,7 @@ export const courseSalesRouter = router({
             })
           : Promise.resolve([]),
         profileTariffIds.length > 0
-          ? prisma.tariff.findMany({
+          ? ctx.db.tariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 id: { in: profileTariffIds },
@@ -1396,7 +1404,7 @@ export const courseSalesRouter = router({
             })
           : Promise.resolve([]),
         customerIds.length > 0
-          ? prisma.income.findMany({
+          ? ctx.db.income.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 customerId: { in: customerIds },
@@ -1437,10 +1445,12 @@ export const courseSalesRouter = router({
       const chainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
         sales: sales,
+        db: ctx.db,
       });
       const allCustomerChainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
         sales: allActiveSalesByCustomer as SaleChainSaleRow[],
+        db: ctx.db,
       });
       const customerCoursesByCustomer = buildCustomerCoursesByCustomer(
         allActiveSalesByCustomer as Array<{
@@ -1535,12 +1545,12 @@ export const courseSalesRouter = router({
       }
       if (input.subTariffId) {
         scopedFilters.push({
-          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters]) },
+          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters], ctx.db) },
         });
       }
 
       const [course, sales] = await Promise.all([
-        prisma.course.findFirst({
+        ctx.db.course.findFirst({
           where: {
             tenantId: ctx.tenantId,
             id: input.courseId,
@@ -1560,7 +1570,7 @@ export const courseSalesRouter = router({
             },
           },
         }),
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             type: 'new_sale',
@@ -1605,6 +1615,7 @@ export const courseSalesRouter = router({
       const allChainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
         sales: sales,
+        db: ctx.db,
       });
       const technicalSaleIds = buildTechnicalSaleIdSetByAgreement({
         sales,
@@ -1622,7 +1633,7 @@ export const courseSalesRouter = router({
 
       const [rangeIncomes, allIncomes, subTariffs] = await Promise.all([
         saleIds.length > 0
-          ? prisma.income.findMany({
+          ? ctx.db.income.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -1643,7 +1654,7 @@ export const courseSalesRouter = router({
             })
           : Promise.resolve([]),
         saleIds.length > 0
-          ? prisma.income.findMany({
+          ? ctx.db.income.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -1660,7 +1671,7 @@ export const courseSalesRouter = router({
             })
           : Promise.resolve([]),
         profileSubTariffIds.length > 0
-          ? prisma.subTariff.findMany({
+          ? ctx.db.subTariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 id: { in: profileSubTariffIds },
@@ -1714,7 +1725,7 @@ export const courseSalesRouter = router({
       }
 
       // Every tariff of the course, including deactivated ones: old sales on a retired tariff must still be counted.
-      const allCourseTariffs = await prisma.tariff.findMany({
+      const allCourseTariffs = await ctx.db.tariff.findMany({
         where: { tenantId: ctx.tenantId, courseId: course.id },
         select: { id: true, name: true },
       });
@@ -1728,7 +1739,7 @@ export const courseSalesRouter = router({
         breakdownSales.map((sale) => sale.resolvedSubTariffId).filter((id): id is string => Boolean(id)),
       ));
       const breakdownSubTariffs = breakdownSubTariffIds.length
-        ? await prisma.subTariff.findMany({ where: { tenantId: ctx.tenantId, id: { in: breakdownSubTariffIds } }, select: { id: true, name: true } })
+        ? await ctx.db.subTariff.findMany({ where: { tenantId: ctx.tenantId, id: { in: breakdownSubTariffIds } }, select: { id: true, name: true } })
         : [];
       const tariffBreakdown = buildTariffBreakdown({
         sales: breakdownSales,

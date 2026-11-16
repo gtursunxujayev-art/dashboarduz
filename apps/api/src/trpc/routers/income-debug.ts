@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { adminProcedure, router } from '../trpc';
 import {
   buildSaleChainMetricsBySaleId,
@@ -108,8 +108,8 @@ function parseSnapshotDate(value: string | null): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-async function getActiveSnapshot(tenantId: string): Promise<ActiveSnapshot | null> {
-  const tenant = await prisma.tenant.findUnique({
+async function getActiveSnapshot(tenantId: string, db: DbClient): Promise<ActiveSnapshot | null> {
+  const tenant = await db.tenant.findUnique({
     where: { id: tenantId },
     select: { settings: true },
   });
@@ -449,8 +449,11 @@ async function refreshCustomerProfileFromLatestActiveSaleForDebug(tx: Prisma.Tra
 async function getSaleChainConsistencySnapshot(params: {
   tenantId: string;
   saleId: string;
+  db: DbClient;
 }) {
-  const sale = await prisma.income.findFirst({
+  const { db } = params;
+
+  const sale = await db.income.findFirst({
     where: {
       id: params.saleId,
       tenantId: params.tenantId,
@@ -470,7 +473,7 @@ async function getSaleChainConsistencySnapshot(params: {
     return null;
   }
 
-  const chainRows = await prisma.income.findMany({
+  const chainRows = await db.income.findMany({
     where: {
       tenantId: params.tenantId,
       lifecycleStatus: 'active',
@@ -636,8 +639,8 @@ export const incomeDebugRouter = router({
         : Math.min(Math.max(limit * 10, 2000), 5000);
 
       const [totalMatchingCount, incomes] = await Promise.all([
-        prisma.income.count({ where }),
-        prisma.income.findMany({
+        ctx.db.income.count({ where }),
+        ctx.db.income.findMany({
           where,
           take: fetchTake,
           orderBy: [{ createdAt: 'desc' }, { entryDate: 'desc' }],
@@ -693,7 +696,7 @@ export const incomeDebugRouter = router({
 
       const [incomeCreateLogs, relinkLogs, exactRelinkLogs] = await Promise.all([
         incomeIds.length
-          ? prisma.auditLog.findMany({
+          ? ctx.db.auditLog.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 action: 'income_create',
@@ -714,7 +717,7 @@ export const incomeDebugRouter = router({
               },
             })
           : Promise.resolve([]),
-        prisma.auditLog.findMany({
+        ctx.db.auditLog.findMany({
           where: {
             tenantId: ctx.tenantId,
             action: 'customer_course_relink',
@@ -733,7 +736,7 @@ export const incomeDebugRouter = router({
             },
           },
         }),
-        prisma.auditLog.findMany({
+        ctx.db.auditLog.findMany({
           where: {
             tenantId: ctx.tenantId,
             action: 'customer_course_relink',
@@ -769,7 +772,7 @@ export const incomeDebugRouter = router({
 
       const exactRelinkIncomeIds = Array.from(exactRelinkLogByIncomeId.keys());
       const exactPossibleRelinkCount = exactRelinkIncomeIds.length > 0
-        ? await prisma.income.count({
+        ? await ctx.db.income.count({
             where: {
               ...where,
               id: { in: exactRelinkIncomeIds },
@@ -912,7 +915,7 @@ export const incomeDebugRouter = router({
       onlyMismatches: z.boolean().default(true),
     }))
     .query(async ({ ctx, input }) => {
-      const sales = await prisma.income.findMany({
+      const sales = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
@@ -947,7 +950,7 @@ export const incomeDebugRouter = router({
       });
       const saleIds = sales.map((sale) => sale.id);
       const chainRows = saleIds.length > 0
-        ? await prisma.income.findMany({
+        ? await ctx.db.income.findMany({
             where: {
               tenantId: ctx.tenantId,
               lifecycleStatus: 'active',
@@ -1020,7 +1023,7 @@ export const incomeDebugRouter = router({
       incomeIds: z.array(z.string().uuid()).min(1).max(300),
     }))
     .mutation(async ({ ctx, input }) => {
-      const activeSnapshot = await getActiveSnapshot(ctx.tenantId);
+      const activeSnapshot = await getActiveSnapshot(ctx.tenantId, ctx.db);
       if (!activeSnapshot || !Array.isArray(activeSnapshot.rows) || activeSnapshot.rows.length === 0) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -1028,7 +1031,7 @@ export const incomeDebugRouter = router({
         });
       }
 
-      const incomes = await prisma.income.findMany({
+      const incomes = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           id: { in: input.incomeIds },
@@ -1136,7 +1139,7 @@ export const incomeDebugRouter = router({
         }
 
         try {
-          const transactionResult = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+          const transactionResult = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
             await tx.income.update({
               where: { id: income.id },
               data: { entryDate: snapshotDate },
@@ -1189,7 +1192,7 @@ export const incomeDebugRouter = router({
       const updatedCount = results.filter((row) => row.status === 'updated').length;
       const skippedCount = results.length - updatedCount;
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1219,7 +1222,7 @@ export const incomeDebugRouter = router({
       limit: z.number().int().min(1).max(5000).default(2000),
     }))
     .mutation(async ({ ctx, input }) => {
-      const activeSales = await prisma.income.findMany({
+      const activeSales = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
@@ -1254,6 +1257,7 @@ export const incomeDebugRouter = router({
           const before = await getSaleChainConsistencySnapshot({
             tenantId: ctx.tenantId,
             saleId: sale.id,
+            db: ctx.db,
           });
           if (!before) {
             results.push({
@@ -1279,7 +1283,7 @@ export const incomeDebugRouter = router({
             continue;
           }
 
-          const normalized = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+          const normalized = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
             return recomputeSaleChainStateFully(tx, {
               tenantId: ctx.tenantId,
               saleId: sale.id,
@@ -1289,6 +1293,7 @@ export const incomeDebugRouter = router({
           const after = await getSaleChainConsistencySnapshot({
             tenantId: ctx.tenantId,
             saleId: normalized.canonicalSaleId,
+            db: ctx.db,
           });
 
           if (!after?.consistency.ok) {
@@ -1330,7 +1335,7 @@ export const incomeDebugRouter = router({
       const failedCount = results.filter((row) => row.status === 'failed').length;
       const skippedCount = results.filter((row) => row.status === 'skipped').length;
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1370,7 +1375,7 @@ export const incomeDebugRouter = router({
         });
       }
 
-      const sourceSale = await prisma.income.findFirst({
+      const sourceSale = await ctx.db.income.findFirst({
         where: {
           id: input.sourceSaleIncomeId,
           tenantId: ctx.tenantId,
@@ -1385,7 +1390,7 @@ export const incomeDebugRouter = router({
           tariffId: true,
         },
       });
-      const targetSale = await prisma.income.findFirst({
+      const targetSale = await ctx.db.income.findFirst({
         where: {
           id: input.targetSaleIncomeId,
           tenantId: ctx.tenantId,
@@ -1415,7 +1420,7 @@ export const incomeDebugRouter = router({
         });
       }
 
-      const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const result = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         const sourceChain = await tx.income.findMany({
           where: {
             tenantId: ctx.tenantId,
@@ -1529,7 +1534,7 @@ export const incomeDebugRouter = router({
         };
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1556,7 +1561,7 @@ export const incomeDebugRouter = router({
       hidden: z.boolean().default(true),
     }))
     .mutation(async ({ ctx, input }) => {
-      const incomes = await prisma.income.findMany({
+      const incomes = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           id: { in: input.incomeIds },
@@ -1573,7 +1578,7 @@ export const incomeDebugRouter = router({
           debugHidden: input.hidden,
         } as Prisma.InputJsonValue;
 
-        return prisma.income.update({
+        return ctx.db.income.update({
           where: { id: income.id },
           data: {
             legacyImportMeta: nextMeta,
@@ -1582,10 +1587,10 @@ export const incomeDebugRouter = router({
       });
 
       if (updates.length) {
-        await prisma.$transaction(updates);
+        await ctx.db.$transaction(updates);
       }
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,

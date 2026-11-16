@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import {
   finalizeBonusMonth,
   getTashkentMonthKey,
@@ -26,8 +26,8 @@ export function getPreviousTashkentMonthStart(now: Date): Date {
 export async function autoFinalizePreviousBonusMonth(now = new Date()): Promise<number> {
   const month = getPreviousTashkentMonthStart(now);
   const [tenants, finalized] = await Promise.all([
-    prisma.tenant.findMany({ select: { id: true } }),
-    prisma.bonusMonthSnapshot.findMany({ where: { month }, select: { tenantId: true } }),
+    systemPrisma.tenant.findMany({ select: { id: true } }),
+    systemPrisma.bonusMonthSnapshot.findMany({ where: { month }, select: { tenantId: true } }),
   ]);
   const alreadyFinalized = new Set(finalized.map((snapshot) => snapshot.tenantId));
   let count = 0;

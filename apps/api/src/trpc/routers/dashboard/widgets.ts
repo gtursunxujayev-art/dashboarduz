@@ -1,6 +1,5 @@
 import { buildTechnicalSaleIdSet, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 import {
-  prisma,
   z,
   protectedProcedure,
   dashboardRangeSchema,
@@ -11,7 +10,7 @@ import {
 
 export const widgetProcedures = {
   widgetCatalogOptions: protectedProcedure.query(async ({ ctx }) => {
-    const courses = await prisma.course.findMany({
+    const courses = await ctx.db.course.findMany({
       where: {
         tenantId: ctx.tenantId,
         isActive: true,
@@ -82,10 +81,10 @@ export const widgetProcedures = {
 
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
 
       const widgetCourseIds = Array.from(new Set(input.widgets.map((widget) => widget.courseId)));
-      const salesRaw = await prisma.income.findMany({
+      const salesRaw = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',

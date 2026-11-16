@@ -1,5 +1,4 @@
 import {
-  prisma,
   TRPCError,
   z,
   asObject,
@@ -20,7 +19,6 @@ import {
   INCOME_LIFECYCLE_REFUNDED,
   REPORT_MONTH_LABELS_UZ,
   REPORT_TZ_OFFSET_MS,
-  isMissingUserMappingColumnError,
   normalizeTextToken,
   normalizeDigits,
   isAllowedUtelManagerExtension,
@@ -136,7 +134,7 @@ export const summaryProcedures = {
       }),
     )
     .query(async ({ ctx, input }) => {
-      const corporateRevision = await prisma.corporateCallDuration.aggregate({
+      const corporateRevision = await ctx.db.corporateCallDuration.aggregate({
         where: { tenantId: ctx.tenantId },
         _max: { updatedAt: true },
       });
@@ -157,8 +155,8 @@ export const summaryProcedures = {
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const tashkiliyOnly = isTashkiliyOnly(ctx.user.roles);
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
-      const tenant = await prisma.tenant.findUnique({
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const tenant = await ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
         select: { settings: true },
       });
@@ -191,7 +189,7 @@ export const summaryProcedures = {
         logContext: sourceLogContext,
         reasonFallback: 'amo_context_failed',
         fallback: null as Awaited<ReturnType<typeof getTenantAmoCRMContext>>,
-        run: async () => withTimeout(getTenantAmoCRMContext(ctx.tenantId), 2500, 'amo_context_timeout'),
+        run: async () => withTimeout(getTenantAmoCRMContext(ctx.tenantId, ctx.db), 2500, 'amo_context_timeout'),
       });
       if (!amoContext) {
         sourceStatus.amoContext.ok = false;
@@ -206,7 +204,7 @@ export const summaryProcedures = {
             logContext: sourceLogContext,
             reasonFallback: 'catalog_fetch_failed',
             fallback: [] as Awaited<ReturnType<typeof collectCatalogFieldOptions>>,
-            run: async () => withTimeout(collectCatalogFieldOptions(ctx.tenantId), 2500, 'catalog_timeout'),
+            run: async () => withTimeout(collectCatalogFieldOptions(ctx.tenantId, ctx.db), 2500, 'catalog_timeout'),
           })
         : [];
       if (!amoContext) {
@@ -257,7 +255,7 @@ export const summaryProcedures = {
       const [pendingNotifications, activeIntegrations, newSalesIncomesRaw, incomesForSellersRaw, callsForSellers] = await Promise.all([
         scope.isScoped
           ? Promise.resolve(0)
-          : prisma.notification.count({
+          : ctx.db.notification.count({
               where: {
                 tenantId: ctx.tenantId,
                 status: {
@@ -271,13 +269,13 @@ export const summaryProcedures = {
             }),
         scope.isScoped
           ? Promise.resolve(0)
-          : prisma.integration.count({
+          : ctx.db.integration.count({
               where: {
                 tenantId: ctx.tenantId,
                 status: 'active',
               },
             }),
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             type: 'new_sale',
@@ -308,7 +306,7 @@ export const summaryProcedures = {
             },
           },
         }),
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -338,10 +336,10 @@ export const summaryProcedures = {
             },
           },
         }),
-        prisma.call.findMany({
+        ctx.db.call.findMany({
           where: {
             tenantId: ctx.tenantId,
-            provider: await getCallsProvider(ctx.tenantId),
+            provider: await getCallsProvider(ctx.tenantId, ctx.db),
             startedAt: {
               gte: rangeStart,
               lte: rangeEnd,
@@ -363,7 +361,7 @@ export const summaryProcedures = {
       ]);
 
       // Technical sales (agreement == 1) and their repayments are bookkeeping rows, not real income.
-      const technicalSaleIds = await loadTechnicalSaleIdsForRows(ctx.tenantId, incomesForSellersRaw);
+      const technicalSaleIds = await loadTechnicalSaleIdsForRows(ctx.tenantId, incomesForSellersRaw, ctx.db);
       const newSalesIncomes = excludeTechnicalRows(newSalesIncomesRaw, technicalSaleIds);
       const incomesForSellers = excludeTechnicalRows(incomesForSellersRaw, technicalSaleIds);
 
@@ -374,60 +372,28 @@ export const summaryProcedures = {
         amocrmResponsibleUserId: string | null;
         utelManagerExternalId: string | null;
       }> = [];
-      try {
-        agentUsers = await prisma.user.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            isActive: true,
-            roles: {
-              hasSome: [...AGENT_ROLES, 'TeamLeader'],
-            },
-            ...(scope.isScoped
-              ? {
-                  id: ctx.user.userId,
-                }
-              : {}),
+      agentUsers = await ctx.db.user.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          isActive: true,
+          roles: {
+            hasSome: [...AGENT_ROLES, 'TeamLeader'],
           },
-          orderBy: [{ name: 'asc' }, { username: 'asc' }],
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            amocrmResponsibleUserId: true,
-            utelManagerExternalId: true,
-          },
-        });
-      } catch (error) {
-        if (!isMissingUserMappingColumnError(error)) {
-          throw error;
-        }
-        const fallbackUsers = await prisma.user.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            isActive: true,
-            roles: {
-              hasSome: [...AGENT_ROLES, 'TeamLeader'],
-            },
-            ...(scope.isScoped
-              ? {
-                  id: ctx.user.userId,
-                }
-              : {}),
-          },
-          orderBy: [{ name: 'asc' }, { username: 'asc' }],
-          select: {
-            id: true,
-            name: true,
-            username: true,
-          },
-        });
-        agentUsers = (fallbackUsers as Array<{ id: string; name: string | null; username: string | null }>)
-          .map((user) => ({
-            ...user,
-            amocrmResponsibleUserId: null,
-            utelManagerExternalId: null,
-          }));
-      }
+          ...(scope.isScoped
+            ? {
+                id: ctx.user.userId,
+              }
+            : {}),
+        },
+        orderBy: [{ name: 'asc' }, { username: 'asc' }],
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          amocrmResponsibleUserId: true,
+          utelManagerExternalId: true,
+        },
+      });
 
       let activityFetchMs = 0;
       const activityFetchStartedMs = Date.now();
@@ -488,6 +454,7 @@ export const summaryProcedures = {
           managerUserIds: agentUsers.map((agent) => agent.id),
           rangeStart,
           rangeEnd,
+          db: ctx.db,
         }),
       });
 
@@ -837,7 +804,7 @@ export const summaryProcedures = {
       return getOrSet(financeCacheKey, 120, async () => {
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
 
       const effectiveManagerUserId = scope.isScoped
         ? ctx.user.userId
@@ -922,7 +889,7 @@ export const summaryProcedures = {
         currentMillisecond,
       );
 
-      const technicalSales = await prisma.income.findMany({
+      const technicalSales = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
@@ -954,7 +921,7 @@ export const summaryProcedures = {
         managers,
         activeIncomeAnalyticsRows,
       ] = await Promise.all([
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where,
           // No row limit: every total below is summed from this list. Only recentIncomes is trimmed.
           orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
@@ -995,7 +962,7 @@ export const summaryProcedures = {
             },
           },
         }),
-        prisma.course.findMany({
+        ctx.db.course.findMany({
           where: { tenantId: ctx.tenantId, isActive: true },
           orderBy: { name: 'asc' },
           select: {
@@ -1004,7 +971,7 @@ export const summaryProcedures = {
             category: true,
           },
         }),
-        prisma.user.findMany({
+        ctx.db.user.findMany({
           where: {
             tenantId: ctx.tenantId,
             isActive: true,
@@ -1020,7 +987,7 @@ export const summaryProcedures = {
             roles: true,
           },
         }),
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             ...analyticsBaseWhere,
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -1083,7 +1050,7 @@ export const summaryProcedures = {
       const activeSaleChainMetricsBySaleId = activeNewSales.length > 0
         ? buildSaleChainMetricsBySaleId({
             sales: activeNewSales,
-            chainRows: await prisma.income.findMany({
+            chainRows: await ctx.db.income.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,

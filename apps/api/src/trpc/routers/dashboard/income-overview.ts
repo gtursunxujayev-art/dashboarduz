@@ -1,9 +1,10 @@
+import type { DbClient } from '@dashboarduz/db';
+
 import {
   classifyCourseCategoryFromField,
   getAgentResponsibleScope,
   getRangeStart,
   INCOME_LIFECYCLE_ACTIVE,
-  prisma,
   protectedProcedure,
 } from './helpers';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
@@ -17,8 +18,11 @@ async function sumIncomeSplit(params: {
   rangeEnd: Date;
   managerUserId: string | null;
   technicalSaleIds: Set<string>;
+  db: DbClient;
 }): Promise<IncomeSplit> {
-  const rows = await prisma.income.findMany({
+  const { db } = params;
+
+  const rows = await db.income.findMany({
     where: {
       tenantId: params.tenantId,
       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -89,10 +93,10 @@ type SelectedCourse = {
 export const incomeOverviewProcedures = {
   incomeOverview: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();
-    const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+    const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
     const managerUserId = scope.isScoped ? ctx.user.userId : null;
 
-    const technicalSales = await prisma.income.findMany({
+    const technicalSales = await ctx.db.income.findMany({
       where: {
         tenantId: ctx.tenantId,
         type: 'new_sale',
@@ -110,9 +114,9 @@ export const incomeOverviewProcedures = {
     const technicalSaleIds = buildTechnicalSaleIdSet(technicalSales);
 
     const [daily, weekly, monthly] = await Promise.all([
-      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('today', now), rangeEnd: now, managerUserId, technicalSaleIds }),
-      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('week', now), rangeEnd: now, managerUserId, technicalSaleIds }),
-      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('month', now), rangeEnd: now, managerUserId, technicalSaleIds }),
+      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('today', now), rangeEnd: now, managerUserId, technicalSaleIds, db: ctx.db }),
+      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('week', now), rangeEnd: now, managerUserId, technicalSaleIds, db: ctx.db }),
+      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('month', now), rangeEnd: now, managerUserId, technicalSaleIds, db: ctx.db }),
     ]);
 
     return { daily, weekly, monthly };
@@ -125,7 +129,7 @@ export const incomeOverviewProcedures = {
       intensive: null,
     };
 
-    const selectedCourses = await loadSelectedReportCourses(ctx.tenantId);
+    const selectedCourses = await loadSelectedReportCourses(ctx.tenantId, ctx.db);
     for (const course of selectedCourses) {
       const category: SelectedCourseCategory = course.dashboardCategory;
       if (result[category]) continue;

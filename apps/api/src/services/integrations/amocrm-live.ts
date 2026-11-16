@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma, type DbClient } from '@dashboarduz/db';
 import { decryptIntegrationTokens } from '../security/encryption';
 
 export type FieldOptionSource = 'catalog' | 'system';
@@ -167,8 +167,11 @@ export function getSystemLeadFieldOptions(): LeadFieldOption[] {
   ];
 }
 
-export async function getTenantAmoCRMContext(tenantId: string): Promise<TenantAmoCRMContext | null> {
-  const integration = await prisma.integration.findUnique({
+export async function getTenantAmoCRMContext(
+  tenantId: string,
+  db: DbClient = systemPrisma,
+): Promise<TenantAmoCRMContext | null> {
+  const integration = await db.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,

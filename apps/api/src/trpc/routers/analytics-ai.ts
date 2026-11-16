@@ -1,6 +1,6 @@
 import { protectedProcedure, router } from '../trpc';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import {
@@ -96,46 +96,6 @@ function safeJsonObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function isMissingMetaTableError(error: unknown): boolean {
-  const raw = error as any;
-  const message = [
-    raw?.message,
-    raw?.meta?.cause,
-    raw?.meta?.modelName,
-    raw?.code,
-  ].map((item) => String(item || '')).join(' ');
-  return (
-    raw?.code === 'P2021'
-    || message.includes('meta_ad_insights')
-    || message.includes('MetaAdInsight')
-  ) && (
-    message.includes('does not exist')
-    || message.includes('does not exist in the current database')
-    || message.includes('relation')
-    || raw?.code === 'P2021'
-  );
-}
-
-function isMissingAnalyticsReportTableError(error: unknown): boolean {
-  const raw = error as any;
-  const message = [
-    raw?.message,
-    raw?.meta?.cause,
-    raw?.meta?.modelName,
-    raw?.code,
-  ].map((item) => String(item || '')).join(' ');
-  return (
-    raw?.code === 'P2021'
-    || message.includes('analytics_ai_reports')
-    || message.includes('AnalyticsAiReport')
-  ) && (
-    message.includes('does not exist')
-    || message.includes('does not exist in the current database')
-    || message.includes('relation')
-    || raw?.code === 'P2021'
-  );
-}
-
 function extractAttributionTokens(metadata: unknown): string[] {
   const data = safeJsonObject(metadata);
   const tokens = new Set<string>();
@@ -154,13 +114,13 @@ function extractAttributionTokens(metadata: unknown): string[] {
   return Array.from(tokens);
 }
 
-export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, rangeEnd: Date, focus: z.infer<typeof aiFocusSchema>) {
+export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, rangeEnd: Date, focus: z.infer<typeof aiFocusSchema>, db: DbClient) {
   const [
     leads,
     incomesRaw,
     calls,
   ] = await Promise.all([
-    prisma.lead.findMany({
+    db.lead.findMany({
       where: {
         tenantId,
         OR: [
@@ -176,7 +136,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
         responsibleUserId: true,
       },
     }),
-    prisma.income.findMany({
+    db.income.findMany({
       where: {
         tenantId,
         lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -199,10 +159,10 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
         },
       },
     }),
-    prisma.call.findMany({
+    db.call.findMany({
       where: {
         tenantId,
-        provider: await getCallsProviderFilter(tenantId),
+        provider: await getCallsProviderFilter(tenantId, db),
         startedAt: { gte: rangeStart, lte: rangeEnd },
       },
       select: {
@@ -226,33 +186,33 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
     impressions: number;
     leads: number;
   }> = [];
-  let metaTableMissing = false;
-  try {
-    metaRows = await prisma.metaAdInsight.findMany({
-      where: {
-        tenantId,
-        date: { gte: new Date(`${toDateOnly(rangeStart)}T00:00:00.000Z`), lte: new Date(`${toDateOnly(rangeEnd)}T00:00:00.000Z`) },
-      },
-      select: {
-        campaignId: true,
-        campaignName: true,
-        adSetId: true,
-        adSetName: true,
-        adId: true,
-        adName: true,
-        spend: true,
-        clicks: true,
-        impressions: true,
-        leads: true,
-      },
-      orderBy: [{ date: 'asc' }, { spend: 'desc' }],
-    });
-  } catch (error) {
-    if (!isMissingMetaTableError(error)) {
-      throw error;
-    }
-    metaTableMissing = true;
-  }
+  const metaTableMissing = false;
+  metaRows = await db.metaAdInsight.findMany({
+    where: {
+      tenantId,
+      date: { gte: new Date(`${toDateOnly(rangeStart)}T00:00:00.000Z`), lte: new Date(`${toDateOnly(rangeEnd)}T00:00:00.000Z`) },
+    },
+    select: {
+      campaignId: true,
+      campaignName: true,
+      adSetId: true,
+      adSetName: true,
+      adId: true,
+      adName: true,
+      spend: true,
+      clicks: true,
+      impressions: true,
+      leads: true,
+    },
+    orderBy: [{ date: 'asc' }, { spend: 'desc' }],
+  }).then((rows) => rows.map((row) => ({
+    ...row,
+    // '' marks a level Meta did not return; downstream code expects null for that.
+    campaignId: row.campaignId || null,
+    adSetId: row.adSetId || null,
+    adId: row.adId || null,
+    spend: Number(row.spend),
+  })));
 
   const sourceCounts = new Map<string, number>();
   const attributionTokens = new Set<string>();
@@ -270,7 +230,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
   }
 
   // Technical sales (agreement == 1) and their repayments are not real income.
-  const incomes = excludeTechnicalRows(incomesRaw, await loadTechnicalSaleIdsForRows(tenantId, incomesRaw));
+  const incomes = excludeTechnicalRows(incomesRaw, await loadTechnicalSaleIdsForRows(tenantId, incomesRaw, db));
   const incomeTotal = sum(incomes.map((income) => income.paymentAmount || 0));
   const agreementTotal = sum(incomes.filter((income) => income.type === 'new_sale').map((income) => resolveSaleAgreementAmount(income)));
   const newSales = incomes.filter((income) => income.type === 'new_sale').length;
@@ -580,7 +540,7 @@ export const analyticsAiRouter = router({
     .input(analyticsAiInputSchema.omit({ focus: true }))
     .query(async ({ input, ctx }) => {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, new Date(), input.dateFrom, input.dateTo);
-      const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, 'meta_targeting');
+      const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, 'meta_targeting', ctx.db);
       return inputSummary.meta;
     }),
 
@@ -588,33 +548,26 @@ export const analyticsAiRouter = router({
     .input(analyticsAiInputSchema)
     .mutation(async ({ input, ctx }) => {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, new Date(), input.dateFrom, input.dateTo);
-      const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, input.focus);
+      const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, input.focus, ctx.db);
       const generated = await generateWithAiProvider(inputSummary);
 
       let reportId: string | null = null;
-      let reportSaved = true;
-      try {
-        const report = await prisma.analyticsAiReport.create({
-          data: {
-            tenantId: ctx.tenantId,
-            userId: ctx.user.userId,
-            range: input.range,
-            dateFrom: rangeStart,
-            dateTo: rangeEnd,
-            focus: input.focus,
-            promptVersion: ANALYTICS_AI_PROMPT_VERSION,
-            model: generated.model,
-            inputSummary: inputSummary as any,
-            result: generated.result as any,
-          },
-        });
-        reportId = report.id;
-      } catch (error) {
-        if (!isMissingAnalyticsReportTableError(error)) {
-          throw error;
-        }
-        reportSaved = false;
-      }
+      const reportSaved = true;
+      const report = await ctx.db.analyticsAiReport.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          range: input.range,
+          dateFrom: rangeStart,
+          dateTo: rangeEnd,
+          focus: input.focus,
+          promptVersion: ANALYTICS_AI_PROMPT_VERSION,
+          model: generated.model,
+          inputSummary: inputSummary as any,
+          result: generated.result as any,
+        },
+      });
+      reportId = report.id;
 
       return {
         reportId,

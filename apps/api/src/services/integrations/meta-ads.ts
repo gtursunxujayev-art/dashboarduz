@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma, type DbClient } from '@dashboarduz/db';
 import { decryptIntegrationTokens } from '../security/encryption';
 
 const META_API_VERSION = process.env.META_API_VERSION || 'v20.0';
@@ -31,11 +31,11 @@ type MetaInsightRow = {
 export type NormalizedMetaInsight = {
   date: Date;
   accountId: string;
-  campaignId: string | null;
+  campaignId: string;
   campaignName: string | null;
-  adSetId: string | null;
+  adSetId: string;
   adSetName: string | null;
-  adId: string | null;
+  adId: string;
   adName: string | null;
   impressions: number;
   clicks: number;
@@ -175,11 +175,11 @@ export async function fetchMetaInsights(
       rows.push({
         date: parseMetaDate(row.date_start),
         accountId,
-        campaignId: row.campaign_id || null,
+        campaignId: row.campaign_id || '',
         campaignName: row.campaign_name || null,
-        adSetId: row.adset_id || null,
+        adSetId: row.adset_id || '',
         adSetName: row.adset_name || null,
-        adId: row.ad_id || null,
+        adId: row.ad_id || '',
         adName: row.ad_name || null,
         impressions: toInteger(row.impressions),
         clicks: toInteger(row.clicks),
@@ -197,8 +197,13 @@ export async function fetchMetaInsights(
   return rows;
 }
 
-export async function syncMetaAdInsightsForTenant(tenantId: string, dateFrom: Date, dateTo: Date) {
-  const integration = await prisma.integration.findUnique({
+export async function syncMetaAdInsightsForTenant(
+  tenantId: string,
+  dateFrom: Date,
+  dateTo: Date,
+  db: DbClient = systemPrisma,
+) {
+  const integration = await db.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,
@@ -223,18 +228,6 @@ export async function syncMetaAdInsightsForTenant(tenantId: string, dateFrom: Da
   let imported = 0;
 
   for (const insight of insights) {
-    const existing = await prisma.metaAdInsight.findFirst({
-      where: {
-        tenantId,
-        date: insight.date,
-        accountId: insight.accountId,
-        campaignId: insight.campaignId,
-        adSetId: insight.adSetId,
-        adId: insight.adId,
-      },
-      select: { id: true },
-    });
-
     const data = {
       campaignName: insight.campaignName,
       adSetName: insight.adSetName,
@@ -249,28 +242,25 @@ export async function syncMetaAdInsightsForTenant(tenantId: string, dateFrom: Da
       raw: insight.raw as any,
     };
 
-    if (existing) {
-      await prisma.metaAdInsight.update({
-        where: { id: existing.id },
-        data,
-      });
-    } else {
-      await prisma.metaAdInsight.create({
-        data: {
-          tenantId,
-          date: insight.date,
-          accountId: insight.accountId,
-          campaignId: insight.campaignId,
-          adSetId: insight.adSetId,
-          adId: insight.adId,
-          ...data,
-        },
-      });
-    }
+    const key = {
+      tenantId,
+      date: insight.date,
+      accountId: insight.accountId,
+      campaignId: insight.campaignId,
+      adSetId: insight.adSetId,
+      adId: insight.adId,
+    };
+
+    // Atomic insert-or-update on the null-safe unique key (no find-then-create race).
+    await db.metaAdInsight.upsert({
+      where: { tenantId_date_accountId_campaignId_adSetId_adId: key },
+      create: { ...key, ...data },
+      update: data,
+    });
     imported += 1;
   }
 
-  await prisma.integration.update({
+  await db.integration.update({
     where: { id: integration.id },
     data: {
       lastSyncAt: new Date(),

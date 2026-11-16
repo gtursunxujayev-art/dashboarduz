@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import express from 'express';
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import type { Request, Response } from 'express';
 import { getDLQMetrics, getQueue, getQueueMetrics, QueueName } from '../services/queue/queues';
 import { amocrmService } from '../services/integrations/amocrm';
@@ -513,11 +513,6 @@ function isUniqueViolation(error: any): boolean {
   return error?.code === 'P2002';
 }
 
-function isMissingWebhookIdempotencyColumnError(error: unknown): boolean {
-  const message = String((error as any)?.message || '').toLowerCase();
-  return message.includes('idempotencykey') && message.includes('does not exist');
-}
-
 async function enqueueWebhookJob(params: {
   jobName: string;
   eventId: string;
@@ -547,7 +542,7 @@ async function writeWebhookRejectionAudit(params: {
   metadata?: Record<string, unknown>;
 }) {
   try {
-    await prisma.auditLog.create({
+    await systemPrisma.auditLog.create({
       data: {
         tenantId: params.tenantId,
         action: 'webhook_rejected',
@@ -580,7 +575,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
     }
 
     const accountId = String(accountIdRaw);
-    const integration = await prisma.integration.findFirst({
+    const integration = await systemPrisma.integration.findFirst({
       where: {
         type: 'amocrm',
         status: 'active',
@@ -611,7 +606,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
 
     let event;
     try {
-      event = await prisma.webhookEvent.create({
+      event = await systemPrisma.webhookEvent.create({
         data: {
           tenantId: integration.tenantId,
           source: 'amocrm',
@@ -627,21 +622,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
         logger.info({ msg: 'Duplicate AmoCRM webhook ignored', idempotencyKey });
         return res.status(200).json({ received: true, duplicate: true });
       }
-      if (isMissingWebhookIdempotencyColumnError(error)) {
-        logger.warn({ msg: 'WebhookEvent.idempotencyKey column missing, creating event without idempotency key' });
-        event = await prisma.webhookEvent.create({
-          data: {
-            tenantId: integration.tenantId,
-            source: 'amocrm',
-            eventType,
-            rawPayload: req.body,
-            signature: signature || null,
-            processed: false,
-          },
-        });
-      } else {
-        throw error;
-      }
+      throw error;
     }
 
     await enqueueWebhookJob({
@@ -651,7 +632,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
       idempotencyKey,
     });
 
-    await prisma.auditLog.create({
+    await systemPrisma.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: 'webhook_received',
@@ -699,7 +680,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
       return res.status(400).json({ error: 'Missing integration key' });
     }
 
-    const integration = await prisma.integration.findFirst({
+    const integration = await systemPrisma.integration.findFirst({
       where: {
         type: 'voip_utel',
         status: 'active',
@@ -776,7 +757,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
 
     let event;
     try {
-      event = await prisma.webhookEvent.create({
+      event = await systemPrisma.webhookEvent.create({
         data: {
           tenantId: integration.tenantId,
           source: 'voip',
@@ -792,21 +773,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
         logger.info({ msg: 'Duplicate VoIP webhook ignored', idempotencyKey, provider });
         return res.status(200).json({ received: true, duplicate: true });
       }
-      if (isMissingWebhookIdempotencyColumnError(error)) {
-        logger.warn({ msg: 'WebhookEvent.idempotencyKey column missing, creating VoIP event without idempotency key' });
-        event = await prisma.webhookEvent.create({
-          data: {
-            tenantId: integration.tenantId,
-            source: 'voip',
-            eventType,
-            rawPayload: preparedPayload.payload as any,
-            signature: signature || null,
-            processed: false,
-          },
-        });
-      } else {
-        throw error;
-      }
+      throw error;
     }
 
     await enqueueWebhookJob({
@@ -816,7 +783,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
       idempotencyKey,
     });
 
-    await prisma.auditLog.create({
+    await systemPrisma.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: 'webhook_received',
@@ -860,7 +827,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       });
     }
 
-    const integration = await prisma.integration.findFirst({
+    const integration = await systemPrisma.integration.findFirst({
       where: {
         type: 'voip_utel',
         status: 'active',
@@ -880,12 +847,12 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
     }
 
     const [totalCalls, recentCalls, receivedEvents] = await Promise.all([
-      prisma.call.count({
+      systemPrisma.call.count({
         where: {
           tenantId: integration.tenantId,
         },
       }),
-      prisma.call.findMany({
+      systemPrisma.call.findMany({
         where: {
           tenantId: integration.tenantId,
         },
@@ -903,7 +870,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
           metadata: true,
         },
       }),
-      prisma.webhookEvent.count({
+      systemPrisma.webhookEvent.count({
         where: {
           tenantId: integration.tenantId,
           source: 'voip',
@@ -995,7 +962,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
     let managerByExtension = new Map<string, string>();
     if (extensionKeys.length > 0) {
       try {
-        const mappedUsers = await prisma.user.findMany({
+        const mappedUsers = await systemPrisma.user.findMany({
           where: {
             tenantId: integration.tenantId,
             isActive: true,
@@ -1031,28 +998,28 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
         recentWebhookEvents,
         recentWebhookRejections,
       ] = await Promise.all([
-        prisma.webhookEvent.count({
+        systemPrisma.webhookEvent.count({
           where: {
             tenantId: integration.tenantId,
             source: 'voip',
             processed: true,
           },
         }),
-        prisma.webhookEvent.count({
+        systemPrisma.webhookEvent.count({
           where: {
             tenantId: integration.tenantId,
             source: 'voip',
             processed: false,
           },
         }),
-        prisma.webhookEvent.count({
+        systemPrisma.webhookEvent.count({
           where: {
             tenantId: integration.tenantId,
             source: 'voip',
             errorMessage: { not: null },
           },
         }),
-        prisma.webhookEvent.findMany({
+        systemPrisma.webhookEvent.findMany({
           where: {
             tenantId: integration.tenantId,
             source: 'voip',
@@ -1070,7 +1037,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
             rawPayload: true,
           },
         }),
-        prisma.auditLog.findMany({
+        systemPrisma.auditLog.findMany({
           where: {
             tenantId: integration.tenantId,
             action: 'webhook_rejected',
@@ -1169,7 +1136,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Missing Telegram secret token' });
     }
 
-    const integration = await prisma.integration.findFirst({
+    const integration = await systemPrisma.integration.findFirst({
       where: {
         type: 'telegram',
         status: 'active',
@@ -1211,7 +1178,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
           lastSeenAt: seenAt,
           lastUpdateId: updateId,
         });
-        await prisma.integration.update({
+        await systemPrisma.integration.update({
           where: { id: integration.id },
           data: { lastSyncAt: seenAt },
         });
@@ -1229,7 +1196,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
 
     let event;
     try {
-      event = await prisma.webhookEvent.create({
+      event = await systemPrisma.webhookEvent.create({
         data: {
           tenantId: integration.tenantId,
           source: 'telegram',
@@ -1244,20 +1211,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
         logger.info({ msg: 'Duplicate Telegram webhook ignored', idempotencyKey });
         return res.status(200).json({ received: true, duplicate: true });
       }
-      if (isMissingWebhookIdempotencyColumnError(error)) {
-        logger.warn({ msg: 'WebhookEvent.idempotencyKey column missing, creating Telegram event without idempotency key' });
-        event = await prisma.webhookEvent.create({
-          data: {
-            tenantId: integration.tenantId,
-            source: 'telegram',
-            eventType,
-            rawPayload: req.body,
-            processed: false,
-          },
-        });
-      } else {
-        throw error;
-      }
+      throw error;
     }
 
     await enqueueWebhookJob({
@@ -1267,7 +1221,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
       idempotencyKey,
     });
 
-    await prisma.auditLog.create({
+    await systemPrisma.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: 'webhook_received',
@@ -1307,7 +1261,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
     }
 
     const webhookTokenHash = hashFaceIdWebhookToken(webhookToken);
-    const integration = await prisma.integration.findFirst({
+    const integration = await systemPrisma.integration.findFirst({
       where: {
         type: 'faceid_attendance',
         status: 'active',
@@ -1336,7 +1290,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
 
     let event;
     try {
-      event = await prisma.webhookEvent.create({
+      event = await systemPrisma.webhookEvent.create({
         data: {
           tenantId: integration.tenantId,
           source: 'faceid',
@@ -1351,20 +1305,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
         logger.info({ msg: 'Duplicate Face ID webhook ignored', idempotencyKey });
         return res.status(200).json({ received: true, duplicate: true });
       }
-      if (isMissingWebhookIdempotencyColumnError(error)) {
-        logger.warn({ msg: 'WebhookEvent.idempotencyKey column missing, creating Face ID event without idempotency key' });
-        event = await prisma.webhookEvent.create({
-          data: {
-            tenantId: integration.tenantId,
-            source: 'faceid',
-            eventType,
-            rawPayload: req.body,
-            processed: false,
-          },
-        });
-      } else {
-        throw error;
-      }
+      throw error;
     }
 
     await enqueueWebhookJob({
@@ -1374,7 +1315,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
       idempotencyKey,
     });
 
-    await prisma.auditLog.create({
+    await systemPrisma.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: 'webhook_received',

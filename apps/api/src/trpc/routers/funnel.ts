@@ -1,3 +1,4 @@
+import type { DbClient } from '@dashboarduz/db';
 // Tahlil → Voronka: per-manager funnel (leads, calls, sales, plan) and lost-revenue analysis.
 import { AGENT_ROLES } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
@@ -40,12 +41,10 @@ import {
   getTenantAmoCRMContext,
   INCOME_LIFECYCLE_ACTIVE,
   isAllowedUtelManagerExtension,
-  isMissingUserMappingColumnError,
   isTashkiliyOnly,
   log,
   LogLevel,
   normalizeDigits,
-  prisma,
   protectedProcedure,
   resolveCallExtension,
   resolveDateRange,
@@ -99,9 +98,9 @@ function detectLeadsFailureReason(error: unknown): string {
   return 'fetch_failed';
 }
 
-async function loadFunnelPipelines(tenantId: string): Promise<{ connected: boolean; pipelines: FunnelPipeline[] }> {
+async function loadFunnelPipelines(tenantId: string, db: DbClient): Promise<{ connected: boolean; pipelines: FunnelPipeline[] }> {
   return getOrSet(buildCacheKey('funnelStages', { t: tenantId }), 600, async () => {
-    const amoContext = await getTenantAmoCRMContext(tenantId);
+    const amoContext = await getTenantAmoCRMContext(tenantId, db);
 
     if (!amoContext) {
       return { connected: false, pipelines: [] };
@@ -162,37 +161,25 @@ type FunnelAgent = {
   utelManagerExternalId: string | null;
 };
 
-async function loadFunnelAgents(tenantId: string, group: z.infer<typeof funnelGroupSchema>): Promise<FunnelAgent[]> {
+async function loadFunnelAgents(tenantId: string, group: z.infer<typeof funnelGroupSchema>, db: DbClient): Promise<FunnelAgent[]> {
   const where = {
     tenantId,
     isActive: true,
     roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
   };
-  let agents: FunnelAgent[];
+  const agents: FunnelAgent[] = await db.user.findMany({
+    where,
+    orderBy: [{ name: 'asc' }, { username: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      username: true,
+      roles: true,
+      amocrmResponsibleUserId: true,
+      utelManagerExternalId: true,
+    },
+  });
 
-  try {
-    agents = await prisma.user.findMany({
-      where,
-      orderBy: [{ name: 'asc' }, { username: 'asc' }],
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        roles: true,
-        amocrmResponsibleUserId: true,
-        utelManagerExternalId: true,
-      },
-    });
-  } catch (error) {
-    if (!isMissingUserMappingColumnError(error)) throw error;
-    const fallback = await prisma.user.findMany({
-      where,
-      orderBy: [{ name: 'asc' }, { username: 'asc' }],
-      select: { id: true, name: true, username: true, roles: true },
-    });
-
-    agents = fallback.map((user) => ({ ...user, amocrmResponsibleUserId: null, utelManagerExternalId: null }));
-  }
   if (group === 'all') return agents;
 
   return agents.filter((agent) => resolveAgentGroup(agent.roles) === group);
@@ -215,9 +202,12 @@ async function buildFunnelBase(params: {
   group: z.infer<typeof funnelGroupSchema>;
   pipelineId: string | null;
   taklifStage: FunnelStageRef | null;
+  db: DbClient;
 }): Promise<FunnelBaseResult> {
+  const { db } = params;
+
   const { tenantId, rangeStart, rangeEnd } = params;
-  const agents = await loadFunnelAgents(tenantId, params.group);
+  const agents = await loadFunnelAgents(tenantId, params.group, db);
   const agentIds = agents.map((agent) => agent.id);
   const sourceStatus: FunnelSourceStatus = {
     leads: { ok: true, reason: null, state: 'ok' },
@@ -320,7 +310,7 @@ async function buildFunnelBase(params: {
     let amoContext;
 
     try {
-      amoContext = await getTenantAmoCRMContext(tenantId);
+      amoContext = await getTenantAmoCRMContext(tenantId, db);
     } catch (error) {
       sourceStatus.leads = { ok: false, reason: detectLeadsFailureReason(error), state: 'unavailable' };
 
@@ -403,13 +393,13 @@ async function buildFunnelBase(params: {
   const [leadsResult, pipelinesResult, calls, salesRaw] = await Promise.all([
     loadLeads(),
     params.taklifStage
-      ? loadFunnelPipelines(tenantId).catch(() => ({ connected: false, pipelines: [] as FunnelPipeline[] }))
+      ? loadFunnelPipelines(tenantId, db).catch(() => ({ connected: false, pipelines: [] as FunnelPipeline[] }))
       : Promise.resolve({ connected: true, pipelines: [] as FunnelPipeline[] }),
     extensions.length
-      ? prisma.call.findMany({
+      ? db.call.findMany({
           where: {
             tenantId,
-            provider: await getCallsProvider(tenantId),
+            provider: await getCallsProvider(tenantId, db),
             startedAt: { gte: rangeStart, lte: rangeEnd },
             OR: [{ from: { in: extensions } }, { to: { in: extensions } }],
           },
@@ -417,7 +407,7 @@ async function buildFunnelBase(params: {
         })
       : Promise.resolve([]),
     agentIds.length
-      ? prisma.income.findMany({
+      ? db.income.findMany({
           where: {
             tenantId,
             type: 'new_sale',
@@ -454,7 +444,7 @@ async function buildFunnelBase(params: {
     if (userId) callsByUserId.set(userId, (callsByUserId.get(userId) || 0) + 1);
   }
 
-  const technicalSaleIds = await loadTechnicalSaleIdsForRows(tenantId, salesRaw);
+  const technicalSaleIds = await loadTechnicalSaleIdsForRows(tenantId, salesRaw, db);
   const sales = excludeTechnicalRows(salesRaw, technicalSaleIds);
   const salesByUserId = new Map<string, { sales: number; agreementSum: number }>();
 
@@ -498,7 +488,7 @@ async function buildFunnelBase(params: {
 export const funnelRouter = router({
   stageOptions: protectedProcedure.query(async ({ ctx }) => {
     try {
-      return await loadFunnelPipelines(ctx.tenantId);
+      return await loadFunnelPipelines(ctx.tenantId, ctx.db);
     } catch (error) {
       log(LogLevel.WARN, 'Funnel: amoCRM pipelines unavailable', {
         tenantId: ctx.tenantId,
@@ -544,9 +534,10 @@ export const funnelRouter = router({
         group: input.group,
         pipelineId: input.pipelineId ?? null,
         taklifStage,
+        db: ctx.db,
       }));
 
-      const tenant = await prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } });
+      const tenant = await ctx.db.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } });
       const plans = extractFunnelPlans(tenant?.settings);
       const rows = base.rows.map((row) => ({ ...row, plan: plans.get(row.userId) ?? 0 }));
 
@@ -555,7 +546,7 @@ export const funnelRouter = router({
       const teamRatios = computeTeamRatios(groupTotals);
       const lostRows = rows.map((row) => computeLostRevenueRow(row, teamRatios));
 
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
       const visibleIds = scope.isScoped ? new Set([ctx.user.userId]) : null;
       let visibleRows = visibleIds ? rows.filter((row) => visibleIds.has(row.userId)) : rows;
       let visibleLostRows = visibleIds ? lostRows.filter((row) => visibleIds.has(row.userId)) : lostRows;
@@ -592,8 +583,8 @@ export const funnelRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin or Manager access required' });
       }
       const [tenant, user] = await Promise.all([
-        prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } }),
-        prisma.user.findFirst({ where: { id: input.userId, tenantId: ctx.tenantId, isActive: true }, select: { id: true } }),
+        ctx.db.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } }),
+        ctx.db.user.findFirst({ where: { id: input.userId, tenantId: ctx.tenantId, isActive: true }, select: { id: true } }),
       ]);
 
       if (!tenant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
@@ -610,11 +601,11 @@ export const funnelRouter = router({
       }
       const nextSettings = { ...settings, funnel: { ...funnelSettings, plans } };
 
-      await prisma.tenant.update({
+      await ctx.db.tenant.update({
         where: { id: ctx.tenantId },
         data: { settings: JSON.parse(JSON.stringify(nextSettings)) as Prisma.InputJsonValue },
       });
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,

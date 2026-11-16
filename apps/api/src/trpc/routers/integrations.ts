@@ -2,7 +2,6 @@ import crypto from 'crypto';
 import { adminProcedure, router } from '../trpc';
 import { z } from 'zod';
 import { amocrmConnectSchema, faceIdConnectSchema, metaAdsConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
-import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { decryptIntegrationTokens, encryptIntegrationTokens } from '../../services/security/encryption';
 import { amocrmService } from '../../services/integrations/amocrm';
@@ -159,15 +158,6 @@ function normalizeUnmatchedUserPolicy(value: unknown): 'store' | 'ignore' {
   return normalized === 'ignore' ? 'ignore' : 'store';
 }
 
-function isMissingMetaTableError(error: unknown): boolean {
-  const message = String((error as any)?.message || '');
-  return message.includes('meta_ad_insights') && (
-    message.includes('does not exist')
-    || message.includes('does not exist in the current database')
-    || message.includes('relation')
-  );
-}
-
 function parseFaceIdUserExternalMap(config: unknown): Record<string, string> {
   const raw = asObject(asObject(config).userExternalMap);
   const result: Record<string, string> = {};
@@ -233,7 +223,7 @@ async function fetchAmoCRMAccountByToken(accessToken: string, baseUrl: string) {
 
 export const integrationsRouter = router({
   list: adminProcedure.query(async ({ ctx }) => {
-    return prisma.integration.findMany({
+    return ctx.db.integration.findMany({
       where: { tenantId: ctx.tenantId },
       orderBy: { createdAt: 'desc' },
     });
@@ -242,7 +232,7 @@ export const integrationsRouter = router({
   getByType: adminProcedure
     .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel', 'faceid_attendance', 'meta_ads']) }))
     .query(async ({ input, ctx }) => {
-      return prisma.integration.findUnique({
+      return ctx.db.integration.findUnique({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -279,7 +269,7 @@ export const integrationsRouter = router({
       }
 
       const validatedAt = new Date();
-      const integration = await prisma.integration.upsert({
+      const integration = await ctx.db.integration.upsert({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -333,7 +323,7 @@ export const integrationsRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -361,7 +351,7 @@ export const integrationsRouter = router({
     let contextError: unknown = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+        amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
         contextError = null;
         break;
       } catch (error: any) {
@@ -434,7 +424,7 @@ export const integrationsRouter = router({
   updateAmoCRMPipelines: adminProcedure
     .input(z.object({ pipelineIds: z.array(z.string()) }))
     .mutation(async ({ input, ctx }) => {
-      const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+      const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       if (!amoContext) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -473,14 +463,14 @@ export const integrationsRouter = router({
         lastPipelineSyncAt: new Date().toISOString(),
       };
 
-      const integration = await prisma.integration.update({
+      const integration = await ctx.db.integration.update({
         where: { id: amoContext.integrationId },
         data: {
           config: nextConfig,
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -501,7 +491,7 @@ export const integrationsRouter = router({
     }),
 
   getCallsSource: adminProcedure.query(async ({ ctx }) => {
-    const integration = await prisma.integration.findUnique({
+    const integration = await ctx.db.integration.findUnique({
       where: { tenantId_type: { tenantId: ctx.tenantId, type: 'amocrm' } },
       select: { status: true, config: true },
     });
@@ -510,7 +500,7 @@ export const integrationsRouter = router({
     const syncedUntil = cursors.every((cursor) => typeof cursor === 'number')
       ? new Date(Math.min(...(cursors as number[])) * 1000).toISOString()
       : null;
-    const importedCalls = await prisma.call.count({ where: { tenantId: ctx.tenantId, provider: AMOCRM_CALL_PROVIDER } });
+    const importedCalls = await ctx.db.call.count({ where: { tenantId: ctx.tenantId, provider: AMOCRM_CALL_PROVIDER } });
 
     return {
       amoConnected: integration?.status === 'active',
@@ -526,7 +516,7 @@ export const integrationsRouter = router({
   setCallsSource: adminProcedure
     .input(z.object({ source: z.enum(['utel', 'amocrm']) }))
     .mutation(async ({ input, ctx }) => {
-      const integration = await prisma.integration.findUnique({
+      const integration = await ctx.db.integration.findUnique({
         where: { tenantId_type: { tenantId: ctx.tenantId, type: 'amocrm' } },
         select: { id: true, status: true, config: true },
       });
@@ -535,11 +525,11 @@ export const integrationsRouter = router({
       }
       if (integration) {
         const config = integration.config && typeof integration.config === 'object' ? (integration.config as Record<string, unknown>) : {};
-        await prisma.integration.update({
+        await ctx.db.integration.update({
           where: { id: integration.id },
           data: { config: { ...config, [CALLS_SOURCE_CONFIG_KEY]: input.source } },
         });
-        await prisma.auditLog.create({
+        await ctx.db.auditLog.create({
           data: {
             tenantId: ctx.tenantId,
             userId: ctx.user.userId,
@@ -579,7 +569,7 @@ export const integrationsRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Failed to register Telegram webhook' });
       }
 
-      const existing = await prisma.integration.findUnique({
+      const existing = await ctx.db.integration.findUnique({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -594,7 +584,7 @@ export const integrationsRouter = router({
       const existingDailyReportCourseIds = parseTelegramDailyReportCourseIds(existing?.config);
 
       const validatedAt = new Date();
-      let integration = await prisma.integration.upsert({
+      let integration = await ctx.db.integration.upsert({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -645,12 +635,14 @@ export const integrationsRouter = router({
         tenantId: ctx.tenantId,
         integrationId: integration.id,
         config: existing?.config,
+        db: ctx.db,
       });
       const storedRecipients = await listTelegramRecipients({
         tenantId: ctx.tenantId,
         integrationId: integration.id,
+        db: ctx.db,
       });
-      integration = await prisma.integration.update({
+      integration = await ctx.db.integration.update({
         where: { id: integration.id },
         data: {
           config: {
@@ -666,7 +658,7 @@ export const integrationsRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -693,7 +685,7 @@ export const integrationsRouter = router({
     }),
 
   getTelegramReportRecipients: adminProcedure.query(async ({ ctx }) => {
-    const integration = await prisma.integration.findUnique({
+    const integration = await ctx.db.integration.findUnique({
       where: {
         tenantId_type: {
           tenantId: ctx.tenantId,
@@ -732,7 +724,7 @@ export const integrationsRouter = router({
       };
     }
 
-    const courseOptions = await prisma.course.findMany({
+    const courseOptions = await ctx.db.course.findMany({
       where: { tenantId: ctx.tenantId },
       select: {
         id: true,
@@ -758,6 +750,7 @@ export const integrationsRouter = router({
         tenantId: ctx.tenantId,
         integrationId: integration.id,
         startedOnly: true,
+        db: ctx.db,
       });
     } catch {
       recipientStorageReady = false;
@@ -786,7 +779,7 @@ export const integrationsRouter = router({
   }),
 
   getTelegramHealth: adminProcedure.query(async ({ ctx }) => {
-    const integration = await prisma.integration.findUnique({
+    const integration = await ctx.db.integration.findUnique({
       where: {
         tenantId_type: {
           tenantId: ctx.tenantId,
@@ -833,10 +826,10 @@ export const integrationsRouter = router({
     let recipientError: string | null = null;
     try {
       [recipientCount, latestRecipient] = await Promise.all([
-        prisma.telegramRecipient.count({
+        ctx.db.telegramRecipient.count({
           where: { tenantId: ctx.tenantId, integrationId: integration.id, started: true },
         }),
-        prisma.telegramRecipient.findFirst({
+        ctx.db.telegramRecipient.findFirst({
           where: { tenantId: ctx.tenantId, integrationId: integration.id },
           orderBy: { lastSeenAt: 'desc' },
           select: { lastSeenAt: true, lastUpdateId: true },
@@ -902,7 +895,7 @@ export const integrationsRouter = router({
   }),
 
   repairTelegramWebhook: adminProcedure.mutation(async ({ ctx }) => {
-    const integration = await prisma.integration.findUnique({
+    const integration = await ctx.db.integration.findUnique({
       where: { tenantId_type: { tenantId: ctx.tenantId, type: 'telegram' } },
       select: { id: true, status: true, config: true, tokensEncrypted: true },
     });
@@ -921,7 +914,7 @@ export const integrationsRouter = router({
         throw new Error(String(result?.description || 'Telegram webhook registration failed.'));
       }
       const repairedAt = new Date();
-      await prisma.integration.update({
+      await ctx.db.integration.update({
         where: { id: integration.id },
         data: {
           config: {
@@ -934,7 +927,7 @@ export const integrationsRouter = router({
           errorMessage: null,
         },
       });
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -959,7 +952,7 @@ export const integrationsRouter = router({
       dailyReportCourseIds: z.array(z.string().uuid()).max(3).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const integration = await prisma.integration.findUnique({
+      const integration = await ctx.db.integration.findUnique({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -981,6 +974,7 @@ export const integrationsRouter = router({
           tenantId: ctx.tenantId,
           integrationId: integration.id,
           selectedChatIds: input.chatIds,
+          db: ctx.db,
         });
       } catch (error: any) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: String(error?.message || error) });
@@ -992,7 +986,7 @@ export const integrationsRouter = router({
       )).slice(0, 3);
 
       if (selectedDailyReportCourseIds.length > 0) {
-        const availableCourses = await prisma.course.findMany({
+        const availableCourses = await ctx.db.course.findMany({
           where: {
             tenantId: ctx.tenantId,
             id: { in: selectedDailyReportCourseIds },
@@ -1012,17 +1006,18 @@ export const integrationsRouter = router({
       const recipients = await listTelegramRecipients({
         tenantId: ctx.tenantId,
         integrationId: integration.id,
+        db: ctx.db,
       });
       const configWithCourseSelection = {
         ...applyTelegramRecipientsToConfig(integration.config, recipients),
         telegramDailyReportCourseIds: selectedDailyReportCourseIds,
       };
-      await prisma.integration.update({
+      await ctx.db.integration.update({
         where: { id: integration.id },
         data: { config: configWithCourseSelection as any },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1107,7 +1102,7 @@ export const integrationsRouter = router({
       }
 
       const validatedAt = new Date();
-      const integration = await prisma.integration.upsert({
+      const integration = await ctx.db.integration.upsert({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -1151,7 +1146,7 @@ export const integrationsRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1175,7 +1170,7 @@ export const integrationsRouter = router({
     }),
 
   getMetaAdsStatus: adminProcedure.query(async ({ ctx }) => {
-    const integration = await prisma.integration.findUnique({
+    const integration = await ctx.db.integration.findUnique({
       where: {
         tenantId_type: {
           tenantId: ctx.tenantId,
@@ -1193,20 +1188,13 @@ export const integrationsRouter = router({
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     let rowsLast30d = 0;
-    let metaTableMissing = false;
-    try {
-      rowsLast30d = await prisma.metaAdInsight.count({
-        where: {
-          tenantId: ctx.tenantId,
-          date: { gte: since },
-        },
-      });
-    } catch (error) {
-      if (!isMissingMetaTableError(error)) {
-        throw error;
-      }
-      metaTableMissing = true;
-    }
+    const metaTableMissing = false;
+    rowsLast30d = await ctx.db.metaAdInsight.count({
+      where: {
+        tenantId: ctx.tenantId,
+        date: { gte: since },
+      },
+    });
 
     if (!integration || integration.status !== 'active') {
       return {
@@ -1251,8 +1239,8 @@ export const integrationsRouter = router({
         : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
       try {
-        const result = await syncMetaAdInsightsForTenant(ctx.tenantId, dateFrom, dateTo);
-        await prisma.auditLog.create({
+        const result = await syncMetaAdInsightsForTenant(ctx.tenantId, dateFrom, dateTo, ctx.db);
+        await ctx.db.auditLog.create({
           data: {
             tenantId: ctx.tenantId,
             userId: ctx.user.userId,
@@ -1268,7 +1256,7 @@ export const integrationsRouter = router({
         });
         return { success: true, ...result };
       } catch (error: any) {
-        await prisma.integration.updateMany({
+        await ctx.db.integration.updateMany({
           where: {
             tenantId: ctx.tenantId,
             type: 'meta_ads',
@@ -1292,7 +1280,7 @@ export const integrationsRouter = router({
       const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/voip?integration_key=${webhookKey}`;
       const validatedAt = new Date();
 
-      const integration = await prisma.integration.upsert({
+      const integration = await ctx.db.integration.upsert({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -1325,7 +1313,7 @@ export const integrationsRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1357,7 +1345,7 @@ export const integrationsRouter = router({
       const validatedAt = new Date();
       const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/faceid`;
 
-      const integration = await prisma.integration.upsert({
+      const integration = await ctx.db.integration.upsert({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -1395,7 +1383,7 @@ export const integrationsRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1427,7 +1415,7 @@ export const integrationsRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const integration = await prisma.integration.findUnique({
+      const integration = await ctx.db.integration.findUnique({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -1457,7 +1445,7 @@ export const integrationsRouter = router({
         lastValidatedAt: new Date().toISOString(),
       };
 
-      await prisma.integration.update({
+      await ctx.db.integration.update({
         where: { id: integration.id },
         data: {
           config: nextConfig,
@@ -1466,7 +1454,7 @@ export const integrationsRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1490,7 +1478,7 @@ export const integrationsRouter = router({
     }),
 
   getFaceIdMappings: adminProcedure.query(async ({ ctx }) => {
-    const integration = await prisma.integration.findUnique({
+    const integration = await ctx.db.integration.findUnique({
       where: {
         tenantId_type: {
           tenantId: ctx.tenantId,
@@ -1512,7 +1500,7 @@ export const integrationsRouter = router({
     const externalMap = parseFaceIdUserExternalMap(integration.config);
     const mappedUserIds = Array.from(new Set(Object.values(externalMap)));
     const users = mappedUserIds.length
-      ? await prisma.user.findMany({
+      ? await ctx.db.user.findMany({
           where: {
             tenantId: ctx.tenantId,
             id: { in: mappedUserIds },
@@ -1554,7 +1542,7 @@ export const integrationsRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const integration = await prisma.integration.findUnique({
+      const integration = await ctx.db.integration.findUnique({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -1574,7 +1562,7 @@ export const integrationsRouter = router({
         });
       }
 
-      const user = await prisma.user.findFirst({
+      const user = await ctx.db.user.findFirst({
         where: {
           id: input.userId,
           tenantId: ctx.tenantId,
@@ -1609,7 +1597,7 @@ export const integrationsRouter = router({
         lastValidatedAt: new Date().toISOString(),
       };
 
-      await prisma.integration.update({
+      await ctx.db.integration.update({
         where: { id: integration.id },
         data: {
           config: nextConfig,
@@ -1618,7 +1606,7 @@ export const integrationsRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1644,7 +1632,7 @@ export const integrationsRouter = router({
   removeFaceIdMapping: adminProcedure
     .input(z.object({ externalUserId: z.string().min(1).max(128) }))
     .mutation(async ({ input, ctx }) => {
-      const integration = await prisma.integration.findUnique({
+      const integration = await ctx.db.integration.findUnique({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -1679,7 +1667,7 @@ export const integrationsRouter = router({
         lastValidatedAt: new Date().toISOString(),
       };
 
-      await prisma.integration.update({
+      await ctx.db.integration.update({
         where: { id: integration.id },
         data: {
           config: nextConfig,
@@ -1688,7 +1676,7 @@ export const integrationsRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1709,7 +1697,7 @@ export const integrationsRouter = router({
   rotateFaceIdToken: adminProcedure
     .input(z.object({}))
     .mutation(async ({ ctx }) => {
-      const integration = await prisma.integration.findUnique({
+      const integration = await ctx.db.integration.findUnique({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -1735,7 +1723,7 @@ export const integrationsRouter = router({
         lastValidatedAt: new Date().toISOString(),
       };
 
-      const updated = await prisma.integration.update({
+      const updated = await ctx.db.integration.update({
         where: { id: integration.id },
         data: {
           status: 'active',
@@ -1746,7 +1734,7 @@ export const integrationsRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1765,7 +1753,7 @@ export const integrationsRouter = router({
     }),
 
   getFaceIdStatus: adminProcedure.query(async ({ ctx }) => {
-    const integration = await prisma.integration.findUnique({
+    const integration = await ctx.db.integration.findUnique({
       where: {
         tenantId_type: {
           tenantId: ctx.tenantId,
@@ -1822,14 +1810,14 @@ export const integrationsRouter = router({
       anomaliesLast7d,
       recentWebhookErrors,
     ] = await Promise.all([
-      prisma.webhookEvent.count({
+      ctx.db.webhookEvent.count({
         where: {
           tenantId: ctx.tenantId,
           source: 'faceid',
           processed: false,
         },
       }),
-      prisma.webhookEvent.count({
+      ctx.db.webhookEvent.count({
         where: {
           tenantId: ctx.tenantId,
           source: 'faceid',
@@ -1837,7 +1825,7 @@ export const integrationsRouter = router({
           errorMessage: { not: null },
         },
       }),
-      prisma.webhookEvent.count({
+      ctx.db.webhookEvent.count({
         where: {
           tenantId: ctx.tenantId,
           source: 'faceid',
@@ -1845,7 +1833,7 @@ export const integrationsRouter = router({
           processed: true,
         },
       }),
-      prisma.attendanceEvent.count({
+      ctx.db.attendanceEvent.count({
         where: {
           tenantId: ctx.tenantId,
           localDate: {
@@ -1854,7 +1842,7 @@ export const integrationsRouter = router({
           },
         },
       }),
-      prisma.attendanceEvent.count({
+      ctx.db.attendanceEvent.count({
         where: {
           tenantId: ctx.tenantId,
           userId: null,
@@ -1864,7 +1852,7 @@ export const integrationsRouter = router({
           },
         },
       }),
-      prisma.attendanceDaySummary.count({
+      ctx.db.attendanceDaySummary.count({
         where: {
           tenantId: ctx.tenantId,
           summaryDate: {
@@ -1874,7 +1862,7 @@ export const integrationsRouter = router({
           OR: [{ anomalyCount: { gt: 0 } }, { absence: true }],
         },
       }),
-      prisma.webhookEvent.findMany({
+      ctx.db.webhookEvent.findMany({
         where: {
           tenantId: ctx.tenantId,
           source: 'faceid',
@@ -1922,7 +1910,7 @@ export const integrationsRouter = router({
   disconnect: adminProcedure
     .input(z.object({ type: z.enum(['amocrm', 'telegram', 'google_sheets', 'voip_utel', 'faceid_attendance', 'meta_ads']) }))
     .mutation(async ({ input, ctx }) => {
-      await prisma.integration.updateMany({
+      await ctx.db.integration.updateMany({
         where: {
           tenantId: ctx.tenantId,
           type: input.type,
@@ -1934,7 +1922,7 @@ export const integrationsRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,

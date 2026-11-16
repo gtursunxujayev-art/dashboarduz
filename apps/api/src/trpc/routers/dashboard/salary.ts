@@ -1,6 +1,6 @@
+import type { DbClient } from '@dashboarduz/db';
 import { z } from 'zod';
 import {
-  prisma,
   TRPCError,
   protectedProcedure,
   INCOME_LIFECYCLE_ACTIVE,
@@ -24,7 +24,6 @@ import {
   type KpiMetricKey,
   type KpiSettings,
   KPI_METRIC_KEYS,
-  isMissingUserMappingColumnError,
 } from './helpers';
 import { amocrmService, type AmoCRMLead } from '../../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
@@ -203,11 +202,11 @@ const salarySummary = protectedProcedure
     const selectedManagerUserId = scopedManagerUserId || input?.managerUserId;
 
     const [tenant, allAgents] = await Promise.all([
-      prisma.tenant.findUnique({
+      ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
         select: { settings: true },
       }),
-      prisma.user.findMany({
+      ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
@@ -230,7 +229,7 @@ const salarySummary = protectedProcedure
 
     const salarySettings = extractSalarySettings(tenant.settings);
     // Label with the bonus policy that applies to the viewed period, not whatever was saved last.
-    const viewedBonusMode = (await resolveEffectiveBonusPolicy(ctx.tenantId, rangeEnd)).policy.bonusMode;
+    const viewedBonusMode = (await resolveEffectiveBonusPolicy(ctx.tenantId, rangeEnd, ctx.db)).policy.bonusMode;
     const agents = selectedManagerUserId
       ? allAgents.filter((agent) => agent.id === selectedManagerUserId)
       : allAgents;
@@ -344,14 +343,14 @@ const salarySummary = protectedProcedure
       });
     }
 
-    const bonusRange = await calculateBonusRange({ tenantId: ctx.tenantId, rangeStart, rangeEnd });
+    const bonusRange = await calculateBonusRange({ tenantId: ctx.tenantId, rangeStart, rangeEnd, db: ctx.db });
     for (const item of bonusRange.items) {
       const salaryRow = salaryByAgent.get(item.agentUserId);
       if (!salaryRow) continue;
       salaryRow.bonusAmount += item.bonusAmount;
       salaryRow.bonusBreakdown[item.category] += item.bonusAmount;
     }
-    const approvedAdjustments = await getApprovedAdjustmentsForMonth(ctx.tenantId, rangeEnd);
+    const approvedAdjustments = await getApprovedAdjustmentsForMonth(ctx.tenantId, rangeEnd, ctx.db);
     const adjustmentRangeMonthStart = getTashkentMonthStart(rangeStart);
     for (const adjustment of approvedAdjustments) {
       const salaryRow = salaryByAgent.get(adjustment.agentUserId);
@@ -362,13 +361,13 @@ const salarySummary = protectedProcedure
 
     const activePlanBonuses = salarySettings.planBonuses.filter((plan) => plan.isActive);
     if (activePlanBonuses.length > 0) {
-      const closures = await loadSaleClosures({ tenantId: ctx.tenantId, rangeEnd });
+      const closures = await loadSaleClosures({ tenantId: ctx.tenantId, rangeEnd, db: ctx.db });
       const profileSubTariffIds = Array.from(new Set(
         closures.map((closure) => closure.profileSubTariffId).filter((value): value is string => Boolean(value)),
       ));
       const subTariffNameById = new Map<string, string>();
       if (profileSubTariffIds.length > 0) {
-        const subTariffs = await prisma.subTariff.findMany({
+        const subTariffs = await ctx.db.subTariff.findMany({
           where: { tenantId: ctx.tenantId, id: { in: profileSubTariffIds } },
           select: { id: true, name: true },
         });
@@ -397,22 +396,18 @@ const salarySummary = protectedProcedure
     if (kpi.enabled && kpi.monthlyBudget > 0) {
       // Fetch agent -> AmoCRM mapping + extensions
       let agentAmoMappings: Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }> = [];
-      try {
-        agentAmoMappings = await prisma.user.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            id: { in: agentIds },
-            isActive: true,
-          },
-          select: {
-            id: true,
-            amocrmResponsibleUserId: true,
-            utelManagerExternalId: true,
-          },
-        }) as Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>;
-      } catch (error) {
-        if (!isMissingUserMappingColumnError(error)) throw error;
-      }
+      agentAmoMappings = await ctx.db.user.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          id: { in: agentIds },
+          isActive: true,
+        },
+        select: {
+          id: true,
+          amocrmResponsibleUserId: true,
+          utelManagerExternalId: true,
+        },
+      }) as Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>;
 
       const agentAmoIdMap = new Map<string, string>(); // agentId -> amoId
       const amoIdToAgentId = new Map<string, string>(); // amoId -> agentId
@@ -436,7 +431,7 @@ const salarySummary = protectedProcedure
       const allExtensions = Array.from(new Set(Array.from(agentExtensions.values()).flat()));
 
       // Parallel fetch: new leads, calls, activity, all incomes for debt collection
-      const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+      const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       const [newLeads, calls, activityByManager, allIncomes] = await Promise.all([
         amoContext && amoManagerIds.length > 0
           ? amocrmService.fetchAllLeads(
@@ -452,10 +447,10 @@ const salarySummary = protectedProcedure
             )
           : Promise.resolve([]),
         allExtensions.length > 0
-          ? prisma.call.findMany({
+          ? ctx.db.call.findMany({
               where: {
                 tenantId: ctx.tenantId,
-                provider: await getCallsProvider(ctx.tenantId),
+                provider: await getCallsProvider(ctx.tenantId, ctx.db),
                 startedAt: { gte: rangeStart, lte: rangeEnd },
                 OR: [
                   { from: { in: allExtensions } },
@@ -481,7 +476,7 @@ const salarySummary = protectedProcedure
               rangeKind: 'custom',
             })
           : Promise.resolve(new Map<string, { followUpCount: number; noteCount: number; stageChangeCount: number; overdueFollowUpCount: number; todayFollowUpCount: number }>()),
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             managerUserId: { in: agentIds },
@@ -500,7 +495,7 @@ const salarySummary = protectedProcedure
         }),
       ]);
       // Technical sales (agreement == 1) and their repayments are not real sales or collections.
-      const kpiIncomes = excludeTechnicalRows(allIncomes, await loadTechnicalSaleIdsForRows(ctx.tenantId, allIncomes));
+      const kpiIncomes = excludeTechnicalRows(allIncomes, await loadTechnicalSaleIdsForRows(ctx.tenantId, allIncomes, ctx.db));
 
       // Group new leads by AmoCRM manager -> count per agent
       const newLeadCountByAgent = new Map<string, number>();
@@ -627,7 +622,7 @@ const salarySummary = protectedProcedure
     if (hasAttendancePenalty) {
       const dateFrom = toLocalDateKey(rangeStart);
       const dateTo = toLocalDateKey(rangeEnd);
-      const summaries = await prisma.attendanceDaySummary.findMany({
+      const summaries = await ctx.db.attendanceDaySummary.findMany({
         where: {
           tenantId: ctx.tenantId,
           userId: { in: agentIds },
@@ -802,6 +797,7 @@ type BonusIncomeDetailsInput = z.infer<typeof bonusIncomeDetailsInputSchema>;
 
 type BonusIncomeDetailsContext = {
   tenantId: string;
+  db: DbClient;
   user: {
     userId: string;
     roles: UserRole[];
@@ -832,11 +828,11 @@ async function loadBonusIncomeDetails({
       const selectedManagerUserId = scopedManagerUserId || input.managerUserId;
 
       const [tenant, allAgents] = await Promise.all([
-        prisma.tenant.findUnique({
+        ctx.db.tenant.findUnique({
           where: { id: ctx.tenantId },
           select: { settings: true },
         }),
-        prisma.user.findMany({
+        ctx.db.user.findMany({
           where: {
             tenantId: ctx.tenantId,
             isActive: true,
@@ -859,7 +855,7 @@ async function loadBonusIncomeDetails({
 
       const salarySettings = extractSalarySettings(tenant.settings);
       // Label with the bonus policy that applies to the viewed period, not whatever was saved last.
-      const viewedBonusMode = (await resolveEffectiveBonusPolicy(ctx.tenantId, rangeEnd)).policy.bonusMode;
+      const viewedBonusMode = (await resolveEffectiveBonusPolicy(ctx.tenantId, rangeEnd, ctx.db)).policy.bonusMode;
       const visibleAgents = selectedManagerUserId
         ? allAgents.filter((agent) => agent.id === selectedManagerUserId)
         : allAgents;
@@ -919,7 +915,7 @@ async function loadBonusIncomeDetails({
       }
 
       // All sales, not only the visible agents' own: a visible agent may record the closing payment on a colleague's sale.
-      const activeSalesForBonus = await prisma.income.findMany({
+      const activeSalesForBonus = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
@@ -958,7 +954,7 @@ async function loadBonusIncomeDetails({
       });
 
       if (options.rejectAboveLimit) {
-        const totalCount = await prisma.income.count({ where: incomeWhere });
+        const totalCount = await ctx.db.income.count({ where: incomeWhere });
         if (isBonusDetailExportOverLimit(totalCount, options.rejectAboveLimit)) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
@@ -967,7 +963,7 @@ async function loadBonusIncomeDetails({
         }
       }
 
-      const incomes = await prisma.income.findMany({
+      const incomes = await ctx.db.income.findMany({
         where: incomeWhere,
         orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
         take: options.rowLimit,
@@ -1044,7 +1040,7 @@ async function loadBonusIncomeDetails({
           .filter((id): id is string => Boolean(id)),
       ));
       const subTariffs = subTariffIds.length > 0
-        ? await prisma.subTariff.findMany({
+        ? await ctx.db.subTariff.findMany({
             where: {
               tenantId: ctx.tenantId,
               id: { in: subTariffIds },
@@ -1056,7 +1052,7 @@ async function loadBonusIncomeDetails({
 
       const saleIdsForBonus = filteredActiveSalesForBonus.map((sale) => sale.id);
       const bonusChainRows = saleIdsForBonus.length > 0
-        ? await prisma.income.findMany({
+        ? await ctx.db.income.findMany({
             where: {
               tenantId: ctx.tenantId,
               lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -1120,14 +1116,14 @@ async function loadBonusIncomeDetails({
       }
 
       // Closures come from the bonus engine so "closed" means exactly what it means for the bonus itself.
-      const closuresInRange = (await loadSaleClosures({ tenantId: ctx.tenantId, rangeEnd }))
+      const closuresInRange = (await loadSaleClosures({ tenantId: ctx.tenantId, rangeEnd, db: ctx.db }))
         .filter((closure) => closure.closedAt >= rangeStart && (!input.courseId || closure.courseId === input.courseId));
       const closingIncomeIds = new Set(closuresInRange.map((closure) => closure.closingIncomeId));
       const managerLabelById = new Map(
         visibleAgents.map((agent) => [agent.id, agent.name || agent.username || agent.id]),
       );
 
-      const centralizedBonus = await calculateBonusRange({ tenantId: ctx.tenantId, rangeStart, rangeEnd });
+      const centralizedBonus = await calculateBonusRange({ tenantId: ctx.tenantId, rangeStart, rangeEnd, db: ctx.db });
       const bonusItemByIncomeId = new Map(
         centralizedBonus.items
           .filter((item) => visibleAgentIds.includes(item.agentUserId))
@@ -1199,7 +1195,7 @@ async function loadBonusIncomeDetails({
       });
 
       // Totals are computed over the whole range, never from `rows`, which is capped for display.
-      const incomeByManager = await prisma.income.groupBy({
+      const incomeByManager = await ctx.db.income.groupBy({
         by: ['managerUserId'],
         where: incomeWhere,
         _sum: { paymentAmount: true },

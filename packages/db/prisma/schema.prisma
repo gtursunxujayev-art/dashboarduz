@@ -54,7 +54,6 @@ model Tenant {
   bonusAdjustmentAudits BonusAdjustmentAudit[]
   bonusAdjustmentApplications BonusAdjustmentApplication[]
 
-  @@index([subdomain])
   @@map("tenants")
 }
 
@@ -70,7 +69,6 @@ model User {
   authProvider String   // phone, telegram, email
   providerId   String?  // external provider ID
   telegramId   String?  @unique
-  googleId     String?  @unique
   amocrmResponsibleUserId String?
   utelManagerExternalId String?
   isActive     Boolean  @default(true)
@@ -91,18 +89,16 @@ model User {
   attendanceAdjustmentSubjects AttendanceAdjustment[] @relation("AttendanceAdjustmentSubject")
   createdAttendanceAdjustments AttendanceAdjustment[] @relation("AttendanceAdjustmentCreatedBy")
   attendanceAdjustmentAudits AttendanceAdjustmentAudit[] @relation("AttendanceAdjustmentAuditActor")
+  analyticsAiReports AnalyticsAiReport[]
+  fallbackManagerImportSessions HistoricalImportSession[] @relation("HistoricalImportFallbackManager")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
-  @@index([tenantId])
   @@index([tenantId, isActive])
   @@index([tenantId, amocrmResponsibleUserId])
   @@index([tenantId, utelManagerExternalId])
-  @@index([username])
   @@index([email])
   @@index([phone])
-  @@index([telegramId])
-  @@index([googleId])
   @@index([amocrmResponsibleUserId])
   @@index([utelManagerExternalId])
   @@map("users")
@@ -146,7 +142,6 @@ model Integration {
   telegramRecipients TelegramRecipient[]
 
   @@unique([tenantId, type])
-  @@index([tenantId])
   @@index([type, status])
   @@map("integrations")
 }
@@ -172,7 +167,6 @@ model TelegramRecipient {
   integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
 
   @@unique([integrationId, chatId])
-  @@index([tenantId])
   @@index([tenantId, started])
   @@index([tenantId, selectedForReports])
   @@map("telegram_recipients")
@@ -183,18 +177,19 @@ model MetaAdInsight {
   tenantId     String
   date         DateTime
   accountId    String
-  campaignId   String?
+  /// '' when Meta did not return the level (kept non-null so the unique key is null-safe)
+  campaignId   String   @default("")
   campaignName String?
-  adSetId      String?
+  adSetId      String   @default("")
   adSetName    String?
-  adId         String?
+  adId         String   @default("")
   adName       String?
   impressions  Int      @default(0)
   clicks       Int      @default(0)
-  spend        Float    @default(0)
-  ctr          Float    @default(0)
-  cpc          Float    @default(0)
-  cpm          Float    @default(0)
+  spend        Decimal  @default(0) @db.Decimal(18, 4)
+  ctr          Decimal  @default(0) @db.Decimal(12, 6)
+  cpc          Decimal  @default(0) @db.Decimal(18, 4)
+  cpm          Decimal  @default(0) @db.Decimal(18, 4)
   leads        Int      @default(0)
   raw          Json?
   createdAt    DateTime @default(now())
@@ -202,9 +197,7 @@ model MetaAdInsight {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, date, accountId, campaignId, adSetId, adId])
-  @@index([tenantId])
-  @@index([tenantId, date])
+  @@unique([tenantId, date, accountId, campaignId, adSetId, adId], map: "meta_ad_insights_tenant_date_account_campaign_adset_ad_key")
   @@index([tenantId, accountId, date])
   @@index([date])
   @@index([accountId])
@@ -227,6 +220,7 @@ model AnalyticsAiReport {
   createdAt     DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([userId])
@@ -247,6 +241,7 @@ model Lead {
   contactId   String?
   status      String?  // lead status from AmoCRM
   pipelineId  String?
+  /// amoCRM responsible user id (not a users.id), so no foreign key.
   responsibleUserId String?
   metadata    Json?    // additional lead data
   source      String?  // where lead came from
@@ -259,7 +254,6 @@ model Lead {
   contact Contact? @relation(fields: [contactId], references: [id])
   calls   Call[]
 
-  @@index([tenantId])
   @@index([amocrmId])
   @@unique([tenantId, amocrmId])
   @@index([contactId])
@@ -284,7 +278,6 @@ model Contact {
   leads  Lead[]
   calls  Call[]
 
-  @@index([tenantId])
   @@index([tenantId, phone])
   @@index([tenantId, email])
   @@index([phone])
@@ -319,7 +312,6 @@ model Call {
   lead   Lead?  @relation(fields: [leadId], references: [id])
   contact Contact? @relation(fields: [contactId], references: [id])
 
-  @@index([tenantId])
   @@index([tenantId, provider, startedAt])
   @@index([tenantId, startedAt])
   @@index([provider])
@@ -354,7 +346,6 @@ model Notification {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, status])
   @@index([tenantId, status, createdAt])
   @@index([status, nextRetryAt])
   @@index([createdAt])
@@ -381,7 +372,6 @@ model WebhookEvent {
 
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId])
   @@index([source, processed])
   @@index([source, idempotencyKey])
   @@unique([tenantId, source, idempotencyKey])
@@ -436,11 +426,14 @@ model Customer {
   updatedAt       DateTime @updatedAt
 
   tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  profileCourse    Course?    @relation("CustomerProfileCourse", fields: [profileCourseId], references: [id], onDelete: SetNull)
+  profileTariff    Tariff?    @relation("CustomerProfileTariff", fields: [profileTariffId], references: [id], onDelete: SetNull)
+  profileSubTariff SubTariff? @relation("CustomerProfileSubTariff", fields: [profileSubTariffId], references: [id], onDelete: SetNull)
+  historicalImportSession HistoricalImportSession? @relation(fields: [historicalImportSessionId], references: [id], onDelete: SetNull)
   incomes Income[]
   incomeAdjustmentRequests IncomeAdjustmentRequest[]
 
   @@unique([tenantId, customerNumber])
-  @@index([tenantId])
   @@index([tenantId, createdAt])
   @@index([tenantId, profileCourseId])
   @@index([tenantId, profileTariffId])
@@ -449,6 +442,7 @@ model Customer {
   @@index([profileCourseId])
   @@index([profileTariffId])
   @@index([profileSubTariffId])
+  @@index([historicalImportSessionId])
   @@unique([tenantId, legacyProfileImportKey])
   @@map("customers")
 }
@@ -470,9 +464,9 @@ model Course {
   incomes Income[]
   incomeAdjustmentRequests IncomeAdjustmentRequest[] @relation("IncomeAdjustmentNewCourse")
   incomeAdjustmentRequestsAsPrevious IncomeAdjustmentRequest[] @relation("IncomeAdjustmentPreviousCourse")
+  profileCustomers Customer[] @relation("CustomerProfileCourse")
 
   @@unique([tenantId, name])
-  @@index([tenantId])
   @@map("courses")
 }
 
@@ -491,9 +485,9 @@ model Tariff {
   subTariffs SubTariff[]
   incomeAdjustmentRequests IncomeAdjustmentRequest[] @relation("IncomeAdjustmentNewTariff")
   incomeAdjustmentRequestsAsPrevious IncomeAdjustmentRequest[] @relation("IncomeAdjustmentPreviousTariff")
+  profileCustomers Customer[] @relation("CustomerProfileTariff")
 
   @@unique([tenantId, courseId, name])
-  @@index([tenantId])
   @@index([courseId])
   @@map("tariffs")
 }
@@ -509,9 +503,9 @@ model SubTariff {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tariff Tariff @relation(fields: [tariffId], references: [id], onDelete: Cascade)
+  profileCustomers Customer[] @relation("CustomerProfileSubTariff")
 
   @@unique([tenantId, tariffId, name])
-  @@index([tenantId])
   @@index([tariffId])
   @@map("sub_tariffs")
 }
@@ -544,12 +538,12 @@ model Income {
   manager  User     @relation("IncomeManager", fields: [managerUserId], references: [id], onDelete: Restrict)
   course   Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   tariff   Tariff?  @relation(fields: [tariffId], references: [id], onDelete: SetNull)
+  historicalImportSession HistoricalImportSession? @relation(fields: [historicalImportSessionId], references: [id], onDelete: SetNull)
   adjustmentRequests IncomeAdjustmentRequest[]
 
   relatedDebtIncome Income? @relation("DebtRepaymentSource", fields: [relatedDebtIncomeId], references: [id], onDelete: SetNull)
   repayments        Income[] @relation("DebtRepaymentSource")
 
-  @@index([tenantId])
   @@index([tenantId, entryDate])
   @@index([tenantId, lifecycleStatus, entryDate])
   @@index([tenantId, type, lifecycleStatus, entryDate])
@@ -591,6 +585,9 @@ model HistoricalImportSession {
 
   tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdBy          User     @relation("HistoricalImportCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  fallbackManager    User?    @relation("HistoricalImportFallbackManager", fields: [fallbackManagerUserId], references: [id], onDelete: SetNull)
+  customers          Customer[]
+  incomes            Income[]
 
   @@index([tenantId])
   @@index([createdByUserId])
@@ -610,7 +607,7 @@ model IncomeAdjustmentRequest {
   reason           String?
   reviewNote       String?
   requestedAmount  Int?
-  refundCardNumber String?
+  refundCardNumber String?  @db.VarChar(16)
   newCourseId      String?
   newTariffId      String?
   newAgreementAmount Int?
@@ -641,6 +638,8 @@ model IncomeAdjustmentRequest {
   @@map("income_adjustment_requests")
 }
 
+/// createdByUserId is an audit value (who saved the policy), kept without a foreign key
+/// so the history survives user deletion.
 model BonusPolicyVersion {
   id              String   @id @default(uuid())
   tenantId        String
@@ -654,10 +653,11 @@ model BonusPolicyVersion {
   snapshots BonusMonthSnapshot[]
 
   @@unique([tenantId, effectiveMonth])
-  @@index([tenantId, effectiveMonth])
   @@map("bonus_policy_versions")
 }
 
+/// Frozen month result. finalizedByUserId (may be the system finalizer id) is a history
+/// value without a foreign key.
 model BonusMonthSnapshot {
   id              String   @id @default(uuid())
   tenantId        String
@@ -682,6 +682,8 @@ model BonusMonthSnapshot {
   @@map("bonus_month_snapshots")
 }
 
+/// Snapshot rows are history: agentUserId and courseId keep the values at finalization
+/// time and intentionally have no foreign keys (users/courses may be deleted later).
 model BonusSnapshotLine {
   id               String   @id @default(uuid())
   tenantId         String
@@ -705,6 +707,8 @@ model BonusSnapshotLine {
   @@map("bonus_snapshot_lines")
 }
 
+/// History values (sourceIncomeId, sourceSaleId, agentUserId, courseId): no foreign keys
+/// on purpose, the snapshot must survive later edits and deletions.
 model BonusSnapshotItem {
   id              String   @id @default(uuid())
   tenantId        String
@@ -732,6 +736,7 @@ model BonusSnapshotItem {
   @@map("bonus_snapshot_items")
 }
 
+/// agentUserId, courseId and reviewedByUserId are history values without foreign keys.
 model BonusAdjustment {
   id                String   @id @default(uuid())
   tenantId          String
@@ -762,6 +767,7 @@ model BonusAdjustment {
   @@map("bonus_adjustments")
 }
 
+/// Audit trail: actorUserId is a history value without a foreign key.
 model BonusAdjustmentAudit {
   id          String   @id @default(uuid())
   tenantId    String
@@ -808,7 +814,6 @@ model CorporateCallDuration {
   manager  User   @relation("CorporateCallDurationManager", fields: [managerUserId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, managerUserId, callDate])
-  @@index([tenantId])
   @@index([managerUserId])
   @@index([callDate])
   @@map("corporate_call_durations")
@@ -843,7 +848,6 @@ model AttendanceEvent {
   adjustments AttendanceAdjustment[]
 
   @@unique([tenantId, idempotencyKey])
-  @@index([tenantId])
   @@index([userId])
   @@index([localDate])
   @@index([eventAt])
@@ -875,7 +879,6 @@ model AttendanceDaySummary {
   user   User   @relation("AttendanceDaySummaryUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, userId, summaryDate])
-  @@index([tenantId])
   @@index([userId])
   @@index([summaryDate])
   @@index([tenantId, summaryDate])

@@ -1,5 +1,4 @@
 import { adminProcedure, router } from '../trpc';
-import { prisma } from '@dashboarduz/db';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { queueService } from '../../services/queue';
@@ -27,13 +26,13 @@ export const notificationsRouter = router({
       }
 
       const [data, total] = await Promise.all([
-        prisma.notification.findMany({
+        ctx.db.notification.findMany({
           where,
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
         }),
-        prisma.notification.count({ where }),
+        ctx.db.notification.count({ where }),
       ]);
 
       return {
@@ -50,7 +49,7 @@ export const notificationsRouter = router({
   retry: adminProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const notification = await prisma.notification.findFirst({
+      const notification = await ctx.db.notification.findFirst({
         where: {
           id: input.id,
           tenantId: ctx.tenantId,
@@ -60,7 +59,7 @@ export const notificationsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Notification not found' });
       }
 
-      await prisma.notification.update({
+      await ctx.db.notification.update({
         where: { id: notification.id },
         data: {
           status: 'pending',
@@ -71,7 +70,7 @@ export const notificationsRouter = router({
 
       await queueService.addNotificationJob(notification.id, { priority: 1 });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,

@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma as prisma } from '@dashboarduz/db';
 import { TelegramService } from '../telegram';
 import { upsertTelegramRecipientRecord } from '../telegram-recipient-store';
 import { extractTelegramRecipientFromPayload } from '../telegram-update';

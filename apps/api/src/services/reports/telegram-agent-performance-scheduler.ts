@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
 import { AGENT_ROLES } from '@dashboarduz/shared';
 import { type AmoCRMTask, amocrmService } from '../integrations/amocrm';
@@ -313,7 +313,7 @@ async function collectAgentMetricsForTenant(params: {
   periodStart: Date;
   periodEnd: Date;
 }): Promise<AgentMetricRow[]> {
-  const agents = await prisma.user.findMany({
+  const agents = await systemPrisma.user.findMany({
     where: {
       tenantId: params.tenantId,
       isActive: true,
@@ -361,7 +361,7 @@ async function collectAgentMetricsForTenant(params: {
   const extensionValues = Array.from(extensionToAgentId.keys());
 
   const [incomeRowsRaw, calls] = await Promise.all([
-    prisma.income.findMany({
+    systemPrisma.income.findMany({
       where: {
         tenantId: params.tenantId,
         managerUserId: { in: agentIds },
@@ -380,7 +380,7 @@ async function collectAgentMetricsForTenant(params: {
       },
     }),
     extensionValues.length > 0
-      ? prisma.call.findMany({
+      ? systemPrisma.call.findMany({
           where: {
             tenantId: params.tenantId,
             provider: await getCallsProvider(params.tenantId),
@@ -539,7 +539,7 @@ async function sendMessageToTelegramChat(botToken: string, chatId: string, text:
 }
 
 async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<void> {
-  const integrations = await prisma.integration.findMany({
+  const integrations = await systemPrisma.integration.findMany({
     where: {
       type: 'telegram',
       status: 'active',
@@ -601,7 +601,7 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
         }
       }
 
-      await prisma.auditLog.create({
+      await systemPrisma.auditLog.create({
         data: {
           tenantId: integration.tenantId,
           action: 'telegram_agent_noon_performance_sent',
@@ -625,7 +625,7 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
       });
     } catch (error: any) {
       await redis.del(lockKey);
-      await prisma.auditLog.create({
+      await systemPrisma.auditLog.create({
         data: {
           tenantId: integration.tenantId,
           action: 'telegram_agent_noon_performance_failed',
