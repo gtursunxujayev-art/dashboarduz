@@ -60,3 +60,12 @@ const RANGE_LABELS: Record<'short' | 'long', Record<ApiDashboardRange, string>> 
 export function getRangeLabel(range: ApiDashboardRange, style: 'short' | 'long' = 'short'): string {
   return RANGE_LABELS[style][range];
 }
+
+/** First day of the current Tashkent month .. today. */
+export function getCurrentMonthToDateRange(now: Date = new Date()): { dateFrom: string; dateTo: string } {
+  const today = tashkentCalendarDay(now);
+  return {
+    dateFrom: toIsoDay(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1))),
+    dateTo: toIsoDay(today),
+  };
+}

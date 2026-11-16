@@ -5,7 +5,7 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatUzs, parseAmountInput } from '@/lib/format';
-import { COURSE_CATEGORIES, type SalaryBonusMode as BonusMode, type SalaryRuleMode as CourseBonusMode, type CourseCategory as SalaryCategory, type CourseCategory as PlanCategory, type PlanBonusPeriodMode as PlanPeriodMode, type PenaltyTarget } from '@dashboarduz/shared';
+import { COURSE_CATEGORIES, normalizeSubTariffName, type CourseCategory as PlanCategory, type CourseCategory as SalaryCategory, type PenaltyTarget, type PlanBonusPeriodMode as PlanPeriodMode, type SalaryBonusMode as BonusMode, type SalaryRuleMode as CourseBonusMode } from '@dashboarduz/shared';
 import { getPlanCategoryLabel } from '@/lib/course-categories';
 
 type BonusTier = {
@@ -108,10 +108,6 @@ function parsePositiveInt(value: string): number {
 
 function getPeriodLabel(mode: PlanPeriodMode): string {
   return mode === 'monthly' ? 'Oylik' : 'Umumiy';
-}
-
-function normalizeSubTariffName(value: string): string {
-  return value.trim().toLowerCase();
 }
 
 function getSalaryCategoryLabel(category: SalaryCategory): string {

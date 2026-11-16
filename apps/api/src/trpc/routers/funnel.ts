@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, funnelGroupSchema, normalizeDigits, reportRangeSchema } from '@dashboarduz/shared';
+import { AGENT_ROLES, funnelGroupSchema, normalizeDigits, reportRangeSchema, isTashkiliyOnly } from '@dashboarduz/shared';
 // Tahlil → Voronka: per-manager funnel (leads, calls, sales, plan) and lost-revenue analysis.
 import type { Prisma } from '@prisma/client';
 
@@ -44,7 +44,6 @@ import {
 import {
   amocrmService,
   getTenantAmoCRMContext,
-  isTashkiliyOnly,
   protectedProcedure,
   router,
   TRPCError,

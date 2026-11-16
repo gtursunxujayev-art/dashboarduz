@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { roleNeedsManagerMapping } from '@dashboarduz/shared';
 
 const availableRoles = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'OfflineDashboard', 'Finance', 'Tashkiliy'] as const;
 const roleLabels: Record<(typeof availableRoles)[number], string> = {
@@ -20,10 +21,6 @@ const roleLabels: Record<(typeof availableRoles)[number], string> = {
 };
 
 type UserRole = (typeof availableRoles)[number];
-
-function roleNeedsManagerMapping(role: UserRole) {
-  return role === 'Agent' || role === 'OnlineAgent' || role === 'OfflineAgent' || role === 'TeamLeader';
-}
 
 export default function UsersPage() {
   const { user: currentUser } = useAuth();

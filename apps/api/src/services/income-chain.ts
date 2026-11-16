@@ -199,11 +199,6 @@ export function extractSaleSubTariffId(meta: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-/** Sub-tariff names are compared trimmed and lower-cased. */
-export function normalizeSubTariffName(value: unknown): string {
-  return String(value || '').trim().toLowerCase();
-}
-
 /** Chain metrics (agreement, paid, debt, last activity) per sale, from the sale and its active debt payments. */
 export async function buildActiveSaleChainMetrics(params: {
   tenantId: string;

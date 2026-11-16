@@ -2,15 +2,7 @@
  * Role checks used to scope data for agents.
  */
 import type { DbClient } from '@dashboarduz/db';
-import { hasAgentRole } from '@dashboarduz/shared';
-
-/** Roles that see every manager's data even when they also hold an agent role. */
-export const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
-
-/** True for users with an agent role and no privileged role. */
-export function isAgentOnly(roles: string[]): boolean {
-  return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
-}
+import { isAgentOnly } from '@dashboarduz/shared';
 
 /**
  * For agent-only users, the amoCRM responsible-user id their data is limited to

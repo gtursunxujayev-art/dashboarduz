@@ -1,4 +1,6 @@
-import { getAgentResponsibleScope, isAgentOnly } from '../access';
+import { isAgentOnly } from '@dashboarduz/shared';
+
+import { getAgentResponsibleScope } from '../access';
 
 describe('isAgentOnly', () => {
   it.each([

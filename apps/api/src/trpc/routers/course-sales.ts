@@ -1,11 +1,10 @@
 import type { DbClient } from '@dashboarduz/db';
-import { reportRangeSchema, courseTypeCategorySchema } from '@dashboarduz/shared';
+import { reportRangeSchema, courseTypeCategorySchema, isAgentOnly, normalizeSubTariffName } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { isAgentOnly } from '../../lib/access';
 import { resolveDateRange, type DateRangeMessages } from '../../lib/dates';
-import { INCOME_LIFECYCLE_ACTIVE, buildActiveSaleChainMetrics, extractSaleSubTariffId, normalizeSubTariffName, type SaleChainSaleRow } from '../../services/income-chain';
+import { INCOME_LIFECYCLE_ACTIVE, buildActiveSaleChainMetrics, extractSaleSubTariffId, type SaleChainSaleRow } from '../../services/income-chain';
 import { resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../services/income-facts';
 import { buildTariffBreakdown, type TariffBreakdownRow } from '../../services/tariff-breakdown';
 import { resolveEffectiveAgreementAmount } from '../../services/technical-income';

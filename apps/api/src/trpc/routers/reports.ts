@@ -1,10 +1,9 @@
 import type { DbClient } from '@dashboarduz/db';
-import { adjustmentStatusSchema, adjustmentTypeSchema } from '@dashboarduz/shared';
+import { adjustmentStatusSchema, adjustmentTypeSchema, isAgentOnly } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { isAgentOnly } from '../../lib/access';
 import { parseCustomDate } from '../../lib/dates';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
 import {

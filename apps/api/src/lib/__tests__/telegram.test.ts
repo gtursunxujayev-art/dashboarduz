@@ -1,3 +1,5 @@
+import { sanitizeTelegramUsername } from '@dashboarduz/shared';
+
 import { telegramService } from '../../services/integrations/telegram';
 import {
   parseCommaSeparatedTelegramGroupIds,
@@ -12,7 +14,6 @@ import {
   normalizeTelegramSecret,
   parseTelegramDailyReportCourseIds,
   resolveTelegramBotTokenForTenant,
-  sanitizeTelegramUsername,
   sendMessageToTelegramChat,
   toHashtag,
 } from '../telegram';

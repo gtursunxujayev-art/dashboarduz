@@ -1,5 +1,5 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { fromTashkentLocalParts, type ManagerGroup, shiftToTashkent } from '@dashboarduz/shared';
+import { fromTashkentLocalParts, groupDigits, shiftToTashkent, type ManagerGroup } from '@dashboarduz/shared';
 
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
@@ -89,27 +89,23 @@ export function resolveDueTelegramGroupSummaryCutoffs(now: Date): Array<'18:00' 
   return due;
 }
 
-function formatAmount(value: number): string {
-  return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-}
-
 export function formatTelegramGroupSummary(group: TelegramGroupSummaryGroup, metrics: TelegramGroupSummaryMetrics): string {
   const label = group === 'online' ? 'Online' : 'Offline';
   const lines = [
     `📊 Bugun — ${label}`,
     `🆕 Yangi sotuvlar: ${metrics.newSalesCount}`,
-    `💰 Umumiy tushum: ${formatAmount(metrics.totalIncome)} so'm`,
-    `💳 Yangi tushum: ${formatAmount(metrics.newIncome)} so'm`,
-    `📥 Qarzdorlik tushumi: ${formatAmount(metrics.debtIncome)} so'm`,
+    `💰 Umumiy tushum: ${groupDigits(String(Math.round(metrics.totalIncome)), ' ')} so'm`,
+    `💳 Yangi tushum: ${groupDigits(String(Math.round(metrics.newIncome)), ' ')} so'm`,
+    `📥 Qarzdorlik tushumi: ${groupDigits(String(Math.round(metrics.debtIncome)), ' ')} so'm`,
   ];
 
   if (group === 'offline' && metrics.coaching) {
     lines.push(`🎓 Couching sotuvi: ${metrics.coaching.salesCount}`);
-    lines.push(`💰 Couching tushumi: ${formatAmount(metrics.coaching.income)} so'm`);
+    lines.push(`💰 Couching tushumi: ${groupDigits(String(Math.round(metrics.coaching.income)), ' ')} so'm`);
   }
   if (group === 'offline' && metrics.intensive) {
     lines.push(`🔥 Intensiv sotuvi: ${metrics.intensive.salesCount}`);
-    lines.push(`💰 Intensiv tushumi: ${formatAmount(metrics.intensive.income)} so'm`);
+    lines.push(`💰 Intensiv tushumi: ${groupDigits(String(Math.round(metrics.intensive.income)), ' ')} so'm`);
   }
 
   return lines.join('\n');

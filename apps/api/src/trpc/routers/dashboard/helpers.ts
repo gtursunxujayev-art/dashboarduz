@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, hasAgentRole, shiftToTashkent, COURSE_CATEGORIES, PLAN_BONUS_PERIOD_MODES, SALARY_RULE_MODES, type PlanBonusPeriodMode, type ReportRangePreset, type SalaryBonusMode, type SalaryRuleMode } from '@dashboarduz/shared';
+import { COURSE_CATEGORIES, PLAN_BONUS_PERIOD_MODES, SALARY_RULE_MODES, shiftToTashkent, type PlanBonusPeriodMode, type ReportRangePreset, type SalaryBonusMode, type SalaryRuleMode } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { getRangeStart } from '../../../lib/dates';
@@ -228,24 +228,6 @@ export function buildTrend(currentValue: number, previousValue: number) {
     diffPercent: Number(diffPercent.toFixed(2)),
     direction,
   };
-}
-
-export function isFinanceOnly(roles: string[]): boolean {
-  return roles.includes('Finance') && !roles.some((role) => (
-    role === 'Admin'
-    || role === 'Manager'
-    || role === 'TeamLeader'
-    || (AGENT_ROLES as readonly string[]).includes(role)
-  ));
-}
-
-export function isTashkiliyOnly(roles: string[]): boolean {
-  return roles.includes('Tashkiliy')
-    && !roles.includes('Admin')
-    && !roles.includes('Manager')
-    && !roles.includes('TeamLeader')
-    && !hasAgentRole(roles)
-    && !roles.includes('Finance');
 }
 
 export function toPieData(input: Map<string, number>) {

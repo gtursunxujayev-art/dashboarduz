@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-import { callsSourceSchema , TASHKENT_OFFSET_MS, amocrmConnectSchema, faceIdConnectSchema, metaAdsConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
+import { amocrmConnectSchema, callsSourceSchema, faceIdConnectSchema, metaAdsConnectSchema, telegramBotConnectSchema, toTashkentDateKey, voipConnectSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -171,15 +171,6 @@ function parseFaceIdUserExternalMap(config: unknown): Record<string, string> {
   }
 
   return result;
-}
-
-function toTashkentDateKey(date: Date): string {
-  const shifted = new Date(date.getTime() + TASHKENT_OFFSET_MS);
-  const year = shifted.getUTCFullYear();
-  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(shifted.getUTCDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
 }
 
 async function fetchAmoCRMAccountByToken(accessToken: string, baseUrl: string) {

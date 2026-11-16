@@ -1,7 +1,8 @@
+import { normalizeSubTariffName } from '@dashboarduz/shared';
+
 import { type PlanBonusPeriodMode, type SalaryPlanBonus } from '../trpc/routers/dashboard/helpers';
 
 import { getTashkentMonthKey, type SaleClosure } from './bonus-engine';
-import { normalizeSubTariffName } from './income-chain';
 
 export type PlanProgress = {
   planId: string;

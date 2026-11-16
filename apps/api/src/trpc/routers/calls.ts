@@ -1,8 +1,8 @@
-import { reportRangeSchema , AGENT_ROLES, hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
+import { reportRangeSchema, AGENT_ROLES, hasAgentRole, normalizeDigits, PRIVILEGED_ROLES } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { PRIVILEGED_ROLES, getAgentResponsibleScope } from '../../lib/access';
+import { getAgentResponsibleScope } from '../../lib/access';
 import { resolveDateRange } from '../../lib/dates';
 import { textFromScalar } from '../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';

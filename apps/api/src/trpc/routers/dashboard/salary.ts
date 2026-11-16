@@ -1,8 +1,7 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, reportRangeSchema, shiftToTashkent, TASHKENT_OFFSET_MS, toTashkentDateKey, type UserRole } from '@dashboarduz/shared';
+import { AGENT_ROLES, reportRangeSchema, shiftToTashkent, TASHKENT_OFFSET_MS, toTashkentDateKey, type UserRole, isAgentOnly, normalizeSubTariffName, isTashkiliyOnly } from '@dashboarduz/shared';
 import { z } from 'zod';
 
-import { isAgentOnly } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import {
   BONUS_DETAIL_EXPORT_LIMIT,
@@ -12,7 +11,7 @@ import {
 import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthStart, loadSaleClosures, resolveEffectiveBonusPolicy } from '../../../services/bonus-engine';
 import { buildCacheKey, getOrSet } from '../../../services/cache';
 import { getCallsProvider } from '../../../services/calls-source';
-import { buildSaleChainMetricsBySaleId, INCOME_LIFECYCLE_ACTIVE, normalizeSubTariffName } from '../../../services/income-chain';
+import { buildSaleChainMetricsBySaleId, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
@@ -23,7 +22,6 @@ import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../se
 import {
   TRPCError,
   protectedProcedure,
-  isTashkiliyOnly,
   getCurrentMonthRange,
   getDaysInReportLocalMonth,
   classifyCourseCategoryFromField,

@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatAmountDigits, parseAmountInput } from '@/lib/format';
 import { getTashkentToday } from '@/lib/date-range';
-import { groupDigits, normalizeDigits, type IncomeType } from '@dashboarduz/shared';
+import { groupDigits, normalizeDigits, sanitizeTelegramUsername, type IncomeType } from '@dashboarduz/shared';
 
 type IncomeTypeChoice = '' | IncomeType;
 type FieldErrors = Record<string, string>;
@@ -103,10 +103,6 @@ function getSubTariffOptionValue(option: SubTariffOptionLike): string {
     return id;
   }
   return normalizeTextToken(option.name);
-}
-
-function sanitizeTelegramUsername(value: string): string {
-  return value.replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
 }
 
 function buildFieldClass(fieldErrors: FieldErrors, field: string, extra = ''): string {

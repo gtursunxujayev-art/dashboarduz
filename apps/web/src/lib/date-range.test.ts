@@ -4,6 +4,7 @@ import {
   getPreviousWeekRange,
   getTashkentDateShift,
   getTashkentToday,
+  getCurrentMonthToDateRange,
   getRangeLabel,
   toApiDateRange,
 } from './date-range';
@@ -44,5 +45,13 @@ describe('getRangeLabel', () => {
     expect(getRangeLabel('month', 'long')).toBe('Bu oy');
     expect(getRangeLabel('custom', 'long')).toBe('Ixtiyoriy sana');
     expect(getRangeLabel('today', 'long')).toBe('Bugun');
+  });
+});
+
+describe('getCurrentMonthToDateRange', () => {
+  it('runs from the first of the Tashkent month to today', () => {
+    expect(getCurrentMonthToDateRange(now)).toEqual({ dateFrom: '2026-11-01', dateTo: '2026-11-07' });
+    // 2026-11-30T19:30Z is already 1 December in Tashkent.
+    expect(getCurrentMonthToDateRange(new Date('2026-11-30T19:30:00Z'))).toEqual({ dateFrom: '2026-12-01', dateTo: '2026-12-01' });
   });
 });

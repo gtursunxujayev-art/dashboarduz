@@ -1,5 +1,8 @@
 import type { DbClient, TenantPrismaClient } from '@dashboarduz/db';
-import { adjustmentStatusSchema, adjustmentTypeSchema, debtFilterSchema ,
+import {
+  adjustmentStatusSchema,
+  adjustmentTypeSchema,
+  debtFilterSchema,
   bulkIncomeImportFromGoogleSheetSchema,
   bulkIncomeImportSchema,
   createCourseSchema,
@@ -8,15 +11,16 @@ import { adjustmentStatusSchema, adjustmentTypeSchema, debtFilterSchema ,
   customerSearchSchema,
   normalizeDigits,
   TASHKENT_OFFSET_MS,
+  isAgentOnly,
+  sanitizeTelegramUsername,
 } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { isAgentOnly } from '../../lib/access';
 import { DATE_RANGE_MESSAGES_EN, parseCustomDate, type ParseCustomDateOptions } from '../../lib/dates';
 import { logger } from '../../lib/logger';
-import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, sanitizeTelegramUsername, sendMessageToTelegramChat, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
+import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, sendMessageToTelegramChat, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import { normalizeKey } from '../../lib/text';
 import { reconcileFinalizedBonusMonths } from '../../services/bonus-engine';
 import {

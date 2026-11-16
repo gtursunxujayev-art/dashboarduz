@@ -1,4 +1,4 @@
-import { reportRangeSchema , AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent } from '@dashboarduz/shared';
+import { reportRangeSchema, AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent, isTashkiliyOnly } from '@dashboarduz/shared';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { withTimeout } from '../../../lib/async';
@@ -29,7 +29,6 @@ import {
   REPORT_MONTH_LABELS_UZ,
   normalizeTextToken,
   extractUtelManagerKey,
-  isTashkiliyOnly,
   classifyCourseCategoryFromField,
   isMappedValue,
   toPieData,

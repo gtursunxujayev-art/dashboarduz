@@ -31,9 +31,9 @@ export function formatAmount(value: number | null | undefined, options: AmountFo
   return options.unit ? `${text} ${options.unit}` : text;
 }
 
-/** Comma thousands separators inside a digit string: `'1234567'` -> `'1,234,567'` (empty stays empty). */
-export function groupDigits(value: string): string {
+/** Thousands separators inside a digit string: `'1234567'` -> `'1,234,567'` (empty stays empty). */
+export function groupDigits(value: string, separator = ','): string {
   if (!value) return '';
 
-  return value.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return value.replace(/\B(?=(\d{3})+(?!\d))/g, separator);
 }

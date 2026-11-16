@@ -1,4 +1,5 @@
-import { isAgentOnly } from '../../../lib/access';
+import { isAgentOnly, isFinanceOnly, isTashkiliyOnly } from '@dashboarduz/shared';
+
 import { normalizePercentage } from '../../../lib/number';
 import { toFiniteNumber } from '../../../lib/object';
 import {
@@ -12,8 +13,6 @@ import {
   classifyCourseCategoryFromField,
   extractSalarySettings,
   toPositiveInteger,
-  isFinanceOnly,
-  isTashkiliyOnly,
   type SalaryRuleTier,
 } from '../dashboard/helpers';
 

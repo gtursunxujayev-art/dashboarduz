@@ -1,4 +1,4 @@
-import { type ExtendedDashboardRange as DashboardRange, getPreviousMonthRange, getPreviousWeekRange, getTashkentToday } from '@/lib/date-range';
+import { getCurrentMonthToDateRange, getPreviousMonthRange, getPreviousWeekRange, getTashkentToday, type ExtendedDashboardRange as DashboardRange } from '@/lib/date-range';
 ﻿'use client';
 
 import Link from 'next/link';
@@ -38,25 +38,6 @@ function getCurrentWeekRange() {
   };
 }
 
-function getCurrentMonthRange() {
-  const now = new Date();
-  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
-  local.setHours(0, 0, 0, 0);
-  const monthStart = new Date(local.getFullYear(), local.getMonth(), 1);
-
-  const toIso = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const dayValue = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${dayValue}`;
-  };
-
-  return {
-    dateFrom: toIso(monthStart),
-    dateTo: toIso(local),
-  };
-}
-
 export default function FinanceBonusDetailsPage() {
   const { user } = useAuth();
   const roles = user?.roles || [];
@@ -86,7 +67,7 @@ export default function FinanceBonusDetailsPage() {
       return getCurrentWeekRange();
     }
     if (range === 'month') {
-      return getCurrentMonthRange();
+      return getCurrentMonthToDateRange();
     }
     if (range === 'last_week') {
       return getPreviousWeekRange();

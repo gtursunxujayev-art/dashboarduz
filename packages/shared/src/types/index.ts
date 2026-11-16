@@ -48,3 +48,38 @@ export interface PaginatedResponse<T> {
     cursor?: string;
   };
 }
+
+/** Roles that see every manager's data even when they also hold an agent role. */
+export const PRIVILEGED_ROLES: ReadonlySet<string> = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
+
+/** An agent role and no privileged role. */
+export function isAgentOnly(roles: readonly string[]): boolean {
+  return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+}
+
+/** Finance, and no Admin, Manager, TeamLeader or agent role. */
+export function isFinanceOnly(roles: readonly string[]): boolean {
+  return roles.includes('Finance') && !roles.some((role) => (
+    role === 'Admin'
+    || role === 'Manager'
+    || role === 'TeamLeader'
+    || (AGENT_ROLES as readonly string[]).includes(role)
+  ));
+}
+
+/** Tashkiliy, and no Admin, Manager, TeamLeader, agent or Finance role. */
+export function isTashkiliyOnly(roles: readonly string[]): boolean {
+  return roles.includes('Tashkiliy')
+    && !roles.includes('Admin')
+    && !roles.includes('Manager')
+    && !roles.includes('TeamLeader')
+    && !hasAgentRole(roles)
+    && !roles.includes('Finance');
+}
+
+/** Roles whose users are linked to an amoCRM manager / UTEL extension. */
+export const MANAGER_MAPPING_ROLES: readonly UserRole[] = [...AGENT_ROLES, 'TeamLeader'];
+
+export function roleNeedsManagerMapping(role: string): boolean {
+  return (MANAGER_MAPPING_ROLES as readonly string[]).includes(role);
+}

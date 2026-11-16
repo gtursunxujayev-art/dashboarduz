@@ -1,8 +1,7 @@
 import { createHash } from 'crypto';
 
-import { normalizeDigits } from '@dashboarduz/shared';
+import { normalizeDigits, sanitizeTelegramUsername } from '@dashboarduz/shared';
 
-import { sanitizeTelegramUsername } from '../lib/telegram';
 import { normalizeKey } from '../lib/text';
 
 export type HistoricalCourseCategory = 'online' | 'offline' | 'intensive' | 'additional_service';

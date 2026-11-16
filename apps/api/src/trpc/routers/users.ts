@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, USER_ROLES, normalizeDigits, type UserRole } from '@dashboarduz/shared';
+import { USER_ROLES, normalizeDigits, roleNeedsManagerMapping, type UserRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -13,11 +13,6 @@ import { listTelegramRecipients } from '../../services/integrations/telegram-rec
 import { adminProcedure, managerProcedure, router } from '../trpc';
 
 const roleSchema = z.enum(USER_ROLES);
-const MAPPING_ROLES: UserRole[] = [...AGENT_ROLES, 'TeamLeader'];
-
-function roleNeedsManagerMapping(role: UserRole): boolean {
-  return MAPPING_ROLES.includes(role);
-}
 
 function rolesNeedManagerMapping(roles: UserRole[]): boolean {
   return roles.some((role) => roleNeedsManagerMapping(role));

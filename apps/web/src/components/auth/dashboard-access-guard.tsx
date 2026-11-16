@@ -3,9 +3,8 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
+import { hasAgentRole, isAgentOnly, isFinanceOnly, isTashkiliyOnly } from '@dashboarduz/shared';
 
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
-const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 const LIVE_LEADERBOARD_PATH = '/dashboard/live-leaderboard';
 const OFFLINE_LEADERBOARD_PATH = '/dashboard/offline-leaderboard';
 const AGENT_ALLOWED_PATHS = [
@@ -45,30 +44,8 @@ const ADMIN_ONLY_PATHS = [
   '/dashboard/income-debug',
 ];
 
-function isAgentOnly(roles: string[]): boolean {
-  return roles.some((role) => AGENT_ROLES.has(role)) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
-}
-
-function isFinanceOnly(roles: string[]): boolean {
-  return roles.includes('Finance') && !roles.some((role) => (
-    role === 'Admin'
-    || role === 'Manager'
-    || role === 'TeamLeader'
-    || AGENT_ROLES.has(role)
-  ));
-}
-
 function isManagerOnly(roles: string[]): boolean {
   return (roles.includes('Manager') || roles.includes('TeamLeader')) && !roles.includes('Admin');
-}
-
-function isTashkiliyOnly(roles: string[]): boolean {
-  return roles.includes('Tashkiliy')
-    && !roles.includes('Admin')
-    && !roles.includes('Manager')
-    && !roles.includes('TeamLeader')
-    && !roles.some((role) => AGENT_ROLES.has(role))
-    && !roles.includes('Finance');
 }
 
 function isPathAllowed(pathname: string, allowedPaths: string[]): boolean {
@@ -97,7 +74,7 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
     user?.roles?.includes('Admin')
     || user?.roles?.includes('Manager')
     || user?.roles?.includes('TeamLeader')
-    || user?.roles?.some((role) => AGENT_ROLES.has(role)),
+    || hasAgentRole(user?.roles),
   );
 
   const isAgentRestriction = Boolean(user && isAgentOnly(user.roles));

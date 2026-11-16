@@ -205,8 +205,3 @@ export function parseTelegramDailyReportCourseIds(config: unknown): string[] {
       .filter(Boolean),
   )).slice(0, 3);
 }
-
-/** Letters, digits, `_` and `@` only. */
-export function sanitizeTelegramUsername(value: string): string {
-  return String(value || '').replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
-}

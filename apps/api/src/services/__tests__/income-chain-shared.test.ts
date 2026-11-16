@@ -1,9 +1,6 @@
-import {
-  buildActiveSaleChainMetrics,
-  extractSaleSubTariffId,
-  INCOME_LIFECYCLE_ACTIVE,
-  normalizeSubTariffName,
-} from '../income-chain';
+import { normalizeSubTariffName } from '@dashboarduz/shared';
+
+import { buildActiveSaleChainMetrics, extractSaleSubTariffId, INCOME_LIFECYCLE_ACTIVE } from '../income-chain';
 
 describe('extractSaleSubTariffId', () => {
   it('reads a trimmed saleSubTariffId string from meta', () => {
