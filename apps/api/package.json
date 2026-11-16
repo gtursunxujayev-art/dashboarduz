@@ -24,6 +24,7 @@
         "db:studio": "npm run studio --workspace @dashboarduz/db",
         "db:push": "npm run db:push --workspace @dashboarduz/db",
         "test": "jest --passWithNoTests",
+        "test:coverage": "jest --coverage",
         "docker:build": "docker build -t dashboarduz-api .",
         "docker:run": "docker run -p 3001:3001 dashboarduz-api",
         "postinstall": "echo 'Prisma generation handled in Dockerfile or run manually with npm run db:generate'",
