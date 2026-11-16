@@ -1,4 +1,5 @@
 import { sleep } from '../../lib/async';
+import { logger } from '../../lib/logger';
 // Telegram Bot integration service
 
 const TELEGRAM_REQUEST_TIMEOUT_MS = 6_000;
@@ -48,22 +49,22 @@ export class TelegramService {
           return response;
         }
         lastError = new Error(`Telegram API temporarily unavailable: HTTP ${response.status}`);
-        console.warn('[Telegram] Transient API response; retrying request.', {
+        logger.warn({
           attempt,
           maxAttempts: TELEGRAM_REQUEST_ATTEMPTS,
           status: response.status,
-        });
+        }, '[Telegram] Transient API response; retrying request.');
         await response.body?.cancel();
       } catch (error) {
         lastError = error;
         if (attempt === TELEGRAM_REQUEST_ATTEMPTS) {
           break;
         }
-        console.warn('[Telegram] Network request failed; retrying request.', {
+        logger.warn({
           attempt,
           maxAttempts: TELEGRAM_REQUEST_ATTEMPTS,
           error: describeNetworkError(error),
-        });
+        }, '[Telegram] Network request failed; retrying request.');
       } finally {
         clearTimeout(timeout);
       }

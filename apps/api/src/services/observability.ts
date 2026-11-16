@@ -2,6 +2,8 @@
 
 import * as Sentry from '@sentry/node';
 
+import { logger } from '../lib/logger';
+
 // Initialize Sentry
 export function initSentry() {
   if (process.env.SENTRY_DSN) {
@@ -49,7 +51,7 @@ export function clearSentryUserContext() {
   }
 }
 
-// Structured logging
+// Log levels for logWithContext (request logging with metrics)
 export enum LogLevel {
   DEBUG = 'debug',
   INFO = 'info',
@@ -64,37 +66,18 @@ export interface LogContext {
   [key: string]: any;
 }
 
-export function log(level: LogLevel, message: string, context?: LogContext) {
-  const { logger } = require('../lib/logger');
-  
-  const logEntry = {
-    msg: message,
-    service: 'dashboarduz-api',
-    ...context,
-  };
+/**
+ * Logs at error level with the shared pino logger and, when Sentry is configured, reports the
+ * message there too (with tenant/user tags and the context as extra data).
+ */
+export function reportError(message: string, context?: LogContext) {
+  logger.error({ ...context }, message);
 
-  // Use pino logger based on level
-  switch (level) {
-    case LogLevel.DEBUG:
-      logger.debug(logEntry);
-      break;
-    case LogLevel.INFO:
-      logger.info(logEntry);
-      break;
-    case LogLevel.WARN:
-      logger.warn(logEntry);
-      break;
-    case LogLevel.ERROR:
-      logger.error(logEntry);
-      break;
-  }
-
-  // Send errors to Sentry
-  if (level === LogLevel.ERROR && process.env.SENTRY_DSN) {
+  if (process.env.SENTRY_DSN) {
     const error = new Error(message);
 
     error.name = 'LoggedError';
-    
+
     const sentryContext: Record<string, unknown> = {
       level: 'error',
       tags: {
@@ -146,7 +129,11 @@ export function logWithContext(
     });
   }
 
-  log(level, message, context);
+  if (level === LogLevel.ERROR) {
+    reportError(message, context);
+  } else {
+    logger[level](context, message);
+  }
 }
 
 // Metrics (Prometheus-compatible)

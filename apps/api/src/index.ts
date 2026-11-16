@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
+
 import app from './app';
-import { log, LogLevel } from './services/observability';
+import { logger } from './lib/logger';
+import { reportError } from './services/observability';
 
 dotenv.config();
 
@@ -12,17 +14,17 @@ function startApiServer(): void {
     const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
     const publicUrl = railwayDomain ? `https://${railwayDomain}` : process.env.PUBLIC_API_URL;
 
-    log(LogLevel.INFO, 'API server started', { port: PORT });
-    console.log(`API server running on ${HOST}:${PORT}`);
+    logger.info({ port: PORT }, 'API server started');
+    logger.info(`API server running on ${HOST}:${PORT}`);
     if (publicUrl) {
-      console.log(`Public API URL: ${publicUrl}`);
-      console.log(`Public tRPC endpoint: ${publicUrl}/api/trpc`);
+      logger.info(`Public API URL: ${publicUrl}`);
+      logger.info(`Public tRPC endpoint: ${publicUrl}/api/trpc`);
     }
   });
 }
 
 Promise.resolve().then(startApiServer).catch((error: any) => {
-  log(LogLevel.ERROR, 'Failed to start API server', {
+  reportError('Failed to start API server', {
     error: error?.message || String(error),
   });
   process.exit(1);

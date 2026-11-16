@@ -6,11 +6,11 @@ import { normalizeDigits } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 
 import { createIntervalJob } from '../../lib/interval-job';
+import { logger } from '../../lib/logger';
 import { toNumberOrNull } from '../../lib/object';
 import { getPreviousTashkentMonthStart } from '../bonus-auto-finalize';
 import { AMOCRM_CALL_PROVIDER, readCallsSource } from '../calls-source';
 import { CALL_NOTE_TYPES } from '../funnel-metrics';
-import { log, LogLevel } from '../observability';
 
 import { amocrmService, type AmoCRMNote } from './amocrm';
 import { getTenantAmoCRMContext } from './amocrm-live';
@@ -233,7 +233,7 @@ async function syncTenantAmoCalls(tenantId: string, now = new Date()): Promise<C
       lastError: null,
       backfillComplete: state.backfillComplete || complete,
     });
-    log(LogLevel.INFO, 'amoCRM calls synced', { tenantId, imported, complete, ms: Date.now() - startedAt });
+    logger.info({ tenantId, imported, complete, ms: Date.now() - startedAt }, 'amoCRM calls synced');
 
     return { imported, complete };
   } catch (error) {
@@ -246,7 +246,7 @@ async function syncTenantAmoCalls(tenantId: string, now = new Date()): Promise<C
       lastError: message,
       backfillComplete: state.backfillComplete,
     }).catch(() => undefined);
-    log(LogLevel.WARN, 'amoCRM calls sync failed', { tenantId, imported, error: message });
+    logger.warn({ tenantId, imported, error: message }, 'amoCRM calls sync failed');
     throw error;
   }
 }
@@ -281,7 +281,7 @@ const job = createIntervalJob({
   intervalMs: SYNC_INTERVAL_MS,
   run: syncAllAmoCalls,
   onError: (error) => {
-    log(LogLevel.WARN, 'amoCRM calls sync run failed', { error: String((error as Error | undefined)?.message || error) });
+    logger.warn({ error: String((error as Error | undefined)?.message || error) }, 'amoCRM calls sync run failed');
   },
 });
 

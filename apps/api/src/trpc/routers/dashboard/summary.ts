@@ -3,6 +3,7 @@ import { reportRangeSchema , AGENT_ROLES, fromTashkentLocalParts, normalizeDigit
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { withTimeout } from '../../../lib/async';
 import { resolveDateRange } from '../../../lib/dates';
+import { logger } from '../../../lib/logger';
 import { asObject } from '../../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
 import { getOrSet, buildCacheKey } from '../../../services/cache';
@@ -24,8 +25,6 @@ import {
   getAmoCRMActivityMetrics,
   createAmoCRMActivityDiagnostics,
   summarizeAmoCRMActivityMetrics,
-  LogLevel,
-  log,
   protectedProcedure,
   REPORT_MONTH_LABELS_UZ,
   normalizeTextToken,
@@ -102,11 +101,11 @@ async function runSummarySourceWithRetry<T>(params: {
       status[key].ok = false;
       status[key].reason = reason;
       status[key].state = reason === 'timeout' ? 'timeout' : 'unavailable';
-      log(LogLevel.WARN, `Dashboard summary source degraded: ${key}`, {
+      logger.warn({
         ...logContext,
         reason,
         error: String((secondError as Error | undefined)?.message || (firstError as Error | undefined)?.message || secondError || firstError),
-      });
+      }, `Dashboard summary source degraded: ${key}`);
 
       return fallback;
     }
@@ -730,13 +729,13 @@ export const summaryProcedures = {
           return a.name.localeCompare(b.name, 'uz');
         });
 
-      log(LogLevel.INFO, 'Dashboard summary activity timings', {
+      logger.info({
         tenantId: ctx.tenantId,
         userId: ctx.user.userId,
         activityFetchMs,
         activityManagerCount: activityManagerIds.length,
         activityTotals,
-      });
+      }, 'Dashboard summary activity timings');
 
       return {
         range: input.range,

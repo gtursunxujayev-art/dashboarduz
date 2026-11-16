@@ -6,6 +6,7 @@ import type { Prisma } from '@prisma/client';
 import { getAgentResponsibleScope } from '../../lib/access';
 import { withTimeout } from '../../lib/async';
 import { resolveDateRange } from '../../lib/dates';
+import { logger } from '../../lib/logger';
 import { asObject, toFiniteNumber } from '../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallExtension } from '../../lib/utel';
 import { buildCacheKey, getOrSet } from '../../services/cache';
@@ -44,8 +45,6 @@ import {
   amocrmService,
   getTenantAmoCRMContext,
   isTashkiliyOnly,
-  log,
-  LogLevel,
   protectedProcedure,
   router,
   TRPCError,
@@ -262,7 +261,7 @@ async function buildFunnelBase(params: {
       const contactNotes = results.filter((result) => result.entityType === 'contacts').flatMap((result) => result.items);
       const answered = findAnsweredLeadIds(leads, leadNotes, contactNotes, { rangeEnd });
 
-      log(LogLevel.INFO, 'Funnel: amoCRM call notes loaded', {
+      logger.info({
         tenantId,
         leads: leadIds.length,
         contacts: contactIds.length,
@@ -270,18 +269,18 @@ async function buildFunnelBase(params: {
         answeredLeads: answered.size,
         requests: tasks.length,
         ms: Date.now() - startedAt,
-      });
+      }, 'Funnel: amoCRM call notes loaded');
 
       return answered;
     } catch (error) {
       const reason = detectLeadsFailureReason(error);
 
       sourceStatus.calls = { ok: false, reason: `calls_${reason}`, state: reason === 'timeout' ? 'timeout' : 'unavailable' };
-      log(LogLevel.WARN, 'Funnel: amoCRM call notes unavailable', {
+      logger.warn({
         tenantId,
         reason,
         error: String((error as Error | undefined)?.message || error),
-      });
+      }, 'Funnel: amoCRM call notes unavailable');
 
       return null;
     }
@@ -348,24 +347,24 @@ async function buildFunnelBase(params: {
       if (truncated) {
         sourceStatus.leads = { ok: false, reason: 'page_cap', state: 'partial' };
       }
-      log(LogLevel.INFO, 'Funnel: amoCRM leads loaded', {
+      logger.info({
         tenantId,
         leads: items.length,
         pipelines: pipelineIds?.length ?? 0,
         managers: responsibleIds.length,
         ms: Date.now() - startedAt,
-      });
+      }, 'Funnel: amoCRM leads loaded');
 
       return { leads: items, answered: await loadAnsweredLeadIds(amoContext, items) };
     } catch (error) {
       const reason = detectLeadsFailureReason(error);
 
       sourceStatus.leads = { ok: false, reason, state: reason === 'timeout' ? 'timeout' : 'unavailable' };
-      log(LogLevel.WARN, 'Funnel: amoCRM leads unavailable', {
+      logger.warn({
         tenantId,
         reason,
         error: String((error as Error | undefined)?.message || error),
-      });
+      }, 'Funnel: amoCRM leads unavailable');
 
       return null;
     }
@@ -471,10 +470,10 @@ export const funnelRouter = router({
     try {
       return await loadFunnelPipelines(ctx.tenantId, ctx.db);
     } catch (error) {
-      log(LogLevel.WARN, 'Funnel: amoCRM pipelines unavailable', {
+      logger.warn({
         tenantId: ctx.tenantId,
         error: String((error as Error | undefined)?.message || error),
-      });
+      }, 'Funnel: amoCRM pipelines unavailable');
 
       return { connected: false, pipelines: [] as FunnelPipeline[] };
     }

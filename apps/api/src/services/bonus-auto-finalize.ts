@@ -2,6 +2,7 @@ import { systemPrisma } from '@dashboarduz/db';
 import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
 import { createIntervalJob } from '../lib/interval-job';
+import { logger } from '../lib/logger';
 
 import {
   finalizeBonusMonth,
@@ -9,7 +10,6 @@ import {
   getTashkentMonthStart,
   SYSTEM_FINALIZER_USER_ID,
 } from './bonus-engine';
-import { log, LogLevel } from './observability';
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -39,14 +39,14 @@ export async function autoFinalizePreviousBonusMonth(now = new Date()): Promise<
     try {
       await finalizeBonusMonth({ tenantId: tenant.id, month, userId: SYSTEM_FINALIZER_USER_ID });
       count += 1;
-      log(LogLevel.INFO, 'Bonus month auto-finalized', { tenantId: tenant.id, month: getTashkentMonthKey(month) });
+      logger.info({ tenantId: tenant.id, month: getTashkentMonthKey(month) }, 'Bonus month auto-finalized');
     } catch (error: unknown) {
       // A parallel worker may have finalized it first (unique tenant+month); anything else is retried next hour.
-      log(LogLevel.WARN, 'Bonus month auto-finalize failed', {
+      logger.warn({
         tenantId: tenant.id,
         month: getTashkentMonthKey(month),
         error: (error as { message?: string } | null)?.message || String(error),
-      });
+      }, 'Bonus month auto-finalize failed');
     }
   }
 
@@ -57,7 +57,7 @@ const job = createIntervalJob({
   intervalMs: CHECK_INTERVAL_MS,
   run: autoFinalizePreviousBonusMonth,
   onError: (error) => {
-    log(LogLevel.WARN, 'Bonus auto-finalize run failed', { error: (error as { message?: string } | null)?.message || String(error) });
+    logger.warn({ error: (error as { message?: string } | null)?.message || String(error) }, 'Bonus auto-finalize run failed');
   },
 });
 

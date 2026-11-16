@@ -1,8 +1,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 
 import { createIntervalJob } from '../lib/interval-job';
-
-import { log, LogLevel } from './observability';
+import { logger } from '../lib/logger';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_RETENTION_DAYS = 90;
@@ -47,7 +46,7 @@ export async function purgeProcessedWebhookEvents(
   }
 
   if (deleted > 0) {
-    log(LogLevel.INFO, 'Purged processed webhook events', { deleted, retentionDays, cutoff: cutoff.toISOString() });
+    logger.info({ deleted, retentionDays, cutoff: cutoff.toISOString() }, 'Purged processed webhook events');
   }
 
   return deleted;
@@ -57,9 +56,9 @@ const job = createIntervalJob({
   intervalMs: CHECK_INTERVAL_MS,
   run: purgeProcessedWebhookEvents,
   onError: (error) => {
-    log(LogLevel.WARN, 'Webhook event retention run failed', {
+    logger.warn({
       error: error instanceof Error ? error.message : String(error),
-    });
+    }, 'Webhook event retention run failed');
   },
 });
 

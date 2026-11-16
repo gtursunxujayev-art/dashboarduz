@@ -1,6 +1,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 
 import { parseAmoTimestamp } from '../lib/amocrm';
+import { logger } from '../lib/logger';
 import { getCaseInsensitiveValue, textFromUnknownOrEmpty } from '../lib/object';
 import { isLikelyExternalPhone, normalizePhoneKeepPlus } from '../lib/phone';
 import { isAllowedUtelManagerExtension, normalizeCallDirection } from '../lib/utel';
@@ -9,7 +10,7 @@ import { getSelectedPipelineIds } from '../services/integrations/amocrm-live';
 import { telegramService } from '../services/integrations/telegram';
 import { upsertTelegramRecipientRecord } from '../services/integrations/telegram-recipient-store';
 import { extractTelegramRecipientFromPayload } from '../services/integrations/telegram-update';
-import { log, LogLevel } from '../services/observability';
+import { reportError } from '../services/observability';
 import { queueService } from '../services/queue';
 import { decryptIntegrationTokens } from '../services/security/encryption';
 import { rateLimiter } from '../services/security/rate-limiter';
@@ -518,7 +519,7 @@ export async function processWebhookEvent(eventId: string) {
   let tenantIdForAudit: string | null = null;
 
   try {
-    log(LogLevel.INFO, 'Processing webhook event', { eventId });
+    logger.info({ eventId }, 'Processing webhook event');
     const event = await systemPrisma.webhookEvent.findUnique({ where: { id: eventId } });
 
     if (!event) {
@@ -526,7 +527,7 @@ export async function processWebhookEvent(eventId: string) {
     }
 
     if (event.processed) {
-      log(LogLevel.WARN, 'Webhook event already processed', { eventId });
+      logger.warn({ eventId }, 'Webhook event already processed');
 
       return;
     }
@@ -580,7 +581,7 @@ export async function processWebhookEvent(eventId: string) {
         await processFaceIdWebhook(event, tenantId);
         break;
       default:
-        log(LogLevel.WARN, 'Unknown webhook source', { eventId, source: event.source });
+        logger.warn({ eventId, source: event.source }, 'Unknown webhook source');
     }
 
     await systemPrisma.webhookEvent.update({
@@ -622,7 +623,7 @@ export async function processWebhookEvent(eventId: string) {
       });
     }
 
-    log(LogLevel.ERROR, 'Webhook processing failed', {
+    reportError('Webhook processing failed', {
       eventId,
       error: error.message,
       stack: error.stack,
@@ -976,13 +977,13 @@ async function processTelegramWebhook(event: any, tenantId: string) {
       lastSeenAt: seenAt,
       lastUpdateId: updateId,
     });
-    log(LogLevel.INFO, 'Telegram recipient processed', {
+    logger.info({
       tenantId,
       integrationId: integration.id,
       chatId: recipient.chatId,
       updateId,
       started: recipient.started,
-    });
+    }, 'Telegram recipient processed');
   }
 
   await systemPrisma.integration.update({
@@ -1123,7 +1124,7 @@ async function sendTelegramNotification(payload: any, botToken: string) {
 }
 
 export async function processExport(exportId: string) {
-  log(LogLevel.INFO, 'Processing export', { exportId });
+  logger.info({ exportId }, 'Processing export');
 }
 
 export async function processIntegrationSync(integrationType: string, tenantId: string) {

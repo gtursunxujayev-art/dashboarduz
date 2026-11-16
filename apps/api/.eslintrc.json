@@ -37,10 +37,8 @@
       "varsIgnorePattern": "^_"
     }],
     
-    // Console logging rules (use built-in eslint no-console)
-    "no-console": ["error", {
-      "allow": ["warn", "error"]
-    }],
+    // Log through the pino logger in src/lib/logger.ts (reportError in services/observability for Sentry)
+    "no-console": "error",
     
     // Import rules
     "import/order": ["error", {
@@ -91,7 +89,7 @@
   },
   "overrides": [
     {
-      "files": ["**/*.test.ts", "**/*.spec.ts"],
+      "files": ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**/*.ts"],
       "rules": {
         "@typescript-eslint/no-explicit-any": "off",
         "@typescript-eslint/no-unsafe-argument": "off",

@@ -15,6 +15,7 @@ import { z } from 'zod';
 
 import { isAgentOnly } from '../../lib/access';
 import { DATE_RANGE_MESSAGES_EN, parseCustomDate, type ParseCustomDateOptions } from '../../lib/dates';
+import { logger } from '../../lib/logger';
 import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, sanitizeTelegramUsername, sendMessageToTelegramChat, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import { normalizeKey } from '../../lib/text';
 import { reconcileFinalizedBonusMonths } from '../../services/bonus-engine';
@@ -418,11 +419,11 @@ async function reconcileBonusAfterIncomeChange(
   try {
     await reconcileFinalizedBonusMonths({ tenantId, actorUserId, db });
   } catch (error) {
-    console.error('[Bonus] Finalized month reconciliation failed after income change', {
+    logger.error({
       tenantId,
       ...context,
       error: String((error as any)?.message || error),
-    });
+    }, '[Bonus] Finalized month reconciliation failed after income change');
   }
 }
 
@@ -922,7 +923,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
-    console.warn('[Income][Telegram] Bot token is missing. Connect Telegram integration or set TELEGRAM_BOT_TOKEN.');
+    logger.warn('[Income][Telegram] Bot token is missing. Connect Telegram integration or set TELEGRAM_BOT_TOKEN.');
 
     return {
       attempted: false,
@@ -1072,11 +1073,11 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   if (!groupIds.length) {
     const normalizedCategory = String(saleIncome.course.category || '').trim().toLowerCase() || 'unknown';
 
-    console.warn('[Income][Telegram] Group ID is missing for payment category', {
+    logger.warn({
       tenantId: params.tenantId,
       category: normalizedCategory,
       expectedEnv: categoryGroupKeys,
-    });
+    }, '[Income][Telegram] Group ID is missing for payment category');
 
     return {
       attempted: false,
@@ -1233,12 +1234,12 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
       const errorMessage = String((error as any)?.message || error);
 
       sendErrors.push(`${groupId}: ${errorMessage}`);
-      console.error('[Income][Telegram] Failed to send offline/intensive payment message', {
+      logger.error({
         tenantId: params.tenantId,
         groupId,
         incomeId: params.incomeId,
         error: errorMessage,
-      });
+      }, '[Income][Telegram] Failed to send offline/intensive payment message');
     }
   }
 
@@ -1252,12 +1253,12 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   } satisfies TelegramPaymentDispatchResult;
 
   if (!dispatchResult.delivered) {
-    console.warn('[Income][Telegram] Payment message was not delivered to any target group.', {
+    logger.warn({
       tenantId: params.tenantId,
       incomeId: params.incomeId,
       groupIds,
       errors: dispatchResult.errors,
-    });
+    }, '[Income][Telegram] Payment message was not delivered to any target group.');
   }
 
   return dispatchResult;
@@ -1338,7 +1339,7 @@ async function sendTariffChangeRequestedTelegram(params: {
   const groupIds = parseTelegramGroupIdsFromEnvKeys(TARIFF_CHANGE_GROUP_ENV_KEYS);
 
   if (!groupIds.length) {
-    console.warn('[Income][Telegram] Tariff change group is missing. Set TARIFF_CHANGE_GROUP_ID (or CHANGE_GROUP_ID).');
+    logger.warn('[Income][Telegram] Tariff change group is missing. Set TARIFF_CHANGE_GROUP_ID (or CHANGE_GROUP_ID).');
 
     return;
   }
@@ -1396,12 +1397,12 @@ async function sendTariffChangeRequestedTelegram(params: {
         disable_web_page_preview: true,
       });
     } catch (error) {
-      console.error('[Income][Telegram] Failed to send tariff-change requested message', {
+      logger.error({
         tenantId: params.tenantId,
         requestId: params.requestId,
         groupId,
         error: String((error as any)?.message || error),
-      });
+      }, '[Income][Telegram] Failed to send tariff-change requested message');
     }
   }
 }
@@ -1471,7 +1472,7 @@ async function sendTariffChangeApprovedTelegram(params: {
   const groupIds = parseTelegramGroupIdsFromEnvKeys(TARIFF_CHANGE_GROUP_ENV_KEYS);
 
   if (!groupIds.length) {
-    console.warn('[Income][Telegram] Tariff change group is missing. Set TARIFF_CHANGE_GROUP_ID (or CHANGE_GROUP_ID).');
+    logger.warn('[Income][Telegram] Tariff change group is missing. Set TARIFF_CHANGE_GROUP_ID (or CHANGE_GROUP_ID).');
 
     return;
   }
@@ -1514,12 +1515,12 @@ async function sendTariffChangeApprovedTelegram(params: {
         disable_web_page_preview: true,
       });
     } catch (error) {
-      console.error('[Income][Telegram] Failed to send tariff-change approved message', {
+      logger.error({
         tenantId: params.tenantId,
         requestId: params.requestId,
         groupId,
         error: String((error as any)?.message || error),
-      });
+      }, '[Income][Telegram] Failed to send tariff-change approved message');
     }
   }
 }
@@ -1535,7 +1536,7 @@ async function sendRefundApprovedTelegram(params: {
   const groupIds = resolveRefundGroupIds();
 
   if (!groupIds.length) {
-    console.warn('[Income][Telegram] Refund group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
+    logger.warn('[Income][Telegram] Refund group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
 
     return;
   }
@@ -1543,7 +1544,7 @@ async function sendRefundApprovedTelegram(params: {
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
-    console.warn('[Income][Telegram] Bot token is missing for refund message.');
+    logger.warn('[Income][Telegram] Bot token is missing for refund message.');
 
     return;
   }
@@ -1637,13 +1638,13 @@ async function sendRefundApprovedTelegram(params: {
     }
 
     if (!delivered) {
-      console.error('[Income][Telegram] Failed to send refund message', {
+      logger.error({
         tenantId: params.tenantId,
         requestId: params.requestId,
         groupId,
         chatIdCandidates,
         error: lastError,
-      });
+      }, '[Income][Telegram] Failed to send refund message');
     }
   }
 }
@@ -1659,7 +1660,7 @@ async function sendRefundRequestedTelegram(params: {
   const groupIds = resolveRefundGroupIds();
 
   if (!groupIds.length) {
-    console.warn('[Income][Telegram] Refund request group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
+    logger.warn('[Income][Telegram] Refund request group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
 
     return;
   }
@@ -1667,7 +1668,7 @@ async function sendRefundRequestedTelegram(params: {
   const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
 
   if (!botToken) {
-    console.warn('[Income][Telegram] Bot token is missing for refund request message.');
+    logger.warn('[Income][Telegram] Bot token is missing for refund request message.');
 
     return;
   }
@@ -1778,13 +1779,13 @@ async function sendRefundRequestedTelegram(params: {
     }
 
     if (!delivered) {
-      console.error('[Income][Telegram] Failed to send refund request message', {
+      logger.error({
         tenantId: params.tenantId,
         requestId: params.requestId,
         groupId,
         chatIdCandidates,
         error: lastError,
-      });
+      }, '[Income][Telegram] Failed to send refund request message');
     }
   }
 }
@@ -1929,13 +1930,13 @@ async function notifyFinanceUsersRefundRequested(params: {
     try {
       await sendMessageToTelegramChat(botToken, chatId, message);
     } catch (error) {
-      console.error('[Income][Telegram] Failed to notify finance user about refund request', {
+      logger.error({
         tenantId: params.tenantId,
         requestId: params.requestId,
         financeUserId: financeUser.id,
         chatId,
         error: String((error as any)?.message || error),
-      });
+      }, '[Income][Telegram] Failed to notify finance user about refund request');
     }
   }
 }
@@ -2039,14 +2040,14 @@ async function notifyRefundRequesterReviewResult(params: {
   try {
     await sendMessageToTelegramChat(botToken, requesterChatId, message);
   } catch (error) {
-    console.error('[Income][Telegram] Failed to notify requester about refund review result', {
+    logger.error({
       tenantId: params.tenantId,
       requestId: params.requestId,
       requesterUserId: request.requestedBy?.id || null,
       chatId: requesterChatId,
       status: params.status,
       error: String((error as any)?.message || error),
-    });
+    }, '[Income][Telegram] Failed to notify requester about refund review result');
   }
 }
 
@@ -3064,11 +3065,11 @@ async function createIncomeEntry(params: {
           db,
         });
       } catch (error) {
-        console.error('[Income][Telegram] Payment notification failed (non-blocking)', {
+        logger.error({
           tenantId,
           incomeId: createdIncome.id,
           error: String((error as any)?.message || error),
-        });
+        }, '[Income][Telegram] Payment notification failed (non-blocking)');
         telegramDispatch = {
           attempted: true,
           delivered: false,
@@ -3514,7 +3515,7 @@ export const customerIncomeRouter = router({
         db: ctx.db,
       });
     } catch (courseError) {
-      console.error('[Income/FormOptions] Failed to load courses, returning empty course list:', courseError);
+      logger.error({ err: courseError }, '[Income/FormOptions] Failed to load courses, returning empty course list:');
       courses = [];
     }
     const outstandingDebtMetricsBySaleId = await buildActiveSaleChainMetrics({
@@ -5759,11 +5760,11 @@ export const customerIncomeRouter = router({
             db: ctx.db,
           });
         } catch (error) {
-          console.error('[Income][Telegram] Refund request notification failed (non-blocking)', {
+          logger.error({
             tenantId: ctx.tenantId,
             requestId: createdRequest.id,
             error: String((error as any)?.message || error),
-          });
+          }, '[Income][Telegram] Refund request notification failed (non-blocking)');
         }
 
         try {
@@ -5774,11 +5775,11 @@ export const customerIncomeRouter = router({
             db: ctx.db,
           });
         } catch (error) {
-          console.error('[Income][Telegram] Finance direct notification for refund request failed (non-blocking)', {
+          logger.error({
             tenantId: ctx.tenantId,
             requestId: createdRequest.id,
             error: String((error as any)?.message || error),
-          });
+          }, '[Income][Telegram] Finance direct notification for refund request failed (non-blocking)');
         }
       } else if (input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE) {
         try {
@@ -5789,11 +5790,11 @@ export const customerIncomeRouter = router({
             db: ctx.db,
           });
         } catch (error) {
-          console.error('[Income][Telegram] Tariff-change request notification failed (non-blocking)', {
+          logger.error({
             tenantId: ctx.tenantId,
             requestId: createdRequest.id,
             error: String((error as any)?.message || error),
-          });
+          }, '[Income][Telegram] Tariff-change request notification failed (non-blocking)');
         }
       }
 
@@ -6006,11 +6007,11 @@ export const customerIncomeRouter = router({
             db: ctx.db,
           });
         } catch (error) {
-          console.error('[Income][Telegram] Refund notification failed (non-blocking)', {
+          logger.error({
             tenantId: ctx.tenantId,
             requestId: request.id,
             error: String((error as any)?.message || error),
-          });
+          }, '[Income][Telegram] Refund notification failed (non-blocking)');
         }
 
         try {
@@ -6021,11 +6022,11 @@ export const customerIncomeRouter = router({
             db: ctx.db,
           });
         } catch (error) {
-          console.error('[Income][Telegram] Requester approved-refund notification failed (non-blocking)', {
+          logger.error({
             tenantId: ctx.tenantId,
             requestId: request.id,
             error: String((error as any)?.message || error),
-          });
+          }, '[Income][Telegram] Requester approved-refund notification failed (non-blocking)');
         }
       }
 
@@ -6152,11 +6153,11 @@ export const customerIncomeRouter = router({
             db: ctx.db,
           });
         } catch (error) {
-          console.error('[Income][Telegram] Requester rejected-refund notification failed (non-blocking)', {
+          logger.error({
             tenantId: ctx.tenantId,
             requestId: request.id,
             error: String((error as any)?.message || error),
-          });
+          }, '[Income][Telegram] Requester rejected-refund notification failed (non-blocking)');
         }
       }
 
@@ -6957,11 +6958,11 @@ export const customerIncomeRouter = router({
             db: ctx.db,
           });
         } catch (error) {
-          console.error('[Income][Telegram] Refund request notification failed (non-blocking)', {
+          logger.error({
             tenantId: ctx.tenantId,
             requestId: createdRefundRequestId,
             error: String((error as any)?.message || error),
-          });
+          }, '[Income][Telegram] Refund request notification failed (non-blocking)');
         }
 
         try {
@@ -6972,11 +6973,11 @@ export const customerIncomeRouter = router({
             db: ctx.db,
           });
         } catch (error) {
-          console.error('[Income][Telegram] Finance direct notification for refund request failed (non-blocking)', {
+          logger.error({
             tenantId: ctx.tenantId,
             requestId: createdRefundRequestId,
             error: String((error as any)?.message || error),
-          });
+          }, '[Income][Telegram] Finance direct notification for refund request failed (non-blocking)');
         }
       }
 

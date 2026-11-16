@@ -34,6 +34,8 @@ const loggerOptions: LoggerOptions = {
     },
   },
   timestamp: pino.stdTimeFunctions.isoTime,
+  // Every line names the service (the former observability log() helper added this field).
+  mixin: () => ({ service: 'dashboarduz-api' }),
 };
 
 // pino-pretty runs as a transport in a worker thread. Under Jest that thread keeps each test worker alive after its

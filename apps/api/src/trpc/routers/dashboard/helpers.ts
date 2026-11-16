@@ -711,6 +711,6 @@ export {
   summarizeAmoCRMActivityMetrics,
   type AmoCRMActivityDiagnostics,
 } from '../../../services/integrations/amocrm-activity';
-export { LogLevel, log } from '../../../services/observability';
+
 export { adminProcedure, protectedProcedure, router } from '../../trpc';
 

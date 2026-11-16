@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { getAgentResponsibleScope } from '../../lib/access';
 import { resolveDateRange } from '../../lib/dates';
+import { logger } from '../../lib/logger';
 import { resolveTelegramBotTokenForTenant, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension, resolveExtensionFromCallParties } from '../../lib/utel';
 import { getCallsProvider } from '../../services/calls-source';
@@ -18,7 +19,6 @@ import {
 } from '../../services/integrations/amocrm-activity';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { telegramService } from '../../services/integrations/telegram';
-import { log, LogLevel } from '../../services/observability';
 import { router, protectedProcedure } from '../trpc';
 
 const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
@@ -813,10 +813,10 @@ export const sellersRouter = router({
       if (!isSchemaCompatibilityError(error, ['corporatecallduration', 'updatedat'])) {
         throw error;
       }
-      log(LogLevel.WARN, 'Sellers list: corporate duration revision fallback applied', {
+      logger.warn({
         tenantId: ctx.tenantId,
         error: String((error as Error)?.message || error),
-      });
+      }, 'Sellers list: corporate duration revision fallback applied');
     }
     const corporateRevisionKey = corporateRevision._max.updatedAt
       ? corporateRevision._max.updatedAt.toISOString()
@@ -834,14 +834,14 @@ export const sellersRouter = router({
 
     if (cached && cached.expiresAt > Date.now()) {
       timings.totalMs = Date.now() - startedAtMs;
-      log(LogLevel.INFO, 'Sellers list timings', {
+      logger.info({
         tenantId: ctx.tenantId,
         userId: ctx.user.userId,
         managerCount: managers.length,
         selectedPipelineIds,
         cacheHit: true,
         timings,
-      });
+      }, 'Sellers list timings');
 
       return cached.data;
     }
@@ -1013,10 +1013,10 @@ export const sellersRouter = router({
         if (!isSchemaCompatibilityError(error, ['call', 'startedat', 'duration'])) {
           throw error;
         }
-        log(LogLevel.WARN, 'Sellers list: calls fallback applied (empty calls)', {
+        logger.warn({
           tenantId: ctx.tenantId,
           error: String((error as Error)?.message || error),
-        });
+        }, 'Sellers list: calls fallback applied (empty calls)');
         calls = [];
       }
     }
@@ -1058,10 +1058,10 @@ export const sellersRouter = router({
               if (!isSchemaCompatibilityError(error, ['lifestylestatus', 'lifecyclestatus', 'category', 'course'])) {
                 throw error;
               }
-              log(LogLevel.WARN, 'Sellers list: incomes fallback applied', {
+              logger.warn({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
-              });
+              }, 'Sellers list: incomes fallback applied');
 
               return await ctx.db.income.findMany({
                 where: {
@@ -1117,10 +1117,10 @@ export const sellersRouter = router({
               if (!isSchemaCompatibilityError(error, ['incomeadjustmentrequest'])) {
                 throw error;
               }
-              log(LogLevel.WARN, 'Sellers list: refund requests fallback applied (empty)', {
+              logger.warn({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
-              });
+              }, 'Sellers list: refund requests fallback applied (empty)');
 
               return [];
             }
@@ -1150,10 +1150,10 @@ export const sellersRouter = router({
               if (!isSchemaCompatibilityError(error, ['lifecyclestatus'])) {
                 throw error;
               }
-              log(LogLevel.WARN, 'Sellers list: customer split fallback applied', {
+              logger.warn({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
-              });
+              }, 'Sellers list: customer split fallback applied');
 
               return await ctx.db.income.findMany({
                 where: {
@@ -1200,10 +1200,10 @@ export const sellersRouter = router({
               if (!isSchemaCompatibilityError(error, ['lifecyclestatus'])) {
                 throw error;
               }
-              log(LogLevel.WARN, 'Sellers list: deadline adherence fallback applied', {
+              logger.warn({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
-              });
+              }, 'Sellers list: deadline adherence fallback applied');
 
               return await ctx.db.income.findMany({
                 where: {
@@ -1285,10 +1285,10 @@ export const sellersRouter = router({
       if (!isSchemaCompatibilityError(error, ['corporatecallduration', 'durationseconds', 'calldate'])) {
         throw error;
       }
-      log(LogLevel.WARN, 'Sellers list: corporate call duration fallback applied (empty)', {
+      logger.warn({
         tenantId: ctx.tenantId,
         error: String((error as Error)?.message || error),
-      });
+      }, 'Sellers list: corporate call duration fallback applied (empty)');
       corporateDurationByUserId = new Map<string, number>();
     }
     const corporateDurationByManager = new Map<string, number>();
@@ -1454,7 +1454,7 @@ export const sellersRouter = router({
     timings.buildResponseMs = Date.now() - buildResponseStartedMs;
     timings.totalMs = Date.now() - startedAtMs;
 
-    log(LogLevel.INFO, 'Sellers list timings', {
+    logger.info({
       tenantId: ctx.tenantId,
       userId: ctx.user.userId,
       managerCount: managers.length,
@@ -1464,7 +1464,7 @@ export const sellersRouter = router({
       activityTotals: summarizeAmoCRMActivityMetrics(activityByManager),
       cacheHit: false,
       timings,
-    });
+    }, 'Sellers list timings');
 
     sellersListCache.set(listCacheKey, {
       expiresAt: Date.now() + SELLERS_LIST_CACHE_TTL_MS,

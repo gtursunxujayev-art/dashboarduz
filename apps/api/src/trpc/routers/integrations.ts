@@ -4,6 +4,7 @@ import { callsSourceSchema , TASHKENT_OFFSET_MS, amocrmConnectSchema, faceIdConn
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { logger } from '../../lib/logger';
 import { asObjectOrEmpty } from '../../lib/object';
 import { parseTelegramDailyReportCourseIds } from '../../lib/telegram';
 import { hashFaceIdWebhookToken } from '../../services/attendance/faceid';
@@ -372,12 +373,12 @@ export const integrationsRouter = router({
       const reason = detectAmoFailureReason(contextError);
       const help = amoFailureHelp(reason);
 
-      console.warn('[AmoCRM][Pipelines] Context load failed', {
+      logger.warn({
         tenantId: ctx.tenantId,
         reason,
         retried: true,
         error: String((contextError as any)?.message || contextError),
-      });
+      }, '[AmoCRM][Pipelines] Context load failed');
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message: [amoFailureMessage('AmoCRM context yuklanmadi', reason), help].filter(Boolean).join('. '),
@@ -400,12 +401,12 @@ export const integrationsRouter = router({
       } catch (secondError: any) {
         const reason = detectAmoFailureReason(secondError || firstError);
 
-        console.warn('[AmoCRM][Pipelines] Fetch failed', {
+        logger.warn({
           tenantId: ctx.tenantId,
           reason,
           retried: true,
           error: String((secondError as any)?.message || (firstError as any)?.message || secondError || firstError),
-        });
+        }, '[AmoCRM][Pipelines] Fetch failed');
         const help = amoFailureHelp(reason);
 
         throw new TRPCError({

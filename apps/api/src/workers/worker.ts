@@ -1,15 +1,15 @@
 // Main worker entry point
 // This file is executed by worker containers
 
+import { logger } from '../lib/logger';
+import { startBonusAutoFinalizeScheduler, stopBonusAutoFinalizeScheduler } from '../services/bonus-auto-finalize';
+import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from '../services/integrations/amocrm-call-sync';
+import { initSentry , reportError } from '../services/observability';
 import { initializeWorkers } from '../services/queue/queues';
-import { log, LogLevel } from '../services/observability';
-import { initSentry } from '../services/observability';
-import { startTelegramReportScheduler, stopTelegramReportScheduler } from '../services/reports/telegram-report-scheduler';
 import { startTelegramAgentPerformanceScheduler, stopTelegramAgentPerformanceScheduler } from '../services/reports/telegram-agent-performance-scheduler';
 import { startTelegramGroupSummaryScheduler, stopTelegramGroupSummaryScheduler } from '../services/reports/telegram-group-summary-scheduler';
-import { startBonusAutoFinalizeScheduler, stopBonusAutoFinalizeScheduler } from '../services/bonus-auto-finalize';
+import { startTelegramReportScheduler, stopTelegramReportScheduler } from '../services/reports/telegram-report-scheduler';
 import { startWebhookEventRetentionScheduler, stopWebhookEventRetentionScheduler } from '../services/webhook-event-retention';
-import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from '../services/integrations/amocrm-call-sync';
 
 // Initialize observability
 initSentry();
@@ -22,7 +22,7 @@ function startWorkerService(): void {
   startBonusAutoFinalizeScheduler();
   startWebhookEventRetentionScheduler();
   startAmoCallsSyncScheduler();
-  log(LogLevel.INFO, 'Worker service started');
+  logger.info('Worker service started');
 }
 
 Promise.resolve().then(startWorkerService).catch((error: any) => {
@@ -31,14 +31,14 @@ Promise.resolve().then(startWorkerService).catch((error: any) => {
     stack: error?.stack || null,
   };
 
-  log(LogLevel.ERROR, 'Failed to start worker service', details);
-  console.error('[Worker] Startup failed:', details);
+  reportError('Failed to start worker service', details);
+  logger.error({ ...details }, '[Worker] Startup failed:');
   process.exit(1);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  log(LogLevel.INFO, 'SIGTERM received, shutting down gracefully');
+  logger.info('SIGTERM received, shutting down gracefully');
   stopTelegramGroupSummaryScheduler();
   stopBonusAutoFinalizeScheduler();
   stopWebhookEventRetentionScheduler();
@@ -49,7 +49,7 @@ process.on('SIGTERM', () => {
 });
 
 process.on('SIGINT', () => {
-  log(LogLevel.INFO, 'SIGINT received, shutting down gracefully');
+  logger.info('SIGINT received, shutting down gracefully');
   stopTelegramGroupSummaryScheduler();
   stopBonusAutoFinalizeScheduler();
   stopWebhookEventRetentionScheduler();

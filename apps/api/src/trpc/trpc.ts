@@ -1,9 +1,11 @@
-import { initTRPC, TRPCError } from '@trpc/server';
-import type { Context } from './context';
 import { forTenant } from '@dashboarduz/db';
 import { Prisma } from '@prisma/client';
+import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
-import { log, LogLevel } from '../services/observability';
+
+import { logger } from '../lib/logger';
+
+import type { Context } from './context';
 
 const t = initTRPC.context<Context>().create({
   transformer: superjson,
@@ -59,7 +61,7 @@ const performanceMiddleware = t.middleware(async (opts) => {
     const responseSize = result.ok ? getApproxResponseSize(result.data) : undefined;
 
     if (durationMs >= Number(process.env.TRPC_SLOW_PROCEDURE_MS || 750)) {
-      log(LogLevel.WARN, 'Slow tRPC procedure', {
+      logger.warn({
         procedureName: opts.path,
         procedureType: opts.type,
         tenantId: opts.ctx.tenantId,
@@ -67,9 +69,9 @@ const performanceMiddleware = t.middleware(async (opts) => {
         durationMs,
         responseSize,
         ok,
-      });
+      }, 'Slow tRPC procedure');
     } else if (process.env.TRPC_PERF_LOG_ALL === 'true') {
-      log(LogLevel.INFO, 'tRPC procedure completed', {
+      logger.info({
         procedureName: opts.path,
         procedureType: opts.type,
         tenantId: opts.ctx.tenantId,
@@ -77,19 +79,19 @@ const performanceMiddleware = t.middleware(async (opts) => {
         durationMs,
         responseSize,
         ok,
-      });
+      }, 'tRPC procedure completed');
     }
 
     return result;
   } catch (error) {
-    log(LogLevel.WARN, 'tRPC procedure failed', {
+    logger.warn({
       procedureName: opts.path,
       procedureType: opts.type,
       tenantId: opts.ctx.tenantId,
       userId: opts.ctx.user?.userId,
       durationMs: Date.now() - startedAt,
       errorName: (error as Error | undefined)?.name,
-    });
+    }, 'tRPC procedure failed');
     throw error;
   }
 });

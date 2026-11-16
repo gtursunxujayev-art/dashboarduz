@@ -3,11 +3,12 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 
+import { logger } from './lib/logger';
 import { applyObservabilityMiddleware } from './middleware/observability';
 import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from './services/integrations/amocrm-call-sync';
 import { telegramService } from './services/integrations/telegram';
 import { parseTelegramGroupIds } from './services/integrations/telegram-groups';
-import { initSentry, log, LogLevel } from './services/observability';
+import { initSentry } from './services/observability';
 import { checkRedisHealth } from './services/queue/redis-client';
 import { startTelegramAgentPerformanceScheduler, stopTelegramAgentPerformanceScheduler } from './services/reports/telegram-agent-performance-scheduler';
 import { startTelegramGroupSummaryScheduler, stopTelegramGroupSummaryScheduler } from './services/reports/telegram-group-summary-scheduler';
@@ -23,13 +24,13 @@ if (process.env.SKIP_ENV_VALIDATION !== 'true') {
     const { validateAllFeatures } = require('./config/env-validator');
 
     validateAllFeatures();
-    console.log('[Config] Environment variables validated successfully');
+    logger.info('[Config] Environment variables validated successfully');
   } catch (error: any) {
-    console.error('[Config] Environment validation failed:', error.message);
+    logger.error({ error: (error as Error).message }, '[Config] Environment validation failed:');
     process.exit(1);
   }
 } else {
-  console.log('[Config] Skipping environment validation (SKIP_ENV_VALIDATION=true)');
+  logger.info('[Config] Skipping environment validation (SKIP_ENV_VALIDATION=true)');
 }
 
 initSentry();
@@ -59,14 +60,14 @@ if (schedulerEnabledInApi) {
   startTelegramAgentPerformanceScheduler();
   startTelegramGroupSummaryScheduler();
   startAmoCallsSyncScheduler();
-  log(LogLevel.INFO, 'Report schedulers are enabled in API process', {
+  logger.info({
     mode: 'api',
     env: process.env.NODE_ENV || 'unknown',
-  });
+  }, 'Report schedulers are enabled in API process');
 } else {
-  log(LogLevel.INFO, 'Queue workers are disabled in API process. Start worker service separately.', {
+  logger.info({
     mode: 'worker_only',
-  });
+  }, 'Queue workers are disabled in API process. Start worker service separately.');
 }
 
 const app = express();

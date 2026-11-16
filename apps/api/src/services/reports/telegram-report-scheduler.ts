@@ -3,6 +3,7 @@ import { fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDat
 
 import { sleep } from '../../lib/async';
 import { createIntervalJob } from '../../lib/interval-job';
+import { logger } from '../../lib/logger';
 import { roundPositivePercentage } from '../../lib/number';
 import { parseTelegramDailyReportCourseIds } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension } from '../../lib/utel';
@@ -19,7 +20,7 @@ import { amocrmService } from '../integrations/amocrm';
 import { extractLeadValue, getTenantAmoCRMContext, humanizeKey } from '../integrations/amocrm-live';
 import { telegramService } from '../integrations/telegram';
 import { listTelegramRecipients } from '../integrations/telegram-recipient-store';
-import { log, LogLevel } from '../observability';
+import { reportError } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 
@@ -1077,10 +1078,10 @@ async function collectMetrics(params: {
     amoContext = await getTenantAmoCRMContext(params.tenantId);
   } catch (error: any) {
     usedLiveAmoLeads = false;
-    log(LogLevel.WARN, 'Report generation: failed to load AmoCRM context, falling back to local lead metrics', {
+    logger.warn({
       tenantId: params.tenantId,
       error: error?.message || 'Unknown error',
-    });
+    }, 'Report generation: failed to load AmoCRM context, falling back to local lead metrics');
   }
   if (amoContext) {
     try {
@@ -1137,10 +1138,10 @@ async function collectMetrics(params: {
       }
     } catch (error: any) {
       usedLiveAmoLeads = false;
-      log(LogLevel.WARN, 'Falling back to local lead metrics for report generation', {
+      logger.warn({
         tenantId: params.tenantId,
         error: error?.message || 'Unknown error',
-      });
+      }, 'Falling back to local lead metrics for report generation');
     }
   }
 
@@ -1636,11 +1637,11 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
         },
       });
 
-      log(LogLevel.INFO, 'Scheduled Telegram report sent', {
+      logger.info({
         tenantId: integration.tenantId,
         schedule: window.kind,
         recipients: sent.recipientCount,
-      });
+      }, 'Scheduled Telegram report sent');
     } catch (error: any) {
       await redis.del(lockKey);
       await systemPrisma.auditLog.create({
@@ -1658,7 +1659,7 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
         },
       });
 
-      log(LogLevel.ERROR, 'Scheduled Telegram report failed', {
+      reportError('Scheduled Telegram report failed', {
         tenantId: integration.tenantId,
         schedule: window.kind,
         error: error?.message || 'Unknown error',
@@ -1679,15 +1680,15 @@ const schedulerJob = createIntervalJob({
     }
   },
   onError: (error) => {
-    log(LogLevel.ERROR, 'Telegram report scheduler tick failed', {
+    reportError('Telegram report scheduler tick failed', {
       error: (error as Error | undefined)?.message || 'Unknown error',
     });
   },
   onStart: () => {
-    log(LogLevel.INFO, 'Telegram report scheduler started', {
+    logger.info({
       timezone: TASHKENT_TIMEZONE_LABEL,
       intervalMs: POLL_INTERVAL_MS,
-    });
+    }, 'Telegram report scheduler started');
   },
 });
 

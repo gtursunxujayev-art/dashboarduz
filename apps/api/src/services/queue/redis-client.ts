@@ -2,6 +2,8 @@
 
 import Redis from 'ioredis';
 
+import { logger } from '../../lib/logger';
+
 let redisClient: Redis | null = null;
 
 export function getRedisClient(): Redis {
@@ -29,19 +31,19 @@ export function getRedisClient(): Redis {
 
     // Event listeners for monitoring
     redisClient.on('connect', () => {
-      console.log('[Redis] Connected to Redis server');
+      logger.info('[Redis] Connected to Redis server');
     });
 
     redisClient.on('error', (error) => {
-      console.error('[Redis] Redis error:', error);
+      logger.error({ err: error }, '[Redis] Redis error:');
     });
 
     redisClient.on('close', () => {
-      console.log('[Redis] Redis connection closed');
+      logger.info('[Redis] Redis connection closed');
     });
 
     redisClient.on('reconnecting', () => {
-      console.log('[Redis] Reconnecting to Redis...');
+      logger.info('[Redis] Reconnecting to Redis...');
     });
   }
 

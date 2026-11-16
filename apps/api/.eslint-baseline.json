@@ -5,22 +5,16 @@
     "@typescript-eslint/no-unsafe-argument": 1,
     "@typescript-eslint/no-unsafe-assignment": 13,
     "@typescript-eslint/no-unsafe-call": 3,
-    "@typescript-eslint/no-unsafe-member-access": 17,
+    "@typescript-eslint/no-unsafe-member-access": 16,
     "@typescript-eslint/no-var-requires": 1,
     "@typescript-eslint/require-await": 1,
-    "import/no-named-as-default-member": 3,
-    "no-console": 2
-  },
-  "src/config/env-validator.ts": {
-    "no-console": 3
+    "import/no-named-as-default-member": 3
   },
   "src/index.ts": {
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-assignment": 1,
     "@typescript-eslint/no-unsafe-member-access": 1,
-    "import/no-named-as-default-member": 1,
-    "import/order": 1,
-    "no-console": 3
+    "import/no-named-as-default-member": 1
   },
   "src/lib/logger.ts": {
     "import/no-named-as-default": 1,
@@ -109,10 +103,6 @@
     "@typescript-eslint/no-base-to-string": 1,
     "@typescript-eslint/no-explicit-any": 4,
     "@typescript-eslint/no-unsafe-argument": 1,
-    "@typescript-eslint/no-unsafe-assignment": 1,
-    "@typescript-eslint/no-unsafe-call": 4,
-    "@typescript-eslint/no-unsafe-member-access": 4,
-    "@typescript-eslint/no-var-requires": 1,
     "object-shorthand": 1
   },
   "src/services/queue.ts": {
@@ -126,14 +116,12 @@
     "@typescript-eslint/no-unsafe-assignment": 49,
     "@typescript-eslint/no-unsafe-member-access": 14,
     "@typescript-eslint/no-unsafe-return": 1,
-    "import/no-cycle": 1,
-    "import/order": 3
+    "import/no-cycle": 1
   },
   "src/services/queue/redis-client.ts": {
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-assignment": 1,
-    "@typescript-eslint/no-unsafe-member-access": 1,
-    "no-console": 3
+    "@typescript-eslint/no-unsafe-member-access": 1
   },
   "src/services/reports/__tests__/telegram-group-summary-scheduler.test.ts": {
     "import/order": 1
@@ -306,8 +294,7 @@
   },
   "src/trpc/trpc.ts": {
     "@typescript-eslint/no-explicit-any": 1,
-    "@typescript-eslint/no-unsafe-member-access": 1,
-    "import/order": 5
+    "@typescript-eslint/no-unsafe-member-access": 1
   },
   "src/webhooks/index.ts": {
     "@typescript-eslint/no-explicit-any": 10,
@@ -331,9 +318,6 @@
   "src/workers/worker.ts": {
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-assignment": 2,
-    "@typescript-eslint/no-unsafe-member-access": 2,
-    "import/no-duplicates": 2,
-    "import/order": 6,
-    "no-duplicate-imports": 1
+    "@typescript-eslint/no-unsafe-member-access": 2
   }
 }

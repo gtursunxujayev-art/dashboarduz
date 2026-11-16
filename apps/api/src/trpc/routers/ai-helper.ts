@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { resolveAiProvider, type AiProviderConfig } from '../../lib/ai-provider';
 import { parseCustomDate } from '../../lib/dates';
+import { logger } from '../../lib/logger';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import { protectedProcedure, router } from '../trpc';
@@ -275,7 +276,7 @@ async function loadHelperPrompt(): Promise<string> {
     }
   }
 
-  console.warn('[aiHelper] AI_HELPER_PROMPT.md not found/readable. Fallback prompt is used.');
+  logger.warn('[aiHelper] AI_HELPER_PROMPT.md not found/readable. Fallback prompt is used.');
   promptCache = { value: FALLBACK_HELPER_PROMPT, loadedAt: now };
 
   return FALLBACK_HELPER_PROMPT;

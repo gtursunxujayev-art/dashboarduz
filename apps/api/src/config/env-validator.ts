@@ -2,6 +2,8 @@
 
 import { z } from 'zod';
 
+import { logger } from '../lib/logger';
+
 // Environment schema
 const envSchema = z.object({
   // Database
@@ -163,7 +165,7 @@ export function validateEnv(): EnvConfig {
 
   // Skip validation if SKIP_ENV_VALIDATION is true
   if (process.env.SKIP_ENV_VALIDATION === 'true') {
-    console.log('[Config] Skipping environment validation (SKIP_ENV_VALIDATION=true)');
+    logger.info('[Config] Skipping environment validation (SKIP_ENV_VALIDATION=true)');
     // Return a minimal valid config
     validatedEnv = {
       JWT_SECRET: process.env.JWT_SECRET || 'dummy-secret-for-skip-validation-mode',
@@ -185,14 +187,14 @@ export function validateEnv(): EnvConfig {
 
       if (constructedUrl) {
         process.env.DATABASE_URL = constructedUrl;
-        console.log('[Config] Constructed DATABASE_URL from individual components');
+        logger.info('[Config] Constructed DATABASE_URL from individual components');
       } else {
-        console.warn('[Config] DATABASE_URL is not set and cannot be constructed from individual components');
-        console.warn('[Config] Database connections will fail if DATABASE_URL is required');
+        logger.warn('[Config] DATABASE_URL is not set and cannot be constructed from individual components');
+        logger.warn('[Config] Database connections will fail if DATABASE_URL is required');
       }
     } else {
       // Log that DATABASE_URL is set (but don't log the actual URL for security)
-      console.log('[Config] DATABASE_URL is set');
+      logger.info('[Config] DATABASE_URL is set');
     }
     
     validatedEnv = envSchema.parse(process.env);
@@ -242,9 +244,7 @@ export function validateFeatureRequirements(feature: string): void {
   const missing = required.filter(key => !process.env[key]);
 
   if (missing.length > 0) {
-    console.warn(
-      `[Env] Feature '${feature}' requires the following environment variables: ${missing.join(', ')}`
-    );
+    logger.warn(`[Env] Feature '${feature}' requires the following environment variables: ${missing.join(', ')}`);
   }
 }
 

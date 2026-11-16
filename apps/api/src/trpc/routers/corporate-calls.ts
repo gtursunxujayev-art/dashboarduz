@@ -3,6 +3,7 @@ import { AGENT_ROLES, hasAgentRole, toTashkentDateKey } from '@dashboarduz/share
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { logger } from '../../lib/logger';
 import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import {
   formatDurationToHms,
@@ -243,13 +244,13 @@ export const corporateCallsRouter = router({
       });
 
       if (!telegram.sent) {
-        console.warn('[CorporateCalls][Telegram] Failed to send corporate call notification.', {
+        logger.warn({
           tenantId: ctx.tenantId,
           managerUserId: entry.managerUserId,
           date,
           reason: telegram.reason,
           errors: (telegram as any).errors || [],
-        });
+        }, '[CorporateCalls][Telegram] Failed to send corporate call notification.');
       }
 
       return {

@@ -1,9 +1,12 @@
 // BullMQ queue definitions
 
 import { Queue, Worker, Job } from 'bullmq';
-import { getRedisClient } from './redis-client';
+
+import { logger } from '../../lib/logger';
 import { processWebhookEvent, processNotification, processExport, processIntegrationSync } from '../../workers/index';
-import { log, LogLevel } from '../observability';
+import { reportError } from '../observability';
+
+import { getRedisClient } from './redis-client';
 
 // Queue names
 export enum QueueName {
@@ -106,9 +109,9 @@ export function getQueue(name: QueueName): Queue {
     queues.set(name, mainQueue);
     dlqQueues.set(name, dlqQueue);
 
-    log(LogLevel.INFO, `Created queue: ${name}`);
+    logger.info(`Created queue: ${name}`);
     
-    log(LogLevel.INFO, `Created DLQ: ${dlqName}`);
+    logger.info(`Created DLQ: ${dlqName}`);
   }
 
   return queues.get(name)!;
@@ -137,22 +140,22 @@ export function initializeWorkers() {
         const processed = await checkIdempotency(idempotencyKey);
 
         if (processed) {
-          log(LogLevel.WARN, 'Skipping duplicate job due to idempotency key', { 
+          logger.warn({ 
             jobId: job.id, 
             eventId, 
             idempotencyKey 
-          });
+          }, 'Skipping duplicate job due to idempotency key');
 
           return;
         }
       }
       
-      log(LogLevel.INFO, 'Processing webhook event', { 
+      logger.info({ 
         jobId: job.id, 
         eventId, 
         tenantId,
         attempt: job.attemptsMade + 1 
-      });
+      }, 'Processing webhook event');
       
       try {
         await processWebhookEvent(eventId);
@@ -162,13 +165,13 @@ export function initializeWorkers() {
           await markIdempotent(idempotencyKey);
         }
         
-        log(LogLevel.INFO, 'Webhook event processed successfully', { 
+        logger.info({ 
           jobId: job.id, 
           eventId,
           attempt: job.attemptsMade + 1 
-        });
+        }, 'Webhook event processed successfully');
       } catch (error: any) {
-        log(LogLevel.ERROR, 'Webhook processing failed', { 
+        reportError('Webhook processing failed', { 
           jobId: job.id, 
           eventId, 
           error: error.message,
@@ -201,21 +204,21 @@ export function initializeWorkers() {
         const processed = await checkIdempotency(idempotencyKey);
 
         if (processed) {
-          log(LogLevel.WARN, 'Skipping duplicate notification job', { 
+          logger.warn({ 
             jobId: job.id, 
             notificationId, 
             idempotencyKey 
-          });
+          }, 'Skipping duplicate notification job');
 
           return;
         }
       }
       
-      log(LogLevel.INFO, 'Processing notification', { 
+      logger.info({ 
         jobId: job.id, 
         notificationId,
         attempt: job.attemptsMade + 1 
-      });
+      }, 'Processing notification');
       
       try {
         await processNotification(notificationId);
@@ -225,13 +228,13 @@ export function initializeWorkers() {
           await markIdempotent(idempotencyKey);
         }
         
-        log(LogLevel.INFO, 'Notification processed successfully', { 
+        logger.info({ 
           jobId: job.id, 
           notificationId,
           attempt: job.attemptsMade + 1 
-        });
+        }, 'Notification processed successfully');
       } catch (error: any) {
-        log(LogLevel.ERROR, 'Notification processing failed', { 
+        reportError('Notification processing failed', { 
           jobId: job.id, 
           notificationId, 
           error: error.message,
@@ -264,21 +267,21 @@ export function initializeWorkers() {
         const processed = await checkIdempotency(idempotencyKey);
 
         if (processed) {
-          log(LogLevel.WARN, 'Skipping duplicate export job', { 
+          logger.warn({ 
             jobId: job.id, 
             exportType, 
             idempotencyKey 
-          });
+          }, 'Skipping duplicate export job');
 
           return;
         }
       }
       
-      log(LogLevel.INFO, 'Processing export', { 
+      logger.info({ 
         jobId: job.id, 
         exportType,
         attempt: job.attemptsMade + 1 
-      });
+      }, 'Processing export');
       
       try {
         await processExport(`${job.id}-${exportType}`);
@@ -288,13 +291,13 @@ export function initializeWorkers() {
           await markIdempotent(idempotencyKey);
         }
         
-        log(LogLevel.INFO, 'Export processed successfully', { 
+        logger.info({ 
           jobId: job.id, 
           exportType,
           attempt: job.attemptsMade + 1 
-        });
+        }, 'Export processed successfully');
       } catch (error: any) {
-        log(LogLevel.ERROR, 'Export processing failed', { 
+        reportError('Export processing failed', { 
           jobId: job.id, 
           exportType, 
           error: error.message,
@@ -327,23 +330,23 @@ export function initializeWorkers() {
         const processed = await checkIdempotency(idempotencyKey);
 
         if (processed) {
-          log(LogLevel.WARN, 'Skipping duplicate sync job', { 
+          logger.warn({ 
             jobId: job.id, 
             integrationType, 
             tenantId,
             idempotencyKey 
-          });
+          }, 'Skipping duplicate sync job');
 
           return;
         }
       }
       
-      log(LogLevel.INFO, 'Processing sync', { 
+      logger.info({ 
         jobId: job.id, 
         integrationType,
         tenantId,
         attempt: job.attemptsMade + 1 
-      });
+      }, 'Processing sync');
       
       try {
         await processIntegrationSync(integrationType, tenantId);
@@ -353,14 +356,14 @@ export function initializeWorkers() {
           await markIdempotent(idempotencyKey);
         }
         
-        log(LogLevel.INFO, 'Sync processed successfully', { 
+        logger.info({ 
           jobId: job.id, 
           integrationType,
           tenantId,
           attempt: job.attemptsMade + 1 
-        });
+        }, 'Sync processed successfully');
       } catch (error: any) {
-        log(LogLevel.ERROR, 'Sync processing failed', { 
+        reportError('Sync processing failed', { 
           jobId: job.id, 
           integrationType,
           tenantId,
@@ -383,7 +386,7 @@ export function initializeWorkers() {
     }
   );
 
-  log(LogLevel.INFO, 'All workers initialized');
+  logger.info('All workers initialized');
 }
 
 // Add job to queue with proper typing and idempotency
@@ -498,15 +501,15 @@ async function moveToDLQ(job: Job, queueName: QueueName, error: any): Promise<vo
       jobId: `dlq-${queueName}-${job.id}-${Date.now()}`,
     });
     
-    log(LogLevel.WARN, 'Job moved to DLQ', {
+    logger.warn({
       jobId: job.id,
       queueName,
       dlqName: getDLQName(queueName),
       attempts: job.attemptsMade,
       error: error.message,
-    });
+    }, 'Job moved to DLQ');
   } catch (dlqError: any) {
-    log(LogLevel.ERROR, 'Failed to move job to DLQ', {
+    reportError('Failed to move job to DLQ', {
       jobId: job.id,
       queueName,
       error: dlqError.message,

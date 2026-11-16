@@ -3,6 +3,7 @@ import { AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent, 
 
 import { isCompletedTask, isLeadTask, taskResponsibleUserId } from '../../lib/amocrm';
 import { createIntervalJob } from '../../lib/interval-job';
+import { logger } from '../../lib/logger';
 import { buildLooseTelegramChatIdCandidates, normalizeTelegramSecret, sendMessageToTelegramChat } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';
 import { getCallsProvider } from '../calls-source';
@@ -10,7 +11,7 @@ import { getCorporateCallDurationByManager } from '../corporate-call-durations';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
 import { amocrmService } from '../integrations/amocrm';
 import { getTenantAmoCRMContext } from '../integrations/amocrm-live';
-import { LogLevel, log } from '../observability';
+import { reportError } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 
@@ -230,10 +231,10 @@ async function collectAgentMetricsForTenant(params: {
   try {
     amocrmContext = await getTenantAmoCRMContext(params.tenantId);
   } catch (error: any) {
-    log(LogLevel.WARN, 'Noon agent performance: failed to load AmoCRM context', {
+    logger.warn({
       tenantId: params.tenantId,
       error: String(error?.message || error),
-    });
+    }, 'Noon agent performance: failed to load AmoCRM context');
   }
   const managerIds = normalizedAgents
     .map((agent) => ({ agentId: agent.id, amoId: agent.amocrmResponsibleUserId }))
@@ -274,10 +275,10 @@ async function collectAgentMetricsForTenant(params: {
         followUpsByAgentId.set(entry.agentId, completedByResponsible.get(entry.amoId) || 0);
       }
     } catch (error: any) {
-      log(LogLevel.WARN, 'Noon agent performance: failed to fetch completed follow-ups from AmoCRM', {
+      logger.warn({
         tenantId: params.tenantId,
         error: String(error?.message || error),
-      });
+      }, 'Noon agent performance: failed to fetch completed follow-ups from AmoCRM');
     }
   }
 
@@ -374,12 +375,12 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
           });
           sentCount += 1;
         } catch (error: any) {
-          log(LogLevel.WARN, 'Noon agent performance: failed to send message to agent', {
+          logger.warn({
             tenantId: integration.tenantId,
             userId: row.userId,
             chatId: row.telegramId,
             error: String(error?.message || error),
-          });
+          }, 'Noon agent performance: failed to send message to agent');
         }
       }
 
@@ -400,11 +401,11 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
         },
       });
 
-      log(LogLevel.INFO, 'Noon agent performance messages sent', {
+      logger.info({
         tenantId: integration.tenantId,
         sentCount,
         agentCount: rows.length,
-      });
+      }, 'Noon agent performance messages sent');
     } catch (error: any) {
       await redis.del(lockKey);
       await systemPrisma.auditLog.create({
@@ -423,7 +424,7 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
         },
       });
 
-      log(LogLevel.ERROR, 'Noon agent performance scheduler failed for tenant', {
+      reportError('Noon agent performance scheduler failed for tenant', {
         tenantId: integration.tenantId,
         error: String(error?.message || error),
       });
@@ -443,15 +444,15 @@ const schedulerJob = createIntervalJob({
     }
   },
   onError: (error) => {
-    log(LogLevel.ERROR, 'Noon agent performance scheduler tick failed', {
+    reportError('Noon agent performance scheduler tick failed', {
       error: String((error as Error | undefined)?.message || error),
     });
   },
   onStart: () => {
-    log(LogLevel.INFO, 'Telegram agent performance scheduler started', {
+    logger.info({
       timezone: TASHKENT_TIMEZONE_LABEL,
       intervalMs: POLL_INTERVAL_MS,
-    });
+    }, 'Telegram agent performance scheduler started');
   },
 });
 

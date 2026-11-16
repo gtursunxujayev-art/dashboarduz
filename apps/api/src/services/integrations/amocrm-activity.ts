@@ -1,7 +1,7 @@
 import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
 import { isCompletedTask, isLeadTask, taskResponsibleUserId, toStringId } from '../../lib/amocrm';
-import { LogLevel, log } from '../observability';
+import { logger } from '../../lib/logger';
 
 import { type AmoCRMEvent, type AmoCRMTask, amocrmService } from './amocrm';
 
@@ -362,15 +362,15 @@ export async function getAmoCRMActivityMetrics(params: {
         },
         params.baseUrl,
       );
-      log(LogLevel.WARN, 'AmoCRM activity: tasks fetched with fallback filter', {
+      logger.warn({
         tenantId: params.tenantId,
         warning: String(error?.message || error),
-      });
+      }, 'AmoCRM activity: tasks fetched with fallback filter');
     } catch (fallbackError: any) {
-      log(LogLevel.WARN, 'AmoCRM activity: failed to fetch tasks', {
+      logger.warn({
         tenantId: params.tenantId,
         error: String(fallbackError?.message || fallbackError),
-      });
+      }, 'AmoCRM activity: failed to fetch tasks');
       diagnostics.completedTasks = { ok: false, reason: failureReason(fallbackError) };
       tasks = [];
     }
@@ -430,15 +430,15 @@ export async function getAmoCRMActivityMetrics(params: {
         },
         params.baseUrl,
       );
-      log(LogLevel.WARN, 'AmoCRM activity: pending tasks fetched with fallback filter', {
+      logger.warn({
         tenantId: params.tenantId,
         warning: String(error?.message || error),
-      });
+      }, 'AmoCRM activity: pending tasks fetched with fallback filter');
     } catch (fallbackError: any) {
-      log(LogLevel.WARN, 'AmoCRM activity: failed to fetch pending tasks', {
+      logger.warn({
         tenantId: params.tenantId,
         error: String(fallbackError?.message || fallbackError),
-      });
+      }, 'AmoCRM activity: failed to fetch pending tasks');
       diagnostics.pendingTasks = { ok: false, reason: failureReason(fallbackError) };
       pendingTasks = [];
     }
@@ -501,15 +501,15 @@ export async function getAmoCRMActivityMetrics(params: {
         },
         params.baseUrl,
       );
-      log(LogLevel.WARN, 'AmoCRM activity: events fetched with fallback filter', {
+      logger.warn({
         tenantId: params.tenantId,
         warning: String(error?.message || error),
-      });
+      }, 'AmoCRM activity: events fetched with fallback filter');
     } catch (fallbackError: any) {
-      log(LogLevel.WARN, 'AmoCRM activity: failed to fetch events', {
+      logger.warn({
         tenantId: params.tenantId,
         error: String(fallbackError?.message || fallbackError),
-      });
+      }, 'AmoCRM activity: failed to fetch events');
       diagnostics.events = { ok: false, reason: failureReason(fallbackError) };
       events = [];
     }

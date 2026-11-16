@@ -2,11 +2,12 @@ import { systemPrisma } from '@dashboarduz/db';
 import { fromTashkentLocalParts, type ManagerGroup, shiftToTashkent } from '@dashboarduz/shared';
 
 import { createIntervalJob } from '../../lib/interval-job';
+import { logger } from '../../lib/logger';
 import { asObjectOrEmpty } from '../../lib/object';
 import { classifyIncomeCategory, type IncomeCategory } from '../income-facts';
 import { telegramService } from '../integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../integrations/telegram-groups';
-import { log, LogLevel } from '../observability';
+import { reportError } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 import { isTechnicalNewSale } from '../technical-income';
@@ -227,10 +228,10 @@ function resolveBotToken(integration: TelegramIntegration): string {
 
       if (token) return token;
     } catch (error: any) {
-      log(LogLevel.WARN, 'Telegram integration token could not be decrypted; using environment fallback', {
+      logger.warn({
         tenantId: integration.tenantId,
         error: error?.message || String(error),
-      });
+      }, 'Telegram integration token could not be decrypted; using environment fallback');
     }
   }
 
@@ -263,7 +264,7 @@ async function recordDeliveryAudit(
     });
   } catch (error: any) {
     // A logging outage must not turn a successful Telegram send into a retry and duplicate it.
-    log(LogLevel.ERROR, 'Telegram group summary audit log failed', {
+    reportError('Telegram group summary audit log failed', {
       tenantId: integration.tenantId,
       schedule,
       group: result.group,
@@ -385,17 +386,17 @@ async function dispatchScheduled(integration: TelegramIntegration, cutoff: '18:0
       });
 
       if (result.status !== 'sent') await redis.del(lockKey);
-      log(result.status === 'sent' ? LogLevel.INFO : LogLevel.WARN, 'Telegram group summary dispatch completed', {
+      logger[result.status === 'sent' ? 'info' : 'warn']({
         tenantId: integration.tenantId,
         schedule: cutoff,
         group,
         status: result.status,
         destinationCount: result.destinationCount,
         sentCount: result.sentCount,
-      });
+      }, 'Telegram group summary dispatch completed');
     } catch (error: any) {
       await redis.del(lockKey);
-      log(LogLevel.ERROR, 'Telegram group summary dispatch failed', {
+      reportError('Telegram group summary dispatch failed', {
         tenantId: integration.tenantId, schedule: cutoff, group, error: error?.message || String(error),
       });
     }
@@ -420,14 +421,14 @@ const schedulerJob = createIntervalJob({
     }
   },
   onError: (error) => {
-    log(LogLevel.ERROR, 'Telegram group summary scheduler tick failed', {
+    reportError('Telegram group summary scheduler tick failed', {
       error: (error as Error | undefined)?.message || String(error),
     });
   },
   onStart: () => {
-    log(LogLevel.INFO, 'Telegram group summary scheduler started', {
+    logger.info({
       timezone: 'Asia/Tashkent', schedules: ['18:00', '23:59'], intervalMs: POLL_INTERVAL_MS,
-    });
+    }, 'Telegram group summary scheduler started');
   },
 });
 
