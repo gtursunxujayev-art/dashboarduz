@@ -5,8 +5,8 @@ import { COURSE_CATEGORIES, type SalaryRuleMode as CourseBonusMode, normalizeSub
 import { type AgentUserOption, type BonusPlan, type CategoryBonusRule, getSalaryCategoryLabel, KPI_METRIC_KEYS, KPI_METRICS, type KpiMetricKey, parsePercentInput, parsePositiveInt } from './bonus-helpers';
 import type { useBonusSettings } from './use-bonus-settings';
 
-export function useBonusActions(prev: ReturnType<typeof useBonusSettings>) {
-  const { agentUsers, attendanceLateTarget, attendanceMissingTarget, attendancePenaltyAbsenceDay, attendancePenaltyCap, attendancePenaltyLateMinute, attendancePenaltyMissingHour, bonusRulesState, courseOverrides, createPlan, deletePlan, editingPlanId, effectiveMonth, fixedSalaryByAgent, isAdmin, kpiMonthlyAmount, kpiThresholds, planActive, planBonusAmount, planCategory, planCourseId, planName, planPeriodMode, planSubTariffId, planSubTariffName, planTargetClosedSales, planTariffId, plansQuery, policyEditorQuery, salaryBonusMode, salaryConfigQuery, savePolicyVersionMutation, selectedKpiMetrics, setBonusRulesState, setEditingPlanId, setError, setKpiMetricSlots, setPlanActive, setPlanBonusAmount, setPlanCategory, setPlanCourseId, setPlanError, setPlanName, setPlanPeriodMode, setPlanSubTariffId, setPlanSubTariffName, setPlanSuccess, setPlanTargetClosedSales, setPlanTariffId, setSuccess, updateAttendancePenaltySettingsMutation, updateFixedSalariesMutation, updateKpiSettingsMutation, updatePlan } = prev;
+export function useBonusActions(base: ReturnType<typeof useBonusSettings>) {
+  const { agentUsers, attendanceLateTarget, attendanceMissingTarget, attendancePenaltyAbsenceDay, attendancePenaltyCap, attendancePenaltyLateMinute, attendancePenaltyMissingHour, bonusRulesState, courseOverrides, createPlan, deletePlan, editingPlanId, effectiveMonth, fixedSalaryByAgent, isAdmin, kpiMonthlyAmount, kpiThresholds, planActive, planBonusAmount, planCategory, planCourseId, planName, planPeriodMode, planSubTariffId, planSubTariffName, planTargetClosedSales, planTariffId, plansQuery, policyEditorQuery, salaryBonusMode, salaryConfigQuery, savePolicyVersionMutation, selectedKpiMetrics, setBonusRulesState, setEditingPlanId, setError, setKpiMetricSlots, setPlanActive, setPlanBonusAmount, setPlanCategory, setPlanCourseId, setPlanError, setPlanName, setPlanPeriodMode, setPlanSubTariffId, setPlanSubTariffName, setPlanSuccess, setPlanTargetClosedSales, setPlanTariffId, setSuccess, updateAttendancePenaltySettingsMutation, updateFixedSalariesMutation, updateKpiSettingsMutation, updatePlan } = base;
 
   const resetPlanForm = () => {
     setEditingPlanId(null);
@@ -438,5 +438,5 @@ export function useBonusActions(prev: ReturnType<typeof useBonusSettings>) {
     });
   };
 
-  return { ...prev, resetPlanForm, validateAndBuildBonusRulesPayload, handleSaveBonusRules, handleSaveFixedSalaries, handleSaveAttendancePenaltySettings, handleKpiMetricSlotChange, handleSaveKpiSettings, handleSavePlan, handleEditPlan, handleTogglePlan, handleDeletePlan, handleRuleModeChange, handleSimplePercentChange, handleTierChange, handleAddTier, handleRemoveTier };
+  return { ...base, resetPlanForm, validateAndBuildBonusRulesPayload, handleSaveBonusRules, handleSaveFixedSalaries, handleSaveAttendancePenaltySettings, handleKpiMetricSlotChange, handleSaveKpiSettings, handleSavePlan, handleEditPlan, handleTogglePlan, handleDeletePlan, handleRuleModeChange, handleSimplePercentChange, handleTierChange, handleAddTier, handleRemoveTier };
 }

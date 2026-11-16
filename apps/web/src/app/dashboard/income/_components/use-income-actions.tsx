@@ -7,8 +7,8 @@ import type { FormEvent } from 'react';
 import { type FieldErrors, formatDateForInput, getTelegramDispatchWarning, TELEGRAM_USERNAME_PATTERN } from './income-helpers';
 import type { useIncomeForm } from './use-income-form';
 
-export function useIncomeActions(prev: ReturnType<typeof useIncomeForm>) {
-  const { canUseRepayment, courseId, coursePriceAmount, createIncomeMutation, customerName, customerNumber, deadline, debtSourceIncomeId, deleteIncomeMutation, editForm, editSubTariffOptions, entryDate, exportDateFrom, exportDateTo, exportIncomesMutation, isAdmin, isExistingCustomer, managerUserId, paymentAmount, resolvedEditSubTariffId, setCourseId, setCoursePriceInput, setCustomerName, setCustomerNumber, setDeadline, setDebtSourceIncomeId, setDeletingIncomeId, setEditError, setEditForm, setEntryDate, setError, setExportError, setExportSuccess, setFieldErrors, setManagerUserId, setPaymentInput, setSkipTelegramNotification, setSubTariffId, setSuccess, setTariffId, setTelegramUsername, setType, skipTelegramNotification, sourceDebtAmount, subTariffId, subTariffOptions, tariffId, telegramUsername, type, updateIncomeMutation, utils } = prev;
+export function useIncomeActions(base: ReturnType<typeof useIncomeForm>) {
+  const { canUseRepayment, courseId, coursePriceAmount, createIncomeMutation, customerName, customerNumber, deadline, debtSourceIncomeId, deleteIncomeMutation, editForm, editSubTariffOptions, entryDate, exportDateFrom, exportDateTo, exportIncomesMutation, isAdmin, isExistingCustomer, managerUserId, paymentAmount, resolvedEditSubTariffId, setCourseId, setCoursePriceInput, setCustomerName, setCustomerNumber, setDeadline, setDebtSourceIncomeId, setDeletingIncomeId, setEditError, setEditForm, setEntryDate, setError, setExportError, setExportSuccess, setFieldErrors, setManagerUserId, setPaymentInput, setSkipTelegramNotification, setSubTariffId, setSuccess, setTariffId, setTelegramUsername, setType, skipTelegramNotification, sourceDebtAmount, subTariffId, subTariffOptions, tariffId, telegramUsername, type, updateIncomeMutation, utils } = base;
 
   const handleDeleteIncome = async (incomeId: string) => {
     if (!isAdmin) {
@@ -316,5 +316,5 @@ export function useIncomeActions(prev: ReturnType<typeof useIncomeForm>) {
     };
   };
 
-  return { ...prev, handleDeleteIncome, handleDownloadIncomesByCustomRange, openEditIncome, closeEditIncome, handleSaveIncomeEdit, handleSubmit, formatIncomeType, getLifecycleStatusBadge };
+  return { ...base, handleDeleteIncome, handleDownloadIncomesByCustomRange, openEditIncome, closeEditIncome, handleSaveIncomeEdit, handleSubmit, formatIncomeType, getLifecycleStatusBadge };
 }
