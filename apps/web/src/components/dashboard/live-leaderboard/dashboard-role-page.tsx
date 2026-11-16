@@ -1,6 +1,6 @@
-import { type ManagerGroup as AgentGroup } from '@dashboarduz/shared';
 ﻿'use client';
 
+import { type ManagerGroup as AgentGroup } from '@dashboarduz/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';

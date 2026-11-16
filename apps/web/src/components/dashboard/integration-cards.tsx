@@ -1,6 +1,6 @@
-import { type IntegrationType as IntegrationId } from '@dashboarduz/shared';
 ﻿'use client';
 
+import { type IntegrationType as IntegrationId } from '@dashboarduz/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';

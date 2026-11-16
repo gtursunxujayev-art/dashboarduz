@@ -1,6 +1,6 @@
-import type { ExtendedDashboardRange as DashboardRange } from '@/lib/date-range';
 ﻿'use client';
 
+import type { ExtendedDashboardRange as DashboardRange } from '@/lib/date-range';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';

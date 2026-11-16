@@ -1,6 +1,6 @@
-import { type ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
 ﻿'use client';
 
+import { type ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
