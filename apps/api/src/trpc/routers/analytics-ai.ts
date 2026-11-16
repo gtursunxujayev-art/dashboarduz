@@ -1,6 +1,6 @@
 import { protectedProcedure, router } from '../trpc';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import {
@@ -154,13 +154,13 @@ function extractAttributionTokens(metadata: unknown): string[] {
   return Array.from(tokens);
 }
 
-export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, rangeEnd: Date, focus: z.infer<typeof aiFocusSchema>) {
+export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, rangeEnd: Date, focus: z.infer<typeof aiFocusSchema>, db: DbClient) {
   const [
     leads,
     incomesRaw,
     calls,
   ] = await Promise.all([
-    prisma.lead.findMany({
+    db.lead.findMany({
       where: {
         tenantId,
         OR: [
@@ -176,7 +176,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
         responsibleUserId: true,
       },
     }),
-    prisma.income.findMany({
+    db.income.findMany({
       where: {
         tenantId,
         lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -199,10 +199,10 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
         },
       },
     }),
-    prisma.call.findMany({
+    db.call.findMany({
       where: {
         tenantId,
-        provider: await getCallsProviderFilter(tenantId),
+        provider: await getCallsProviderFilter(tenantId, db),
         startedAt: { gte: rangeStart, lte: rangeEnd },
       },
       select: {
@@ -228,7 +228,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
   }> = [];
   let metaTableMissing = false;
   try {
-    metaRows = await prisma.metaAdInsight.findMany({
+    metaRows = await db.metaAdInsight.findMany({
       where: {
         tenantId,
         date: { gte: new Date(`${toDateOnly(rangeStart)}T00:00:00.000Z`), lte: new Date(`${toDateOnly(rangeEnd)}T00:00:00.000Z`) },
@@ -270,7 +270,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
   }
 
   // Technical sales (agreement == 1) and their repayments are not real income.
-  const incomes = excludeTechnicalRows(incomesRaw, await loadTechnicalSaleIdsForRows(tenantId, incomesRaw));
+  const incomes = excludeTechnicalRows(incomesRaw, await loadTechnicalSaleIdsForRows(tenantId, incomesRaw, db));
   const incomeTotal = sum(incomes.map((income) => income.paymentAmount || 0));
   const agreementTotal = sum(incomes.filter((income) => income.type === 'new_sale').map((income) => resolveSaleAgreementAmount(income)));
   const newSales = incomes.filter((income) => income.type === 'new_sale').length;
@@ -580,7 +580,7 @@ export const analyticsAiRouter = router({
     .input(analyticsAiInputSchema.omit({ focus: true }))
     .query(async ({ input, ctx }) => {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, new Date(), input.dateFrom, input.dateTo);
-      const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, 'meta_targeting');
+      const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, 'meta_targeting', ctx.db);
       return inputSummary.meta;
     }),
 
@@ -588,13 +588,13 @@ export const analyticsAiRouter = router({
     .input(analyticsAiInputSchema)
     .mutation(async ({ input, ctx }) => {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, new Date(), input.dateFrom, input.dateTo);
-      const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, input.focus);
+      const inputSummary = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, input.focus, ctx.db);
       const generated = await generateWithAiProvider(inputSummary);
 
       let reportId: string | null = null;
       let reportSaved = true;
       try {
-        const report = await prisma.analyticsAiReport.create({
+        const report = await ctx.db.analyticsAiReport.create({
           data: {
             tenantId: ctx.tenantId,
             userId: ctx.user.userId,

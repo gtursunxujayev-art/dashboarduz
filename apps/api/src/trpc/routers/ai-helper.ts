@@ -6,7 +6,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { collectAnalyticsInput } from './analytics-ai';
 import { parseCustomDate } from './dashboard/helpers';
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { INCOME_LIFECYCLE_ACTIVE } from './dashboard/helpers';
 
 const aiHelperMessageSchema = z.object({
@@ -399,13 +399,14 @@ async function buildCourseHintSummary(
   rangeStart: Date,
   rangeEnd: Date,
   message: string,
+  db: DbClient,
 ): Promise<CourseHintSummary | null> {
   const requestedToken = extractLikelyCourseToken(message);
   if (!requestedToken) {
     return null;
   }
 
-  const courses = await prisma.course.findMany({
+  const courses = await db.course.findMany({
     where: { tenantId, isActive: true },
     select: { id: true, name: true },
   });
@@ -437,7 +438,7 @@ async function buildCourseHintSummary(
     };
   }
 
-  const salesRaw = await prisma.income.findMany({
+  const salesRaw = await db.income.findMany({
     where: {
       tenantId,
       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -457,7 +458,7 @@ async function buildCourseHintSummary(
     },
   });
 
-  const repaymentsRaw = await prisma.income.findMany({
+  const repaymentsRaw = await db.income.findMany({
     where: {
       tenantId,
       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -475,7 +476,7 @@ async function buildCourseHintSummary(
   });
 
   // Technical sales (agreement == 1) and their repayments are not real sales.
-  const technicalSaleIds = await loadTechnicalSaleIdsForRows(tenantId, [...salesRaw, ...repaymentsRaw]);
+  const technicalSaleIds = await loadTechnicalSaleIdsForRows(tenantId, [...salesRaw, ...repaymentsRaw], db);
   const sales = excludeTechnicalRows(salesRaw, technicalSaleIds);
   const repayments = excludeTechnicalRows(repaymentsRaw, technicalSaleIds);
 
@@ -613,7 +614,7 @@ export const aiHelperRouter = router({
       const rangeStart = parseCustomDate(resolved.dateFrom, false);
       const rangeEnd = parseCustomDate(resolved.dateTo, true);
       const focus = chooseFocus(input.message);
-      const courseHint = await buildCourseHintSummary(ctx.tenantId, rangeStart, rangeEnd, input.message);
+      const courseHint = await buildCourseHintSummary(ctx.tenantId, rangeStart, rangeEnd, input.message, ctx.db);
       if (courseHint && shouldPreferCourseDirectAnswer(input.message)) {
         if (courseHint.matchedCourseName && courseHint.similarity >= 0.55) {
           return {
@@ -636,7 +637,7 @@ export const aiHelperRouter = router({
           };
         }
       }
-      const analyticsInput = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, focus);
+      const analyticsInput = await collectAnalyticsInput(ctx.tenantId, rangeStart, rangeEnd, focus, ctx.db);
       const prompt = await loadHelperPrompt();
       const provider = resolveAiProvider();
 
