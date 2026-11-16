@@ -1,5 +1,5 @@
 import { router, protectedProcedure } from '../trpc';
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
@@ -245,7 +245,7 @@ function resolveDateRange(range: CallsRange, now: Date, dateFrom?: string, dateT
   return { rangeStart, rangeEnd };
 }
 
-async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
+async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
   const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
@@ -253,7 +253,7 @@ async function getAgentResponsibleScope(tenantId: string, userId: string, roles:
 
   let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
   try {
-    currentUser = await prisma.user.findFirst({
+    currentUser = await db.user.findFirst({
       where: {
         id: userId,
         tenantId,
@@ -279,7 +279,7 @@ export const callsRouter = router({
   list: protectedProcedure
     .input(callsListSchema)
     .query(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
       if (scope.isScoped && !scope.responsibleUserId) {
         return {
           data: [],
@@ -297,7 +297,7 @@ export const callsRouter = router({
 
       const where: any = {
         tenantId: ctx.tenantId,
-        provider: await getCallsProviderFilter(ctx.tenantId),
+        provider: await getCallsProviderFilter(ctx.tenantId, ctx.db),
         ...(scope.isScoped
           ? {
               lead: {
@@ -319,7 +319,7 @@ export const callsRouter = router({
       }
 
       const [data, total] = await Promise.all([
-        prisma.call.findMany({
+        ctx.db.call.findMany({
           where,
           orderBy: { startedAt: 'desc' },
           skip,
@@ -330,7 +330,7 @@ export const callsRouter = router({
             },
           },
         }),
-        prisma.call.count({ where }),
+        ctx.db.call.count({ where }),
       ]);
 
       return {
@@ -347,8 +347,8 @@ export const callsRouter = router({
   get: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
-      const call = await prisma.call.findFirst({
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const call = await ctx.db.call.findFirst({
         where: {
           id: input.id,
           tenantId: ctx.tenantId,
@@ -397,7 +397,7 @@ export const callsRouter = router({
     const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 
     const [agentUsers, currentUser] = await Promise.all([
-      prisma.user.findMany({
+      ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
@@ -412,7 +412,7 @@ export const callsRouter = router({
         },
       }),
       isAgentOnly
-        ? prisma.user.findFirst({
+        ? ctx.db.user.findFirst({
             where: {
               id: ctx.user.userId,
               tenantId: ctx.tenantId,
@@ -445,10 +445,10 @@ export const callsRouter = router({
 
     const extensionValues = Array.from(extensionToAgent.keys());
     const calls = extensionValues.length > 0
-      ? await prisma.call.findMany({
+      ? await ctx.db.call.findMany({
           where: {
             tenantId: ctx.tenantId,
-            provider: await getCallsProvider(ctx.tenantId),
+            provider: await getCallsProvider(ctx.tenantId, ctx.db),
             startedAt: {
               gte: rangeStart,
               lte: rangeEnd,
@@ -524,6 +524,7 @@ export const callsRouter = router({
       managerUserIds: mappedAgents.map((agent) => agent.id),
       rangeStart,
       rangeEnd,
+      db: ctx.db,
     });
 
     const rows = mappedAgents
