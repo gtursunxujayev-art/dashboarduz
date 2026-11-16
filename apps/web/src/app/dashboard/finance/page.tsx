@@ -1,69 +1,16 @@
-﻿'use client';
+'use client';
 
-import type { ExtendedDashboardRange as DashboardRange } from '@/lib/date-range';
-import Link from 'next/link';
-import { useMemo, useState } from 'react';
-import { trpc } from '@/lib/trpc';
+import { getIncomeStatusBadge } from '@/components/dashboard/income-status-badge';
+import LoadingBlock from '@/components/dashboard/loading-block';
 import { useAuth } from '@/contexts/auth-context';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
-import LoadingBlock from '@/components/dashboard/loading-block';
-import {
-  getPreviousMonthRange,
-  getPreviousWeekRange,
-  getTashkentDateShift,
-  getTashkentToday,
-} from '@/lib/date-range';
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { type ExtendedDashboardRange as DashboardRange, getPreviousMonthRange, getPreviousWeekRange, getTashkentDateShift, getTashkentToday } from '@/lib/date-range';
 import { formatSom } from '@/lib/format';
-import { getIncomeStatusBadge } from '@/components/dashboard/income-status-badge';
-
-const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
-
-
-function formatCompactAmount(value: number | null | undefined): string {
-  const safe = Number(value || 0);
-  const abs = Math.abs(safe);
-  if (abs >= 1_000_000_000) {
-    return `${(safe / 1_000_000_000).toFixed(1)} mlrd`;
-  }
-  if (abs >= 1_000_000) {
-    return `${(safe / 1_000_000).toFixed(1)} mln`;
-  }
-  if (abs >= 1_000) {
-    return `${(safe / 1_000).toFixed(1)} ming`;
-  }
-  return `${Math.round(safe)}`;
-}
-
-function getTrendMeta(direction?: string) {
-  if (direction === 'up') {
-    return {
-      badgeClass: 'bg-emerald-100 text-emerald-800',
-      label: "O'sish",
-      sign: '+',
-    };
-  }
-  if (direction === 'down') {
-    return {
-      badgeClass: 'bg-red-100 text-red-800',
-      label: 'Pasayish',
-      sign: '',
-    };
-  }
-  return {
-    badgeClass: 'bg-gray-100 text-gray-700',
-    label: "O'zgarish yo'q",
-    sign: '',
-  };
-}
+import { trpc } from '@/lib/trpc';
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { AGENT_ROLES, formatCompactAmount, getTrendMeta } from './_components/finance-helpers';
 
 export default function FinancePage() {
   const { user } = useAuth();
@@ -622,13 +569,3 @@ export default function FinancePage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
