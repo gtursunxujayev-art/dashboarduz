@@ -38,6 +38,7 @@ type SelectedReportCourse = {
   group: AgentGroup;
   salesCount: number;
   agreementAmount: number;
+  debtorsCount: number;
   tariffs: Array<{
     tariffId: string | null;
     name: string;
@@ -230,6 +231,9 @@ function SalesStatsPanel({
                 </h3>
                 <p className="mt-2 text-sm font-semibold text-slate-300">
                   Kelishuv - <span className={tone}>{formatCompactMoney(course.agreementAmount)} so'm</span>
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-300">
+                  Qarzdorlar - <span className="text-rose-300">{course.debtorsCount}</span>
                 </p>
               </div>
             </div>
