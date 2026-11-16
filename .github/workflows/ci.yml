@@ -82,10 +82,32 @@ jobs:
       - name: Migrate the test database
         env:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        # Applies every migration from zero, including the RLS / constraint migrations under packages/db.
         run: npx prisma migrate deploy --schema=packages/db/prisma/schema.prisma
 
+      - name: Check schema drift
+        # Fails if the migrated database and schema.prisma disagree (a model change without a migration).
+        run: >-
+          npx prisma migrate diff
+          --from-url "$TEST_DATABASE_URL"
+          --to-schema-datamodel packages/db/prisma/schema.prisma
+          --exit-code
+
+      - name: RLS isolation test
+        # Applies packages/db/scripts/rls-enforce.sql to this throwaway database and checks that the tenant-scoped
+        # client (forTenant / ctx.db) cannot read or write another tenant's rows. Runs on its own so a skip or
+        # failure is visible; it is excluded from the coverage run below.
+        working-directory: apps/api
+        run: npx jest --ci --coverage=false src/__tests__/rls-isolation.integration.test.ts
+
       - name: Run tests with coverage
-        run: npm run test:coverage --workspaces --if-present
+        # Includes the money-path integration tests (apps/api/src/__tests__/integration), which use the same
+        # TEST_DATABASE_URL.
+        # The ignore pattern is passed to apps/api only: on the CLI it replaces a config's own testPathIgnorePatterns,
+        # and apps/web has one.
+        run: |
+          npm run test:coverage --workspace @dashboarduz/api -- --testPathIgnorePatterns /node_modules/ rls-isolation
+          npm run test:coverage --workspace @dashboarduz/web
 
       - name: Coverage summary
         if: always()
