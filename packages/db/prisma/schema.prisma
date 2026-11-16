@@ -91,6 +91,8 @@ model User {
   attendanceAdjustmentSubjects AttendanceAdjustment[] @relation("AttendanceAdjustmentSubject")
   createdAttendanceAdjustments AttendanceAdjustment[] @relation("AttendanceAdjustmentCreatedBy")
   attendanceAdjustmentAudits AttendanceAdjustmentAudit[] @relation("AttendanceAdjustmentAuditActor")
+  analyticsAiReports AnalyticsAiReport[]
+  fallbackManagerImportSessions HistoricalImportSession[] @relation("HistoricalImportFallbackManager")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -227,6 +229,7 @@ model AnalyticsAiReport {
   createdAt     DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([userId])
@@ -247,6 +250,7 @@ model Lead {
   contactId   String?
   status      String?  // lead status from AmoCRM
   pipelineId  String?
+  /// amoCRM responsible user id (not a users.id), so no foreign key.
   responsibleUserId String?
   metadata    Json?    // additional lead data
   source      String?  // where lead came from
@@ -436,6 +440,10 @@ model Customer {
   updatedAt       DateTime @updatedAt
 
   tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  profileCourse    Course?    @relation("CustomerProfileCourse", fields: [profileCourseId], references: [id], onDelete: SetNull)
+  profileTariff    Tariff?    @relation("CustomerProfileTariff", fields: [profileTariffId], references: [id], onDelete: SetNull)
+  profileSubTariff SubTariff? @relation("CustomerProfileSubTariff", fields: [profileSubTariffId], references: [id], onDelete: SetNull)
+  historicalImportSession HistoricalImportSession? @relation(fields: [historicalImportSessionId], references: [id], onDelete: SetNull)
   incomes Income[]
   incomeAdjustmentRequests IncomeAdjustmentRequest[]
 
@@ -471,6 +479,7 @@ model Course {
   incomes Income[]
   incomeAdjustmentRequests IncomeAdjustmentRequest[] @relation("IncomeAdjustmentNewCourse")
   incomeAdjustmentRequestsAsPrevious IncomeAdjustmentRequest[] @relation("IncomeAdjustmentPreviousCourse")
+  profileCustomers Customer[] @relation("CustomerProfileCourse")
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -492,6 +501,7 @@ model Tariff {
   subTariffs SubTariff[]
   incomeAdjustmentRequests IncomeAdjustmentRequest[] @relation("IncomeAdjustmentNewTariff")
   incomeAdjustmentRequestsAsPrevious IncomeAdjustmentRequest[] @relation("IncomeAdjustmentPreviousTariff")
+  profileCustomers Customer[] @relation("CustomerProfileTariff")
 
   @@unique([tenantId, courseId, name])
   @@index([tenantId])
@@ -510,6 +520,7 @@ model SubTariff {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tariff Tariff @relation(fields: [tariffId], references: [id], onDelete: Cascade)
+  profileCustomers Customer[] @relation("CustomerProfileSubTariff")
 
   @@unique([tenantId, tariffId, name])
   @@index([tenantId])
@@ -545,6 +556,7 @@ model Income {
   manager  User     @relation("IncomeManager", fields: [managerUserId], references: [id], onDelete: Restrict)
   course   Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   tariff   Tariff?  @relation(fields: [tariffId], references: [id], onDelete: SetNull)
+  historicalImportSession HistoricalImportSession? @relation(fields: [historicalImportSessionId], references: [id], onDelete: SetNull)
   adjustmentRequests IncomeAdjustmentRequest[]
 
   relatedDebtIncome Income? @relation("DebtRepaymentSource", fields: [relatedDebtIncomeId], references: [id], onDelete: SetNull)
@@ -592,6 +604,9 @@ model HistoricalImportSession {
 
   tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdBy          User     @relation("HistoricalImportCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  fallbackManager    User?    @relation("HistoricalImportFallbackManager", fields: [fallbackManagerUserId], references: [id], onDelete: SetNull)
+  customers          Customer[]
+  incomes            Income[]
 
   @@index([tenantId])
   @@index([createdByUserId])
@@ -642,6 +657,8 @@ model IncomeAdjustmentRequest {
   @@map("income_adjustment_requests")
 }
 
+/// createdByUserId is an audit value (who saved the policy), kept without a foreign key
+/// so the history survives user deletion.
 model BonusPolicyVersion {
   id              String   @id @default(uuid())
   tenantId        String
@@ -659,6 +676,8 @@ model BonusPolicyVersion {
   @@map("bonus_policy_versions")
 }
 
+/// Frozen month result. finalizedByUserId (may be the system finalizer id) is a history
+/// value without a foreign key.
 model BonusMonthSnapshot {
   id              String   @id @default(uuid())
   tenantId        String
@@ -683,6 +702,8 @@ model BonusMonthSnapshot {
   @@map("bonus_month_snapshots")
 }
 
+/// Snapshot rows are history: agentUserId and courseId keep the values at finalization
+/// time and intentionally have no foreign keys (users/courses may be deleted later).
 model BonusSnapshotLine {
   id               String   @id @default(uuid())
   tenantId         String
@@ -706,6 +727,8 @@ model BonusSnapshotLine {
   @@map("bonus_snapshot_lines")
 }
 
+/// History values (sourceIncomeId, sourceSaleId, agentUserId, courseId): no foreign keys
+/// on purpose, the snapshot must survive later edits and deletions.
 model BonusSnapshotItem {
   id              String   @id @default(uuid())
   tenantId        String
@@ -733,6 +756,7 @@ model BonusSnapshotItem {
   @@map("bonus_snapshot_items")
 }
 
+/// agentUserId, courseId and reviewedByUserId are history values without foreign keys.
 model BonusAdjustment {
   id                String   @id @default(uuid())
   tenantId          String
@@ -763,6 +787,7 @@ model BonusAdjustment {
   @@map("bonus_adjustments")
 }
 
+/// Audit trail: actorUserId is a history value without a foreign key.
 model BonusAdjustmentAudit {
   id          String   @id @default(uuid())
   tenantId    String
