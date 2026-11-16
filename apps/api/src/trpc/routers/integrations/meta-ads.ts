@@ -1,0 +1,195 @@
+import { metaAdsConnectSchema } from '@dashboarduz/shared';
+import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
+import { asObjectOrEmpty } from '../../../lib/object';
+import { normalizeMetaAdAccountId, syncMetaAdInsightsForTenant, validateMetaAdAccount } from '../../../services/integrations/meta-ads';
+import { encryptIntegrationTokens } from '../../../services/security/encryption';
+import { adminProcedure } from '../../trpc';
+
+export const metaAdsIntegrationProcedures = {
+  connectMetaAds: adminProcedure
+    .input(metaAdsConnectSchema)
+    .mutation(async ({ input, ctx }) => {
+      const accessToken = input.accessToken.trim();
+      const adAccountId = normalizeMetaAdAccountId(input.adAccountId);
+      const account = await validateMetaAdAccount(accessToken, adAccountId);
+
+      if (!account?.id) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Meta Ad Account was not returned.' });
+      }
+
+      const validatedAt = new Date();
+      const integration = await ctx.db.integration.upsert({
+        where: {
+          tenantId_type: {
+            tenantId: ctx.tenantId,
+            type: 'meta_ads',
+          },
+        },
+        update: {
+          status: 'active',
+          tokensEncrypted: encryptIntegrationTokens({ accessToken }),
+          config: {
+            adAccountId,
+            accountId: String(account.id),
+            accountName: account.name || null,
+            accountStatus: account.account_status ?? null,
+            currency: account.currency || null,
+            pixelId: input.pixelId?.trim() || null,
+            connectionMode: 'system_user_token',
+            connectedAt: validatedAt.toISOString(),
+            lastValidatedAt: validatedAt.toISOString(),
+          },
+          lastSyncAt: validatedAt,
+          errorMessage: null,
+        },
+        create: {
+          tenantId: ctx.tenantId,
+          type: 'meta_ads',
+          status: 'active',
+          tokensEncrypted: encryptIntegrationTokens({ accessToken }),
+          config: {
+            adAccountId,
+            accountId: String(account.id),
+            accountName: account.name || null,
+            accountStatus: account.account_status ?? null,
+            currency: account.currency || null,
+            pixelId: input.pixelId?.trim() || null,
+            connectionMode: 'system_user_token',
+            connectedAt: validatedAt.toISOString(),
+            lastValidatedAt: validatedAt.toISOString(),
+          },
+          lastSyncAt: validatedAt,
+        },
+      });
+
+      await ctx.db.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          action: 'integration_connect',
+          resource: 'integration',
+          resourceId: integration.id,
+          metadata: { type: 'meta_ads', adAccountId },
+        },
+      });
+
+      return {
+        integration,
+        connection: {
+          verified: true,
+          validatedAt: validatedAt.toISOString(),
+          adAccountId,
+          accountName: account.name || null,
+          currency: account.currency || null,
+        },
+      };
+    }),
+  getMetaAdsStatus: adminProcedure.query(async ({ ctx }) => {
+    const integration = await ctx.db.integration.findUnique({
+      where: {
+        tenantId_type: {
+          tenantId: ctx.tenantId,
+          type: 'meta_ads',
+        },
+      },
+      select: {
+        status: true,
+        config: true,
+        lastSyncAt: true,
+        errorMessage: true,
+        tokensEncrypted: true,
+      },
+    });
+
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    let rowsLast30d = 0;
+    const metaTableMissing = false;
+
+    rowsLast30d = await ctx.db.metaAdInsight.count({
+      where: {
+        tenantId: ctx.tenantId,
+        date: { gte: since },
+      },
+    });
+
+    if (!integration || integration.status !== 'active') {
+      return {
+        connected: false,
+        hasToken: false,
+        accountName: null as string | null,
+        adAccountId: null as string | null,
+        pixelId: null as string | null,
+        lastSyncAt: null as string | null,
+        errorMessage: null as string | null,
+        rowsLast30d,
+        tableMissing: metaTableMissing,
+      };
+    }
+
+    const config = asObjectOrEmpty(integration.config);
+
+    return {
+      connected: true,
+      hasToken: Boolean(integration.tokensEncrypted),
+      accountName: typeof config.accountName === 'string' ? config.accountName : null,
+      adAccountId: typeof config.adAccountId === 'string' ? config.adAccountId : null,
+      pixelId: typeof config.pixelId === 'string' ? config.pixelId : null,
+      lastSyncAt: integration.lastSyncAt ? integration.lastSyncAt.toISOString() : null,
+      errorMessage: integration.errorMessage,
+      rowsLast30d,
+      tableMissing: metaTableMissing,
+    };
+  }),
+  syncMetaAds: adminProcedure
+    .input(
+      z.object({
+        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const now = new Date();
+      const dateTo = input.dateTo ? new Date(`${input.dateTo}T00:00:00.000Z`) : now;
+      const dateFrom = input.dateFrom
+        ? new Date(`${input.dateFrom}T00:00:00.000Z`)
+        : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      try {
+        const result = await syncMetaAdInsightsForTenant(ctx.tenantId, dateFrom, dateTo, ctx.db);
+
+        await ctx.db.auditLog.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.user.userId,
+            action: 'integration_sync',
+            resource: 'integration',
+            metadata: {
+              type: 'meta_ads',
+              dateFrom: dateFrom.toISOString(),
+              dateTo: dateTo.toISOString(),
+              imported: result.imported,
+            },
+          },
+        });
+
+        return { success: true, ...result };
+      } catch (error: any) {
+        await ctx.db.integration.updateMany({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'meta_ads',
+          },
+          data: {
+            status: 'error',
+            errorMessage: error?.message || 'Meta Ads sync failed',
+          },
+        });
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error?.message || 'Meta Ads sync failed',
+        });
+      }
+    }),
+};

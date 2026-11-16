@@ -97,6 +97,11 @@
   "src/services/funnel-metrics.ts": {
     "@typescript-eslint/no-unsafe-assignment": 1
   },
+  "src/services/integration-settings/connection.ts": {
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unsafe-member-access": 2,
+    "prefer-const": 1
+  },
   "src/services/integrations/__tests__/amocrm-events.test.ts": {
     "@typescript-eslint/require-await": 6
   },
@@ -305,13 +310,32 @@
   "src/trpc/routers/index.ts": {
     "import/order": 17
   },
-  "src/trpc/routers/integrations.ts": {
-    "@typescript-eslint/no-explicit-any": 18,
-    "@typescript-eslint/no-unnecessary-type-assertion": 5,
-    "@typescript-eslint/no-unsafe-assignment": 10,
-    "@typescript-eslint/no-unsafe-member-access": 17,
-    "@typescript-eslint/require-await": 2,
-    "prefer-const": 1
+  "src/trpc/routers/integrations/amocrm.ts": {
+    "@typescript-eslint/no-explicit-any": 7,
+    "@typescript-eslint/no-unnecessary-type-assertion": 4,
+    "@typescript-eslint/no-unsafe-member-access": 3,
+    "@typescript-eslint/require-await": 1
+  },
+  "src/trpc/routers/integrations/faceid.ts": {
+    "@typescript-eslint/no-unnecessary-type-assertion": 1
+  },
+  "src/trpc/routers/integrations/general.ts": {
+    "@typescript-eslint/require-await": 1
+  },
+  "src/trpc/routers/integrations/meta-ads.ts": {
+    "@typescript-eslint/no-explicit-any": 1,
+    "@typescript-eslint/no-unsafe-assignment": 2,
+    "@typescript-eslint/no-unsafe-member-access": 2
+  },
+  "src/trpc/routers/integrations/telegram-reports.ts": {
+    "@typescript-eslint/no-explicit-any": 6,
+    "@typescript-eslint/no-unsafe-assignment": 5,
+    "@typescript-eslint/no-unsafe-member-access": 5
+  },
+  "src/trpc/routers/integrations/telegram.ts": {
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unsafe-assignment": 3,
+    "@typescript-eslint/no-unsafe-member-access": 5
   },
   "src/trpc/routers/leads.ts": {
     "@typescript-eslint/require-await": 3
