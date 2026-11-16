@@ -71,3 +71,34 @@ Enforcement is a manual step because it changes production behaviour. Order:
   by hand.
 - The migrations themselves need no rollback for this: they do not enforce
   anything on the owner.
+
+## Migrations in this change
+
+All are safe on a live database with existing data and idempotent where
+Postgres allows it. Each file's header says exactly what it does to data.
+
+| Migration | What it does | Effect on existing data / locks |
+| --- | --- | --- |
+| `20261116100000_rls_transaction_local_context` | `app.set_tenant_context` becomes transaction-local by default (2-arg calls still work); every existing policy gets `WITH CHECK`; `user_auth_links` isolated by the owning user's tenant. | Catalog only. |
+| `20261116100500_reconcile_startup_schema_patching` | Creates `corporate_call_durations` if missing (it was only created by the removed startup bootstrap); drops bootstrap-only indexes (`courses_category/startDate/endDate/isHiddenFromIncomeForm_idx`, `income_adjustment_requests_refundCardNumber_idx`); ensures `customers_historicalImportSessionId_idx`; drops `id`/`updatedAt` column defaults the schema does not declare. | No data change. Catalog only, except the index create if that index is missing (it exists wherever 20260323150000 ran). |
+| `20261116101000_rls_policies_for_uncovered_tables` | Tenant isolation policies for `meta_ad_insights`, `analytics_ai_reports`, `historical_import_sessions`, `corporate_call_durations` and the four attendance tables. | Catalog only. |
+| `20261116102000_add_missing_foreign_keys` | FKs (ON DELETE SET NULL) for customer profile course/tariff/sub-tariff, customer and income `historicalImportSessionId`, `analytics_ai_reports.userId`, `historical_import_sessions.fallbackManagerUserId`. | **Sets orphaned references to NULL** first. Constraints added NOT VALID, then validated (scan without blocking writes). |
+| `20261116103000_meta_ad_insights_null_safe_unique` | `campaignId/adSetId/adId` NOT NULL DEFAULT ''; unique key recreated under a non-truncated name. | **Deletes duplicate insight rows** under the null-safe key (keeps the most recently updated), NULL → ''. `SET NOT NULL` scans under an exclusive lock (no rewrite). |
+| `20261116104000_status_type_check_constraints` | CHECK constraints on integration type/status, income type, historical import status, bonus adjustment status, notification status, attendance action. | No data change. A constraint whose existing data does not fit is dropped again with a WARNING instead of failing. |
+| `20261116105000_meta_ad_insights_decimal_money` | `spend/cpc/cpm` NUMERIC(18,4), `ctr` NUMERIC(12,6). | Values rounded to that scale. **Table rewrite** under an exclusive lock. |
+| `20261116106000_drop_redundant_indexes` | Drops 22 indexes that are a left prefix of another index or unique key (list in the file). | Catalog only; brief lock per table. |
+| `20261116107000_drop_user_google_id` | Drops unused `users.googleId` and its two indexes. | **Column values are lost** (expected to be empty; the file has the check query). |
+| `20261116108000_clear_completed_historical_import_rows` | Nulls `incomeRows`/`customerRows` of historical import sessions in status `completed`. | **Deletes the stored raw spreadsheet rows** of completed imports only. |
+
+## Tests
+
+- `apps/api/src/__tests__/rls-policy-coverage.test.ts` (always runs): every
+  model with `tenantId` has RLS and a tenant policy with `WITH CHECK`.
+- `apps/api/src/__tests__/rls-isolation.integration.test.ts` runs only when
+  `TEST_DATABASE_URL` is set. Point it at a **throwaway** database where
+  `prisma migrate deploy` has run, as a superuser/BYPASSRLS owner. It runs
+  `scripts/rls-enforce.sql` there and checks, as `dashboarduz_app` through
+  `forTenant`, that tenant A cannot read or write tenant B and that the
+  context does not leak between sequential or concurrent requests.
+  Example: `TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/rls_test npx jest rls-isolation`
+  (from `apps/api`).
