@@ -24,12 +24,12 @@ jest.mock('@/lib/trpc', () => ({
           error: null,
           data: {
             online: {
-              courseId: 'online', name: 'Online-Sentyabr', salesCount: 49, agreementAmount: 76_900_000,
+              courseId: 'online', name: 'Online-Sentyabr', salesCount: 49, agreementAmount: 76_900_000, debtorsCount: 0,
               tariffs: [{ tariffId: 'premium', name: 'Premium', salesCount: 16 }],
             },
             offline: null,
             intensive: {
-              courseId: 'intensive', name: 'Intensiv-2026', salesCount: 21, agreementAmount: 33_300_000,
+              courseId: 'intensive', name: 'Intensiv-2026', salesCount: 21, agreementAmount: 33_300_000, debtorsCount: 0,
               tariffs: [],
             },
           },
