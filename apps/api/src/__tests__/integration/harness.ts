@@ -27,6 +27,8 @@ if (testDatabaseUrl) {
   assertSafeTestDatabaseUrl(testDatabaseUrl);
   // The Prisma singleton reads DATABASE_URL when it first connects; tests must never reach any other database.
   process.env.DATABASE_URL = testDatabaseUrl;
+  // systemPrisma prefers DATABASE_SYSTEM_URL; drop it so the unscoped client also uses the test database.
+  delete process.env.DATABASE_SYSTEM_URL;
   process.env.JWT_SECRET = process.env.JWT_SECRET || `integration-test-${randomUUID()}`;
   // Keep integration runs away from Redis-backed caching and outbound Telegram calls.
   delete process.env.REDIS_URL;
@@ -47,8 +49,8 @@ export type TestTenant = {
 };
 
 /* eslint-disable @typescript-eslint/no-var-requires -- loaded lazily so DATABASE_URL is set before Prisma is created */
-function loadPrisma(): typeof import('@dashboarduz/db').prisma {
-  return (require('@dashboarduz/db') as typeof import('@dashboarduz/db')).prisma;
+function loadPrisma(): typeof import('@dashboarduz/db').systemPrisma {
+  return (require('@dashboarduz/db') as typeof import('@dashboarduz/db')).systemPrisma;
 }
 
 /** Creates an isolated tenant with an Admin and a sales Agent (only Agent-like roles earn bonuses). */
