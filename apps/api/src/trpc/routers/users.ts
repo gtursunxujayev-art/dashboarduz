@@ -1,5 +1,5 @@
 import { adminProcedure, managerProcedure, router } from '../trpc';
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { z } from 'zod';
 import { AGENT_ROLES, USER_ROLES, type UserRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
@@ -133,13 +133,13 @@ function generatePassword(length = 12) {
   return result;
 }
 
-async function generateUniqueLogin(seed: string) {
+async function generateUniqueLogin(seed: string, db: DbClient) {
   const base = normalizeLoginSeed(seed);
 
   for (let i = 0; i < 20; i += 1) {
     const suffix = crypto.randomBytes(2).toString('hex');
     const candidate = `${base}.${suffix}`;
-    const exists = await prisma.user.findFirst({
+    const exists = await db.user.findFirst({
       where: { username: candidate },
       select: { id: true },
     });
@@ -153,7 +153,7 @@ async function generateUniqueLogin(seed: string) {
 
 export const usersRouter = router({
   amocrmManagers: managerProcedure.query(async ({ ctx }) => {
-    const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+    const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
     if (!amoContext) {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
@@ -174,7 +174,7 @@ export const usersRouter = router({
   }),
 
   utelManagers: managerProcedure.query(async ({ ctx }) => {
-    const calls = await prisma.call.findMany({
+    const calls = await ctx.db.call.findMany({
       where: {
         tenantId: ctx.tenantId,
         provider: 'utel',
@@ -197,7 +197,7 @@ export const usersRouter = router({
       }
     }
 
-    const mappedUsers = await prisma.user.findMany({
+    const mappedUsers = await ctx.db.user.findMany({
       where: {
         tenantId: ctx.tenantId,
         utelManagerExternalId: { not: null },
@@ -227,7 +227,7 @@ export const usersRouter = router({
   }),
 
   telegramRecipients: managerProcedure.query(async ({ ctx }) => {
-    const integration = await prisma.integration.findUnique({
+    const integration = await ctx.db.integration.findUnique({
       where: {
         tenantId_type: {
           tenantId: ctx.tenantId,
@@ -248,6 +248,7 @@ export const usersRouter = router({
       tenantId: ctx.tenantId,
       integrationId: integration.id,
       startedOnly: true,
+      db: ctx.db,
     }))
       .map((recipient) => ({
         id: recipient.chatId,
@@ -259,7 +260,7 @@ export const usersRouter = router({
 
   list: managerProcedure.query(async ({ ctx }) => {
     try {
-      return await prisma.user.findMany({
+      return await ctx.db.user.findMany({
         where: { tenantId: ctx.tenantId },
         orderBy: { createdAt: 'asc' },
         select: {
@@ -282,7 +283,7 @@ export const usersRouter = router({
         throw error;
       }
 
-      const fallback = await prisma.user.findMany({
+      const fallback = await ctx.db.user.findMany({
         where: { tenantId: ctx.tenantId },
         orderBy: { createdAt: 'asc' },
         select: {
@@ -330,7 +331,7 @@ export const usersRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const loginSeed = input.name?.trim() || input.role.toLowerCase();
-      const username = await generateUniqueLogin(loginSeed);
+      const username = await generateUniqueLogin(loginSeed, ctx.db);
       const plainPassword = generatePassword(12);
       const passwordHash = await hashPassword(plainPassword);
 
@@ -353,7 +354,7 @@ export const usersRouter = router({
       };
 
       if (createData.phone) {
-        const existingByPhone = await prisma.user.findFirst({
+        const existingByPhone = await ctx.db.user.findFirst({
           where: {
             tenantId: ctx.tenantId,
             phone: createData.phone,
@@ -376,7 +377,7 @@ export const usersRouter = router({
 
       let created: { id: string; username: string | null; name: string | null; roles: string[] };
       try {
-        created = await prisma.user.create({
+        created = await ctx.db.user.create({
           data: createData,
           select: {
             id: true,
@@ -401,7 +402,7 @@ export const usersRouter = router({
         throw error;
       }
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -436,7 +437,7 @@ export const usersRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const user = await prisma.user.findFirst({
+      const user = await ctx.db.user.findFirst({
         where: {
           id: input.userId,
           tenantId: ctx.tenantId,
@@ -457,7 +458,7 @@ export const usersRouter = router({
       const normalizedPhone = validateNormalizedPhoneOrThrow(input.phone);
 
       if (normalizedPhone) {
-        const existingByPhone = await prisma.user.findFirst({
+        const existingByPhone = await ctx.db.user.findFirst({
           where: {
             tenantId: ctx.tenantId,
             phone: normalizedPhone,
@@ -473,7 +474,7 @@ export const usersRouter = router({
         }
       }
 
-      const updated = await prisma.user.update({
+      const updated = await ctx.db.user.update({
         where: { id: user.id },
         data: {
           name: normalizedName,
@@ -495,7 +496,7 @@ export const usersRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -529,7 +530,7 @@ export const usersRouter = router({
         });
       }
 
-      const target = await prisma.user.findFirst({
+      const target = await ctx.db.user.findFirst({
         where: {
           id: input.userId,
           tenantId: ctx.tenantId,
@@ -556,7 +557,7 @@ export const usersRouter = router({
         };
       }
 
-      const updated = await prisma.user.update({
+      const updated = await ctx.db.user.update({
         where: { id: target.id },
         data: { isActive: input.isActive },
         select: {
@@ -565,7 +566,7 @@ export const usersRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -597,7 +598,7 @@ export const usersRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const user = await prisma.user.findFirst({
+      const user = await ctx.db.user.findFirst({
         where: {
           id: input.userId,
           tenantId: ctx.tenantId,
@@ -614,7 +615,7 @@ export const usersRouter = router({
       let previousUtelManagerExternalId: string | null = null;
       if (rolesNeedManagerMapping(input.roles as UserRole[])) {
         try {
-          const mappingSource = await prisma.user.findFirst({
+          const mappingSource = await ctx.db.user.findFirst({
             where: {
               id: input.userId,
               tenantId: ctx.tenantId,
@@ -661,7 +662,7 @@ export const usersRouter = router({
         createdAt: Date;
       };
       try {
-        updated = await prisma.user.update({
+        updated = await ctx.db.user.update({
           where: { id: user.id },
           data: updateData,
           select: {
@@ -689,7 +690,7 @@ export const usersRouter = router({
         throw error;
       }
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -718,7 +719,7 @@ export const usersRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const user = await prisma.user.findFirst({
+      const user = await ctx.db.user.findFirst({
         where: {
           id: input.userId,
           tenantId: ctx.tenantId,
@@ -735,7 +736,7 @@ export const usersRouter = router({
 
       const normalizedUsername = input.username?.trim().toLowerCase();
       if (normalizedUsername && normalizedUsername !== user.username) {
-        const duplicate = await prisma.user.findFirst({
+        const duplicate = await ctx.db.user.findFirst({
           where: {
             username: normalizedUsername,
             NOT: { id: user.id },
@@ -756,7 +757,7 @@ export const usersRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No credentials to update.' });
       }
 
-      const updated = await prisma.user.update({
+      const updated = await ctx.db.user.update({
         where: { id: user.id },
         data: {
           ...(normalizedUsername ? { username: normalizedUsername } : {}),
@@ -770,7 +771,7 @@ export const usersRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
