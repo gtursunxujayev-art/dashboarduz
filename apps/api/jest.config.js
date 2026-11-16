@@ -2,6 +2,9 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // One worker per core leaves no headroom: with ~20 workers finishing at once on Windows, a worker can miss
+  // jest-worker's 500 ms exit deadline and be reported as 'failed to exit gracefully' although nothing leaked.
+  maxWorkers: '50%',
   testMatch: ['**/__tests__/**/*.test.ts'],
   moduleNameMapper: {
     '^@dashboarduz/shared$': '<rootDir>/../../packages/shared/src',
