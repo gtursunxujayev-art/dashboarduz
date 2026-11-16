@@ -47,6 +47,11 @@ describe('selected report courses', () => {
       ] as never)
       .mockResolvedValueOnce([
         { id: 'technical-sale', type: 'new_sale', coursePriceAmount: 1, debtAmount: 0, paymentAmount: 1 },
+      ] as never)
+      .mockResolvedValueOnce([
+        // Pays the intensive sale off; the online sale still owes 3M after this repayment.
+        { relatedDebtIncomeId: 'intensive-sale', paymentAmount: 3_000_000 },
+        { relatedDebtIncomeId: 'online-sale', paymentAmount: 5_000_000 },
       ] as never);
 
     const result = await loadSelectedReportCourses('tenant-1');
@@ -64,6 +69,7 @@ describe('selected report courses', () => {
       group: 'online',
       salesCount: 2,
       agreementAmount: 13_000_000,
+      debtorsCount: 1,
     }));
     expect(result[0]?.tariffs).toEqual([
       { tariffId: 'premium', name: 'Premium', salesCount: 1 },
@@ -75,6 +81,7 @@ describe('selected report courses', () => {
       group: 'offline',
       salesCount: 1,
       agreementAmount: 4_000_000,
+      debtorsCount: 0,
     }));
   });
 
