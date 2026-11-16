@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma, type DbClient, type TenantPrismaClient } from '@dashboarduz/db';
 import { parseTelegramRecipients, type TelegramRecipientRecord } from './telegram-recipients';
 
 type RecipientUpsertInput = {
@@ -56,11 +56,13 @@ export async function importLegacyTelegramRecipients(params: {
   tenantId: string;
   integrationId: string;
   config: unknown;
+  db?: DbClient;
 }): Promise<void> {
+  const db = params.db ?? systemPrisma;
   const recipients = parseTelegramRecipients(params.config);
   if (!recipients.length) return;
 
-  await prisma.telegramRecipient.createMany({
+  await db.telegramRecipient.createMany({
     data: recipients.map((recipient) => ({
       tenantId: params.tenantId,
       integrationId: params.integrationId,
@@ -82,8 +84,10 @@ export async function listTelegramRecipients(params: {
   tenantId: string;
   integrationId: string;
   startedOnly?: boolean;
+  db?: DbClient;
 }): Promise<TelegramRecipientRecord[]> {
-  const rows = await prisma.telegramRecipient.findMany({
+  const db = params.db ?? systemPrisma;
+  const rows = await db.telegramRecipient.findMany({
     where: {
       tenantId: params.tenantId,
       integrationId: params.integrationId,
@@ -105,7 +109,7 @@ export async function listTelegramRecipients(params: {
   return rows.map(toRecord);
 }
 
-export async function upsertTelegramRecipientRecord(input: RecipientUpsertInput) {
+export async function upsertTelegramRecipientRecord(input: RecipientUpsertInput, db: DbClient = systemPrisma) {
   const chatId = normalizeText(input.chatId);
   if (!chatId) throw new Error('chatId is required to upsert Telegram recipient');
 
@@ -114,7 +118,7 @@ export async function upsertTelegramRecipientRecord(input: RecipientUpsertInput)
   const lastName = normalizeText(input.lastName);
   const seenAt = input.lastSeenAt || new Date();
   const started = Boolean(input.started);
-  const row = await prisma.telegramRecipient.upsert({
+  const row = await db.telegramRecipient.upsert({
     where: {
       integrationId_chatId: {
         integrationId: input.integrationId,
@@ -154,9 +158,11 @@ export async function updateTelegramRecipientSelection(params: {
   tenantId: string;
   integrationId: string;
   selectedChatIds: string[];
+  db?: TenantPrismaClient;
 }): Promise<string[]> {
+  const db = params.db ?? systemPrisma;
   const selectedChatIds = Array.from(new Set(params.selectedChatIds.map((id) => id.trim()).filter(Boolean)));
-  const available = await prisma.telegramRecipient.findMany({
+  const available = await db.telegramRecipient.findMany({
     where: { tenantId: params.tenantId, integrationId: params.integrationId, started: true },
     select: { chatId: true },
   });
@@ -164,12 +170,12 @@ export async function updateTelegramRecipientSelection(params: {
   const unknown = selectedChatIds.find((chatId) => !availableSet.has(chatId));
   if (unknown) throw new Error(`Unknown Telegram recipient chat id: ${unknown}`);
 
-  await prisma.$transaction([
-    prisma.telegramRecipient.updateMany({
+  await db.$transaction([
+    db.telegramRecipient.updateMany({
       where: { tenantId: params.tenantId, integrationId: params.integrationId, selectedForReports: true },
       data: { selectedForReports: false },
     }),
-    prisma.telegramRecipient.updateMany({
+    db.telegramRecipient.updateMany({
       where: {
         tenantId: params.tenantId,
         integrationId: params.integrationId,

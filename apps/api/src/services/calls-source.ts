@@ -1,6 +1,6 @@
 // Which provider's rows in the `calls` table the dashboards count: Utel webhooks (default) or calls imported from amoCRM.
 // Only one is counted at a time — Utel calls are usually also logged in amoCRM, so adding both would double them.
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma, type DbClient } from '@dashboarduz/db';
 
 import { buildCacheKey, getOrSet, invalidateCache } from './cache';
 
@@ -23,9 +23,9 @@ function callsProviderCacheKey(tenantId: string): string {
 }
 
 /** The `Call.provider` value every call count should filter on for this tenant. */
-export async function getCallsProvider(tenantId: string): Promise<string> {
+export async function getCallsProvider(tenantId: string, db: DbClient = systemPrisma): Promise<string> {
   return getOrSet(callsProviderCacheKey(tenantId), 60, async () => {
-    const integration = await prisma.integration.findUnique({
+    const integration = await db.integration.findUnique({
       where: { tenantId_type: { tenantId, type: 'amocrm' } },
       select: { status: true, config: true },
     });
@@ -46,8 +46,8 @@ export async function invalidateCallsProvider(tenantId: string): Promise<void> {
  * Filter for queries that used to count every provider: amoCRM rows only when amoCRM is the source,
  * otherwise everything except amoCRM rows (so other webhook providers keep counting as before).
  */
-export async function getCallsProviderFilter(tenantId: string): Promise<string | { not: string }> {
-  const provider = await getCallsProvider(tenantId);
+export async function getCallsProviderFilter(tenantId: string, db: DbClient = systemPrisma): Promise<string | { not: string }> {
+  const provider = await getCallsProvider(tenantId, db);
 
   return provider === AMOCRM_CALL_PROVIDER ? provider : { not: AMOCRM_CALL_PROVIDER };
 }

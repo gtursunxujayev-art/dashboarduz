@@ -2,7 +2,7 @@
  * Single source of truth for the money "facts" every report, dashboard, leaderboard and bonus screen uses.
  * Do not re-implement these formulas inline; import them from here.
  */
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma, type DbClient } from '@dashboarduz/db';
 import { classifyCourseCategoryFromField } from '../trpc/routers/dashboard/helpers';
 import { getSaleAgreementAmount } from './income-chain';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from './technical-income';
@@ -36,12 +36,16 @@ export function resolveRowSaleId(row: IncomeRowRef): string | null {
  * Technical sales (agreement == 1) are bookkeeping entries, not real sales. Loads the technical sale ids
  * among the sales the given rows belong to, so both the sale and its repayments can be excluded.
  */
-export async function loadTechnicalSaleIdsForRows(tenantId: string, rows: IncomeRowRef[]): Promise<Set<string>> {
+export async function loadTechnicalSaleIdsForRows(
+  tenantId: string,
+  rows: IncomeRowRef[],
+  db: DbClient = systemPrisma,
+): Promise<Set<string>> {
   const saleIds = Array.from(new Set(rows.map(resolveRowSaleId).filter((id): id is string => Boolean(id))));
   if (!saleIds.length) {
     return new Set();
   }
-  const sales = await prisma.income.findMany({
+  const sales = await db.income.findMany({
     where: { tenantId, id: { in: saleIds }, type: 'new_sale' },
     select: { id: true, type: true, coursePriceAmount: true, debtAmount: true, paymentAmount: true },
   });

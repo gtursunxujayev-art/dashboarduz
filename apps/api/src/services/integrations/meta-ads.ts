@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma, type DbClient } from '@dashboarduz/db';
 import { decryptIntegrationTokens } from '../security/encryption';
 
 const META_API_VERSION = process.env.META_API_VERSION || 'v20.0';
@@ -197,8 +197,13 @@ export async function fetchMetaInsights(
   return rows;
 }
 
-export async function syncMetaAdInsightsForTenant(tenantId: string, dateFrom: Date, dateTo: Date) {
-  const integration = await prisma.integration.findUnique({
+export async function syncMetaAdInsightsForTenant(
+  tenantId: string,
+  dateFrom: Date,
+  dateTo: Date,
+  db: DbClient = systemPrisma,
+) {
+  const integration = await db.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,
@@ -223,7 +228,7 @@ export async function syncMetaAdInsightsForTenant(tenantId: string, dateFrom: Da
   let imported = 0;
 
   for (const insight of insights) {
-    const existing = await prisma.metaAdInsight.findFirst({
+    const existing = await db.metaAdInsight.findFirst({
       where: {
         tenantId,
         date: insight.date,
@@ -250,12 +255,12 @@ export async function syncMetaAdInsightsForTenant(tenantId: string, dateFrom: Da
     };
 
     if (existing) {
-      await prisma.metaAdInsight.update({
+      await db.metaAdInsight.update({
         where: { id: existing.id },
         data,
       });
     } else {
-      await prisma.metaAdInsight.create({
+      await db.metaAdInsight.create({
         data: {
           tenantId,
           date: insight.date,
@@ -270,7 +275,7 @@ export async function syncMetaAdInsightsForTenant(tenantId: string, dateFrom: Da
     imported += 1;
   }
 
-  await prisma.integration.update({
+  await db.integration.update({
     where: { id: integration.id },
     data: {
       lastSyncAt: new Date(),

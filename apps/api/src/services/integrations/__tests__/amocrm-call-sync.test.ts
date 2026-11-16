@@ -3,7 +3,11 @@ import { describe, expect, it } from '@jest/globals';
 import { getCallsProviderFilter, readCallsSource } from '../../calls-source';
 import { noteToCallRow, readCallsSyncState, type CallManager } from '../amocrm-call-sync';
 
-jest.mock('@dashboarduz/db', () => ({ prisma: {} }));
+jest.mock('@dashboarduz/db', () => {
+  const client = {};
+
+  return { prisma: client, systemPrisma: client };
+});
 jest.mock('../../cache', () => ({
   buildCacheKey: (prefix: string) => prefix,
   getOrSet: (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),

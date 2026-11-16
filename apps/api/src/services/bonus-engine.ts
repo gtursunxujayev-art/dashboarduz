@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma, type TenantPrismaClient } from '@dashboarduz/db';
 import {
   classifyCourseCategoryFromField,
   extractSalarySettings,
@@ -234,8 +234,9 @@ export type SaleClosure = {
  * Every non-technical active sale that became fully paid on or before `rangeEnd`, with the payment that closed it.
  * Uses the same closure rule as the bonus engine, so plan bonus and bonus counts can never disagree.
  */
-export async function loadSaleClosures(params: { tenantId: string; rangeEnd: Date }): Promise<SaleClosure[]> {
-  const rows = await prisma.income.findMany({
+export async function loadSaleClosures(params: { tenantId: string; rangeEnd: Date; db?: TenantPrismaClient }): Promise<SaleClosure[]> {
+  const db = params.db ?? systemPrisma;
+  const rows = await db.income.findMany({
     where: { tenantId: params.tenantId, lifecycleStatus: 'active', entryDate: { lte: params.rangeEnd } },
     select: {
       id: true, type: true, relatedDebtIncomeId: true, managerUserId: true,
@@ -280,14 +281,14 @@ export async function loadSaleClosures(params: { tenantId: string; rangeEnd: Dat
   return closures;
 }
 
-export async function resolveEffectiveBonusPolicy(tenantId: string, month: Date): Promise<{
+export async function resolveEffectiveBonusPolicy(tenantId: string, month: Date, db: TenantPrismaClient = systemPrisma): Promise<{
   policy: BonusPolicy;
   policyVersionId: string | null;
 }> {
   const monthStart = getTashkentMonthStart(month);
   const [tenant, version] = await Promise.all([
-    prisma.tenant.findUnique({ where: { id: tenantId }, select: { settings: true } }),
-    prisma.bonusPolicyVersion.findFirst({
+    db.tenant.findUnique({ where: { id: tenantId }, select: { settings: true } }),
+    db.bonusPolicyVersion.findFirst({
       where: { tenantId, effectiveMonth: { lte: monthStart } },
       orderBy: { effectiveMonth: 'desc' },
     }),
@@ -375,18 +376,20 @@ export async function calculateBonusMonth(params: {
   month: Date;
   policy?: BonusPolicy;
   policyVersionId?: string | null;
+  db?: TenantPrismaClient;
 }): Promise<BonusMonthCalculation> {
+  const db = params.db ?? systemPrisma;
   const month = getTashkentMonthStart(params.month);
   const monthEnd = getTashkentMonthEnd(month);
   const resolved = params.policy
     ? { policy: params.policy, policyVersionId: params.policyVersionId ?? null }
-    : await resolveEffectiveBonusPolicy(params.tenantId, month);
+    : await resolveEffectiveBonusPolicy(params.tenantId, month, db);
   const [users, rows] = await Promise.all([
-    prisma.user.findMany({
+    db.user.findMany({
       where: { tenantId: params.tenantId, isActive: true, roles: { hasSome: [...ELIGIBLE_ROLES] } },
       select: { id: true, roles: true },
     }),
-    prisma.income.findMany({
+    db.income.findMany({
       where: { tenantId: params.tenantId, lifecycleStatus: 'active', entryDate: { lte: monthEnd } },
       select: {
         id: true, type: true, relatedDebtIncomeId: true, managerUserId: true,
@@ -542,10 +545,11 @@ export async function calculateBonusMonth(params: {
   };
 }
 
-export async function getBonusMonth(params: { tenantId: string; month: Date; preferSnapshot?: boolean }): Promise<BonusMonthCalculation> {
+export async function getBonusMonth(params: { tenantId: string; month: Date; preferSnapshot?: boolean; db?: TenantPrismaClient }): Promise<BonusMonthCalculation> {
+  const db = params.db ?? systemPrisma;
   const month = getTashkentMonthStart(params.month);
   if (params.preferSnapshot !== false) {
-    const snapshot = await prisma.bonusMonthSnapshot.findUnique({
+    const snapshot = await db.bonusMonthSnapshot.findUnique({
       where: { tenantId_month: { tenantId: params.tenantId, month } },
       include: { lines: true, items: true },
     });
@@ -593,19 +597,21 @@ export async function getBonusMonth(params: { tenantId: string; month: Date; pre
       };
     }
   }
-  return calculateBonusMonth({ tenantId: params.tenantId, month });
+  return calculateBonusMonth({ tenantId: params.tenantId, month, db });
 }
 
 export async function calculateBonusRange(params: {
   tenantId: string;
   rangeStart: Date;
   rangeEnd: Date;
+  db?: TenantPrismaClient;
 }): Promise<{ items: BonusCalculationItem[]; months: BonusMonthCalculation[]; totalBonusAmount: number }> {
+  const db = params.db ?? systemPrisma;
   const months: BonusMonthCalculation[] = [];
   let cursor = getTashkentMonthStart(params.rangeStart);
   const finalMonth = getTashkentMonthStart(params.rangeEnd);
   while (cursor <= finalMonth) {
-    months.push(await getBonusMonth({ tenantId: params.tenantId, month: cursor }));
+    months.push(await getBonusMonth({ tenantId: params.tenantId, month: cursor, db }));
     const shifted = new Date(cursor.getTime() + TASHKENT_OFFSET_MS);
     cursor = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 1) - TASHKENT_OFFSET_MS);
   }
@@ -620,13 +626,14 @@ export async function calculateBonusRange(params: {
 }
 
 /** `userId` is the admin who pressed finalize, or SYSTEM_FINALIZER_USER_ID for the automatic month-end freeze. */
-export async function finalizeBonusMonth(params: { tenantId: string; month: Date; userId: string }): Promise<BonusMonthCalculation> {
+export async function finalizeBonusMonth(params: { tenantId: string; month: Date; userId: string; db?: TenantPrismaClient }): Promise<BonusMonthCalculation> {
+  const db = params.db ?? systemPrisma;
   const month = getTashkentMonthStart(params.month);
   if (getTashkentMonthEnd(month) >= new Date()) throw new Error('Only completed months can be finalized.');
-  const existing = await prisma.bonusMonthSnapshot.findUnique({ where: { tenantId_month: { tenantId: params.tenantId, month } } });
-  if (existing) return getBonusMonth({ tenantId: params.tenantId, month });
-  const calculation = await calculateBonusMonth({ tenantId: params.tenantId, month });
-  await prisma.$transaction(async (tx) => {
+  const existing = await db.bonusMonthSnapshot.findUnique({ where: { tenantId_month: { tenantId: params.tenantId, month } } });
+  if (existing) return getBonusMonth({ tenantId: params.tenantId, month, db });
+  const calculation = await calculateBonusMonth({ tenantId: params.tenantId, month, db });
+  await db.$transaction(async (tx) => {
     const snapshot = await tx.bonusMonthSnapshot.create({
       data: {
         tenantId: params.tenantId,
@@ -668,12 +675,13 @@ export async function finalizeBonusMonth(params: { tenantId: string; month: Date
       });
     }
   });
-  return getBonusMonth({ tenantId: params.tenantId, month });
+  return getBonusMonth({ tenantId: params.tenantId, month, db });
 }
 
-export async function reconcileBonusMonth(params: { tenantId: string; month: Date; actorUserId?: string | null }): Promise<number> {
+export async function reconcileBonusMonth(params: { tenantId: string; month: Date; actorUserId?: string | null; db?: TenantPrismaClient }): Promise<number> {
+  const db = params.db ?? systemPrisma;
   const month = getTashkentMonthStart(params.month);
-  const snapshot = await prisma.bonusMonthSnapshot.findUnique({
+  const snapshot = await db.bonusMonthSnapshot.findUnique({
     where: { tenantId_month: { tenantId: params.tenantId, month } },
     include: { lines: true, adjustments: true },
   });
@@ -683,13 +691,14 @@ export async function reconcileBonusMonth(params: { tenantId: string; month: Dat
     month,
     policy: normalizeBonusPolicy(snapshot.policy),
     policyVersionId: snapshot.policyVersionId,
+    db,
   });
   if (current.sourceDigest === snapshot.sourceDigest || current.legacySourceDigest === snapshot.sourceDigest) {
     // Data is back to what was finalized, so any pending correction is stale.
-    await prisma.bonusAdjustment.deleteMany({ where: { snapshotId: snapshot.id, status: 'pending' } });
+    await db.bonusAdjustment.deleteMany({ where: { snapshotId: snapshot.id, status: 'pending' } });
     return 0;
   }
-  const eligibleAgentIds = new Set((await prisma.user.findMany({
+  const eligibleAgentIds = new Set((await db.user.findMany({
     where: { tenantId: params.tenantId, isActive: true, roles: { hasSome: [...ELIGIBLE_ROLES] } },
     select: { id: true },
   })).map((user) => user.id));
@@ -709,7 +718,7 @@ export async function reconcileBonusMonth(params: { tenantId: string; month: Dat
     const droppedOnlyByEligibility = !next && original && !eligibleAgentIds.has(original.agentUserId);
     const delta = droppedOnlyByEligibility ? 0 : (next?.bonusAmount || 0) - (original?.bonusAmount || 0) - approved;
     if (delta === 0) {
-      if (pending) await prisma.bonusAdjustment.delete({ where: { id: pending.id } });
+      if (pending) await db.bonusAdjustment.delete({ where: { id: pending.id } });
       continue;
     }
     const rejectedSameDigest = snapshot.adjustments.some((adjustment) => (
@@ -725,9 +734,9 @@ export async function reconcileBonusMonth(params: { tenantId: string; month: Dat
       category: next?.category || original!.category,
     };
     const adjustment = pending
-      ? await prisma.bonusAdjustment.update({ where: { id: pending.id }, data })
-      : await prisma.bonusAdjustment.create({ data: { ...data, tenantId: params.tenantId, snapshotId: snapshot.id, groupKey } });
-    await prisma.bonusAdjustmentAudit.create({
+      ? await db.bonusAdjustment.update({ where: { id: pending.id }, data })
+      : await db.bonusAdjustment.create({ data: { ...data, tenantId: params.tenantId, snapshotId: snapshot.id, groupKey } });
+    await db.bonusAdjustmentAudit.create({
       data: {
         tenantId: params.tenantId,
         adjustmentId: adjustment.id,
@@ -741,15 +750,16 @@ export async function reconcileBonusMonth(params: { tenantId: string; month: Dat
   return pendingCount;
 }
 
-export async function reconcileFinalizedBonusMonths(params: { tenantId: string; actorUserId?: string | null }): Promise<number> {
-  const snapshots = await prisma.bonusMonthSnapshot.findMany({
+export async function reconcileFinalizedBonusMonths(params: { tenantId: string; actorUserId?: string | null; db?: TenantPrismaClient }): Promise<number> {
+  const db = params.db ?? systemPrisma;
+  const snapshots = await db.bonusMonthSnapshot.findMany({
     where: { tenantId: params.tenantId },
     select: { month: true },
     orderBy: { month: 'asc' },
   });
   let total = 0;
   for (const snapshot of snapshots) {
-    total += await reconcileBonusMonth({ tenantId: params.tenantId, month: snapshot.month, actorUserId: params.actorUserId });
+    total += await reconcileBonusMonth({ tenantId: params.tenantId, month: snapshot.month, actorUserId: params.actorUserId, db });
   }
   return total;
 }
@@ -760,12 +770,14 @@ export async function reviewBonusAdjustment(params: {
   userId: string;
   action: 'approve' | 'reject';
   note?: string;
+  db?: TenantPrismaClient;
 }) {
-  const adjustment = await prisma.bonusAdjustment.findFirst({ where: { id: params.adjustmentId, tenantId: params.tenantId, status: 'pending' } });
+  const db = params.db ?? systemPrisma;
+  const adjustment = await db.bonusAdjustment.findFirst({ where: { id: params.adjustmentId, tenantId: params.tenantId, status: 'pending' } });
   if (!adjustment) throw new Error('Pending bonus adjustment was not found.');
   if (params.action === 'reject' && !params.note?.trim()) throw new Error('A rejection reason is required.');
   const payoutMonth = params.action === 'approve' ? getTashkentMonthStart(new Date()) : null;
-  return prisma.$transaction(async (tx) => {
+  return db.$transaction(async (tx) => {
     const updated = await tx.bonusAdjustment.update({
       where: { id: adjustment.id },
       data: {
@@ -789,10 +801,10 @@ export async function reviewBonusAdjustment(params: {
   });
 }
 
-export async function getApprovedAdjustmentsForMonth(tenantId: string, month: Date) {
+export async function getApprovedAdjustmentsForMonth(tenantId: string, month: Date, db: TenantPrismaClient = systemPrisma) {
   const monthStart = getTashkentMonthStart(month);
   const monthEnd = getTashkentMonthEnd(month);
-  return prisma.bonusAdjustment.findMany({
+  return db.bonusAdjustment.findMany({
     where: {
       tenantId,
       status: 'approved',
