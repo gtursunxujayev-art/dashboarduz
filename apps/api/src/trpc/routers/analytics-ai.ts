@@ -3,6 +3,7 @@ import { toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { resolveAiProvider } from '../../lib/ai-provider';
 import { resolveDateRange } from '../../lib/dates';
 import { getCallsProviderFilter } from '../../services/calls-source';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../services/income-chain';
@@ -418,24 +419,6 @@ function parseAiJson(text: string): unknown {
     }
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'AI provider did not return valid JSON.' });
   }
-}
-
-function resolveAiProvider() {
-  const explicitProvider = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
-
-  if (explicitProvider === 'deepseek' || (!explicitProvider && process.env.DEEPSEEK_API_KEY)) {
-    return {
-      provider: 'deepseek' as const,
-      apiKey: process.env.DEEPSEEK_API_KEY || '',
-      model: process.env.DEEPSEEK_MODEL || process.env.AI_MODEL || 'deepseek-v4-pro',
-    };
-  }
-
-  return {
-    provider: 'openai' as const,
-    apiKey: process.env.OPENAI_API_KEY || '',
-    model: process.env.OPENAI_MODEL || process.env.AI_MODEL || 'gpt-5.2',
-  };
 }
 
 async function generateWithDeepSeek(inputSummary: Awaited<ReturnType<typeof collectAnalyticsInput>>, apiKey: string, model: string) {

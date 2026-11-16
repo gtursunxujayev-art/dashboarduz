@@ -6,6 +6,7 @@ import { TASHKENT_OFFSET_MS, toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { resolveAiProvider, type AiProviderConfig } from '../../lib/ai-provider';
 import { parseCustomDate } from '../../lib/dates';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
@@ -31,10 +32,6 @@ const aiHelperInputSchema = z.object({
     updatedAt: z.string().optional(),
   }).optional(),
 });
-
-type AiProviderConfig =
-  | { provider: 'deepseek'; model: string; apiKey: string }
-  | { provider: 'openai'; model: string; apiKey: string };
 
 type DateWindow = {
   dateFrom: string;
@@ -226,24 +223,6 @@ function resolveDateWindow(
   return {
     ...getCurrentMonthWindow(now),
     reason: 'default_current_month',
-  };
-}
-
-function resolveAiProvider(): AiProviderConfig {
-  const explicitProvider = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
-
-  if (explicitProvider === 'deepseek' || (!explicitProvider && process.env.DEEPSEEK_API_KEY)) {
-    return {
-      provider: 'deepseek',
-      apiKey: process.env.DEEPSEEK_API_KEY || '',
-      model: process.env.DEEPSEEK_MODEL || process.env.AI_MODEL || 'deepseek-v4-pro',
-    };
-  }
-
-  return {
-    provider: 'openai',
-    apiKey: process.env.OPENAI_API_KEY || '',
-    model: process.env.OPENAI_MODEL || process.env.AI_MODEL || 'gpt-5.2',
   };
 }
 

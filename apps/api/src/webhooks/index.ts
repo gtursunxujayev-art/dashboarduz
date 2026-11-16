@@ -8,6 +8,7 @@ import { logger } from '../lib/logger';
 import { asObject, textFromUnknown } from '../lib/object';
 import { isLikelyExternalPhone, normalizePhoneKeepPlus } from '../lib/phone';
 import { isAllowedUtelManagerExtension, normalizeCallDirection } from '../lib/utel';
+import { hashFaceIdWebhookToken } from '../services/attendance/faceid';
 import { amocrmService } from '../services/integrations/amocrm';
 import { upsertTelegramRecipientRecord } from '../services/integrations/telegram-recipient-store';
 import { extractTelegramRecipientFromPayload } from '../services/integrations/telegram-update';
@@ -27,12 +28,8 @@ function getRawBody(req: Request): string {
   return JSON.stringify(req.body ?? {});
 }
 
-function buildIdempotencyKey(source: string, tenantId: string, payload: string): string {
+function buildWebhookIdempotencyKey(source: string, tenantId: string, payload: string): string {
   return crypto.createHash('sha256').update(`${source}:${tenantId}:${payload}`).digest('hex');
-}
-
-function hashFaceIdWebhookToken(token: string): string {
-  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 function extractBearerToken(req: Request): string | null {
@@ -580,7 +577,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
 
-    const idempotencyKey = buildIdempotencyKey('amocrm', integration.tenantId, rawBody);
+    const idempotencyKey = buildWebhookIdempotencyKey('amocrm', integration.tenantId, rawBody);
     const eventType = req.body?.event_type
       || (req.body?.leads ? 'leads' : req.body?.contacts ? 'contacts' : 'unknown');
 
@@ -744,7 +741,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
       return res.status(200).json({ received: true, ignored: true, reason: preparedPayload.reason || 'ignored_event' });
     }
 
-    const idempotencyKey = buildIdempotencyKey(`voip:${provider}`, integration.tenantId, rawBody);
+    const idempotencyKey = buildWebhookIdempotencyKey(`voip:${provider}`, integration.tenantId, rawBody);
     const eventType = preparedPayload.eventType;
 
     let event;
@@ -1164,7 +1161,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
 
-    const idempotencyKey = buildIdempotencyKey('telegram', integration.tenantId, rawBody);
+    const idempotencyKey = buildWebhookIdempotencyKey('telegram', integration.tenantId, rawBody);
     const eventType = req.body?.message ? 'message' : req.body?.callback_query ? 'callback_query' : 'update';
     const recipient = extractTelegramRecipientFromPayload(req.body);
 
@@ -1296,7 +1293,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
 
-    const idempotencyKey = buildIdempotencyKey('faceid', integration.tenantId, rawBody);
+    const idempotencyKey = buildWebhookIdempotencyKey('faceid', integration.tenantId, rawBody);
     const eventType = String(req.body?.event_type || req.body?.request?.event_type || 'check_in_out');
 
     let event;

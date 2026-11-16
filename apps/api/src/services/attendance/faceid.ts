@@ -7,6 +7,11 @@ import { asObject } from '../../lib/object';
 
 const REQUIRED_WORK_SECONDS_MON_TO_SAT = 9 * 60 * 60;
 
+/** FaceID webhook tokens are stored and compared as SHA-256 hex digests. */
+export function hashFaceIdWebhookToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
 type FaceIdPayloadUser = {
   id?: string | number | null;
   first_name?: string | null;
@@ -125,7 +130,7 @@ function getRawFaceIdPayload(input: unknown): Record<string, unknown> {
   return body;
 }
 
-function buildIdempotencyKey(payload: FaceIdPayload): string {
+function buildFaceIdIdempotencyKey(payload: FaceIdPayload): string {
   const source = String(payload.source || 'FACE_ID').trim().toUpperCase();
   const action = String(payload.action || '').trim().toUpperCase();
   const externalUserId = String(payload.user?.id || '').trim();
@@ -180,7 +185,7 @@ function parseFaceIdEvent(input: unknown): FaceIdParsedEvent | null {
     longitude: parseNumeric(payload.longitude),
     lateMinutes,
     source: String(payload.source || 'FACE_ID').trim().toUpperCase() || 'FACE_ID',
-    idempotencyKey: buildIdempotencyKey(payload),
+    idempotencyKey: buildFaceIdIdempotencyKey(payload),
     rawPayload,
   };
 }

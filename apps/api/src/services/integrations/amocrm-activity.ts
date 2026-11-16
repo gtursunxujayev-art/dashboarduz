@@ -282,7 +282,7 @@ function isStageChangeEvent(event: AmoCRMEvent): boolean {
   return false;
 }
 
-function buildCacheKey(
+function buildActivityCacheKey(
   tenantId: string,
   managerIds: string[],
   rangeStart: Date,
@@ -319,7 +319,7 @@ export async function getAmoCRMActivityMetrics(params: {
     return new Map();
   }
 
-  const cacheKey = buildCacheKey(params.tenantId, managerIds, params.rangeStart, params.rangeEnd);
+  const cacheKey = buildActivityCacheKey(params.tenantId, managerIds, params.rangeStart, params.rangeEnd);
   const cached = metricsCache.get(cacheKey);
 
   if (cached && cached.expiresAt > Date.now()) {

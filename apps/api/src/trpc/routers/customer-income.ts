@@ -2376,7 +2376,7 @@ async function buildRowLookupContext(tenantId: string, db: DbClient): Promise<Ro
   };
 }
 
-function resolveManagerUserId(params: {
+function resolveImportRowManagerUserId(params: {
   rawManagerValue: string;
   lookupContext: RowLookupContext;
   fallbackManagerUserId?: string;
@@ -2425,7 +2425,7 @@ function parseBulkRowToCreateIncomeInput(
   const row = buildNormalizedRow(rawRow);
 
   const managerRaw = normalizeStringValue(getRowValue(row, MANAGER_HEADERS));
-  const managerUserId = resolveManagerUserId({
+  const managerUserId = resolveImportRowManagerUserId({
     rawManagerValue: managerRaw,
     lookupContext,
     fallbackManagerUserId,

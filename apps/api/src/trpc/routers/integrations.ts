@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { asObjectOrEmpty } from '../../lib/object';
 import { parseTelegramDailyReportCourseIds } from '../../lib/telegram';
+import { hashFaceIdWebhookToken } from '../../services/attendance/faceid';
 import {
   AMOCRM_CALL_PROVIDER,
   CALLS_SOURCE_CONFIG_KEY,
@@ -125,10 +126,6 @@ function getPublicApiBaseUrl(): string {
 
 function buildFaceIdWebhookToken(): string {
   return crypto.randomBytes(32).toString('hex');
-}
-
-function hashFaceIdWebhookToken(token: string): string {
-  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 function normalizeBranchWhitelist(branchWhitelist?: string[]): string[] {
