@@ -1,9 +1,11 @@
+import { reportRangeSchema } from '@dashboarduz/shared';
+
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 
-import { z, protectedProcedure, dashboardRangeSchema } from './helpers';
+import { z, protectedProcedure, } from './helpers';
 
 export const widgetProcedures = {
   widgetCatalogOptions: protectedProcedure.query(async ({ ctx }) => {
@@ -56,7 +58,7 @@ export const widgetProcedures = {
   customSalesWidgets: protectedProcedure
     .input(
       z.object({
-        range: dashboardRangeSchema,
+        range: reportRangeSchema,
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
         widgets: z

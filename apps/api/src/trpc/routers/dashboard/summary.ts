@@ -1,4 +1,4 @@
-import { AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent } from '@dashboarduz/shared';
+import { reportRangeSchema , AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent } from '@dashboarduz/shared';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { withTimeout } from '../../../lib/async';
@@ -27,7 +27,6 @@ import {
   LogLevel,
   log,
   protectedProcedure,
-  dashboardRangeSchema,
   REPORT_MONTH_LABELS_UZ,
   normalizeTextToken,
   extractUtelManagerKey,
@@ -118,7 +117,7 @@ export const summaryProcedures = {
   summary: protectedProcedure
     .input(
       z.object({
-        range: dashboardRangeSchema,
+        range: reportRangeSchema,
         pipelineIds: z.array(z.string()).optional(),
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
@@ -795,7 +794,7 @@ export const summaryProcedures = {
   financeSummary: protectedProcedure
     .input(
       z.object({
-        range: dashboardRangeSchema,
+        range: reportRangeSchema,
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
         courseId: z.string().uuid().optional(),

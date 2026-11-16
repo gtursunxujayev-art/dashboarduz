@@ -1,8 +1,8 @@
 // Shared Tashkent (GMT+5) date-range helpers for dashboard filters.
-import { DAY_MS, tashkentCalendarDay } from '@dashboarduz/shared';
+import { DAY_MS, tashkentCalendarDay, type ReportRangePreset } from '@dashboarduz/shared';
 
 export type ExtendedDashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
-export type ApiDashboardRange = 'today' | 'week' | 'month' | 'custom';
+export type ApiDashboardRange = ReportRangePreset;
 
 
 function toIsoDay(date: Date): string {

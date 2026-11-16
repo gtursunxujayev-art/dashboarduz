@@ -9,8 +9,8 @@ import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatSom, formatTashkentDate } from '@/lib/format';
 import { getTashkentToday } from '@/lib/date-range';
+import { type ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
 
-type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 type DetailTab = 'umumiy' | 'tariflar' | 'menejerlar' | 'mijozlar';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 

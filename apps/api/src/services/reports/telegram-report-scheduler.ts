@@ -1,5 +1,5 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey, TASHKENT_TIMEZONE_LABEL, formatAmount, type AmountFormatOptions } from '@dashboarduz/shared';
+import { fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey, TASHKENT_TIMEZONE_LABEL, formatAmount, type AmountFormatOptions, type ManagerGroup } from '@dashboarduz/shared';
 
 import { sleep } from '../../lib/async';
 import { createIntervalJob } from '../../lib/interval-job';
@@ -42,7 +42,7 @@ type ReportWindow = {
 
 type ManualReportKind = 'today' | 'weekly' | 'monthly';
 
-export type ManagerGroup = 'online' | 'offline';
+export type { ManagerGroup };
 
 export type ReportManagerRow = {
   group: ManagerGroup;

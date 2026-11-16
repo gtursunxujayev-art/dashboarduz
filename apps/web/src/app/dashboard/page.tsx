@@ -1,3 +1,4 @@
+import { type ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
 ﻿'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -15,7 +16,6 @@ import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import { formatDurationHoursMinutes, formatDurationLongWords, formatSom } from '@/lib/format';
 import { getRangeLabel, getTashkentToday } from '@/lib/date-range';
 
-type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 const RANGE_OPTIONS: DashboardRange[] = ['today', 'week', 'month', 'custom'];
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 

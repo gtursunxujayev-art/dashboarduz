@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { toTashkentDateKey } from '@dashboarduz/shared';
+import { aiFocusSchema , reportRangeSchema , toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -10,7 +10,7 @@ import { INCOME_LIFECYCLE_ACTIVE } from '../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import { protectedProcedure, router } from '../trpc';
 
-import { classifyCourseCategoryFromField, dashboardRangeSchema } from './dashboard/helpers';
+import { classifyCourseCategoryFromField, } from './dashboard/helpers';
 
 const ANALYTICS_AI_PROMPT_VERSION = 'sales-intelligence-v1';
 
@@ -60,10 +60,8 @@ Return JSON with:
   "data_gaps": []
 }`;
 
-const aiFocusSchema = z.enum(['sales', 'lead_quality', 'meta_targeting', 'agents', 'courses']);
-
 const analyticsAiInputSchema = z.object({
-  range: dashboardRangeSchema,
+  range: reportRangeSchema,
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
   focus: aiFocusSchema.default('sales'),

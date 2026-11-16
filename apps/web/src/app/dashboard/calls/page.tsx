@@ -6,8 +6,8 @@ import LoadingBlock from '@/components/dashboard/loading-block';
 import { useAuth } from '@/contexts/auth-context';
 import { getRangeLabel, getTashkentToday } from '@/lib/date-range';
 import { formatDurationShortWords } from '@/lib/format';
+import { type ReportRangePreset as CallsRange } from '@dashboarduz/shared';
 
-type CallsRange = 'today' | 'week' | 'month' | 'custom';
 const RANGE_OPTIONS: CallsRange[] = ['today', 'week', 'month', 'custom'];
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 

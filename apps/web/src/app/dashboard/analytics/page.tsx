@@ -7,9 +7,8 @@ import AnalyticsCharts from '@/components/dashboard/analytics-charts';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import { getRangeLabel, getTashkentToday } from '@/lib/date-range';
+import { type AiFocus, type ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
 
-type DashboardRange = 'today' | 'week' | 'month' | 'custom';
-type AiFocus = 'sales' | 'lead_quality' | 'meta_targeting' | 'agents' | 'courses';
 const RANGE_OPTIONS: DashboardRange[] = ['today', 'week', 'month', 'custom'];
 const AI_FOCUS_OPTIONS: Array<{ value: AiFocus; label: string }> = [
   { value: 'sales', label: 'Sales' },

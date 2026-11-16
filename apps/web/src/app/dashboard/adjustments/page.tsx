@@ -5,11 +5,10 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatAmountDigits, formatCourseBundle, parseAmountInput } from '@/lib/format';
-import { groupDigits, normalizeDigits } from '@dashboarduz/shared';
+import { groupDigits, normalizeDigits, type AdjustmentType, type ReviewAction } from '@dashboarduz/shared';
 import { getIncomeStatusBadge } from '@/components/dashboard/income-status-badge';
 
-type AdjustmentMode = '' | 'refund' | 'tariff_change';
-type ReviewAction = 'approve' | 'reject';
+type AdjustmentMode = '' | AdjustmentType;
 
 function formatCardNumberInput(value: string): string {
   const digits = normalizeDigits(value).slice(0, 16);

@@ -3,8 +3,8 @@
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatDurationClock, formatPercent, formatSomUz } from '@/lib/format';
 import { KpiCard } from '@/components/dashboard/kpi-card';
+import { type ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
 
-type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
 type SellerPerformanceRow = {
   userId: string;

@@ -1,4 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
+import { reportRangeSchema, courseTypeCategorySchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -16,9 +17,6 @@ const COURSE_SALES_DATE_MESSAGES: DateRangeMessages = {
   missingBounds: "Ixtiyoriy davr uchun 'dan' va 'gacha' sanalari majburiy.",
   endBeforeStart: "'gacha' sanasi 'dan' sanasidan oldin bo'lishi mumkin emas.",
 };
-
-const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
-const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
 
 async function findSaleIdsBySubTariff(
   tenantId: string,
@@ -203,7 +201,7 @@ export const courseSalesRouter = router({
   typeOptions: protectedProcedure
     .input(
       z.object({
-        category: courseSalesTypeCategorySchema,
+        category: courseTypeCategorySchema,
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -260,7 +258,7 @@ export const courseSalesRouter = router({
   typeSummary: protectedProcedure
     .input(
       z.object({
-        category: courseSalesTypeCategorySchema,
+        category: courseTypeCategorySchema,
         courseId: z.string().uuid().optional(),
         tariffId: z.string().uuid().optional(),
         subTariffId: z.string().uuid().optional(),
@@ -549,7 +547,7 @@ export const courseSalesRouter = router({
   typeCustomers: protectedProcedure
     .input(
       z.object({
-        category: courseSalesTypeCategorySchema,
+        category: courseTypeCategorySchema,
         courseId: z.string().uuid().optional(),
         tariffId: z.string().uuid().optional(),
         subTariffId: z.string().uuid().optional(),
@@ -862,7 +860,7 @@ export const courseSalesRouter = router({
         courseId: z.string().uuid(),
         tariffId: z.string().uuid().optional(),
         subTariffId: z.string().uuid().optional(),
-        range: courseSalesRangeSchema,
+        range: reportRangeSchema,
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
       }),
@@ -1157,7 +1155,7 @@ export const courseSalesRouter = router({
         courseId: z.string().uuid(),
         tariffId: z.string().uuid().optional(),
         subTariffId: z.string().uuid().optional(),
-        range: courseSalesRangeSchema.default('month'),
+        range: reportRangeSchema.default('month'),
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
         query: z.string().trim().max(120).optional(),
@@ -1449,7 +1447,7 @@ export const courseSalesRouter = router({
         courseId: z.string().uuid(),
         tariffId: z.string().uuid().optional(),
         subTariffId: z.string().uuid().optional(),
-        range: courseSalesRangeSchema,
+        range: reportRangeSchema,
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
       }),

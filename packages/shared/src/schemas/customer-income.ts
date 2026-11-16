@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { courseCategorySchema } from './enums';
+
 export const incomeTypeSchema = z.enum(['new_sale', 'repayment']);
 const customerNumberSchema = z
   .string()
@@ -18,7 +20,7 @@ export const customerSearchSchema = z.object({
 
 export const createCourseSchema = z.object({
   name: z.string().min(1).max(120),
-  category: z.enum(['online', 'offline', 'intensive', 'additional_service']),
+  category: courseCategorySchema,
   startDate: z.string().min(1).optional(),
   endDate: z.string().min(1).optional(),
 });

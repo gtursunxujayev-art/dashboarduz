@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { normalizeDigits } from '@dashboarduz/shared';
+import { managerGroupSchema , normalizeDigits } from '@dashboarduz/shared';
 
 import { getRangeStart } from '../../../lib/dates';
 import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
@@ -447,7 +447,7 @@ const incomeRowSelect = {
 
 export const liveLeaderboardProcedures = {
   liveLeaderboardPreviousMonthWinner: protectedProcedure
-    .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
+    .input(z.object({ group: managerGroupSchema.default('online') }).optional())
     .query(async ({ ctx, input }) => {
       const requestedGroup: AgentGroup = input?.group || 'online';
 
@@ -565,7 +565,7 @@ export const liveLeaderboardProcedures = {
   }),
 
   liveLeaderboardCallStats: protectedProcedure
-    .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
+    .input(z.object({ group: managerGroupSchema.default('online') }).optional())
     .query(async ({ ctx, input }) => {
       const requestedGroup: AgentGroup = input?.group || 'online';
 
@@ -666,7 +666,7 @@ export const liveLeaderboardProcedures = {
     }),
 
   liveLeaderboard: protectedProcedure
-    .input(z.object({ group: z.enum(['online', 'offline']).default('online') }).optional())
+    .input(z.object({ group: managerGroupSchema.default('online') }).optional())
     .query(async ({ ctx, input }) => {
       const requestedGroup: AgentGroup = input?.group || 'online';
 

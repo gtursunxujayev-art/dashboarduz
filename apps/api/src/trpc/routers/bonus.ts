@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES } from '@dashboarduz/shared';
+import { penaltyTargetSchema, reviewActionSchema , AGENT_ROLES } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -616,9 +616,9 @@ const updateAttendancePenaltySettingsInput = z.object({
   absenceDayPenaltyUZS: z.number().int().nonnegative(),
   applyToFixedSalary: z.boolean(),
   applyToKpi: z.boolean(),
-  latePenaltyTarget: z.enum(['fixed', 'kpi']),
-  missingHourPenaltyTarget: z.enum(['fixed', 'kpi']),
-  absenceDayPenaltyTarget: z.enum(['fixed', 'kpi']),
+  latePenaltyTarget: penaltyTargetSchema,
+  missingHourPenaltyTarget: penaltyTargetSchema,
+  absenceDayPenaltyTarget: penaltyTargetSchema,
   monthlyPenaltyCapUZS: z.number().int().nonnegative(),
 });
 
@@ -854,7 +854,7 @@ export const bonusRouter = router({
 
   reviewBonusAdjustment: adminProcedure.input(z.object({
     adjustmentId: z.string().uuid(),
-    action: z.enum(['approve', 'reject']),
+    action: reviewActionSchema,
     note: z.string().trim().max(1000).optional(),
   })).mutation(async ({ ctx, input }) => {
     try {

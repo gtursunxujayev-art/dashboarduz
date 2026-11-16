@@ -1,3 +1,4 @@
+import { type ManagerGroup as AgentGroup } from '@dashboarduz/shared';
 ﻿'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -7,7 +8,6 @@ import { sortAgentsForBoard } from './leaderboard-ranking';
 import { formatCompactMoney, formatDurationClock, formatSomUz } from '@/lib/format';
 import { LeaderboardKpiCard } from '@/components/dashboard/kpi-card';
 
-type AgentGroup = 'online' | 'offline';
 
 type LeaderboardAgent = {
   userId: string;

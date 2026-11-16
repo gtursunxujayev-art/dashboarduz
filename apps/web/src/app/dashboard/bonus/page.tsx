@@ -5,13 +5,9 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatUzs, parseAmountInput } from '@/lib/format';
+import { COURSE_CATEGORIES, type SalaryBonusMode as BonusMode, type SalaryRuleMode as CourseBonusMode, type CourseCategory as SalaryCategory, type CourseCategory as PlanCategory, type PlanBonusPeriodMode as PlanPeriodMode, type PenaltyTarget } from '@dashboarduz/shared';
+import { getPlanCategoryLabel } from '@/lib/course-categories';
 
-type BonusMode = 'on_income' | 'on_debt_closed';
-type CourseBonusMode = 'simple' | 'tiered';
-type SalaryCategory = 'online' | 'offline' | 'intensive' | 'additional_service';
-type PlanCategory = 'online' | 'offline' | 'intensive' | 'additional_service';
-type PlanPeriodMode = 'monthly' | 'all_time';
-type PenaltyTarget = 'fixed' | 'kpi';
 type BonusTier = {
   minSales: number;
   maxSales: number | null;
@@ -108,13 +104,6 @@ function parsePercentInput(value: string): number {
 function parsePositiveInt(value: string): number {
   const parsed = Number.parseInt(value.replace(/[^\d]/g, ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function getCategoryLabel(category: PlanCategory): string {
-  if (category === 'online') return 'Online';
-  if (category === 'offline') return 'Offline';
-  if (category === 'intensive') return 'Intensiv';
-  return "Qo'shimcha xizmat";
 }
 
 function getPeriodLabel(mode: PlanPeriodMode): string {
@@ -449,7 +438,7 @@ export default function BonusPage() {
   };
 
   const validateAndBuildBonusRulesPayload = (): { bonusRules: Record<SalaryCategory, CategoryBonusRule> } | null => {
-    const categories: SalaryCategory[] = ['online', 'offline', 'intensive', 'additional_service'];
+    const categories: SalaryCategory[] = [...COURSE_CATEGORIES];
     const payload = {} as Record<SalaryCategory, CategoryBonusRule>;
 
     for (const category of categories) {
@@ -965,7 +954,7 @@ export default function BonusPage() {
               </div>
             </div>
 
-            {(['online', 'offline', 'intensive', 'additional_service'] as SalaryCategory[]).map((category) => {
+            {COURSE_CATEGORIES.map((category) => {
               const rule = bonusRulesState[category];
               if (!rule) return null;
               return (
@@ -1594,7 +1583,7 @@ export default function BonusPage() {
                     <div className="space-y-1">
                       <p className="text-sm font-semibold text-gray-900">{plan.name}</p>
                       <p className="text-xs text-gray-600">
-                        {getCategoryLabel(plan.courseCategory)} | {getPeriodLabel(plan.periodMode)}
+                        {getPlanCategoryLabel(plan.courseCategory)} | {getPeriodLabel(plan.periodMode)}
                       </p>
                       <p className="text-xs text-gray-600">
                         Kurs: {plan.courseId ? (courseNameById.get(plan.courseId) || '-') : 'Barchasi'} | Tarif: {plan.tariffId ? (courseNameById.get(plan.tariffId) || '-') : 'Barchasi'} | Subtarif: {plan.subTariffId ? (courseNameById.get(plan.subTariffId) || '-') : (plan.subTariffName || 'Barchasi')}

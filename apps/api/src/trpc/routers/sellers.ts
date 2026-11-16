@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { normalizeDigits } from '@dashboarduz/shared';
+import { sellerRangeSchema , normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -29,7 +29,6 @@ const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
 
 const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
-const sellerRangeSchema = z.enum(['today', 'week', 'month', 'last30days', 'custom']);
 
 type SellerRange = z.infer<typeof sellerRangeSchema>;
 const SELLERS_LIST_CACHE_TTL_MS = 2 * 60 * 1000;

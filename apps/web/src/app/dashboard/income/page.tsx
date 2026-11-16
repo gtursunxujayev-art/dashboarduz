@@ -6,9 +6,8 @@ import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatAmountDigits, parseAmountInput } from '@/lib/format';
 import { getTashkentToday } from '@/lib/date-range';
-import { groupDigits, normalizeDigits } from '@dashboarduz/shared';
+import { groupDigits, normalizeDigits, type IncomeType } from '@dashboarduz/shared';
 
-type IncomeType = 'new_sale' | 'repayment';
 type IncomeTypeChoice = '' | IncomeType;
 type FieldErrors = Record<string, string>;
 

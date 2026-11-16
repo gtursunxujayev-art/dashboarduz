@@ -6,8 +6,8 @@ import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatSom, formatTashkentDate } from '@/lib/format';
+import { type CourseTypeCategory } from '@dashboarduz/shared';
 
-type CourseTypeCategory = 'online' | 'offline' | 'intensive';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 const CATEGORY_LABELS: Record<CourseTypeCategory, string> = {

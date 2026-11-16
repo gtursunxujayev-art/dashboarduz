@@ -1,4 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
+import { adjustmentStatusSchema, adjustmentTypeSchema } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -154,8 +155,8 @@ export const reportsRouter = router({
 
   adjustments: protectedProcedure
     .input(reportFiltersSchema.extend({
-      type: z.enum(['refund', 'tariff_change']),
-      status: z.enum(['pending', 'approved', 'rejected']).optional(),
+      type: adjustmentTypeSchema,
+      status: adjustmentStatusSchema.optional(),
     }))
     .query(async ({ ctx, input }) => {
       const scope = getAdjustmentRoleScope(ctx.user.roles);

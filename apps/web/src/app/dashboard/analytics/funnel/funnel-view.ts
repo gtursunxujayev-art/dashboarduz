@@ -1,7 +1,8 @@
 import { toApiDateRange, type ExtendedDashboardRange } from '@/lib/date-range';
 import { formatSomRounded } from '@/lib/format';
+import { type FunnelGroup } from '@dashboarduz/shared';
 
-export type FunnelGroup = 'all' | 'online' | 'offline';
+export type { FunnelGroup };
 export type FunnelStageRef = { pipelineId: string; statusId: string };
 export type FunnelHole = 'aktivlik' | 'taklif' | 'yopish' | 'chek';
 export type FunnelPipelineOption = {

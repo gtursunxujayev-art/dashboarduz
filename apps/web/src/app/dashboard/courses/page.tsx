@@ -4,6 +4,8 @@ import { FormEvent, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { COURSE_CATEGORY_OPTIONS, getCourseCategoryLabel } from '@/lib/course-categories';
+import type { CourseCategory } from '@dashboarduz/shared';
 
 type TariffItem = {
   id: string;
@@ -23,24 +25,13 @@ type SubTariffItem = {
 type CourseItem = {
   id: string;
   name: string;
-  category: 'online' | 'offline' | 'intensive' | 'additional_service';
+  category: CourseCategory;
   startDate: Date | string | null;
   endDate: Date | string | null;
   isActive: boolean;
   isHiddenFromIncomeForm: boolean;
   tariffs: TariffItem[];
 };
-
-const COURSE_CATEGORY_OPTIONS: Array<{ value: CourseItem['category']; label: string }> = [
-  { value: 'online', label: 'Onlayn' },
-  { value: 'offline', label: 'Oflayn' },
-  { value: 'intensive', label: 'Intensiv' },
-  { value: 'additional_service', label: "Qo'shimcha xizmat" },
-];
-
-function getCategoryLabel(category: CourseItem['category']): string {
-  return COURSE_CATEGORY_OPTIONS.find((option) => option.value === category)?.label || category;
-}
 
 function toDateInputValue(value: Date | string | null | undefined): string {
   if (!value) {
@@ -497,7 +488,7 @@ export default function CoursesPage() {
                             <div>
                               <p className="text-base font-medium text-gray-900">{course.name}</p>
                               <p className="text-xs text-gray-500">
-                                {course.tariffs.length} ta tarif - {course.isActive ? 'Faol' : 'Faolsiz'} - {getCategoryLabel(course.category)} - {course.isHiddenFromIncomeForm ? "To'lovdan yashirilgan" : "To'lovda ko'rinadi"} - {toDateInputValue(course.startDate) || '-'} / {toDateInputValue(course.endDate) || '-'}
+                                {course.tariffs.length} ta tarif - {course.isActive ? 'Faol' : 'Faolsiz'} - {getCourseCategoryLabel(course.category)} - {course.isHiddenFromIncomeForm ? "To'lovdan yashirilgan" : "To'lovda ko'rinadi"} - {toDateInputValue(course.startDate) || '-'} / {toDateInputValue(course.endDate) || '-'}
                               </p>
                             </div>
                             <span className="text-sm text-blue-600">{openCourseIds[course.id] ? 'Yopish' : 'Ochish'}</span>

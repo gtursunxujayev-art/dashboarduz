@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { formatDateTime } from '@/lib/format';
+import { type CallsSource } from '@dashboarduz/shared';
 
-type CallsSource = 'utel' | 'amocrm';
 
 const SOURCE_OPTIONS: Array<{ value: CallsSource; label: string; hint: string }> = [
   { value: 'utel', label: 'Utel webhook', hint: "Qo'ng'iroqlar Utel webhook orqali keladi." },

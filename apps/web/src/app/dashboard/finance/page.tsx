@@ -1,3 +1,4 @@
+import type { ExtendedDashboardRange as DashboardRange } from '@/lib/date-range';
 ﻿'use client';
 
 import Link from 'next/link';
@@ -24,7 +25,6 @@ import {
 import { formatSom } from '@/lib/format';
 import { getIncomeStatusBadge } from '@/components/dashboard/income-status-badge';
 
-type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 

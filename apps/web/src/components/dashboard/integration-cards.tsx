@@ -1,3 +1,4 @@
+import { type IntegrationType as IntegrationId } from '@dashboarduz/shared';
 ﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -5,7 +6,6 @@ import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { AmoCallsSourcePanel } from '@/components/dashboard/amo-calls-source-panel';
 
-type IntegrationId = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel' | 'faceid_attendance';
 
 interface IntegrationConfig {
   webhookUrl?: string | null;

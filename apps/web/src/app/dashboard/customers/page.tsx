@@ -5,9 +5,8 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatNumberEn, formatTashkentDate } from '@/lib/format';
-import { normalizeDigits } from '@dashboarduz/shared';
+import { normalizeDigits, type DebtFilter } from '@dashboarduz/shared';
 
-type DebtFilter = 'all' | 'with_debt' | 'without_debt';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 function sanitizeTelegram(value: string): string {

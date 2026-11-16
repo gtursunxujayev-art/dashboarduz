@@ -1,5 +1,5 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { fromTashkentLocalParts, shiftToTashkent } from '@dashboarduz/shared';
+import { fromTashkentLocalParts, type ManagerGroup, shiftToTashkent } from '@dashboarduz/shared';
 
 import { createIntervalJob } from '../../lib/interval-job';
 import { asObjectOrEmpty } from '../../lib/object';
@@ -14,7 +14,7 @@ import { isTechnicalNewSale } from '../technical-income';
 const POLL_INTERVAL_MS = 30_000;
 const LOCK_TTL_SECONDS = 2 * 24 * 60 * 60;
 
-export type TelegramGroupSummaryGroup = 'online' | 'offline';
+export type TelegramGroupSummaryGroup = ManagerGroup;
 export type TelegramGroupSummarySchedule = '18:00' | '23:59' | 'manual';
 
 export type TelegramGroupSummaryMetrics = {

@@ -1,6 +1,6 @@
 import type { DbClient } from '@dashboarduz/db';
+import { AGENT_ROLES, funnelGroupSchema, normalizeDigits, reportRangeSchema } from '@dashboarduz/shared';
 // Tahlil → Voronka: per-manager funnel (leads, calls, sales, plan) and lost-revenue analysis.
-import { AGENT_ROLES, normalizeDigits } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 
 import { getAgentResponsibleScope } from '../../lib/access';
@@ -42,7 +42,6 @@ import {
 
 import {
   amocrmService,
-  dashboardRangeSchema,
   getTenantAmoCRMContext,
   isTashkiliyOnly,
   log,
@@ -54,7 +53,6 @@ import {
 } from './dashboard/helpers';
 import { resolveAgentGroup } from './dashboard/live-leaderboard';
 
-const funnelGroupSchema = z.enum(['all', 'online', 'offline']);
 const stageRefSchema = z.object({ pipelineId: z.string().min(1), statusId: z.string().min(1) });
 const PLAN_EDITOR_ROLES = ['Admin', 'Manager'];
 const LEADS_PAGE_SIZE = 250;
@@ -485,7 +483,7 @@ export const funnelRouter = router({
   summary: protectedProcedure
     .input(
       z.object({
-        range: dashboardRangeSchema,
+        range: reportRangeSchema,
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
         group: funnelGroupSchema.default('all'),

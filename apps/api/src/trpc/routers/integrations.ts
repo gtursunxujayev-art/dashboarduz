@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-import { TASHKENT_OFFSET_MS, amocrmConnectSchema, faceIdConnectSchema, metaAdsConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
+import { callsSourceSchema , TASHKENT_OFFSET_MS, amocrmConnectSchema, faceIdConnectSchema, metaAdsConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -526,7 +526,7 @@ export const integrationsRouter = router({
   }),
 
   setCallsSource: adminProcedure
-    .input(z.object({ source: z.enum(['utel', 'amocrm']) }))
+    .input(z.object({ source: callsSourceSchema }))
     .mutation(async ({ input, ctx }) => {
       const integration = await ctx.db.integration.findUnique({
         where: { tenantId_type: { tenantId: ctx.tenantId, type: 'amocrm' } },

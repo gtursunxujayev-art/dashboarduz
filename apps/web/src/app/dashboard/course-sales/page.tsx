@@ -8,8 +8,8 @@ import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatSom, formatTashkentDate } from '@/lib/format';
 import { getTashkentToday } from '@/lib/date-range';
+import { type ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
 
-type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 export default function CourseSalesPage() {

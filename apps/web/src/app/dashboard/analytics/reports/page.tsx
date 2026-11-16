@@ -22,8 +22,9 @@ import {
   type ReportTab,
 } from './reports-export';
 import { formatCourseBundle, formatSomUz, formatTashkentDate, formatTashkentTimestamp } from '@/lib/format';
+import { type AdjustmentStatus } from '@dashboarduz/shared';
 
-type AdjustmentStatusFilter = '' | 'pending' | 'approved' | 'rejected';
+type AdjustmentStatusFilter = '' | AdjustmentStatus;
 
 const TAB_LABELS: Record<ReportTab, string> = {
   debtors: 'Qarzdorlar',

@@ -1,5 +1,5 @@
 import type { DbClient, TenantPrismaClient } from '@dashboarduz/db';
-import {
+import { adjustmentStatusSchema, adjustmentTypeSchema, debtFilterSchema ,
   bulkIncomeImportFromGoogleSheetSchema,
   bulkIncomeImportSchema,
   createCourseSchema,
@@ -5311,8 +5311,8 @@ export const customerIncomeRouter = router({
     .input(
       z
         .object({
-          status: z.enum([ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_STATUS_APPROVED, ADJUSTMENT_STATUS_REJECTED]).optional(),
-          type: z.enum([ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE]).optional(),
+          status: adjustmentStatusSchema.optional(),
+          type: adjustmentTypeSchema.optional(),
           limit: z.number().int().positive().max(200).default(80),
         })
         .optional(),
@@ -5528,7 +5528,7 @@ export const customerIncomeRouter = router({
   createAdjustmentRequest: protectedProcedure
     .input(
       z.object({
-        type: z.enum([ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE]),
+        type: adjustmentTypeSchema,
         incomeId: z.string().uuid(),
         reason: z.string().max(500).optional(),
         refundCardNumber: z.string().regex(REFUND_CARD_NUMBER_REGEX).optional(),
@@ -7194,7 +7194,7 @@ export const customerIncomeRouter = router({
           courseId: z.string().uuid().optional(),
           tariffId: z.string().uuid().optional(),
           subTariffId: z.string().uuid().optional(),
-          debtFilter: z.enum(['all', 'with_debt', 'without_debt']).default('all'),
+          debtFilter: debtFilterSchema.default('all'),
           // Omitted = every matching customer; the page and its export need the full filtered list.
           limit: z.number().int().positive().max(10000).optional(),
         })

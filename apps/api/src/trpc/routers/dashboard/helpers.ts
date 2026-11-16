@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, hasAgentRole, shiftToTashkent } from '@dashboarduz/shared';
+import { AGENT_ROLES, hasAgentRole, shiftToTashkent, COURSE_CATEGORIES, PLAN_BONUS_PERIOD_MODES, SALARY_RULE_MODES, type PlanBonusPeriodMode, type ReportRangePreset, type SalaryBonusMode, type SalaryRuleMode } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { getRangeStart } from '../../../lib/dates';
@@ -12,7 +12,6 @@ import {
 } from '../../../services/integrations/amocrm-live';
 import { normalizeIdentifier } from '../../../services/integrations/amocrm-live';
 
-export const dashboardRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 export const dashboardWidgetIdSchema = z.string().min(1).max(120);
 export const dashboardCustomSalesWidgetSchema = z.object({
   id: z.string().min(1).max(120),
@@ -39,17 +38,15 @@ export const PIE_COLORS = [
   '#84CC16',
 ] as const;
 
-export type DashboardRange = z.infer<typeof dashboardRangeSchema>;
+export type DashboardRange = ReportRangePreset;
 
-export const SALARY_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
-export const SALARY_RULE_MODES = ['simple', 'tiered'] as const;
-export const PLAN_BONUS_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
-export const PLAN_BONUS_PERIOD_MODES = ['monthly', 'all_time'] as const;
+/** Salary bonus rules and plan bonuses are both configured per course category. */
+export const SALARY_CATEGORIES = COURSE_CATEGORIES;
+export const PLAN_BONUS_CATEGORIES = COURSE_CATEGORIES;
+export { PLAN_BONUS_PERIOD_MODES, SALARY_RULE_MODES, type PlanBonusPeriodMode, type SalaryBonusMode, type SalaryRuleMode };
 export const REPORT_MONTH_LABELS_UZ = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'] as const;
 
 export type SalaryCategory = (typeof SALARY_CATEGORIES)[number];
-export type SalaryRuleMode = (typeof SALARY_RULE_MODES)[number];
-export type SalaryBonusMode = 'on_income' | 'on_debt_closed';
 export type SalaryBreakdown = Record<SalaryCategory, number>;
 export type SalaryRuleTier = {
   minSales: number;
@@ -63,7 +60,6 @@ export type SalaryCategoryBonusRule = {
 };
 export type SalaryBonusRules = Record<SalaryCategory, SalaryCategoryBonusRule>;
 export type PlanBonusCategory = (typeof PLAN_BONUS_CATEGORIES)[number];
-export type PlanBonusPeriodMode = (typeof PLAN_BONUS_PERIOD_MODES)[number];
 export type SalaryPlanBonus = {
   id: string;
   name: string;

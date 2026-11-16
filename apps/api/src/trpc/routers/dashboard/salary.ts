@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, shiftToTashkent, TASHKENT_OFFSET_MS, toTashkentDateKey, type UserRole } from '@dashboarduz/shared';
+import { AGENT_ROLES, reportRangeSchema, shiftToTashkent, TASHKENT_OFFSET_MS, toTashkentDateKey, type UserRole } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { isAgentOnly } from '../../../lib/access';
@@ -25,7 +25,6 @@ import {
   protectedProcedure,
   isTashkiliyOnly,
   getCurrentMonthRange,
-  dashboardRangeSchema,
   getDaysInReportLocalMonth,
   classifyCourseCategoryFromField,
   extractSalarySettings,
@@ -173,7 +172,7 @@ function buildRequiredWorkdaysByMonth(rangeStart: Date, rangeEnd: Date): Map<str
 const salarySummary = protectedProcedure
     .input(
       z.object({
-        range: dashboardRangeSchema.default('month').optional(),
+        range: reportRangeSchema.default('month').optional(),
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
         managerUserId: z.string().uuid().optional(),
@@ -823,7 +822,7 @@ const salarySummary = protectedProcedure
     });
 
 const bonusIncomeDetailsInputSchema = z.object({
-  range: dashboardRangeSchema.default('month'),
+  range: reportRangeSchema.default('month'),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
   courseId: z.string().uuid().optional(),

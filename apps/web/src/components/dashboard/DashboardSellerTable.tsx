@@ -2,8 +2,8 @@
 
 import VirtualTable from '@/components/ui/VirtualTable';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { type ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
 
-type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
 type Props = {
   isLoading: boolean;

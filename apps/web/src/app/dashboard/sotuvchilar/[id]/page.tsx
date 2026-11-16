@@ -6,8 +6,8 @@ import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatDurationClock, formatPercent, formatResponseTime, formatSomRounded } from '@/lib/format';
 import { getTashkentDateShift, getTashkentToday } from '@/lib/date-range';
 import { getConversionBadge, getDailyTalkBadge, getDeadlineBadge, getDebtCollectionBadge, getFollowUpBadge, getMissedCallBadge, getOutboundBadge, getRefundBadge, getResponseTimeBadge, type KpiBadge } from '@/components/dashboard/seller-kpi-badges';
+import { type SellerRange } from '@dashboarduz/shared';
 
-type SellerRange = 'today' | 'week' | 'month' | 'last30days' | 'custom';
 
 function formatDurationReadable(seconds: number | null | undefined): string {
   const safe = Math.max(0, Math.floor(seconds || 0));

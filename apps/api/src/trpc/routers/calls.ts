@@ -1,5 +1,4 @@
-
-import { AGENT_ROLES, hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
+import { reportRangeSchema , AGENT_ROLES, hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -24,7 +23,6 @@ const clickToCallSchema = z.object({
   callerId: z.string().optional(),
   recording: z.boolean().optional().default(true),
 });
-const callsRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 
 const AGENT_MOTIVATION_ABOVE = "Bugungi harakatlaringizga baraka bersin, ko'proq suhbat ko'proq savdo degani";
 const AGENT_MOTIVATION_BELOW = "Bugun qolganlardan ortda qolyapsiz, qo'ng'iroqlarni ko'paytiring, ko'proq bonus ko'proq harakat qilganlarga nasib qiladi ";
@@ -163,7 +161,7 @@ export const callsRouter = router({
   analytics: protectedProcedure
     .input(
       z.object({
-        range: callsRangeSchema.default('today'),
+        range: reportRangeSchema.default('today'),
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
       }),

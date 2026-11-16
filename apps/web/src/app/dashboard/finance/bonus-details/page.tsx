@@ -1,3 +1,4 @@
+import { type ExtendedDashboardRange as DashboardRange, getPreviousMonthRange, getPreviousWeekRange, getTashkentToday } from '@/lib/date-range';
 ﻿'use client';
 
 import Link from 'next/link';
@@ -12,9 +13,7 @@ import {
   buildBonusDetailExportRows,
 } from './bonus-detail-export';
 import { formatSom } from '@/lib/format';
-import { getPreviousMonthRange, getPreviousWeekRange, getTashkentToday } from '@/lib/date-range';
 
-type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 function getCurrentWeekRange() {
