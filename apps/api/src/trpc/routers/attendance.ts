@@ -1,4 +1,3 @@
-import { prisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
@@ -139,7 +138,7 @@ export const attendanceRouter = router({
       };
 
       const [rows, total] = await Promise.all([
-        prisma.attendanceEvent.findMany({
+        ctx.db.attendanceEvent.findMany({
           where,
           orderBy: [{ eventAt: 'desc' }, { createdAt: 'desc' }],
           skip,
@@ -173,7 +172,7 @@ export const attendanceRouter = router({
             },
           },
         }),
-        prisma.attendanceEvent.count({ where }),
+        ctx.db.attendanceEvent.count({ where }),
       ]);
 
       return {
@@ -229,7 +228,7 @@ export const attendanceRouter = router({
       };
 
       const [rows, total] = await Promise.all([
-        prisma.attendanceDaySummary.findMany({
+        ctx.db.attendanceDaySummary.findMany({
           where,
           orderBy: [{ summaryDate: 'desc' }, { updatedAt: 'desc' }],
           skip,
@@ -261,7 +260,7 @@ export const attendanceRouter = router({
             },
           },
         }),
-        prisma.attendanceDaySummary.count({ where }),
+        ctx.db.attendanceDaySummary.count({ where }),
       ]);
 
       return {
@@ -313,7 +312,7 @@ export const attendanceRouter = router({
       }
 
       const scopedUserId = resolveAttendanceReportScopedUserId(ctx.user.roles, ctx.user.userId);
-      const users = await prisma.user.findMany({
+      const users = await ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
@@ -337,7 +336,7 @@ export const attendanceRouter = router({
       }
 
       const summaries = users.length > 0
-        ? await prisma.attendanceDaySummary.findMany({
+        ? await ctx.db.attendanceDaySummary.findMany({
             where: {
               tenantId: ctx.tenantId,
               userId: { in: users.map((user) => user.id) },
@@ -400,7 +399,7 @@ export const attendanceRouter = router({
           : undefined;
 
       const [summaryAnomalies, unmatchedEvents] = await Promise.all([
-        prisma.attendanceDaySummary.findMany({
+        ctx.db.attendanceDaySummary.findMany({
           where: {
             tenantId: ctx.tenantId,
             ...(dateFilter ? { summaryDate: dateFilter } : {}),
@@ -427,7 +426,7 @@ export const attendanceRouter = router({
             },
           },
         }),
-        prisma.attendanceEvent.findMany({
+        ctx.db.attendanceEvent.findMany({
           where: {
             tenantId: ctx.tenantId,
             userId: null,
@@ -509,7 +508,7 @@ export const attendanceRouter = router({
         const localDate = toLocalDateKey(eventAt);
         const localTime = toLocalTimeValue(eventAt);
 
-        const createdEvent = await prisma.attendanceEvent.create({
+        const createdEvent = await ctx.db.attendanceEvent.create({
           data: {
             tenantId: ctx.tenantId,
             userId: input.userId,
@@ -532,7 +531,7 @@ export const attendanceRouter = router({
           },
         });
 
-        const adjustment = await prisma.attendanceAdjustment.create({
+        const adjustment = await ctx.db.attendanceAdjustment.create({
           data: {
             tenantId: ctx.tenantId,
             userId: input.userId,
@@ -551,7 +550,7 @@ export const attendanceRouter = router({
           select: { id: true },
         });
 
-        await prisma.attendanceAdjustmentAudit.create({
+        await ctx.db.attendanceAdjustmentAudit.create({
           data: {
             adjustmentId: adjustment.id,
             tenantId: ctx.tenantId,
@@ -565,6 +564,7 @@ export const attendanceRouter = router({
 
         await recomputeAttendanceDaySummary({
           tenantId: ctx.tenantId,
+          db: ctx.db,
           userId: input.userId,
           localDate,
         });
@@ -580,7 +580,7 @@ export const attendanceRouter = router({
         const localDate = toLocalDateKey(eventAt);
         const localTime = toLocalTimeValue(eventAt);
 
-        const createdEvent = await prisma.attendanceEvent.create({
+        const createdEvent = await ctx.db.attendanceEvent.create({
           data: {
             tenantId: ctx.tenantId,
             userId: input.userId,
@@ -603,7 +603,7 @@ export const attendanceRouter = router({
           },
         });
 
-        const adjustment = await prisma.attendanceAdjustment.create({
+        const adjustment = await ctx.db.attendanceAdjustment.create({
           data: {
             tenantId: ctx.tenantId,
             userId: input.userId,
@@ -622,7 +622,7 @@ export const attendanceRouter = router({
           select: { id: true },
         });
 
-        await prisma.attendanceAdjustmentAudit.create({
+        await ctx.db.attendanceAdjustmentAudit.create({
           data: {
             adjustmentId: adjustment.id,
             tenantId: ctx.tenantId,
@@ -636,6 +636,7 @@ export const attendanceRouter = router({
 
         await recomputeAttendanceDaySummary({
           tenantId: ctx.tenantId,
+          db: ctx.db,
           userId: input.userId,
           localDate,
         });
@@ -647,7 +648,7 @@ export const attendanceRouter = router({
       }
 
       if (input.action === 'edit_event_time') {
-        const targetEvent = await prisma.attendanceEvent.findFirst({
+        const targetEvent = await ctx.db.attendanceEvent.findFirst({
           where: {
             id: input.eventId,
             tenantId: ctx.tenantId,
@@ -669,7 +670,7 @@ export const attendanceRouter = router({
         const newLocalDate = toLocalDateKey(newEventAt);
         const newLocalTime = toLocalTimeValue(newEventAt);
 
-        const updated = await prisma.attendanceEvent.update({
+        const updated = await ctx.db.attendanceEvent.update({
           where: { id: targetEvent.id },
           data: {
             eventAt: newEventAt,
@@ -680,7 +681,7 @@ export const attendanceRouter = router({
           select: { id: true, userId: true },
         });
 
-        const adjustment = await prisma.attendanceAdjustment.create({
+        const adjustment = await ctx.db.attendanceAdjustment.create({
           data: {
             tenantId: ctx.tenantId,
             userId: updated.userId,
@@ -703,7 +704,7 @@ export const attendanceRouter = router({
           select: { id: true },
         });
 
-        await prisma.attendanceAdjustmentAudit.create({
+        await ctx.db.attendanceAdjustmentAudit.create({
           data: {
             adjustmentId: adjustment.id,
             tenantId: ctx.tenantId,
@@ -718,12 +719,14 @@ export const attendanceRouter = router({
         if (updated.userId) {
           await recomputeAttendanceDaySummary({
             tenantId: ctx.tenantId,
+            db: ctx.db,
             userId: updated.userId,
             localDate: targetEvent.localDate,
           });
           if (newLocalDate !== targetEvent.localDate) {
             await recomputeAttendanceDaySummary({
               tenantId: ctx.tenantId,
+              db: ctx.db,
               userId: updated.userId,
               localDate: newLocalDate,
             });
@@ -737,7 +740,7 @@ export const attendanceRouter = router({
       }
 
       const summaryDate = parseDateKey(input.summaryDate, 'summaryDate');
-      const existingSummary = await prisma.attendanceDaySummary.findUnique({
+      const existingSummary = await ctx.db.attendanceDaySummary.findUnique({
         where: {
           tenantId_userId_summaryDate: {
             tenantId: ctx.tenantId,
@@ -759,7 +762,7 @@ export const attendanceRouter = router({
         },
       });
 
-      const updatedSummary = await prisma.attendanceDaySummary.upsert({
+      const updatedSummary = await ctx.db.attendanceDaySummary.upsert({
         where: {
           tenantId_userId_summaryDate: {
             tenantId: ctx.tenantId,
@@ -798,7 +801,7 @@ export const attendanceRouter = router({
         },
       });
 
-      const adjustment = await prisma.attendanceAdjustment.create({
+      const adjustment = await ctx.db.attendanceAdjustment.create({
         data: {
           tenantId: ctx.tenantId,
           userId: input.userId,
@@ -812,7 +815,7 @@ export const attendanceRouter = router({
         select: { id: true },
       });
 
-      await prisma.attendanceAdjustmentAudit.create({
+      await ctx.db.attendanceAdjustmentAudit.create({
         data: {
           adjustmentId: adjustment.id,
           tenantId: ctx.tenantId,
@@ -850,6 +853,7 @@ export const attendanceRouter = router({
 
       const result = await recomputeAttendanceSummariesForRange({
         tenantId: ctx.tenantId,
+        db: ctx.db,
         dateFrom,
         dateTo,
         userId: input.userId,

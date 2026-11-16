@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma, type DbClient } from '@dashboarduz/db';
 
 const REPORT_TZ_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const REQUIRED_WORK_SECONDS_MON_TO_SAT = 9 * 60 * 60;
@@ -245,7 +245,7 @@ async function resolveMatchedUserId(params: {
   // 1) Phone match first.
   const normalizedExternalPhone = normalizePhone(params.parsed.externalPhone);
   if (normalizedExternalPhone) {
-    const phoneCandidates = await prisma.user.findMany({
+    const phoneCandidates = await systemPrisma.user.findMany({
       where: {
         tenantId: params.tenantId,
         isActive: true,
@@ -276,7 +276,7 @@ async function resolveMatchedUserId(params: {
   if (params.parsed.externalUserId) {
     const mappedUserId = userExternalMap[params.parsed.externalUserId];
     if (mappedUserId) {
-      const mappedUser = await prisma.user.findFirst({
+      const mappedUser = await systemPrisma.user.findFirst({
         where: {
           id: mappedUserId,
           tenantId: params.tenantId,
@@ -298,7 +298,7 @@ async function resolveMatchedUserId(params: {
   // 3) Strict unique full-name fallback.
   const incomingNormalizedName = buildNormalizedFullName(params.parsed.firstName, params.parsed.lastName);
   if (incomingNormalizedName) {
-    const nameCandidates = await prisma.user.findMany({
+    const nameCandidates = await systemPrisma.user.findMany({
       where: {
         tenantId: params.tenantId,
         isActive: true,
@@ -369,8 +369,11 @@ export async function recomputeAttendanceDaySummary(params: {
   tenantId: string;
   userId: string;
   localDate: string;
+  /** Tenant-scoped client for user requests; defaults to the system client (workers). */
+  db?: DbClient;
 }): Promise<void> {
-  const events = await prisma.attendanceEvent.findMany({
+  const db = params.db ?? systemPrisma;
+  const events = await db.attendanceEvent.findMany({
     where: {
       tenantId: params.tenantId,
       userId: params.userId,
@@ -430,7 +433,7 @@ export async function recomputeAttendanceDaySummary(params: {
   const lateCount = firstInLateMinutes > 0 ? 1 : 0;
   const anomalyCount = unmatchedInCount + unmatchedOutCount;
 
-  await prisma.attendanceDaySummary.upsert({
+  await db.attendanceDaySummary.upsert({
     where: {
       tenantId_userId_summaryDate: {
         tenantId: params.tenantId,
@@ -525,7 +528,7 @@ export async function ingestFaceIdEvent(params: {
     },
   };
 
-  const created = await prisma.attendanceEvent.upsert({
+  const created = await systemPrisma.attendanceEvent.upsert({
     where: {
       tenantId_idempotencyKey: {
         tenantId: params.tenantId,
@@ -600,8 +603,10 @@ export async function recomputeAttendanceSummariesForRange(params: {
   dateFrom: string;
   dateTo: string;
   userId?: string;
+  db?: DbClient;
 }): Promise<{ recomputed: number }> {
-  const events = await prisma.attendanceEvent.findMany({
+  const db = params.db ?? systemPrisma;
+  const events = await db.attendanceEvent.findMany({
     where: {
       tenantId: params.tenantId,
       ...(params.userId ? { userId: params.userId } : {}),
@@ -627,6 +632,7 @@ export async function recomputeAttendanceSummariesForRange(params: {
       tenantId: params.tenantId,
       userId: event.userId,
       localDate: event.localDate,
+      db,
     });
     recomputed += 1;
   }

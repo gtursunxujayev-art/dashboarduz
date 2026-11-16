@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 
 /**
  * Database clients.
@@ -55,6 +55,9 @@ export const prisma: PrismaClient = systemPrisma;
 
 /** A tenant-scoped client. Same API as PrismaClient. */
 export type TenantPrismaClient = PrismaClient;
+
+/** Any client a data helper can run queries on: a full client or an interactive transaction. */
+export type DbClient = PrismaClient | Prisma.TransactionClient;
 
 type RawCapable = Pick<PrismaClient, '$executeRaw'>;
 
