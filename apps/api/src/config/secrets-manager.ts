@@ -41,7 +41,7 @@ class AWSSecretsManager implements SecretsManager {
     }
   }
 
-  async setSecret(secretName: string, secretValue: string | Record<string, any>): Promise<void> {
+  async setSecret(secretName: string, _secretValue: string | Record<string, any>): Promise<void> {
     try {
       // In production, use AWS SDK
       // const secretString = typeof secretValue === 'string' ? secretValue : JSON.stringify(secretValue);
@@ -99,7 +99,7 @@ class VaultSecretsManager implements SecretsManager {
     }
   }
 
-  async setSecret(secretName: string, secretValue: string | Record<string, any>): Promise<void> {
+  async setSecret(secretName: string, _secretValue: string | Record<string, any>): Promise<void> {
     try {
       // In production, use Vault API
       // const secretData = typeof secretValue === 'string' 

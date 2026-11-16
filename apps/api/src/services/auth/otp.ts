@@ -26,11 +26,11 @@ class FirebaseOTPProvider implements OTPProvider {
         // For now, we'll simulate the initialization
         this.admin = {
           auth: () => ({
-            generateSignInWithPhoneNumber: async (phone: string) => {
+            generateSignInWithPhoneNumber: async (_phone: string) => {
               // Simulate Firebase phone auth
               return { verificationId: `firebase-verification-${Date.now()}` };
             },
-            verifyPhoneNumber: async (verificationId: string, code: string) => {
+            verifyPhoneNumber: async (_verificationId: string, _code: string) => {
               // Simulate verification
               return { success: true };
             }
@@ -349,7 +349,7 @@ export class OTPRateLimiter {
   private static readonly MAX_ATTEMPTS_PER_DAY = 20;
   private static readonly RESEND_COOLDOWN_SECONDS = 60;
 
-  static async checkRateLimit(phone: string, action: 'send' | 'verify'): Promise<{ allowed: boolean; retryAfter?: number; error?: string }> {
+  static async checkRateLimit(_phone: string, _action: 'send' | 'verify'): Promise<{ allowed: boolean; retryAfter?: number; error?: string }> {
     // In production, implement Redis-based rate limiting
     // For now, return always allowed
     return { allowed: true };

@@ -6,7 +6,6 @@
                             "module":  "commonjs",
                             "moduleResolution":  "node",
                             "noUnusedLocals": false,
-                            "noUnusedParameters": false,
                             "exactOptionalPropertyTypes": false,
                             "declaration": true,
                             "declarationMap": true
