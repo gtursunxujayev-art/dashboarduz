@@ -1,7 +1,7 @@
 import { isAgentOnly } from '../../../lib/access';
+import { normalizePercentage } from '../../../lib/number';
 import { toFiniteNumber } from '../../../lib/object';
 import {
-  normalizePercentage,
   createZeroBreakdown,
   normalizeSalaryTier,
   isValidTierSequence,

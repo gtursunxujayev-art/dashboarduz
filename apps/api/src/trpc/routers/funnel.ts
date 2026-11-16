@@ -4,6 +4,7 @@ import { AGENT_ROLES, normalizeDigits } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 
 import { getAgentResponsibleScope } from '../../lib/access';
+import { withTimeout } from '../../lib/async';
 import { resolveDateRange } from '../../lib/dates';
 import { asObject, toFiniteNumber } from '../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallExtension } from '../../lib/utel';
@@ -67,21 +68,6 @@ const NOTES_MAX_PAGES_PER_CHUNK = 20;
 type FunnelSourceState = 'ok' | 'partial' | 'unavailable' | 'timeout';
 type FunnelSourceEntry = { ok: boolean; reason: string | null; state: FunnelSourceState };
 type FunnelSourceStatus = { leads: FunnelSourceEntry; calls: FunnelSourceEntry };
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, reason: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(reason)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
 
 function detectLeadsFailureReason(error: unknown): string {
   const message = String((error as Error | undefined)?.message || '').toLowerCase();

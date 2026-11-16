@@ -1,6 +1,7 @@
 import { AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent } from '@dashboarduz/shared';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
+import { withTimeout } from '../../../lib/async';
 import { resolveDateRange } from '../../../lib/dates';
 import { asObject } from '../../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
@@ -80,15 +81,6 @@ function detectSummarySourceReason(error: unknown, fallback: string): string {
   }
 
   return fallback;
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, reason: string): Promise<T> {
-  return await Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error(reason)), timeoutMs);
-    }),
-  ]);
 }
 
 async function runSummarySourceWithRetry<T>(params: {

@@ -1,6 +1,8 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey } from '@dashboarduz/shared';
 
+import { sleep } from '../../lib/async';
+import { roundPositivePercentage } from '../../lib/number';
 import { parseTelegramDailyReportCourseIds } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension } from '../../lib/utel';
 import { getCallsProvider, getCallsProviderFilter } from '../calls-source';
@@ -158,18 +160,6 @@ function formatSelectedCourseLine(row: ReportMetrics['selectedCourseRows'][numbe
     : 'Tariflar: 0';
 
   return `${row.courseName}: Sotuv - ${row.salesCount} | ${tariffs}`;
-}
-
-function normalizePercentage(value: number): number {
-  if (!Number.isFinite(value) || value <= 0) {
-    return 0;
-  }
-
-  return Number(value.toFixed(2));
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getReportTenantName(value: string | null | undefined): string {
@@ -1424,9 +1414,9 @@ async function collectMetrics(params: {
   }
 
   const nonQualifiedLeads = Array.from(reasonMap.values()).reduce((sum, value) => sum + value, 0);
-  const qualifiedShare = newLeads > 0 ? normalizePercentage((qualifiedLeads / newLeads) * 100) : 0;
-  const nonQualifiedShare = newLeads > 0 ? normalizePercentage((nonQualifiedLeads / newLeads) * 100) : 0;
-  const conversionPercent = newLeads > 0 ? normalizePercentage((newSalesCount / newLeads) * 100) : 0;
+  const qualifiedShare = newLeads > 0 ? roundPositivePercentage((qualifiedLeads / newLeads) * 100) : 0;
+  const nonQualifiedShare = newLeads > 0 ? roundPositivePercentage((nonQualifiedLeads / newLeads) * 100) : 0;
+  const conversionPercent = newLeads > 0 ? roundPositivePercentage((newSalesCount / newLeads) * 100) : 0;
 
   const reasonBreakdown = Array.from(reasonMap.entries())
     .map(([label, value]) => ({ label, value }))
@@ -1446,7 +1436,7 @@ async function collectMetrics(params: {
       qualified: row.qualified,
       nonQualified: row.nonQualified,
       sales: row.sales,
-      conversion: row.leads > 0 ? normalizePercentage((row.sales / row.leads) * 100) : 0,
+      conversion: row.leads > 0 ? roundPositivePercentage((row.sales / row.leads) * 100) : 0,
       agreementAmount: row.agreementAmount,
       incomeAmount: row.incomeAmount,
       callDurationSeconds: (managerCallDurationByUserId.get(row.userId) || 0) + (corporateDurationByUserId.get(row.userId) || 0),

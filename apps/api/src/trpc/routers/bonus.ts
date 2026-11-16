@@ -3,7 +3,9 @@ import { AGENT_ROLES } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { normalizePercentage } from '../../lib/number';
 import { asObjectOrEmpty, toFiniteNumber } from '../../lib/object';
+import { normalizeMatchText } from '../../lib/text';
 import {
   buildLegacyBonusPolicy,
   calculateBonusMonth,
@@ -105,29 +107,12 @@ function canReadBonusPlans(roles: string[]): boolean {
   return roles.some((role) => BONUS_READ_ROLES.has(role));
 }
 
-function normalizeName(value: string): string {
-  return value.trim().toLowerCase();
-}
-
 function getCategoryLabel(category: BonusRuleCategory): string {
   if (category === 'online') return 'Online';
   if (category === 'offline') return 'Offline';
   if (category === 'intensive') return 'Intensiv';
 
   return "Qo'shimcha xizmat";
-}
-
-function normalizePercentage(value: unknown): number {
-  const parsed = toFiniteNumber(value, 0);
-
-  if (parsed <= 0) {
-    return 0;
-  }
-  if (parsed >= 100) {
-    return 100;
-  }
-
-  return Number(parsed.toFixed(2));
 }
 
 function normalizeTier(raw: unknown): BonusRuleTier | null {
@@ -442,7 +427,7 @@ async function validatePlanScope(params: {
 }) {
   const { db } = params;
 
-  const normalizedSubTariffName = params.subTariffName ? normalizeName(params.subTariffName) : '';
+  const normalizedSubTariffName = params.subTariffName ? normalizeMatchText(params.subTariffName) : '';
 
   if (!params.courseId && (params.tariffId || params.subTariffId || normalizedSubTariffName)) {
     throw new TRPCError({
@@ -537,7 +522,7 @@ async function validatePlanScope(params: {
       },
     });
 
-    const hasMatch = courseSubTariffs.some((item) => normalizeName(item.name) === normalizedSubTariffName);
+    const hasMatch = courseSubTariffs.some((item) => normalizeMatchText(item.name) === normalizedSubTariffName);
 
     if (!hasMatch) {
       throw new TRPCError({
@@ -1255,7 +1240,7 @@ export const bonusRouter = router({
       courseId: input.courseId ?? null,
       tariffId: input.tariffId ?? null,
       subTariffId: input.tariffId ? (input.subTariffId ?? null) : null,
-      subTariffName: input.tariffId ? null : (input.subTariffName ? normalizeName(input.subTariffName) : null),
+      subTariffName: input.tariffId ? null : (input.subTariffName ? normalizeMatchText(input.subTariffName) : null),
       targetClosedSales: Math.max(1, Math.floor(input.targetClosedSales)),
       bonusAmount: Math.max(1, Math.round(input.bonusAmount)),
       createdAt: nowIso,
@@ -1329,7 +1314,7 @@ export const bonusRouter = router({
       subTariffId: nextPlan.tariffId ? nextPlan.subTariffId : null,
       subTariffName: nextPlan.tariffId
         ? null
-        : (nextPlan.subTariffName ? normalizeName(nextPlan.subTariffName) : null),
+        : (nextPlan.subTariffName ? normalizeMatchText(nextPlan.subTariffName) : null),
     };
 
     await validatePlanScope({

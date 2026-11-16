@@ -3,6 +3,7 @@ import { AGENT_ROLES, hasAgentRole, shiftToTashkent } from '@dashboarduz/shared'
 import { z } from 'zod';
 
 import { getRangeStart } from '../../../lib/dates';
+import { normalizePercentage } from '../../../lib/number';
 import { asObject, toFiniteNumber } from '../../../lib/object';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import {
@@ -398,19 +399,6 @@ export function getCurrentMonthRange(now: Date) {
     monthStart: getRangeStart('month', now),
     monthEnd: now,
   };
-}
-
-export function normalizePercentage(value: unknown): number {
-  const parsed = toFiniteNumber(value, 0);
-
-  if (parsed <= 0) {
-    return 0;
-  }
-  if (parsed >= 100) {
-    return 100;
-  }
-
-  return Number(parsed.toFixed(2));
 }
 
 export function createZeroBreakdown(): SalaryBreakdown {

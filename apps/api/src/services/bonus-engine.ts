@@ -3,11 +3,11 @@ import { createHash } from 'node:crypto';
 import { systemPrisma, type DbClient, type Prisma, type TenantPrismaClient } from '@dashboarduz/db';
 import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
+import { normalizePercentage } from '../lib/number';
 import { asObjectOrEmpty } from '../lib/object';
 import {
   classifyCourseCategoryFromField,
   extractSalarySettings,
-  normalizePercentage,
   resolveBonusPercent,
   type SalaryBonusMode,
   type SalaryBonusRules,

@@ -4,6 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { asObjectOrEmpty } from '../../lib/object';
+import { normalizeMatchText } from '../../lib/text';
 import { adminProcedure, router } from '../trpc';
 
 type SnapshotMapping = {
@@ -116,13 +117,6 @@ function normalizeHeader(value: unknown): string {
     .replace(/[�']/g, "'");
 }
 
-function normalizeName(value: unknown): string {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-}
-
 function parseMoney(value: unknown): number {
   const raw = String(value ?? '').trim();
 
@@ -222,7 +216,7 @@ function normalizeFinanceRows(rows: Array<Array<string | number | boolean | null
     const customerPhone = String(getCell(row, mapping.customerPhone) ?? '').trim();
     const customerName = String(getCell(row, mapping.customerName) ?? '').trim();
     const normalizedPhone = normalizeDigits(customerPhone);
-    const normalizedName = normalizeName(customerName);
+    const normalizedName = normalizeMatchText(customerName, { collapseWhitespace: true });
     const paymentAmount = parseMoney(getCell(row, mapping.paymentAmount));
 
     if (!paymentDate && !normalizedPhone && !normalizedName && paymentAmount === 0) {
@@ -333,7 +327,7 @@ async function loadProjectRows(tenantId: string, from: Date, to: Date, db: DbCli
       remainingDebtAmount: Number(income.remainingDebtAmount ?? 0),
       deadline: income.deadline ? income.deadline.toISOString().slice(0, 10) : null,
       normalizedPhone: normalizeDigits(income.customer?.customerNumber || ''),
-      normalizedName: normalizeName(income.customer?.name || ''),
+      normalizedName: normalizeMatchText(income.customer?.name || '', { collapseWhitespace: true }),
       lifecycleStatus: String(income.lifecycleStatus || ''),
     };
   });
@@ -632,12 +626,12 @@ export const incomeProblemsRouter = router({
       const projectRows = await loadProjectRows(ctx.tenantId, from, to, ctx.db);
       const financeRows = snapshot.rows.filter((row) => row.paymentDate && row.paymentDate >= input.dateFrom && row.paymentDate <= input.dateTo);
       const compared = summarizeComparisons(groupRows(projectRows), groupRows(financeRows));
-      const search = normalizeName(input.search || '');
+      const search = normalizeMatchText(input.search || '', { collapseWhitespace: true });
       const filteredRows = compared.rows.filter((row) => {
         if (input.status && row.status !== input.status) return false;
         if (!search) return true;
 
-        return normalizeName(`${row.phone} ${row.name}`).includes(search);
+        return normalizeMatchText(`${row.phone} ${row.name}`, { collapseWhitespace: true }).includes(search);
       });
 
       return {

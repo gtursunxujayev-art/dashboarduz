@@ -1,11 +1,8 @@
+import { sleep } from '../../lib/async';
 // Telegram Bot integration service
 
 const TELEGRAM_REQUEST_TIMEOUT_MS = 6_000;
 const TELEGRAM_REQUEST_ATTEMPTS = 3;
-
-function sleep(delayMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
-}
 
 function describeNetworkError(error: unknown): string {
   const requestError = error as Error & {

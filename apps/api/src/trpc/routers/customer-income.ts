@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { isAgentOnly } from '../../lib/access';
 import { DATE_RANGE_MESSAGES_EN, parseCustomDate, type ParseCustomDateOptions } from '../../lib/dates';
 import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, sanitizeTelegramUsername, sendMessageToTelegramChat, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
+import { normalizeKey } from '../../lib/text';
 import { reconcileFinalizedBonusMonths } from '../../services/bonus-engine';
 import {
   type HistoricalCatalogItemPreview,
@@ -2157,13 +2158,6 @@ const COURSE_PRICE_HEADERS = ['courseprice', 'kursnarxi', 'price'];
 const PAYMENT_HEADERS = ['payment', 'paymentamount', 'tolov', 'toplov'];
 const DEADLINE_HEADERS = ['deadline', 'muddat'];
 const DEBT_SOURCE_HEADERS = ['debtsourceincomeid', 'debtincomeid', 'relateddebtincomeid', 'sourceincomeid'];
-
-function normalizeKey(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/['"`’]/g, '')
-    .replace(/[^a-z0-9]+/g, '');
-}
 
 function normalizeStringValue(value: BulkIncomeCell | undefined): string {
   if (value === null || value === undefined) {

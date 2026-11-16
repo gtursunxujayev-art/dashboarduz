@@ -5,12 +5,16 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { asObject, asObjectOrEmpty } from '../../lib/object';
+import { normalizeMatchText, type MatchTextOptions } from '../../lib/text';
 import {
   buildSaleChainMetricsBySaleId,
   evaluateSaleChainConsistency,
   getSaleAgreementAmount,
 } from '../../services/income-chain';
 import { adminProcedure, router } from '../trpc';
+
+const NAME_MATCH: MatchTextOptions = { collapseWhitespace: true, unifyApostrophes: true };
+const LOOSE_TEXT_MATCH: MatchTextOptions = { ...NAME_MATCH, hyphensToSpaces: true };
 
 const incomeDebugInput = z.object({
   mode: z.enum(['suspicious', 'future', 'unresolved', 'relink', 'imported', 'hidden', 'all']).default('suspicious'),
@@ -68,23 +72,6 @@ type ActiveSnapshot = {
   rowCount: number;
   rows: FinanceSnapshotRow[];
 };
-
-function normalizeName(value: unknown): string {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/[’']/g, "'");
-}
-
-function normalizeText(value: unknown): string {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/[’']/g, "'")
-    .replace(/-/g, ' ');
-}
 
 function parseSnapshotDate(value: string | null): Date | null {
   if (!value) return null;
@@ -524,10 +511,10 @@ function findSnapshotMatch(params: {
   usedRowKeys: Set<string>;
 }) {
   const normalizedPhone = normalizeDigits(params.income.customerNumber);
-  const normalizedNameValue = normalizeName(params.income.customerName);
-  const managerNeedle = normalizeText(params.income.managerName);
-  const courseNeedle = normalizeText(params.income.courseName);
-  const tariffNeedle = normalizeText(params.income.tariffName);
+  const normalizedNameValue = normalizeMatchText(params.income.customerName, NAME_MATCH);
+  const managerNeedle = normalizeMatchText(params.income.managerName, LOOSE_TEXT_MATCH);
+  const courseNeedle = normalizeMatchText(params.income.courseName, LOOSE_TEXT_MATCH);
+  const tariffNeedle = normalizeMatchText(params.income.tariffName, LOOSE_TEXT_MATCH);
   const amount = Math.round(params.income.paymentAmount || 0);
   const debt = Math.round(params.income.remainingDebtAmount || 0);
 
@@ -549,8 +536,8 @@ function findSnapshotMatch(params: {
 
       if (normalizedPhone && row.normalizedPhone === normalizedPhone) score += 100;
       if (normalizedNameValue && row.normalizedName === normalizedNameValue) score += 20;
-      if (managerNeedle && normalizeText(row.managerLabel) === managerNeedle) score += 15;
-      const financeCourseHaystack = normalizeText(`${row.courseName} ${row.tariffName} ${row.subTariffName}`);
+      if (managerNeedle && normalizeMatchText(row.managerLabel, LOOSE_TEXT_MATCH) === managerNeedle) score += 15;
+      const financeCourseHaystack = normalizeMatchText(`${row.courseName} ${row.tariffName} ${row.subTariffName}`, LOOSE_TEXT_MATCH);
 
       if (courseNeedle && financeCourseHaystack.includes(courseNeedle)) score += 10;
       if (tariffNeedle && financeCourseHaystack.includes(tariffNeedle)) score += 10;
