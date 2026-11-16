@@ -16,7 +16,7 @@ export const CALL_NOTE_ENTITY_TYPES = ['contacts', 'leads', 'companies'] as cons
 export type CallNoteEntityType = (typeof CALL_NOTE_ENTITY_TYPES)[number];
 
 /** Key in the amoCRM integration config that holds sync progress. */
-export const CALLS_SYNC_CONFIG_KEY = 'calls_sync';
+const CALLS_SYNC_CONFIG_KEY = 'calls_sync';
 
 const NOTES_PAGE_SIZE = 250;
 /** Per entity type per run; a long backfill continues on the next run. */
@@ -180,7 +180,7 @@ async function saveSyncState(integrationId: string, state: CallsSyncState): Prom
 export type CallsSyncResult = { imported: number; complete: boolean };
 
 /** Imports new call notes for one tenant. Safe to run concurrently: rows are unique per provider + call id. */
-export async function syncTenantAmoCalls(tenantId: string, now = new Date()): Promise<CallsSyncResult | null> {
+async function syncTenantAmoCalls(tenantId: string, now = new Date()): Promise<CallsSyncResult | null> {
   const amoContext = await getTenantAmoCRMContext(tenantId);
 
   if (!amoContext) return null;
@@ -272,7 +272,7 @@ export async function triggerTenantAmoCallsSync(tenantId: string): Promise<void>
 }
 
 /** Syncs every tenant whose amoCRM integration is set to be the calls source. */
-export async function syncAllAmoCalls(): Promise<void> {
+async function syncAllAmoCalls(): Promise<void> {
   const integrations = await systemPrisma.integration.findMany({
     where: { type: 'amocrm', status: 'active' },
     select: { tenantId: true, config: true },

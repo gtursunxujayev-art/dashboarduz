@@ -35,11 +35,6 @@ const envSchema = z.object({
   FIREBASE_PRIVATE_KEY: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   
-  // Google OAuth
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_REDIRECT_URI: z.string().url().optional(),
-  
   // Telegram
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   OFLINE_GROUP_ID: z.string().optional(),

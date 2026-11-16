@@ -70,7 +70,7 @@ export function asStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
-export function readMetadataKey(sourceValue: unknown, keyPath: string): unknown {
+function readMetadataKey(sourceValue: unknown, keyPath: string): unknown {
   const source = asObject(sourceValue);
   if (!source) {
     return null;
@@ -88,7 +88,7 @@ export function readMetadataKey(sourceValue: unknown, keyPath: string): unknown 
   return current ?? null;
 }
 
-export function readCustomFieldValue(sourceValue: unknown, customKey: string): unknown {
+function readCustomFieldValue(sourceValue: unknown, customKey: string): unknown {
   const source = asObject(sourceValue);
   const fields = Array.isArray(source?.custom_fields_values) ? source.custom_fields_values : [];
   const target = customKey.replace(/^amocrm_custom:/, '');

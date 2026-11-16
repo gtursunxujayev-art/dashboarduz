@@ -115,7 +115,7 @@ export async function validateMetaAdAccount(accessToken: string, adAccountId: st
   }>(accountPath, { fields: 'id,name,account_status,currency' }, accessToken);
 }
 
-export async function fetchMetaInsights(
+async function fetchMetaInsights(
   accessToken: string,
   adAccountId: string,
   dateFrom: Date,

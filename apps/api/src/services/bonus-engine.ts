@@ -545,7 +545,7 @@ export async function calculateBonusMonth(params: {
   };
 }
 
-export async function getBonusMonth(params: { tenantId: string; month: Date; preferSnapshot?: boolean; db?: DbClient }): Promise<BonusMonthCalculation> {
+async function getBonusMonth(params: { tenantId: string; month: Date; preferSnapshot?: boolean; db?: DbClient }): Promise<BonusMonthCalculation> {
   const db = params.db ?? systemPrisma;
   const month = getTashkentMonthStart(params.month);
   if (params.preferSnapshot !== false) {

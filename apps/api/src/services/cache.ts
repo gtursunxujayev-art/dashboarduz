@@ -77,7 +77,7 @@ export async function getOrSet<T>(
 /**
  * Get a cached value with hit/miss metadata and basic stampede protection.
  */
-export async function getOrSetWithMeta<T>(
+async function getOrSetWithMeta<T>(
   key: string,
   ttlSeconds: number,
   fetchFn: () => Promise<T>,
@@ -159,28 +159,6 @@ export async function invalidateCache(key: string): Promise<void> {
   } catch {
     // ignore
   }
-}
-
-/**
- * Invalidate cached keys by prefix (best-effort, bounded SCAN).
- */
-export async function invalidateCachePrefix(prefix: string): Promise<number> {
-  const client = getCacheClient();
-  if (!client) return 0;
-  let cursor = '0';
-  let deleted = 0;
-  try {
-    do {
-      const [nextCursor, keys] = await client.scan(cursor, 'MATCH', `${prefix}*`, 'COUNT', 100);
-      cursor = nextCursor;
-      if (keys.length > 0) {
-        deleted += await client.del(...keys);
-      }
-    } while (cursor !== '0');
-  } catch {
-    return deleted;
-  }
-  return deleted;
 }
 
 /**

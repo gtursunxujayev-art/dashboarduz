@@ -62,7 +62,6 @@ class FirebaseOTPProvider implements OTPProvider {
       logger.info({ phone }, 'Sending OTP via Firebase');
       
       // In production, this would use Firebase Admin SDK
-      // const result = await this.admin.auth().generateSignInWithPhoneNumber(phone, {});
       
       // For now, simulate successful OTP send
       const verificationId = `firebase-${Date.now()}-${phone}`;
@@ -99,7 +98,6 @@ class FirebaseOTPProvider implements OTPProvider {
       logger.info({ phone }, 'Verifying OTP via Firebase');
       
       // In production, this would verify with Firebase
-      // const result = await this.admin.auth().verifyPhoneNumber(verificationId, code);
       
       // For now, simulate verification by checking against stored sessions
       const verified = await this.checkVerificationCode(phone, code);
@@ -314,7 +312,7 @@ class TwilioOTPProvider implements OTPProvider {
 }
 
 // Factory to get OTP provider based on env
-export function getOTPProvider(): OTPProvider {
+function getOTPProvider(): OTPProvider {
   const provider = process.env.OTP_PROVIDER || 'twilio';
   
   logger.info({ provider }, 'Initializing OTP provider');
@@ -327,24 +325,6 @@ export function getOTPProvider(): OTPProvider {
     default:
       logger.warn({ provider }, 'Unknown OTP provider, defaulting to Twilio');
       return new TwilioOTPProvider();
-  }
-}
-
-// Rate limiting for OTP requests
-export class OTPRateLimiter {
-  private static readonly MAX_ATTEMPTS_PER_HOUR = 5;
-  private static readonly MAX_ATTEMPTS_PER_DAY = 20;
-  private static readonly RESEND_COOLDOWN_SECONDS = 60;
-
-  static async checkRateLimit(phone: string, action: 'send' | 'verify'): Promise<{ allowed: boolean; retryAfter?: number; error?: string }> {
-    // In production, implement Redis-based rate limiting
-    // For now, return always allowed
-    return { allowed: true };
-  }
-
-  static async recordAttempt(phone: string, action: 'send' | 'verify', success: boolean): Promise<void> {
-    // In production, record in Redis
-    logger.debug({ phone, action, success }, 'Recorded OTP attempt');
   }
 }
 

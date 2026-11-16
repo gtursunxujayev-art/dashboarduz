@@ -27,7 +27,7 @@ export function formatReportDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-export function getReportDayStart(date: Date): Date {
+function getReportDayStart(date: Date): Date {
   const local = toReportLocal(date);
   return fromReportLocalParts(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), 0, 0, 0, 0);
 }
