@@ -257,9 +257,9 @@ async function loadHelperPrompt(): Promise<string> {
   }
 
   const candidates = [
-    path.resolve(process.cwd(), 'AI_HELPER_PROMPT.md'),
-    path.resolve(process.cwd(), '..', 'AI_HELPER_PROMPT.md'),
-    path.resolve(process.cwd(), '..', '..', 'AI_HELPER_PROMPT.md'),
+    path.resolve(process.cwd(), 'docs', 'AI_HELPER_PROMPT.md'),
+    path.resolve(process.cwd(), '..', 'docs', 'AI_HELPER_PROMPT.md'),
+    path.resolve(process.cwd(), '..', '..', 'docs', 'AI_HELPER_PROMPT.md'),
   ];
 
   for (const candidate of candidates) {

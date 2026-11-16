@@ -27,8 +27,12 @@ apps/*/node_modules/
 apps/*/.next/
 apps/*/dist/
 apps/*/.swc/
+apps/*/*.tsbuildinfo
 
 # package artifacts
 packages/*/node_modules/
 packages/*/dist/
 packages/*/*.tsbuildinfo
+
+# local Claude Code settings
+.claude/settings.local.json
