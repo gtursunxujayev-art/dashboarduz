@@ -449,6 +449,7 @@ model Customer {
   @@index([profileCourseId])
   @@index([profileTariffId])
   @@index([profileSubTariffId])
+  @@index([historicalImportSessionId])
   @@unique([tenantId, legacyProfileImportKey])
   @@map("customers")
 }
@@ -610,7 +611,7 @@ model IncomeAdjustmentRequest {
   reason           String?
   reviewNote       String?
   requestedAmount  Int?
-  refundCardNumber String?
+  refundCardNumber String?  @db.VarChar(16)
   newCourseId      String?
   newTariffId      String?
   newAgreementAmount Int?

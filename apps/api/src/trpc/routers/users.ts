@@ -20,15 +20,6 @@ function rolesNeedManagerMapping(roles: UserRole[]): boolean {
   return roles.some((role) => roleNeedsManagerMapping(role));
 }
 
-function isMissingUserMappingColumnError(error: unknown) {
-  const message = String((error as any)?.message || '');
-  return (
-    message.includes('amocrmResponsibleUserId')
-    || message.includes('utelManagerExternalId')
-    || message.includes('telegramId')
-  );
-}
-
 function isTelegramMappingConflictError(error: unknown): boolean {
   const errorCode = String((error as any)?.code || '');
   const message = String((error as any)?.message || '').toLowerCase();
@@ -259,63 +250,24 @@ export const usersRouter = router({
   }),
 
   list: managerProcedure.query(async ({ ctx }) => {
-    try {
-      return await ctx.db.user.findMany({
-        where: { tenantId: ctx.tenantId },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          username: true,
-          name: true,
-          email: true,
-          phone: true,
-          roles: true,
-          amocrmResponsibleUserId: true,
-          utelManagerExternalId: true,
-          telegramId: true,
-          isActive: true,
-          lastLoginAt: true,
-          createdAt: true,
-        },
-      });
-    } catch (error: any) {
-      if (!isMissingUserMappingColumnError(error)) {
-        throw error;
-      }
-
-      const fallback = await ctx.db.user.findMany({
-        where: { tenantId: ctx.tenantId },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          username: true,
-          name: true,
-          email: true,
-          phone: true,
-          roles: true,
-          isActive: true,
-          lastLoginAt: true,
-          createdAt: true,
-        },
-      });
-
-      return (fallback as Array<{
-        id: string;
-        username: string | null;
-        name: string | null;
-        email: string | null;
-        phone: string | null;
-        roles: string[];
-        isActive: boolean;
-        lastLoginAt: Date | null;
-        createdAt: Date;
-      }>).map((user) => ({
-        ...user,
-        amocrmResponsibleUserId: null,
-        utelManagerExternalId: null,
-        telegramId: null,
-      }));
-    }
+    return await ctx.db.user.findMany({
+      where: { tenantId: ctx.tenantId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        email: true,
+        phone: true,
+        roles: true,
+        amocrmResponsibleUserId: true,
+        utelManagerExternalId: true,
+        telegramId: true,
+        isActive: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
+    });
   }),
 
   create: managerProcedure
@@ -391,12 +343,6 @@ export const usersRouter = router({
           throw new TRPCError({
             code: 'CONFLICT',
             message: "Tanlangan Telegram foydalanuvchisi allaqachon boshqa akkauntga biriktirilgan.",
-          });
-        }
-        if (isMissingUserMappingColumnError(error)) {
-          throw new TRPCError({
-            code: 'PRECONDITION_FAILED',
-            message: 'User mapping columns are missing. Run database migrations first.',
           });
         }
         throw error;
@@ -614,28 +560,18 @@ export const usersRouter = router({
       let previousAmoResponsibleUserId: string | null = null;
       let previousUtelManagerExternalId: string | null = null;
       if (rolesNeedManagerMapping(input.roles as UserRole[])) {
-        try {
-          const mappingSource = await ctx.db.user.findFirst({
-            where: {
-              id: input.userId,
-              tenantId: ctx.tenantId,
-            },
-            select: {
-              amocrmResponsibleUserId: true,
-              utelManagerExternalId: true,
-            },
-          });
-          previousAmoResponsibleUserId = mappingSource?.amocrmResponsibleUserId || null;
-          previousUtelManagerExternalId = mappingSource?.utelManagerExternalId || null;
-        } catch (error: any) {
-          if (isMissingUserMappingColumnError(error)) {
-            throw new TRPCError({
-              code: 'PRECONDITION_FAILED',
-              message: 'User mapping columns are missing. Run database migrations first.',
-            });
-          }
-          throw error;
-        }
+        const mappingSource = await ctx.db.user.findFirst({
+          where: {
+            id: input.userId,
+            tenantId: ctx.tenantId,
+          },
+          select: {
+            amocrmResponsibleUserId: true,
+            utelManagerExternalId: true,
+          },
+        });
+        previousAmoResponsibleUserId = mappingSource?.amocrmResponsibleUserId || null;
+        previousUtelManagerExternalId = mappingSource?.utelManagerExternalId || null;
       }
 
       const updateData: any = {

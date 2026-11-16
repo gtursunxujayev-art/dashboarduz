@@ -158,15 +158,6 @@ function normalizeUnmatchedUserPolicy(value: unknown): 'store' | 'ignore' {
   return normalized === 'ignore' ? 'ignore' : 'store';
 }
 
-function isMissingMetaTableError(error: unknown): boolean {
-  const message = String((error as any)?.message || '');
-  return message.includes('meta_ad_insights') && (
-    message.includes('does not exist')
-    || message.includes('does not exist in the current database')
-    || message.includes('relation')
-  );
-}
-
 function parseFaceIdUserExternalMap(config: unknown): Record<string, string> {
   const raw = asObject(asObject(config).userExternalMap);
   const result: Record<string, string> = {};
@@ -1197,20 +1188,13 @@ export const integrationsRouter = router({
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     let rowsLast30d = 0;
-    let metaTableMissing = false;
-    try {
-      rowsLast30d = await ctx.db.metaAdInsight.count({
-        where: {
-          tenantId: ctx.tenantId,
-          date: { gte: since },
-        },
-      });
-    } catch (error) {
-      if (!isMissingMetaTableError(error)) {
-        throw error;
-      }
-      metaTableMissing = true;
-    }
+    const metaTableMissing = false;
+    rowsLast30d = await ctx.db.metaAdInsight.count({
+      where: {
+        tenantId: ctx.tenantId,
+        date: { gte: since },
+      },
+    });
 
     if (!integration || integration.status !== 'active') {
       return {

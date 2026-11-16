@@ -133,11 +133,6 @@ export type SalarySettingsSnapshot = {
   attendancePenaltySettings: AttendancePenaltySettings;
 };
 
-export function isMissingUserMappingColumnError(error: unknown) {
-  const message = String((error as any)?.message || '');
-  return message.includes('amocrmResponsibleUserId') || message.includes('utelManagerExternalId');
-}
-
 export function normalizeTextToken(value: unknown): string {
   return String(value || '').trim().toLowerCase();
 }

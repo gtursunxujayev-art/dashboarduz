@@ -96,46 +96,6 @@ function safeJsonObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function isMissingMetaTableError(error: unknown): boolean {
-  const raw = error as any;
-  const message = [
-    raw?.message,
-    raw?.meta?.cause,
-    raw?.meta?.modelName,
-    raw?.code,
-  ].map((item) => String(item || '')).join(' ');
-  return (
-    raw?.code === 'P2021'
-    || message.includes('meta_ad_insights')
-    || message.includes('MetaAdInsight')
-  ) && (
-    message.includes('does not exist')
-    || message.includes('does not exist in the current database')
-    || message.includes('relation')
-    || raw?.code === 'P2021'
-  );
-}
-
-function isMissingAnalyticsReportTableError(error: unknown): boolean {
-  const raw = error as any;
-  const message = [
-    raw?.message,
-    raw?.meta?.cause,
-    raw?.meta?.modelName,
-    raw?.code,
-  ].map((item) => String(item || '')).join(' ');
-  return (
-    raw?.code === 'P2021'
-    || message.includes('analytics_ai_reports')
-    || message.includes('AnalyticsAiReport')
-  ) && (
-    message.includes('does not exist')
-    || message.includes('does not exist in the current database')
-    || message.includes('relation')
-    || raw?.code === 'P2021'
-  );
-}
-
 function extractAttributionTokens(metadata: unknown): string[] {
   const data = safeJsonObject(metadata);
   const tokens = new Set<string>();
@@ -226,33 +186,26 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
     impressions: number;
     leads: number;
   }> = [];
-  let metaTableMissing = false;
-  try {
-    metaRows = await db.metaAdInsight.findMany({
-      where: {
-        tenantId,
-        date: { gte: new Date(`${toDateOnly(rangeStart)}T00:00:00.000Z`), lte: new Date(`${toDateOnly(rangeEnd)}T00:00:00.000Z`) },
-      },
-      select: {
-        campaignId: true,
-        campaignName: true,
-        adSetId: true,
-        adSetName: true,
-        adId: true,
-        adName: true,
-        spend: true,
-        clicks: true,
-        impressions: true,
-        leads: true,
-      },
-      orderBy: [{ date: 'asc' }, { spend: 'desc' }],
-    });
-  } catch (error) {
-    if (!isMissingMetaTableError(error)) {
-      throw error;
-    }
-    metaTableMissing = true;
-  }
+  const metaTableMissing = false;
+  metaRows = await db.metaAdInsight.findMany({
+    where: {
+      tenantId,
+      date: { gte: new Date(`${toDateOnly(rangeStart)}T00:00:00.000Z`), lte: new Date(`${toDateOnly(rangeEnd)}T00:00:00.000Z`) },
+    },
+    select: {
+      campaignId: true,
+      campaignName: true,
+      adSetId: true,
+      adSetName: true,
+      adId: true,
+      adName: true,
+      spend: true,
+      clicks: true,
+      impressions: true,
+      leads: true,
+    },
+    orderBy: [{ date: 'asc' }, { spend: 'desc' }],
+  });
 
   const sourceCounts = new Map<string, number>();
   const attributionTokens = new Set<string>();
@@ -592,29 +545,22 @@ export const analyticsAiRouter = router({
       const generated = await generateWithAiProvider(inputSummary);
 
       let reportId: string | null = null;
-      let reportSaved = true;
-      try {
-        const report = await ctx.db.analyticsAiReport.create({
-          data: {
-            tenantId: ctx.tenantId,
-            userId: ctx.user.userId,
-            range: input.range,
-            dateFrom: rangeStart,
-            dateTo: rangeEnd,
-            focus: input.focus,
-            promptVersion: ANALYTICS_AI_PROMPT_VERSION,
-            model: generated.model,
-            inputSummary: inputSummary as any,
-            result: generated.result as any,
-          },
-        });
-        reportId = report.id;
-      } catch (error) {
-        if (!isMissingAnalyticsReportTableError(error)) {
-          throw error;
-        }
-        reportSaved = false;
-      }
+      const reportSaved = true;
+      const report = await ctx.db.analyticsAiReport.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.user.userId,
+          range: input.range,
+          dateFrom: rangeStart,
+          dateTo: rangeEnd,
+          focus: input.focus,
+          promptVersion: ANALYTICS_AI_PROMPT_VERSION,
+          model: generated.model,
+          inputSummary: inputSummary as any,
+          result: generated.result as any,
+        },
+      });
+      reportId = report.id;
 
       return {
         reportId,

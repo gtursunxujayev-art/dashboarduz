@@ -412,11 +412,6 @@ function isAllowedUtelManagerExtension(value: unknown): boolean {
   return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
 }
 
-function isMissingUserMappingColumnError(error: unknown) {
-  const message = String((error as any)?.message || '');
-  return message.includes('amocrmResponsibleUserId') || message.includes('utelManagerExternalId');
-}
-
 function isSchemaCompatibilityError(error: unknown, hints: string[] = []): boolean {
   const message = String((error as any)?.message || '').toLowerCase();
   const isMissingSchema =
@@ -776,41 +771,34 @@ async function getManagerExtensionsMap(tenantId: string, managerIds: string[], d
     return new Map();
   }
 
-  try {
-    const mappedUsers = await db.user.findMany({
-      where: {
-        tenantId,
-        isActive: true,
-        amocrmResponsibleUserId: { in: managerIds },
-        utelManagerExternalId: { not: null },
-      },
-      select: {
-        amocrmResponsibleUserId: true,
-        utelManagerExternalId: true,
-      },
-    });
+  const mappedUsers = await db.user.findMany({
+    where: {
+      tenantId,
+      isActive: true,
+      amocrmResponsibleUserId: { in: managerIds },
+      utelManagerExternalId: { not: null },
+    },
+    select: {
+      amocrmResponsibleUserId: true,
+      utelManagerExternalId: true,
+    },
+  });
 
-    const byManager = new Map<string, Set<string>>();
-    for (const mappedUser of mappedUsers as Array<{ amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>) {
-      const managerId = asString(mappedUser.amocrmResponsibleUserId);
-      const extension = normalizeDigits(mappedUser.utelManagerExternalId || '');
-      if (!managerId || !isAllowedUtelManagerExtension(extension)) {
-        continue;
-      }
-      const current = byManager.get(managerId) || new Set<string>();
-      current.add(extension);
-      byManager.set(managerId, current);
+  const byManager = new Map<string, Set<string>>();
+  for (const mappedUser of mappedUsers as Array<{ amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>) {
+    const managerId = asString(mappedUser.amocrmResponsibleUserId);
+    const extension = normalizeDigits(mappedUser.utelManagerExternalId || '');
+    if (!managerId || !isAllowedUtelManagerExtension(extension)) {
+      continue;
     }
-
-    return new Map(
-      Array.from(byManager.entries()).map(([managerId, extensions]) => [managerId, Array.from(extensions)]),
-    );
-  } catch (error) {
-    if (!isMissingUserMappingColumnError(error)) {
-      throw error;
-    }
-    return new Map();
+    const current = byManager.get(managerId) || new Set<string>();
+    current.add(extension);
+    byManager.set(managerId, current);
   }
+
+  return new Map(
+    Array.from(byManager.entries()).map(([managerId, extensions]) => [managerId, Array.from(extensions)]),
+  );
 }
 
 function resolveCallExtension(call: { from: string; to: string }): string | null {
@@ -998,24 +986,17 @@ export const sellersRouter = router({
     const extensionMappingStartedMs = Date.now();
     const extensionsByManagerPromise = getManagerExtensionsMap(ctx.tenantId, managerIdList, ctx.db);
     const userMappingsPromise = (async () => {
-      try {
-        return await ctx.db.user.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            isActive: true,
-            amocrmResponsibleUserId: { in: managerIdList },
-          },
-          select: {
-            id: true,
-            amocrmResponsibleUserId: true,
-          },
-        });
-      } catch (error) {
-        if (!isMissingUserMappingColumnError(error)) {
-          throw error;
-        }
-        return [];
-      }
+      return await ctx.db.user.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          isActive: true,
+          amocrmResponsibleUserId: { in: managerIdList },
+        },
+        select: {
+          id: true,
+          amocrmResponsibleUserId: true,
+        },
+      });
     })();
 
     const [activeLeads, newLeadsInRange, activityByManager, extensionsByManager, userMappings] = await Promise.all([
@@ -1684,22 +1665,16 @@ export const sellersRouter = router({
         : [];
 
       let mappedManagerUserIds: string[] = [];
-      try {
-        mappedManagerUserIds = (
-          await ctx.db.user.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              isActive: true,
-              amocrmResponsibleUserId: input.id,
-            },
-            select: { id: true },
-          })
-        ).map((user) => user.id);
-      } catch (error) {
-        if (!isMissingUserMappingColumnError(error)) {
-          throw error;
-        }
-      }
+      mappedManagerUserIds = (
+        await ctx.db.user.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            isActive: true,
+            amocrmResponsibleUserId: input.id,
+          },
+          select: { id: true },
+        })
+      ).map((user) => user.id);
 
       const [sellerIncomesRaw, detailRefundRequests, detailIncomesWithCustomer, detailIncomesWithDeadline] = await Promise.all([
         mappedManagerUserIds.length > 0
@@ -2059,11 +2034,6 @@ export const sellersRouter = router({
             amocrmResponsibleUserId: input.id,
           },
           select: { id: true },
-        }).catch((error) => {
-          if (!isMissingUserMappingColumnError(error)) {
-            throw error;
-          }
-          return [];
         }),
       ]);
 

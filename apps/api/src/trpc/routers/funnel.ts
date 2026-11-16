@@ -41,7 +41,6 @@ import {
   getTenantAmoCRMContext,
   INCOME_LIFECYCLE_ACTIVE,
   isAllowedUtelManagerExtension,
-  isMissingUserMappingColumnError,
   isTashkiliyOnly,
   log,
   LogLevel,
@@ -168,31 +167,19 @@ async function loadFunnelAgents(tenantId: string, group: z.infer<typeof funnelGr
     isActive: true,
     roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
   };
-  let agents: FunnelAgent[];
+  const agents: FunnelAgent[] = await db.user.findMany({
+    where,
+    orderBy: [{ name: 'asc' }, { username: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      username: true,
+      roles: true,
+      amocrmResponsibleUserId: true,
+      utelManagerExternalId: true,
+    },
+  });
 
-  try {
-    agents = await db.user.findMany({
-      where,
-      orderBy: [{ name: 'asc' }, { username: 'asc' }],
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        roles: true,
-        amocrmResponsibleUserId: true,
-        utelManagerExternalId: true,
-      },
-    });
-  } catch (error) {
-    if (!isMissingUserMappingColumnError(error)) throw error;
-    const fallback = await db.user.findMany({
-      where,
-      orderBy: [{ name: 'asc' }, { username: 'asc' }],
-      select: { id: true, name: true, username: true, roles: true },
-    });
-
-    agents = fallback.map((user) => ({ ...user, amocrmResponsibleUserId: null, utelManagerExternalId: null }));
-  }
   if (group === 'all') return agents;
 
   return agents.filter((agent) => resolveAgentGroup(agent.roles) === group);

@@ -6,7 +6,6 @@ import { log, LogLevel } from '../services/observability';
 import { initSentry } from '../services/observability';
 import { startTelegramReportScheduler, stopTelegramReportScheduler } from '../services/reports/telegram-report-scheduler';
 import { startTelegramAgentPerformanceScheduler, stopTelegramAgentPerformanceScheduler } from '../services/reports/telegram-agent-performance-scheduler';
-import { ensureSchemaCompatibility } from '../services/db/schema-compatibility';
 import { startTelegramGroupSummaryScheduler, stopTelegramGroupSummaryScheduler } from '../services/reports/telegram-group-summary-scheduler';
 import { startBonusAutoFinalizeScheduler, stopBonusAutoFinalizeScheduler } from '../services/bonus-auto-finalize';
 import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from '../services/integrations/amocrm-call-sync';
@@ -14,8 +13,7 @@ import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from '../servic
 // Initialize observability
 initSentry();
 
-async function startWorkerService() {
-  await ensureSchemaCompatibility();
+function startWorkerService(): void {
   initializeWorkers();
   startTelegramReportScheduler();
   startTelegramAgentPerformanceScheduler();
@@ -25,7 +23,7 @@ async function startWorkerService() {
   log(LogLevel.INFO, 'Worker service started');
 }
 
-startWorkerService().catch((error: any) => {
+Promise.resolve().then(startWorkerService).catch((error: any) => {
   const details = {
     error: error?.message || String(error),
     stack: error?.stack || null,

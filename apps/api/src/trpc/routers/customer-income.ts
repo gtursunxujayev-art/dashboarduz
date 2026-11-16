@@ -1,4 +1,4 @@
-import { systemPrisma, type DbClient, type TenantPrismaClient } from '@dashboarduz/db';
+import type { DbClient, TenantPrismaClient } from '@dashboarduz/db';
 import { NON_TECHNICAL_SALE_WHERE } from '../../services/income-facts';
 import { TRPCError } from '@trpc/server';
 import { Prisma } from '@prisma/client';
@@ -128,92 +128,6 @@ function normalizeCourseCategoryValue(value: unknown): string {
   return 'offline';
 }
 
-function extractErrorText(error: unknown): string {
-  const message = String((error as any)?.message || '');
-  const cause = String((error as any)?.cause || '');
-  let serialized = '';
-  try {
-    serialized = JSON.stringify(error);
-  } catch {
-    serialized = '';
-  }
-  return `${message}\n${cause}\n${serialized}`.toLowerCase();
-}
-
-function isMissingCourseCategoryColumnError(error: unknown): boolean {
-  const message = extractErrorText(error);
-  return (
-    (message.includes('courses.category') || message.includes('course.category') || message.includes(' category '))
-    && (message.includes('does not exist') || message.includes('unknown') || message.includes('column'))
-  );
-}
-
-function isMissingCourseHiddenFromIncomeFormColumnError(error: unknown): boolean {
-  const message = extractErrorText(error);
-  return (
-    (message.includes('courses.ishiddenfromincomeform') || message.includes('ishiddenfromincomeform'))
-    && (message.includes('does not exist') || message.includes('unknown') || message.includes('column'))
-  );
-}
-
-function isMissingCourseStartDateColumnError(error: unknown): boolean {
-  const message = extractErrorText(error);
-  return (
-    message.includes('courses.startdate')
-    || message.includes('course.startdate')
-    || message.includes('"startdate"')
-    || message.includes(' startdate ')
-    || message.includes('`startdate`')
-  );
-}
-
-function isMissingCourseEndDateColumnError(error: unknown): boolean {
-  const message = extractErrorText(error);
-  return (
-    message.includes('courses.enddate')
-    || message.includes('course.enddate')
-    || message.includes('"enddate"')
-    || message.includes(' enddate ')
-    || message.includes('`enddate`')
-  );
-}
-
-function isMissingSubTariffSchemaError(error: unknown): boolean {
-  const message = extractErrorText(error);
-  return (
-    (
-      message.includes('sub_tariffs')
-      || message.includes('subtariff')
-      || message.includes('subtariffid')
-    )
-    && (
-      message.includes('does not exist')
-      || message.includes('unknown')
-      || message.includes('column')
-    )
-  );
-}
-
-function isMissingRefundCardNumberColumnError(error: unknown): boolean {
-  const message = extractErrorText(error);
-  return (
-    (message.includes('incomeadjustmentrequest.refundcardnumber')
-      || message.includes('income_adjustment_requests.refundcardnumber')
-      || message.includes('refundcardnumber'))
-    && (message.includes('does not exist') || message.includes('unknown') || message.includes('column'))
-  );
-}
-
-function isMissingHistoricalImportSchemaError(error: unknown): boolean {
-  const message = String((error as any)?.message || '').toLowerCase();
-  return (
-    (message.includes('historical_import_sessions') && message.includes('does not exist'))
-    || (message.includes('legacyimportkey') && message.includes('does not exist'))
-    || (message.includes('legacyprofileimportkey') && message.includes('does not exist'))
-    || (message.includes('historicalimportsessionid') && message.includes('does not exist'))
-  );
-}
-
 function throwHistoricalImportMigrationError(): never {
   throw new TRPCError({
     code: 'PRECONDITION_FAILED',
@@ -307,76 +221,6 @@ async function buildActiveSaleChainMetrics(params: {
     sales: params.sales,
     chainRows,
   });
-}
-
-function isCourseCategoryConstraintOutdatedError(error: unknown): boolean {
-  let details = '';
-  try {
-    details = JSON.stringify(error);
-  } catch {
-    details = '';
-  }
-  const message = [
-    String((error as any)?.message || ''),
-    String((error as any)?.cause || ''),
-    String((error as any)?.meta?.database_error || ''),
-    String((error as any)?.meta?.cause || ''),
-    details,
-  ]
-    .join(' ')
-    .toLowerCase();
-  return (
-    message.includes('courses_category_check')
-    || (
-      message.includes('violates check constraint')
-      && message.includes('category')
-      && message.includes('courses')
-    )
-    || (
-      message.includes('23514')
-      && message.includes('category')
-      && message.includes('courses')
-    )
-  );
-}
-
-function throwCourseCategoryMigrationError(): never {
-  throw new TRPCError({
-    code: 'PRECONDITION_FAILED',
-    message: "Kurs kategoriya cheklovi eskirgan. `additional_service` uchun yangi database migration ni ishga tushiring va keyin importni qayta boshlang.",
-  });
-}
-
-async function ensureCourseCategoryConstraintSupportsAdditionalService(): Promise<void> {
-  await systemPrisma.$transaction([
-    systemPrisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '5000ms'`),
-    systemPrisma.$executeRawUnsafe(`SET LOCAL statement_timeout = '15000ms'`),
-    systemPrisma.$executeRawUnsafe(`
-      UPDATE "courses"
-      SET "category" = 'offline'
-      WHERE "category" IS NULL
-         OR LENGTH(TRIM("category")) = 0
-         OR "category" NOT IN ('online', 'offline', 'intensive', 'additional_service');
-    `),
-    systemPrisma.$executeRawUnsafe(`ALTER TABLE "courses" DROP CONSTRAINT IF EXISTS "courses_category_check"`),
-    systemPrisma.$executeRawUnsafe(`
-      ALTER TABLE "courses"
-      ADD CONSTRAINT "courses_category_check"
-      CHECK ("category" IN ('online', 'offline', 'intensive', 'additional_service'));
-    `),
-  ]);
-}
-
-async function ensureAdditionalServiceCategoryReady(requestedCategory: string | null | undefined): Promise<void> {
-  if (requestedCategory !== 'additional_service') {
-    return;
-  }
-
-  try {
-    await ensureCourseCategoryConstraintSupportsAdditionalService();
-  } catch {
-    throwCourseCategoryMigrationError();
-  }
 }
 
 async function refreshCustomerProfileFromLatestActiveSale(
@@ -836,145 +680,65 @@ async function fetchCoursesWithTariffsSafe(params: {
     ...(params.excludeHiddenFromIncomeForm ? { isHiddenFromIncomeForm: false } : {}),
   };
 
-  try {
-    const courses = await db.course.findMany({
-      where,
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        category: true,
-        startDate: true,
-        endDate: true,
-        isActive: true,
-        isHiddenFromIncomeForm: true,
-        createdAt: true,
-        updatedAt: true,
-        tariffs: {
-          where: params.onlyActive ? { isActive: true } : undefined,
-          orderBy: { name: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            isActive: true,
-            courseId: true,
-            createdAt: true,
-            updatedAt: true,
-            subTariffs: {
-              orderBy: { name: 'asc' },
-              select: {
-                id: true,
-                name: true,
-                isActive: true,
-                tariffId: true,
-                createdAt: true,
-                updatedAt: true,
-              },
+  const courses = await db.course.findMany({
+    where,
+    orderBy: { name: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      category: true,
+      startDate: true,
+      endDate: true,
+      isActive: true,
+      isHiddenFromIncomeForm: true,
+      createdAt: true,
+      updatedAt: true,
+      tariffs: {
+        where: params.onlyActive ? { isActive: true } : undefined,
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          courseId: true,
+          createdAt: true,
+          updatedAt: true,
+          subTariffs: {
+            orderBy: { name: 'asc' },
+            select: {
+              id: true,
+              name: true,
+              isActive: true,
+              tariffId: true,
+              createdAt: true,
+              updatedAt: true,
             },
           },
         },
       },
-    });
+    },
+  });
 
-    return (courses as CourseWithTariffsSafe[]).map((course) => ({
-      ...course,
-      category: normalizeCourseCategoryValue(course.category),
-    }));
-  } catch (error) {
-    const missingCategoryColumn = isMissingCourseCategoryColumnError(error);
-    const missingHiddenColumn = isMissingCourseHiddenFromIncomeFormColumnError(error);
-    const missingStartDateColumn = isMissingCourseStartDateColumnError(error);
-    const missingEndDateColumn = isMissingCourseEndDateColumnError(error);
-    if (!missingCategoryColumn && !missingHiddenColumn && !missingStartDateColumn && !missingEndDateColumn) {
-      throw error;
-    }
-
-    const fallbackCourses = await db.course.findMany({
-      where: baseWhere,
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-        tariffs: {
-          where: params.onlyActive ? { isActive: true } : undefined,
-          orderBy: { name: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            isActive: true,
-            courseId: true,
-            createdAt: true,
-            updatedAt: true,
-            subTariffs: {
-              orderBy: { name: 'asc' },
-              select: {
-                id: true,
-                name: true,
-                isActive: true,
-                tariffId: true,
-                createdAt: true,
-                updatedAt: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    return (fallbackCourses as Array<{
-      id: string;
-      name: string;
-      isActive: boolean;
-      createdAt: Date;
-      updatedAt: Date;
-      tariffs: CourseWithTariffsSafe['tariffs'];
-    }>).map((course) => ({
-      ...course,
-      category: normalizeCourseCategoryValue(null),
-      startDate: null,
-      endDate: null,
-      isHiddenFromIncomeForm: false,
-    }));
-  }
+  return (courses as CourseWithTariffsSafe[]).map((course) => ({
+    ...course,
+    category: normalizeCourseCategoryValue(course.category),
+  }));
 }
 
 async function fetchCourseOptionsSafe(tenantId: string, db: DbClient): Promise<Array<{ id: string; name: string; category: string }>> {
-  try {
-    const courses = await db.course.findMany({
-      where: { tenantId, isActive: true },
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        category: true,
-      },
-    });
-    return (courses as Array<{ id: string; name: string; category: string }>).map((course) => ({
-      ...course,
-      category: normalizeCourseCategoryValue(course.category),
-    }));
-  } catch (error) {
-    if (!isMissingCourseCategoryColumnError(error)) {
-      throw error;
-    }
-
-    const fallbackCourses = await db.course.findMany({
-      where: { tenantId, isActive: true },
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-      },
-    });
-
-    return (fallbackCourses as Array<{ id: string; name: string }>).map((course) => ({
-      ...course,
-      category: normalizeCourseCategoryValue(null),
-    }));
-  }
+  const courses = await db.course.findMany({
+    where: { tenantId, isActive: true },
+    orderBy: { name: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      category: true,
+    },
+  });
+  return (courses as Array<{ id: string; name: string; category: string }>).map((course) => ({
+    ...course,
+    category: normalizeCourseCategoryValue(course.category),
+  }));
 }
 
 function isAgentOnly(roles: string[]): boolean {
@@ -1349,107 +1113,51 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
 
   let saleIncome: SaleIncomePayload | null = null;
 
-  try {
-    const withCategory = await db.income.findFirst({
-      where: {
-        id: saleIncomeId,
-        tenantId: params.tenantId,
-      },
-      select: {
-        id: true,
-        entryDate: true,
-        deadline: true,
-        coursePriceAmount: true,
-        debtAmount: true,
-        remainingDebtAmount: true,
-        tariffId: true,
-        customer: {
-          select: {
-            name: true,
-            customerNumber: true,
-            telegramUsername: true,
-          },
-        },
-        course: {
-          select: {
-            id: true,
-            name: true,
-            category: true,
-          },
-        },
-        tariff: {
-          select: {
-            name: true,
-          },
+  const withCategory = await db.income.findFirst({
+    where: {
+      id: saleIncomeId,
+      tenantId: params.tenantId,
+    },
+    select: {
+      id: true,
+      entryDate: true,
+      deadline: true,
+      coursePriceAmount: true,
+      debtAmount: true,
+      remainingDebtAmount: true,
+      tariffId: true,
+      customer: {
+        select: {
+          name: true,
+          customerNumber: true,
+          telegramUsername: true,
         },
       },
-    });
-    saleIncome = withCategory
-      ? {
-          ...withCategory,
-          course: withCategory.course
-            ? {
-                ...withCategory.course,
-                category: withCategory.course.category ?? null,
-              }
-            : null,
-        }
-      : null;
-  } catch (error) {
-    if (!isMissingCourseCategoryColumnError(error)) {
-      throw error;
-    }
-
-    const fallback = await db.income.findFirst({
-      where: {
-        id: saleIncomeId,
-        tenantId: params.tenantId,
-      },
-      select: {
-        id: true,
-        entryDate: true,
-        deadline: true,
-        coursePriceAmount: true,
-        debtAmount: true,
-        remainingDebtAmount: true,
-        tariffId: true,
-        customer: {
-          select: {
-            name: true,
-            customerNumber: true,
-            telegramUsername: true,
-          },
-        },
-        course: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        tariff: {
-          select: {
-            name: true,
-          },
+      course: {
+        select: {
+          id: true,
+          name: true,
+          category: true,
         },
       },
-    });
-
-    if (fallback?.course?.id) {
-      const safeCourseOptions = await fetchCourseOptionsSafe(params.tenantId, db);
-      const safeCategory = safeCourseOptions.find((course) => course.id === fallback.course?.id)?.category ?? 'offline';
-      saleIncome = fallback
-        ? {
-            ...fallback,
-            course: fallback.course ? { ...fallback.course, category: safeCategory } : null,
-          }
-        : null;
-    } else {
-      saleIncome = {
-        ...(fallback as any),
-        course: null,
-      };
-    }
-  }
+      tariff: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+  saleIncome = withCategory
+    ? {
+        ...withCategory,
+        course: withCategory.course
+          ? {
+              ...withCategory.course,
+              category: withCategory.course.category ?? null,
+            }
+          : null,
+      }
+    : null;
 
   if (!saleIncome?.course || !saleIncome.customer) {
     return {
@@ -3165,14 +2873,6 @@ async function createIncomeEntry(params: {
           ...(allowHiddenCourseSelection ? {} : { isHiddenFromIncomeForm: false }),
         },
         select: { id: true },
-      }).catch((error) => {
-        if (!allowHiddenCourseSelection && isMissingCourseHiddenFromIncomeFormColumnError(error)) {
-          return db.course.findFirst({
-            where: { id: input.courseId, tenantId, isActive: true },
-            select: { id: true },
-          });
-        }
-        throw error;
       }),
       db.tariff.findFirst({
         where: { id: input.tariffId, tenantId, courseId: input.courseId, isActive: true },
@@ -4134,9 +3834,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      await ensureAdditionalServiceCategoryReady(input.category);
-
-      const upsertCourse = (params: { withCategory: boolean; withDates: boolean }) => ctx.db.course.upsert({
+      return ctx.db.course.upsert({
         where: {
           tenantId_name: {
             tenantId: ctx.tenantId,
@@ -4146,44 +3844,18 @@ export const customerIncomeRouter = router({
         create: {
           tenantId: ctx.tenantId,
           name,
-          ...(params.withCategory ? { category: input.category } : {}),
-          ...(params.withDates ? { startDate, endDate } : {}),
+          category: input.category,
+          startDate,
+          endDate,
           isActive: true,
         },
         update: {
-          ...(params.withCategory ? { category: input.category } : {}),
-          ...(params.withDates ? { startDate, endDate } : {}),
+          category: input.category,
+          startDate,
+          endDate,
           isActive: true,
         },
       });
-
-      try {
-        return await upsertCourse({ withCategory: true, withDates: true });
-      } catch (error) {
-        let normalizedError = error;
-        if (isCourseCategoryConstraintOutdatedError(error)) {
-          try {
-            await ensureCourseCategoryConstraintSupportsAdditionalService();
-            return await upsertCourse({ withCategory: true, withDates: true });
-          } catch (retryError) {
-            normalizedError = retryError;
-            if (isCourseCategoryConstraintOutdatedError(retryError)) {
-              throwCourseCategoryMigrationError();
-            }
-          }
-        }
-        const missingCategoryColumn = isMissingCourseCategoryColumnError(normalizedError);
-        const missingStartDateColumn = isMissingCourseStartDateColumnError(normalizedError);
-        const missingEndDateColumn = isMissingCourseEndDateColumnError(normalizedError);
-        if (!missingCategoryColumn && !missingStartDateColumn && !missingEndDateColumn) {
-          throw normalizedError;
-        }
-
-        return upsertCourse({
-          withCategory: !missingCategoryColumn,
-          withDates: !missingStartDateColumn && !missingEndDateColumn,
-        });
-      }
     }),
 
   createTariff: managerProcedure
@@ -4274,69 +3946,11 @@ export const customerIncomeRouter = router({
     }),
 
   courseCatalog: protectedProcedure.query(async ({ ctx }) => {
-    try {
-      return await fetchCoursesWithTariffsSafe({
-        tenantId: ctx.tenantId,
-        onlyActive: false,
-        db: ctx.db,
-      });
-    } catch (error) {
-      const errorText = extractErrorText(error);
-      const hasMissingCourseColumn =
-        errorText.includes('does not exist')
-        && errorText.includes('courses.')
-        && (
-          errorText.includes('courses.category')
-          || errorText.includes('courses.startdate')
-          || errorText.includes('courses.enddate')
-          || errorText.includes('courses.ishiddenfromincomeform')
-        );
-      if (!hasMissingCourseColumn) {
-        throw error;
-      }
-
-      const fallbackCourses = await ctx.db.course.findMany({
-        where: { tenantId: ctx.tenantId },
-        orderBy: { name: 'asc' },
-        select: {
-          id: true,
-          name: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-          tariffs: {
-            orderBy: { name: 'asc' },
-            select: {
-              id: true,
-              name: true,
-              isActive: true,
-              courseId: true,
-              createdAt: true,
-              updatedAt: true,
-              subTariffs: {
-                orderBy: { name: 'asc' },
-                select: {
-                  id: true,
-                  name: true,
-                  isActive: true,
-                  tariffId: true,
-                  createdAt: true,
-                  updatedAt: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      return fallbackCourses.map((course) => ({
-        ...course,
-        category: 'offline',
-        startDate: null,
-        endDate: null,
-        isHiddenFromIncomeForm: false,
-      }));
-    }
+    return fetchCoursesWithTariffsSafe({
+      tenantId: ctx.tenantId,
+      onlyActive: false,
+      db: ctx.db,
+    });
   }),
 
   updateCourse: managerProcedure
@@ -4410,58 +4024,10 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
       }
 
-      await ensureAdditionalServiceCategoryReady(data.category);
-
-      const updateCourse = (updateData: typeof data) => ctx.db.course.update({
+      return ctx.db.course.update({
         where: { id: input.courseId },
-        data: updateData,
+        data,
       });
-
-      try {
-        return await updateCourse(data);
-      } catch (error) {
-        if (isCourseCategoryConstraintOutdatedError(error)) {
-          try {
-            await ensureCourseCategoryConstraintSupportsAdditionalService();
-            return await updateCourse(data);
-          } catch {
-            throwCourseCategoryMigrationError();
-          }
-        }
-        const missingCategoryColumn = isMissingCourseCategoryColumnError(error);
-        const missingHiddenColumn = isMissingCourseHiddenFromIncomeFormColumnError(error);
-        const missingStartDateColumn = isMissingCourseStartDateColumnError(error);
-        const missingEndDateColumn = isMissingCourseEndDateColumnError(error);
-        if (!missingCategoryColumn && !missingHiddenColumn && !missingStartDateColumn && !missingEndDateColumn) {
-          throw error;
-        }
-
-        const fallbackData: typeof data = {
-          ...data,
-        };
-
-        if (missingCategoryColumn) {
-          delete fallbackData.category;
-        }
-        if (missingHiddenColumn) {
-          delete fallbackData.isHiddenFromIncomeForm;
-        }
-        if (missingStartDateColumn) {
-          delete fallbackData.startDate;
-        }
-        if (missingEndDateColumn) {
-          delete fallbackData.endDate;
-        }
-
-        if (!Object.keys(fallbackData).length) {
-          throw new TRPCError({
-            code: 'PRECONDITION_FAILED',
-            message: 'Course fields are unavailable until database migrations are applied.',
-          });
-        }
-
-        return updateCourse(fallbackData);
-      }
     }),
 
   updateTariff: managerProcedure
@@ -5712,24 +5278,18 @@ export const customerIncomeRouter = router({
 
       const subTariffNameById = new Map<string, string>();
       if (collectedSubTariffIds.size > 0) {
-        try {
-          const subTariffs = await ctx.db.subTariff.findMany({
-            where: {
-              tenantId: ctx.tenantId,
-              id: { in: Array.from(collectedSubTariffIds) },
-            },
-            select: {
-              id: true,
-              name: true,
-            },
-          });
-          for (const subTariff of subTariffs) {
-            subTariffNameById.set(subTariff.id, subTariff.name);
-          }
-        } catch (error) {
-          if (!isMissingSubTariffSchemaError(error)) {
-            throw error;
-          }
+        const subTariffs = await ctx.db.subTariff.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            id: { in: Array.from(collectedSubTariffIds) },
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        });
+        for (const subTariff of subTariffs) {
+          subTariffNameById.set(subTariff.id, subTariff.name);
         }
       }
 
@@ -5866,28 +5426,15 @@ export const customerIncomeRouter = router({
       } satisfies Prisma.IncomeAdjustmentRequestSelect;
 
       let requests: Array<any> = [];
-      try {
-        requests = await ctx.db.incomeAdjustmentRequest.findMany({
-          where,
-          orderBy: [{ createdAt: 'desc' }],
-          take: input?.limit ?? 80,
-          select: {
-            ...requestSelectBase,
-            refundCardNumber: true,
-          },
-        });
-      } catch (error) {
-        if (!isMissingRefundCardNumberColumnError(error)) {
-          throw error;
-        }
-        requests = await ctx.db.incomeAdjustmentRequest.findMany({
-          where,
-          orderBy: [{ createdAt: 'desc' }],
-          take: input?.limit ?? 80,
-          select: requestSelectBase,
-        });
-        requests = requests.map((item) => ({ ...item, refundCardNumber: null }));
-      }
+      requests = await ctx.db.incomeAdjustmentRequest.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }],
+        take: input?.limit ?? 80,
+        select: {
+          ...requestSelectBase,
+          refundCardNumber: true,
+        },
+      });
 
       const profileSubTariffIds = Array.from(
         new Set(
@@ -6179,58 +5726,29 @@ export const customerIncomeRouter = router({
         : null;
 
       const createdRequest = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
-        let request: { id: string; type: string; status: string };
-        try {
-          request = await tx.incomeAdjustmentRequest.create({
-            data: {
-              tenantId: ctx.tenantId,
-              type: input.type,
-              status: ADJUSTMENT_STATUS_PENDING,
-              incomeId: sourceIncome.id,
-              customerId: sourceIncome.customerId,
-              requestedByUserId: ctx.user.userId,
-              reason: input.reason?.trim() || null,
-              requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? refundChainPaidAmount : null,
-              refundCardNumber: input.type === ADJUSTMENT_TYPE_REFUND ? input.refundCardNumber || null : null,
-              newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
-              newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
-              newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
-              previousCourseId: sourceIncome.courseId ?? null,
-              previousTariffId: sourceIncome.tariffId ?? null,
-            },
-            select: {
-              id: true,
-              type: true,
-              status: true,
-            },
-          });
-        } catch (error) {
-          if (!isMissingRefundCardNumberColumnError(error)) {
-            throw error;
-          }
-          request = await tx.incomeAdjustmentRequest.create({
-            data: {
-              tenantId: ctx.tenantId,
-              type: input.type,
-              status: ADJUSTMENT_STATUS_PENDING,
-              incomeId: sourceIncome.id,
-              customerId: sourceIncome.customerId,
-              requestedByUserId: ctx.user.userId,
-              reason: input.reason?.trim() || null,
-              requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? refundChainPaidAmount : null,
-              newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
-              newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
-              newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
-              previousCourseId: sourceIncome.courseId ?? null,
-              previousTariffId: sourceIncome.tariffId ?? null,
-            },
-            select: {
-              id: true,
-              type: true,
-              status: true,
-            },
-          });
-        }
+        const request: { id: string; type: string; status: string } = await tx.incomeAdjustmentRequest.create({
+          data: {
+            tenantId: ctx.tenantId,
+            type: input.type,
+            status: ADJUSTMENT_STATUS_PENDING,
+            incomeId: sourceIncome.id,
+            customerId: sourceIncome.customerId,
+            requestedByUserId: ctx.user.userId,
+            reason: input.reason?.trim() || null,
+            requestedAmount: input.type === ADJUSTMENT_TYPE_REFUND ? refundChainPaidAmount : null,
+            refundCardNumber: input.type === ADJUSTMENT_TYPE_REFUND ? input.refundCardNumber || null : null,
+            newCourseId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newCourseId || null : null,
+            newTariffId: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newTariffId || null : null,
+            newAgreementAmount: input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE ? input.newAgreementAmount || null : null,
+            previousCourseId: sourceIncome.courseId ?? null,
+            previousTariffId: sourceIncome.tariffId ?? null,
+          },
+          select: {
+            id: true,
+            type: true,
+            status: true,
+          },
+        });
 
         if (input.type === ADJUSTMENT_TYPE_REFUND) {
           await tx.income.updateMany({

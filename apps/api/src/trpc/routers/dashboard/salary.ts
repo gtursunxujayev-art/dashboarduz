@@ -24,7 +24,6 @@ import {
   type KpiMetricKey,
   type KpiSettings,
   KPI_METRIC_KEYS,
-  isMissingUserMappingColumnError,
 } from './helpers';
 import { amocrmService, type AmoCRMLead } from '../../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
@@ -397,22 +396,18 @@ const salarySummary = protectedProcedure
     if (kpi.enabled && kpi.monthlyBudget > 0) {
       // Fetch agent -> AmoCRM mapping + extensions
       let agentAmoMappings: Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }> = [];
-      try {
-        agentAmoMappings = await ctx.db.user.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            id: { in: agentIds },
-            isActive: true,
-          },
-          select: {
-            id: true,
-            amocrmResponsibleUserId: true,
-            utelManagerExternalId: true,
-          },
-        }) as Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>;
-      } catch (error) {
-        if (!isMissingUserMappingColumnError(error)) throw error;
-      }
+      agentAmoMappings = await ctx.db.user.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          id: { in: agentIds },
+          isActive: true,
+        },
+        select: {
+          id: true,
+          amocrmResponsibleUserId: true,
+          utelManagerExternalId: true,
+        },
+      }) as Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>;
 
       const agentAmoIdMap = new Map<string, string>(); // agentId -> amoId
       const amoIdToAgentId = new Map<string, string>(); // amoId -> agentId

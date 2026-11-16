@@ -19,7 +19,6 @@ import {
   INCOME_LIFECYCLE_REFUNDED,
   REPORT_MONTH_LABELS_UZ,
   REPORT_TZ_OFFSET_MS,
-  isMissingUserMappingColumnError,
   normalizeTextToken,
   normalizeDigits,
   isAllowedUtelManagerExtension,
@@ -373,60 +372,28 @@ export const summaryProcedures = {
         amocrmResponsibleUserId: string | null;
         utelManagerExternalId: string | null;
       }> = [];
-      try {
-        agentUsers = await ctx.db.user.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            isActive: true,
-            roles: {
-              hasSome: [...AGENT_ROLES, 'TeamLeader'],
-            },
-            ...(scope.isScoped
-              ? {
-                  id: ctx.user.userId,
-                }
-              : {}),
+      agentUsers = await ctx.db.user.findMany({
+        where: {
+          tenantId: ctx.tenantId,
+          isActive: true,
+          roles: {
+            hasSome: [...AGENT_ROLES, 'TeamLeader'],
           },
-          orderBy: [{ name: 'asc' }, { username: 'asc' }],
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            amocrmResponsibleUserId: true,
-            utelManagerExternalId: true,
-          },
-        });
-      } catch (error) {
-        if (!isMissingUserMappingColumnError(error)) {
-          throw error;
-        }
-        const fallbackUsers = await ctx.db.user.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            isActive: true,
-            roles: {
-              hasSome: [...AGENT_ROLES, 'TeamLeader'],
-            },
-            ...(scope.isScoped
-              ? {
-                  id: ctx.user.userId,
-                }
-              : {}),
-          },
-          orderBy: [{ name: 'asc' }, { username: 'asc' }],
-          select: {
-            id: true,
-            name: true,
-            username: true,
-          },
-        });
-        agentUsers = (fallbackUsers as Array<{ id: string; name: string | null; username: string | null }>)
-          .map((user) => ({
-            ...user,
-            amocrmResponsibleUserId: null,
-            utelManagerExternalId: null,
-          }));
-      }
+          ...(scope.isScoped
+            ? {
+                id: ctx.user.userId,
+              }
+            : {}),
+        },
+        orderBy: [{ name: 'asc' }, { username: 'asc' }],
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          amocrmResponsibleUserId: true,
+          utelManagerExternalId: true,
+        },
+      });
 
       let activityFetchMs = 0;
       const activityFetchStartedMs = Date.now();
