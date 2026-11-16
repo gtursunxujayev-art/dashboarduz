@@ -542,7 +542,7 @@ export async function calculateBonusMonth(params: {
   };
 }
 
-export async function getBonusMonth(params: { tenantId: string; month: Date; preferSnapshot?: boolean }): Promise<BonusMonthCalculation> {
+async function getBonusMonth(params: { tenantId: string; month: Date; preferSnapshot?: boolean }): Promise<BonusMonthCalculation> {
   const month = getTashkentMonthStart(params.month);
   if (params.preferSnapshot !== false) {
     const snapshot = await prisma.bonusMonthSnapshot.findUnique({

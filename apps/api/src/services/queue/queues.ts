@@ -115,7 +115,7 @@ export function getQueue(name: QueueName): Queue {
 }
 
 // Get DLQ for a queue
-export function getDLQueue(name: QueueName): Queue {
+function getDLQueue(name: QueueName): Queue {
   if (!dlqQueues.has(name)) {
     // Ensure main queue exists first
     getQueue(name);
@@ -453,46 +453,6 @@ export async function getQueueMetrics(queueName: QueueName): Promise<{
   };
 }
 
-// Clean old jobs
-export async function cleanOldJobs(queueName: QueueName, maxAgeHours: number = 24): Promise<number> {
-  const queue = getQueue(queueName);
-  const maxAge = maxAgeHours * 60 * 60 * 1000; // Convert to milliseconds
-  const cutoff = Date.now() - maxAge;
-
-  // This is a simplified cleanup - in production, you might want more sophisticated cleanup
-  const jobs = await queue.getJobs(['completed', 'failed']);
-  const oldJobs = jobs.filter(job => job.timestamp < cutoff);
-  
-  for (const job of oldJobs) {
-    await job.remove();
-  }
-
-  return oldJobs.length;
-}
-
-// Close all queues (for graceful shutdown)
-export async function closeAllQueues(): Promise<void> {
-  for (const [name, queue] of queues) {
-    await queue.close();
-    log(LogLevel.INFO, `Closed queue: ${name}`);
-  }
-  queues.clear();
-}
-
-// Retry failed jobs
-export async function retryFailedJobs(queueName: QueueName, count: number = 100): Promise<number> {
-  const queue = getQueue(queueName);
-  const failedJobs = await queue.getFailed(0, count - 1);
-  
-  let retried = 0;
-  for (const job of failedJobs) {
-    await job.retry();
-    retried++;
-  }
-
-  return retried;
-}
-
 // Idempotency helpers
 async function checkIdempotency(idempotencyKey: string): Promise<boolean> {
   const redis = getRedisClient();
@@ -573,33 +533,4 @@ export async function getDLQMetrics(queueName: QueueName): Promise<{
     failed,
     delayed,
   };
-}
-
-// Retry jobs from DLQ
-export async function retryDLQJobs(queueName: QueueName, count: number = 100): Promise<number> {
-  const dlq = getDLQueue(queueName);
-  const failedJobs = await dlq.getFailed(0, count - 1);
-  
-  let retried = 0;
-  for (const job of failedJobs) {
-    const originalData = job.data.originalData;
-    const mainQueue = getQueue(queueName);
-    
-    // Re-add to main queue with new idempotency key
-    await mainQueue.add(queueName, {
-      ...originalData,
-      idempotencyKey: `retry-${job.id}-${Date.now()}`,
-      retryFromDLQ: true,
-      originalDLQJobId: job.id,
-    }, {
-      attempts: 5,
-      backoff: { type: 'exponential', delay: 3000 },
-    });
-    
-    // Remove from DLQ
-    await job.remove();
-    retried++;
-  }
-
-  return retried;
 }

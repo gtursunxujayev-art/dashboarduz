@@ -1,4 +1,4 @@
-export const TECHNICAL_NEW_SALE_AGREEMENT_AMOUNT = 1;
+const TECHNICAL_NEW_SALE_AGREEMENT_AMOUNT = 1;
 
 type TechnicalSaleLike = {
   id: string;

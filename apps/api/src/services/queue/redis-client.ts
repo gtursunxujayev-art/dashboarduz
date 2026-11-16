@@ -45,14 +45,6 @@ export function getRedisClient(): Redis {
   return redisClient;
 }
 
-export async function closeRedisClient(): Promise<void> {
-  if (redisClient) {
-    await redisClient.quit();
-    redisClient = null;
-    console.log('[Redis] Redis client closed');
-  }
-}
-
 // Health check
 export async function checkRedisHealth(): Promise<{
   status: 'healthy' | 'unhealthy';

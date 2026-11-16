@@ -10,15 +10,6 @@ type TelegramRecipientRecord = {
   lastSeenAt: string | null;
 };
 
-type UpsertTelegramRecipientInput = {
-  chatId: string;
-  username?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  started?: boolean;
-  lastSeenAt?: string;
-};
-
 function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -141,74 +132,6 @@ export function applyTelegramRecipientsToConfig(
     ...configObject,
     telegramReportRecipients: normalizedRecipients,
     reportRecipientChatIds,
-  };
-}
-
-export function upsertTelegramRecipient(
-  config: unknown,
-  input: UpsertTelegramRecipientInput,
-): { config: Record<string, unknown>; recipient: TelegramRecipientRecord } {
-  const chatId = normalizeString(input.chatId);
-  if (!chatId) {
-    throw new Error('chatId is required to upsert Telegram recipient');
-  }
-
-  const recipients = parseTelegramRecipients(config);
-  const byChatId = new Map<string, TelegramRecipientRecord>(
-    recipients.map((recipient) => [recipient.chatId, recipient]),
-  );
-  const existing = byChatId.get(chatId);
-
-  const username = normalizeString(input.username) || existing?.username || null;
-  const firstName = normalizeString(input.firstName) || existing?.firstName || null;
-  const lastName = normalizeString(input.lastName) || existing?.lastName || null;
-  const started = existing?.started || Boolean(input.started);
-  const startedAt = existing?.startedAt || (started ? (input.lastSeenAt || new Date().toISOString()) : null);
-  const lastSeenAt = input.lastSeenAt || new Date().toISOString();
-
-  const nextRecipient: TelegramRecipientRecord = {
-    chatId,
-    username,
-    firstName,
-    lastName,
-    displayName: buildDisplayName({ chatId, username, firstName, lastName }),
-    started,
-    selectedForReports: existing?.selectedForReports || false,
-    startedAt,
-    lastSeenAt,
-  };
-
-  byChatId.set(chatId, nextRecipient);
-  const nextRecipients = Array.from(byChatId.values());
-
-  return {
-    config: applyTelegramRecipientsToConfig(config, nextRecipients),
-    recipient: nextRecipient,
-  };
-}
-
-export function updateTelegramReportSelection(
-  config: unknown,
-  selectedChatIdsInput: string[],
-): { config: Record<string, unknown>; selectedChatIds: string[] } {
-  const selectedSet = new Set(
-    selectedChatIdsInput
-      .map((chatId) => normalizeString(chatId))
-      .filter((chatId): chatId is string => Boolean(chatId)),
-  );
-
-  const recipients = parseTelegramRecipients(config).map((recipient) => ({
-    ...recipient,
-    selectedForReports: recipient.started && selectedSet.has(recipient.chatId),
-  }));
-
-  const selectedChatIds = recipients
-    .filter((recipient) => recipient.started && recipient.selectedForReports)
-    .map((recipient) => recipient.chatId);
-
-  return {
-    config: applyTelegramRecipientsToConfig(config, recipients),
-    selectedChatIds,
   };
 }
 

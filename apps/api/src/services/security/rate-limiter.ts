@@ -321,32 +321,3 @@ export class RateLimiter {
 
 // Singleton instance
 export const rateLimiter = new RateLimiter();
-
-// Rate limit middleware for tRPC
-export function createRateLimitMiddleware(planResolver?: (ctx: any) => string) {
-  return async (opts: any) => {
-    const { ctx, path } = opts;
-    
-    if (!ctx.tenantId) {
-      return opts.next();
-    }
-    
-    const plan = planResolver ? planResolver(ctx) : 'free';
-    const endpoint = path.replace(/\./g, ':');
-    
-    const result = await rateLimiter.middleware(ctx.tenantId, endpoint, plan);
-    
-    if (!result.allowed) {
-      throw new Error(result.error || 'Rate limit exceeded');
-    }
-    
-    // Add rate limit headers to response
-    if (result.headers && ctx.res) {
-      Object.entries(result.headers).forEach(([key, value]) => {
-        ctx.res.setHeader(key, value);
-      });
-    }
-    
-    return opts.next();
-  };
-}

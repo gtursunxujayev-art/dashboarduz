@@ -21,7 +21,7 @@ declare global {
 }
 
 // Generate request ID middleware
-export function requestIdMiddleware(req: Request, res: Response, next: NextFunction) {
+function requestIdMiddleware(req: Request, res: Response, next: NextFunction) {
   const requestId = req.headers['x-request-id'] as string || randomUUID();
   
   req.context = {
@@ -34,7 +34,7 @@ export function requestIdMiddleware(req: Request, res: Response, next: NextFunct
 }
 
 // Request logging middleware
-export function requestLoggingMiddleware(req: Request, res: Response, next: NextFunction) {
+function requestLoggingMiddleware(req: Request, res: Response, next: NextFunction) {
   const { requestId, startTime } = req.context;
   
   // Log request start
@@ -86,7 +86,7 @@ export function requestLoggingMiddleware(req: Request, res: Response, next: Next
 }
 
 // Error logging middleware
-export function errorLoggingMiddleware(
+function errorLoggingMiddleware(
   error: any,
   req: Request,
   _res: Response,
@@ -118,7 +118,7 @@ export function errorLoggingMiddleware(
 }
 
 // User context middleware (sets Sentry user context)
-export function userContextMiddleware(req: Request, _res: Response, next: NextFunction) {
+function userContextMiddleware(req: Request, _res: Response, next: NextFunction) {
   // Use tenantId and userId from request (set by tenant middleware)
   const userId = (req as any).userId;
   const tenantId = (req as any).tenantId;
@@ -134,7 +134,7 @@ export function userContextMiddleware(req: Request, _res: Response, next: NextFu
 }
 
 // Cleanup middleware (clears Sentry context after request)
-export function cleanupMiddleware(_req: Request, res: Response, next: NextFunction) {
+function cleanupMiddleware(_req: Request, res: Response, next: NextFunction) {
   res.on('finish', () => {
     clearSentryUserContext();
   });
@@ -142,7 +142,7 @@ export function cleanupMiddleware(_req: Request, res: Response, next: NextFuncti
 }
 
 // Metrics endpoint middleware
-export function metricsMiddleware(req: Request, res: Response, next: NextFunction) {
+function metricsMiddleware(req: Request, res: Response, next: NextFunction) {
   if (req.path === '/metrics') {
     const { Metrics } = require('../services/observability');
     
@@ -154,7 +154,7 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
 }
 
 // Health check endpoint with detailed metrics
-export function healthCheckMiddleware(req: Request, res: Response, next: NextFunction) {
+function healthCheckMiddleware(req: Request, res: Response, next: NextFunction) {
   if (req.path === '/health/detailed') {
     const { Metrics } = require('../services/observability');
     const { checkRedisHealth } = require('../services/queue/redis-client');
