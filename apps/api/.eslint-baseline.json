@@ -190,6 +190,16 @@
     "@typescript-eslint/no-unsafe-member-access": 1,
     "import/order": 1
   },
+  "src/services/sellers/leads.ts": {
+    "@typescript-eslint/no-unnecessary-type-assertion": 1
+  },
+  "src/services/sellers/list-cache.ts": {
+    "@typescript-eslint/no-explicit-any": 1
+  },
+  "src/services/sellers/metrics.ts": {
+    "@typescript-eslint/no-explicit-any": 1,
+    "@typescript-eslint/no-unsafe-member-access": 1
+  },
   "src/trpc/context.ts": {
     "import/order": 1
   },
@@ -312,10 +322,10 @@
     "@typescript-eslint/no-unsafe-member-access": 2,
     "import/order": 4
   },
-  "src/trpc/routers/sellers.ts": {
-    "@typescript-eslint/no-explicit-any": 2,
-    "@typescript-eslint/no-unnecessary-type-assertion": 2,
-    "@typescript-eslint/no-unsafe-member-access": 1,
+  "src/trpc/routers/sellers/detail.ts": {
+    "@typescript-eslint/no-unnecessary-type-assertion": 1
+  },
+  "src/trpc/routers/sellers/list.ts": {
     "@typescript-eslint/no-unsafe-return": 1
   },
   "src/trpc/routers/telegram-bot.ts": {
