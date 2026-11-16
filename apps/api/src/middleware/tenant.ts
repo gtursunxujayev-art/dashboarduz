@@ -41,7 +41,7 @@ export async function resolveTenant(req: Request, res: Response, next: NextFunct
     (req as any).userId = payload.userId;
     (req as any).roles = payload.roles || [];
 
-    next();
+    return next();
   } catch (err) {
     logger.warn({ 
       err, 
