@@ -235,9 +235,15 @@
     "@typescript-eslint/require-await": 1,
     "import/order": 8
   },
-  "src/trpc/routers/bonus.ts": {
+  "src/trpc/routers/bonus/plans.ts": {
+    "@typescript-eslint/no-unsafe-assignment": 3
+  },
+  "src/trpc/routers/bonus/policy.ts": {
     "@typescript-eslint/no-explicit-any": 4,
-    "@typescript-eslint/no-unsafe-assignment": 11
+    "@typescript-eslint/no-unsafe-assignment": 5
+  },
+  "src/trpc/routers/bonus/settings.ts": {
+    "@typescript-eslint/no-unsafe-assignment": 3
   },
   "src/trpc/routers/calls.ts": {
     "@typescript-eslint/no-explicit-any": 1,
