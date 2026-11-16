@@ -1,6 +1,8 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
+import { createIntervalJob } from '../lib/interval-job';
+
 import {
   finalizeBonusMonth,
   getTashkentMonthKey,
@@ -10,8 +12,6 @@ import {
 import { log, LogLevel } from './observability';
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
-
-let timer: NodeJS.Timeout | null = null;
 
 /** Start of the previous Tashkent calendar month relative to `now`. */
 export function getPreviousTashkentMonthStart(now: Date): Date {
@@ -53,21 +53,18 @@ export async function autoFinalizePreviousBonusMonth(now = new Date()): Promise<
   return count;
 }
 
-export function startBonusAutoFinalizeScheduler(): void {
-  if (timer) return;
-  const run = () => {
-    autoFinalizePreviousBonusMonth().catch((error: unknown) => {
-      log(LogLevel.WARN, 'Bonus auto-finalize run failed', { error: (error as { message?: string } | null)?.message || String(error) });
-    });
-  };
+const job = createIntervalJob({
+  intervalMs: CHECK_INTERVAL_MS,
+  run: autoFinalizePreviousBonusMonth,
+  onError: (error) => {
+    log(LogLevel.WARN, 'Bonus auto-finalize run failed', { error: (error as { message?: string } | null)?.message || String(error) });
+  },
+});
 
-  run();
-  timer = setInterval(run, CHECK_INTERVAL_MS);
+export function startBonusAutoFinalizeScheduler(): void {
+  job.start();
 }
 
 export function stopBonusAutoFinalizeScheduler(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+  job.stop();
 }

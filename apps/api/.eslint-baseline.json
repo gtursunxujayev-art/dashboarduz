@@ -139,20 +139,20 @@
     "import/order": 1
   },
   "src/services/reports/telegram-agent-performance-scheduler.ts": {
-    "@typescript-eslint/no-explicit-any": 5,
-    "@typescript-eslint/no-unsafe-member-access": 6
-  },
-  "src/services/reports/telegram-group-summary-scheduler.ts": {
-    "@typescript-eslint/no-explicit-any": 5,
-    "@typescript-eslint/no-unsafe-argument": 1,
-    "@typescript-eslint/no-unsafe-assignment": 4,
+    "@typescript-eslint/no-explicit-any": 4,
     "@typescript-eslint/no-unsafe-member-access": 5
   },
+  "src/services/reports/telegram-group-summary-scheduler.ts": {
+    "@typescript-eslint/no-explicit-any": 4,
+    "@typescript-eslint/no-unsafe-argument": 1,
+    "@typescript-eslint/no-unsafe-assignment": 3,
+    "@typescript-eslint/no-unsafe-member-access": 4
+  },
   "src/services/reports/telegram-report-scheduler.ts": {
-    "@typescript-eslint/no-explicit-any": 9,
-    "@typescript-eslint/no-unsafe-assignment": 8,
+    "@typescript-eslint/no-explicit-any": 8,
+    "@typescript-eslint/no-unsafe-assignment": 7,
     "@typescript-eslint/no-unsafe-call": 1,
-    "@typescript-eslint/no-unsafe-member-access": 7,
+    "@typescript-eslint/no-unsafe-member-access": 6,
     "@typescript-eslint/no-unsafe-return": 1,
     "@typescript-eslint/no-unused-vars": 2
   },

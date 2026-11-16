@@ -5,6 +5,7 @@ import { systemPrisma } from '@dashboarduz/db';
 import { normalizeDigits } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 
+import { createIntervalJob } from '../../lib/interval-job';
 import { toNumberOrNull } from '../../lib/object';
 import { getPreviousTashkentMonthStart } from '../bonus-auto-finalize';
 import { AMOCRM_CALL_PROVIDER, readCallsSource } from '../calls-source';
@@ -276,23 +277,18 @@ async function syncAllAmoCalls(): Promise<void> {
   }
 }
 
-let timer: NodeJS.Timeout | null = null;
+const job = createIntervalJob({
+  intervalMs: SYNC_INTERVAL_MS,
+  run: syncAllAmoCalls,
+  onError: (error) => {
+    log(LogLevel.WARN, 'amoCRM calls sync run failed', { error: String((error as Error | undefined)?.message || error) });
+  },
+});
 
 export function startAmoCallsSyncScheduler(): void {
-  if (timer) return;
-  const run = () => {
-    syncAllAmoCalls().catch((error: unknown) => {
-      log(LogLevel.WARN, 'amoCRM calls sync run failed', { error: String((error as Error | undefined)?.message || error) });
-    });
-  };
-
-  run();
-  timer = setInterval(run, SYNC_INTERVAL_MS);
+  job.start();
 }
 
 export function stopAmoCallsSyncScheduler(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+  job.stop();
 }

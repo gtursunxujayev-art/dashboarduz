@@ -1,13 +1,13 @@
 import { systemPrisma } from '@dashboarduz/db';
 
+import { createIntervalJob } from '../lib/interval-job';
+
 import { log, LogLevel } from './observability';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_RETENTION_DAYS = 90;
 const DELETE_BATCH_SIZE = 5000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-let timer: NodeJS.Timeout | null = null;
 
 /** Days to keep processed webhook events (WEBHOOK_EVENT_RETENTION_DAYS, default 90, minimum 1). */
 export function getWebhookEventRetentionDays(env: NodeJS.ProcessEnv = process.env): number {
@@ -53,23 +53,20 @@ export async function purgeProcessedWebhookEvents(
   return deleted;
 }
 
-export function startWebhookEventRetentionScheduler(): void {
-  if (timer) return;
-  const run = () => {
-    purgeProcessedWebhookEvents().catch((error: unknown) => {
-      log(LogLevel.WARN, 'Webhook event retention run failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+const job = createIntervalJob({
+  intervalMs: CHECK_INTERVAL_MS,
+  run: purgeProcessedWebhookEvents,
+  onError: (error) => {
+    log(LogLevel.WARN, 'Webhook event retention run failed', {
+      error: error instanceof Error ? error.message : String(error),
     });
-  };
+  },
+});
 
-  run();
-  timer = setInterval(run, CHECK_INTERVAL_MS);
+export function startWebhookEventRetentionScheduler(): void {
+  job.start();
 }
 
 export function stopWebhookEventRetentionScheduler(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+  job.stop();
 }

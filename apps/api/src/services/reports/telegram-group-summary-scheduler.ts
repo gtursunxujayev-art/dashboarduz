@@ -1,6 +1,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { fromTashkentLocalParts, shiftToTashkent } from '@dashboarduz/shared';
 
+import { createIntervalJob } from '../../lib/interval-job';
 import { asObjectOrEmpty } from '../../lib/object';
 import { classifyIncomeCategory, type IncomeCategory } from '../income-facts';
 import { telegramService } from '../integrations/telegram';
@@ -50,9 +51,6 @@ type TelegramIntegration = {
   tokensEncrypted: string | null;
   config: unknown;
 };
-
-let schedulerTimer: NodeJS.Timeout | null = null;
-let schedulerInProgress = false;
 
 function selectedCourseIds(config: unknown): Set<string> {
   const raw = asObjectOrEmpty(config).telegramDailyReportCourseIds;
@@ -404,10 +402,10 @@ async function dispatchScheduled(integration: TelegramIntegration, cutoff: '18:0
   }
 }
 
-async function tickScheduler(): Promise<void> {
-  if (schedulerInProgress) return;
-  schedulerInProgress = true;
-  try {
+const schedulerJob = createIntervalJob({
+  intervalMs: POLL_INTERVAL_MS,
+  skipWhileRunning: true,
+  run: async () => {
     const now = new Date();
     const cutoffs = resolveDueTelegramGroupSummaryCutoffs(now);
 
@@ -420,25 +418,23 @@ async function tickScheduler(): Promise<void> {
     for (const integration of integrations) {
       for (const cutoff of cutoffs) await dispatchScheduled(integration, cutoff, now);
     }
-  } catch (error: any) {
-    log(LogLevel.ERROR, 'Telegram group summary scheduler tick failed', { error: error?.message || String(error) });
-  } finally {
-    schedulerInProgress = false;
-  }
-}
+  },
+  onError: (error) => {
+    log(LogLevel.ERROR, 'Telegram group summary scheduler tick failed', {
+      error: (error as Error | undefined)?.message || String(error),
+    });
+  },
+  onStart: () => {
+    log(LogLevel.INFO, 'Telegram group summary scheduler started', {
+      timezone: 'Asia/Tashkent', schedules: ['18:00', '23:59'], intervalMs: POLL_INTERVAL_MS,
+    });
+  },
+});
 
 export function startTelegramGroupSummaryScheduler(): void {
-  if (schedulerTimer) return;
-  schedulerTimer = setInterval(() => void tickScheduler(), POLL_INTERVAL_MS);
-  void tickScheduler();
-  log(LogLevel.INFO, 'Telegram group summary scheduler started', {
-    timezone: 'Asia/Tashkent', schedules: ['18:00', '23:59'], intervalMs: POLL_INTERVAL_MS,
-  });
+  schedulerJob.start();
 }
 
 export function stopTelegramGroupSummaryScheduler(): void {
-  if (schedulerTimer) {
-    clearInterval(schedulerTimer);
-    schedulerTimer = null;
-  }
+  schedulerJob.stop();
 }

@@ -43,3 +43,6 @@ export function tashkentCalendarDay(date: Date): Date {
 
   return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
 }
+
+/** How reports label the Tashkent offset. */
+export const TASHKENT_TIMEZONE_LABEL = 'GMT+5';

@@ -1,7 +1,8 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey } from '@dashboarduz/shared';
+import { fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey, TASHKENT_TIMEZONE_LABEL, formatAmount, type AmountFormatOptions } from '@dashboarduz/shared';
 
 import { sleep } from '../../lib/async';
+import { createIntervalJob } from '../../lib/interval-job';
 import { roundPositivePercentage } from '../../lib/number';
 import { parseTelegramDailyReportCourseIds } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension } from '../../lib/utel';
@@ -22,8 +23,8 @@ import { log, LogLevel } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 
-const REPORT_TIMEZONE_LABEL = 'GMT+5';
 const POLL_INTERVAL_MS = 30_000;
+const CURRENCY_FORMAT: AmountFormatOptions = { locale: 'en-US', unit: 'UZS', round: true };
 const LOCK_TTL_SECONDS = 60 * 60 * 24 * 14; // 14 days
 const MIN_DAILY_REPORT_PREP_MS = 10_000;
 const MIN_WEEKLY_REPORT_PREP_MS = 20_000;
@@ -98,9 +99,6 @@ type TelegramIntegrationWithTenant = {
   };
 };
 
-let schedulerTimer: NodeJS.Timeout | null = null;
-let schedulerInProgress = false;
-
 function formatLocalDateTime(date: Date): string {
   const local = shiftToTashkent(date);
   const year = local.getUTCFullYear();
@@ -110,11 +108,7 @@ function formatLocalDateTime(date: Date): string {
   const minute = String(local.getUTCMinutes()).padStart(2, '0');
   const second = String(local.getUTCSeconds()).padStart(2, '0');
 
-  return `${year}-${month}-${day} ${hour}:${minute}:${second} ${REPORT_TIMEZONE_LABEL}`;
-}
-
-function formatCurrency(value: number): string {
-  return `${Math.round(value).toLocaleString('en-US')} UZS`;
+  return `${year}-${month}-${day} ${hour}:${minute}:${second} ${TASHKENT_TIMEZONE_LABEL}`;
 }
 
 function formatCompactCurrency(value: number): string {
@@ -450,9 +444,9 @@ export function createStyledReportPdf(params: {
     c.text(top + 27, left + 10, value, { font: 'F2', size: size(14), color: accent });
   };
 
-  drawStandardCard(0, 0, 'Kelishuv summasi', formatCurrency(params.metrics.agreementTotal));
-  drawStandardCard(0, 2, 'Online kelishuv summasi', formatCurrency(params.metrics.onlineAgreementTotal));
-  drawStandardCard(1, 0, 'Offline kelishuv summasi', formatCurrency(params.metrics.offlineAgreementTotal));
+  drawStandardCard(0, 0, 'Kelishuv summasi', formatAmount(params.metrics.agreementTotal, CURRENCY_FORMAT));
+  drawStandardCard(0, 2, 'Online kelishuv summasi', formatAmount(params.metrics.onlineAgreementTotal, CURRENCY_FORMAT));
+  drawStandardCard(1, 0, 'Offline kelishuv summasi', formatAmount(params.metrics.offlineAgreementTotal, CURRENCY_FORMAT));
   drawStandardCard(1, 2, 'Sifatli lidlar', `${params.metrics.qualifiedLeads} (${params.metrics.qualifiedShare.toFixed(1)}%)`);
 
   // Tushum card with new-sale vs debt-repayment split.
@@ -461,12 +455,12 @@ export function createStyledReportPdf(params: {
 
   c.rect(incomeTop, incomeLeft, 160, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
   c.text(incomeTop + 9, incomeLeft + 10, 'Tushum', { size: size(9), color: [0.4, 0.46, 0.56] });
-  c.text(incomeTop + 22, incomeLeft + 10, formatCurrency(params.metrics.incomeTotal), { font: 'F2', size: size(14), color: accent });
-  c.text(incomeTop + 36, incomeLeft + 10, `Yangi sotuv: ${formatCurrency(params.metrics.newSalesIncomeTotal)}`, {
+  c.text(incomeTop + 22, incomeLeft + 10, formatAmount(params.metrics.incomeTotal, CURRENCY_FORMAT), { font: 'F2', size: size(14), color: accent });
+  c.text(incomeTop + 36, incomeLeft + 10, `Yangi sotuv: ${formatAmount(params.metrics.newSalesIncomeTotal, CURRENCY_FORMAT)}`, {
     size: size(8),
     color: textDark,
   });
-  c.text(incomeTop + 46, incomeLeft + 10, `Qarz to'lovi: ${formatCurrency(params.metrics.debtRepaymentIncomeTotal)}`, {
+  c.text(incomeTop + 46, incomeLeft + 10, `Qarz to'lovi: ${formatAmount(params.metrics.debtRepaymentIncomeTotal, CURRENCY_FORMAT)}`, {
     size: size(8),
     color: textDark,
   });
@@ -1673,50 +1667,36 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
   }
 }
 
-async function tickScheduler(): Promise<void> {
-  if (schedulerInProgress) {
-    return;
-  }
-  schedulerInProgress = true;
-
-  try {
+const schedulerJob = createIntervalJob({
+  intervalMs: POLL_INTERVAL_MS,
+  skipWhileRunning: true,
+  run: async () => {
     const nowUtc = new Date();
     const dueWindows = resolveReportWindows(nowUtc);
 
     for (const window of dueWindows) {
       await dispatchWindow(window, nowUtc);
     }
-  } catch (error: any) {
+  },
+  onError: (error) => {
     log(LogLevel.ERROR, 'Telegram report scheduler tick failed', {
-      error: error?.message || 'Unknown error',
+      error: (error as Error | undefined)?.message || 'Unknown error',
     });
-  } finally {
-    schedulerInProgress = false;
-  }
-}
+  },
+  onStart: () => {
+    log(LogLevel.INFO, 'Telegram report scheduler started', {
+      timezone: TASHKENT_TIMEZONE_LABEL,
+      intervalMs: POLL_INTERVAL_MS,
+    });
+  },
+});
 
 export function startTelegramReportScheduler(): void {
-  if (schedulerTimer) {
-    return;
-  }
-
-  schedulerTimer = setInterval(() => {
-    void tickScheduler();
-  }, POLL_INTERVAL_MS);
-
-  void tickScheduler();
-
-  log(LogLevel.INFO, 'Telegram report scheduler started', {
-    timezone: REPORT_TIMEZONE_LABEL,
-    intervalMs: POLL_INTERVAL_MS,
-  });
+  schedulerJob.start();
 }
 
 export function stopTelegramReportScheduler(): void {
-  if (schedulerTimer) {
-    clearInterval(schedulerTimer);
-    schedulerTimer = null;
-  }
+  schedulerJob.stop();
 }
 
 export async function sendImmediateTodayReportForTenant(tenantId: string): Promise<{

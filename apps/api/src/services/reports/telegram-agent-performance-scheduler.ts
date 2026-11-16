@@ -1,7 +1,8 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey } from '@dashboarduz/shared';
+import { AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey, TASHKENT_TIMEZONE_LABEL, formatAmount, type AmountFormatOptions } from '@dashboarduz/shared';
 
 import { isCompletedTask, isLeadTask, taskResponsibleUserId } from '../../lib/amocrm';
+import { createIntervalJob } from '../../lib/interval-job';
 import { buildLooseTelegramChatIdCandidates, normalizeTelegramSecret, sendMessageToTelegramChat } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';
 import { getCallsProvider } from '../calls-source';
@@ -13,8 +14,8 @@ import { LogLevel, log } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 
-const REPORT_TIMEZONE_LABEL = 'GMT+5';
 const POLL_INTERVAL_MS = 30_000;
+const CURRENCY_FORMAT: AmountFormatOptions = { locale: 'ru-RU', unit: "so'm", round: true, clampNegative: true };
 const LOCK_TTL_SECONDS = 60 * 60 * 24 * 2; // 2 days
 
 const AGENT_MOTIVATION_ABOVE = "Harakatlaringiz juda yaxshi, qo'ng'iroqlarni kamaytirmang va albatta natija siz kutganingizdek bo'ladi!";
@@ -52,13 +53,6 @@ type AgentMetricRow = {
   aboveAverageDuration: boolean;
 };
 
-let schedulerTimer: NodeJS.Timeout | null = null;
-let schedulerInProgress = false;
-
-function formatCurrency(value: number): string {
-  return `${Math.max(0, Math.round(value)).toLocaleString('ru-RU')} so'm`;
-}
-
 function formatDurationUz(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds));
   const hours = Math.floor(safe / 3600);
@@ -91,7 +85,7 @@ function buildAgentMessage(row: AgentMetricRow): string {
   const motivation = row.aboveAverageDuration ? AGENT_MOTIVATION_ABOVE : AGENT_MOTIVATION_BELOW;
 
   return [
-    `Bugungi tushum - ${formatCurrency(row.incomeToday)}`,
+    `Bugungi tushum - ${formatAmount(row.incomeToday, CURRENCY_FORMAT)}`,
     `Qo'ng'iroqlar soni - ${row.callsCount}`,
     `Qo'ng'iroqlar davomiyligi - ${formatDurationUz(row.callDurationSeconds)}`,
     `Bajarilgan topshiriqlar - ${row.followUpsDone}`,
@@ -397,7 +391,7 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
           resourceId: integration.id,
           metadata: {
             schedule: 'daily_noon',
-            timezone: REPORT_TIMEZONE_LABEL,
+            timezone: TASHKENT_TIMEZONE_LABEL,
             periodStart: window.periodStart.toISOString(),
             periodEnd: window.periodEnd.toISOString(),
             sentCount,
@@ -421,7 +415,7 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
           resourceId: integration.id,
           metadata: {
             schedule: 'daily_noon',
-            timezone: REPORT_TIMEZONE_LABEL,
+            timezone: TASHKENT_TIMEZONE_LABEL,
             periodStart: window.periodStart.toISOString(),
             periodEnd: window.periodEnd.toISOString(),
             error: String(error?.message || error),
@@ -437,48 +431,34 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
   }
 }
 
-async function tickScheduler(): Promise<void> {
-  if (schedulerInProgress) {
-    return;
-  }
-  schedulerInProgress = true;
-
-  try {
+const schedulerJob = createIntervalJob({
+  intervalMs: POLL_INTERVAL_MS,
+  skipWhileRunning: true,
+  run: async () => {
     const nowUtc = new Date();
     const window = resolveNoonWindow(nowUtc);
 
     if (window) {
       await dispatchNoonWindow(window, nowUtc);
     }
-  } catch (error: any) {
+  },
+  onError: (error) => {
     log(LogLevel.ERROR, 'Noon agent performance scheduler tick failed', {
-      error: String(error?.message || error),
+      error: String((error as Error | undefined)?.message || error),
     });
-  } finally {
-    schedulerInProgress = false;
-  }
-}
+  },
+  onStart: () => {
+    log(LogLevel.INFO, 'Telegram agent performance scheduler started', {
+      timezone: TASHKENT_TIMEZONE_LABEL,
+      intervalMs: POLL_INTERVAL_MS,
+    });
+  },
+});
 
 export function startTelegramAgentPerformanceScheduler(): void {
-  if (schedulerTimer) {
-    return;
-  }
-
-  schedulerTimer = setInterval(() => {
-    void tickScheduler();
-  }, POLL_INTERVAL_MS);
-
-  void tickScheduler();
-
-  log(LogLevel.INFO, 'Telegram agent performance scheduler started', {
-    timezone: REPORT_TIMEZONE_LABEL,
-    intervalMs: POLL_INTERVAL_MS,
-  });
+  schedulerJob.start();
 }
 
 export function stopTelegramAgentPerformanceScheduler(): void {
-  if (schedulerTimer) {
-    clearInterval(schedulerTimer);
-    schedulerTimer = null;
-  }
+  schedulerJob.stop();
 }
