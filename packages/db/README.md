@@ -8,7 +8,6 @@ Prisma schema, migrations and database clients.
 | --- | --- | --- |
 | `forTenant(tenantId, userId)` | Everything done for a logged-in user. tRPC protected procedures get it as `ctx.db`. | `DATABASE_URL` |
 | `systemPrisma` | Code with no user: webhooks, workers, schedulers, login/registration/OTP, health checks, scripts. | `DATABASE_SYSTEM_URL`, falling back to `DATABASE_URL` |
-| `prisma` | Deprecated alias of `systemPrisma`. Do not use in new code. | same as `systemPrisma` |
 
 `forTenant` wraps every operation in a transaction that first runs
 `set_config('app.current_tenant', …, true)` and `set_config('app.current_user', …, true)`.
@@ -17,6 +16,8 @@ reuses a pooled connection, and they are in place for every query, including
 batch `$transaction([...])` and interactive `$transaction(async (tx) => …)`
 (set once at the start of that transaction). The cost is one extra statement
 per query and one transaction per non-transactional query.
+
+There is deliberately no generic `prisma` export any more: pick one of the two.
 
 ## Row Level Security rollout
 

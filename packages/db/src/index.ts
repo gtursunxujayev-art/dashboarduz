@@ -47,12 +47,6 @@ if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.tenantBasePrisma = tenantBasePrisma;
 }
 
-/**
- * @deprecated Alias of `systemPrisma`. Request handlers must use the tenant-scoped
- * `ctx.db`; system code should import `systemPrisma` explicitly.
- */
-export const prisma: PrismaClient = systemPrisma;
-
 /** A tenant-scoped client. Same API as PrismaClient. */
 export type TenantPrismaClient = PrismaClient;
 
