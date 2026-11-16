@@ -126,7 +126,7 @@ export async function loadSelectedReportCourses(tenantId: string, db: DbClient):
   }));
 
   const repayments = selectedCourseSales.length
-    ? await prisma.income.findMany({
+    ? await db.income.findMany({
         where: {
           tenantId,
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
