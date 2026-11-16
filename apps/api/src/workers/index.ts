@@ -1,6 +1,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 
-import { asObject, getCaseInsensitiveValue, textFromUnknownOrEmpty } from '../lib/object';
+import { parseAmoTimestamp } from '../lib/amocrm';
+import { getCaseInsensitiveValue, textFromUnknownOrEmpty } from '../lib/object';
 import { isLikelyExternalPhone, normalizePhoneKeepPlus } from '../lib/phone';
 import { isAllowedUtelManagerExtension, normalizeCallDirection } from '../lib/utel';
 import { ingestFaceIdEvent } from '../services/attendance/faceid';
@@ -44,29 +45,6 @@ function extractContactField(contactData: any, code: string): string | null {
   const value = field?.values?.[0]?.value;
 
   return typeof value === 'string' ? value : null;
-}
-
-function parseAmoTimestamp(value: unknown): Date | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const millis = value > 1_000_000_000_000 ? value : value * 1000;
-    const parsed = new Date(millis);
-
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  if (typeof value === 'string') {
-    const asNumber = Number(value);
-
-    if (!Number.isNaN(asNumber)) {
-      return parseAmoTimestamp(asNumber);
-    }
-
-    const parsed = new Date(value);
-
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  return null;
 }
 
 function parseCallDate(value: unknown): Date | null {

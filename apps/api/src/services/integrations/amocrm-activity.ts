@@ -1,5 +1,6 @@
 import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
+import { isCompletedTask, isLeadTask, taskResponsibleUserId, toStringId } from '../../lib/amocrm';
 import { LogLevel, log } from '../observability';
 
 import { type AmoCRMEvent, type AmoCRMTask, amocrmService } from './amocrm';
@@ -83,14 +84,6 @@ function cloneMetricsMap(input: Map<string, AmoCRMActivityMetrics>): Map<string,
   );
 }
 
-function toStringId(value: unknown): string {
-  if (value === null || value === undefined) {
-    return '';
-  }
-
-  return String(value).trim();
-}
-
 function toDate(value: unknown): Date | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const millis = value > 1_000_000_000_000 ? value : value * 1000;
@@ -136,54 +129,6 @@ function isWithinRange(value: Date | null, start: Date, end: Date): boolean {
   }
 
   return value >= start && value <= end;
-}
-
-function isCompletedTask(task: AmoCRMTask): boolean {
-  const value = task.is_completed ?? (task as Record<string, unknown>).completed ?? (task as Record<string, unknown>).isCompleted;
-
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'number') {
-    return value === 1;
-  }
-  const normalized = toStringId(value).toLowerCase();
-
-  if (!normalized) {
-    return false;
-  }
-
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'done';
-}
-
-function isLeadTask(task: AmoCRMTask): boolean {
-  const entityType = toStringId(task.entity_type).toLowerCase();
-
-  if (!entityType) {
-    return true;
-  }
-
-  return entityType === 'lead' || entityType === 'leads';
-}
-
-function taskResponsibleUserId(task: AmoCRMTask): string {
-  const source = task as Record<string, unknown>;
-  const direct = toStringId(task.responsible_user_id);
-
-  if (direct) {
-    return direct;
-  }
-
-  const nestedResponsible = source.responsible_user as Record<string, unknown> | undefined;
-  const nestedByEmbedded = (source._embedded as Record<string, unknown> | undefined)?.responsible_user as Record<string, unknown> | undefined;
-
-  return (
-    toStringId(nestedResponsible?.id)
-    || toStringId(nestedResponsible?.user_id)
-    || toStringId(nestedByEmbedded?.id)
-    || toStringId(nestedByEmbedded?.user_id)
-    || ''
-  );
 }
 
 function taskActionDate(task: AmoCRMTask): Date | null {

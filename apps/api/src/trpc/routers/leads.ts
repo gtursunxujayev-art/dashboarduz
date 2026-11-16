@@ -4,6 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { getAgentResponsibleScope } from '../../lib/access';
+import { parseAmoTimestampOrNow } from '../../lib/amocrm';
 import { asObject } from '../../lib/object';
 import { amocrmService, type AmoCRMLead } from '../../services/integrations/amocrm';
 import {
@@ -11,30 +12,6 @@ import {
   getTenantAmoCRMContext,
 } from '../../services/integrations/amocrm-live';
 import { router, protectedProcedure } from '../trpc';
-
-function parseAmoTimestamp(value: unknown): Date {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const millis = value > 1_000_000_000_000 ? value : value * 1000;
-
-    return new Date(millis);
-  }
-
-  if (typeof value === 'string') {
-    const asNumber = Number(value);
-
-    if (!Number.isNaN(asNumber)) {
-      return parseAmoTimestamp(asNumber);
-    }
-
-    const parsed = new Date(value);
-
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed;
-    }
-  }
-
-  return new Date();
-}
 
 function getPrimaryContact(lead: AmoCRMLead): { name: string | null; phone: string | null; email: string | null } | null {
   const contacts = Array.isArray(lead._embedded?.contacts) ? lead._embedded?.contacts : [];
@@ -95,8 +72,8 @@ function mapLeadForUi(lead: AmoCRMLead, statusMap: Map<string, string>, pipeline
     pipelineName: pipelineId ? (pipelineMap.get(pipelineId) || pipelineId) : null,
     source: extractLeadValue(lead, sourceFieldKey) || '-',
     contact,
-    createdAt: parseAmoTimestamp(lead.created_at),
-    updatedAt: parseAmoTimestamp(lead.updated_at),
+    createdAt: parseAmoTimestampOrNow(lead.created_at),
+    updatedAt: parseAmoTimestampOrNow(lead.updated_at),
     metadata: lead,
   };
 }
@@ -233,8 +210,8 @@ export const leadsRouter = router({
         pipelineId,
         pipelineName: pipelineId ? (pipelineMap.get(pipelineId) || pipelineId) : null,
         contact: getPrimaryContact(lead),
-        createdAt: parseAmoTimestamp(lead.created_at),
-        updatedAt: parseAmoTimestamp(lead.updated_at),
+        createdAt: parseAmoTimestampOrNow(lead.created_at),
+        updatedAt: parseAmoTimestampOrNow(lead.updated_at),
         metadata: lead,
       };
     }),

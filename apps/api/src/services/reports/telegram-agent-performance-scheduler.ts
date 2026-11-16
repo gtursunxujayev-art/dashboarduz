@@ -1,12 +1,13 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey } from '@dashboarduz/shared';
 
+import { isCompletedTask, isLeadTask, taskResponsibleUserId } from '../../lib/amocrm';
 import { buildLooseTelegramChatIdCandidates, normalizeTelegramSecret, sendMessageToTelegramChat } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';
 import { getCallsProvider } from '../calls-source';
 import { getCorporateCallDurationByManager } from '../corporate-call-durations';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
-import { type AmoCRMTask, amocrmService } from '../integrations/amocrm';
+import { amocrmService } from '../integrations/amocrm';
 import { getTenantAmoCRMContext } from '../integrations/amocrm-live';
 import { LogLevel, log } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
@@ -84,49 +85,6 @@ function resolveNoonWindow(nowUtc: Date): NoonWindow | null {
     periodEnd: nowUtc,
     periodKey: toTashkentDateKey(nowUtc),
   };
-}
-
-function taskResponsibleUserId(task: AmoCRMTask): string {
-  const source = task as Record<string, unknown>;
-  const direct = String(task.responsible_user_id || '').trim();
-
-  if (direct) {
-    return direct;
-  }
-
-  const nestedResponsible = source.responsible_user as Record<string, unknown> | undefined;
-  const nestedEmbedded = (source._embedded as Record<string, unknown> | undefined)?.responsible_user as Record<string, unknown> | undefined;
-
-  return (
-    String(nestedResponsible?.id || '').trim()
-    || String(nestedResponsible?.user_id || '').trim()
-    || String(nestedEmbedded?.id || '').trim()
-    || String(nestedEmbedded?.user_id || '').trim()
-  );
-}
-
-function isCompletedTask(task: AmoCRMTask): boolean {
-  const value = task.is_completed ?? (task as Record<string, unknown>).completed ?? (task as Record<string, unknown>).isCompleted;
-
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'number') {
-    return value === 1;
-  }
-  const normalized = String(value || '').trim().toLowerCase();
-
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'done';
-}
-
-function isLeadTask(task: AmoCRMTask): boolean {
-  const entityType = String(task.entity_type || '').trim().toLowerCase();
-
-  if (!entityType) {
-    return true;
-  }
-
-  return entityType === 'lead' || entityType === 'leads';
 }
 
 function buildAgentMessage(row: AgentMetricRow): string {
