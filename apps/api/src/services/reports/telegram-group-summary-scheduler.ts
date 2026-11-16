@@ -224,6 +224,7 @@ async function loadSummaryRows(tenantId: string, start: Date, end: Date) {
 
     if (!missing.length) break;
     const ancestors = await systemPrisma.income.findMany({ where: { tenantId, id: { in: missing } }, select });
+
     if (!ancestors.length) break;
     for (const row of ancestors) known.set(row.id, row);
     pending = Array.from(new Set(ancestors.map((row) => row.relatedDebtIncomeId).filter((id): id is string => Boolean(id))));

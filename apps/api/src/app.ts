@@ -164,6 +164,7 @@ app.get('/health/ready', async (_req, res) => {
         return queueService.healthCheck();
       })(),
     ]);
+
     await systemPrisma.$queryRaw`SELECT 1`;
 
     if (redisHealth.status !== 'healthy' || queueHealth.status === 'unhealthy') {

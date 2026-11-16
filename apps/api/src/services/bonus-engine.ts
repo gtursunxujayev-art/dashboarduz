@@ -652,6 +652,7 @@ async function getBonusMonth(params: { tenantId: string; month: Date; preferSnap
       };
     }
   }
+
   return calculateBonusMonth({ tenantId: params.tenantId, month, db });
 }
 
@@ -690,8 +691,10 @@ export async function finalizeBonusMonth(params: { tenantId: string; month: Date
 
   if (getTashkentMonthEnd(month) >= new Date()) throw new Error('Only completed months can be finalized.');
   const existing = await db.bonusMonthSnapshot.findUnique({ where: { tenantId_month: { tenantId: params.tenantId, month } } });
+
   if (existing) return getBonusMonth({ tenantId: params.tenantId, month, db });
   const calculation = await calculateBonusMonth({ tenantId: params.tenantId, month, db });
+
   await db.$transaction(async (tx) => {
     const snapshot = await tx.bonusMonthSnapshot.create({
       data: {
@@ -735,6 +738,7 @@ export async function finalizeBonusMonth(params: { tenantId: string; month: Date
       });
     }
   });
+
   return getBonusMonth({ tenantId: params.tenantId, month, db });
 }
 
@@ -758,6 +762,7 @@ export async function reconcileBonusMonth(params: { tenantId: string; month: Dat
   if (current.sourceDigest === snapshot.sourceDigest || current.legacySourceDigest === snapshot.sourceDigest) {
     // Data is back to what was finalized, so any pending correction is stale.
     await db.bonusAdjustment.deleteMany({ where: { snapshotId: snapshot.id, status: 'pending' } });
+
     return 0;
   }
   const eligibleAgentIds = new Set((await db.user.findMany({
@@ -801,6 +806,7 @@ export async function reconcileBonusMonth(params: { tenantId: string; month: Dat
     const adjustment = pending
       ? await db.bonusAdjustment.update({ where: { id: pending.id }, data })
       : await db.bonusAdjustment.create({ data: { ...data, tenantId: params.tenantId, snapshotId: snapshot.id, groupKey } });
+
     await db.bonusAdjustmentAudit.create({
       data: {
         tenantId: params.tenantId,
@@ -842,9 +848,11 @@ export async function reviewBonusAdjustment(params: {
 }) {
   const db = params.db ?? systemPrisma;
   const adjustment = await db.bonusAdjustment.findFirst({ where: { id: params.adjustmentId, tenantId: params.tenantId, status: 'pending' } });
+
   if (!adjustment) throw new Error('Pending bonus adjustment was not found.');
   if (params.action === 'reject' && !params.note?.trim()) throw new Error('A rejection reason is required.');
   const payoutMonth = params.action === 'approve' ? getTashkentMonthStart(new Date()) : null;
+
   return db.$transaction(async (tx) => {
     const updated = await tx.bonusAdjustment.update({
       where: { id: adjustment.id },
@@ -874,6 +882,7 @@ export async function reviewBonusAdjustment(params: {
 export async function getApprovedAdjustmentsForMonth(tenantId: string, month: Date, db: DbClient = systemPrisma) {
   const monthStart = getTashkentMonthStart(month);
   const monthEnd = getTashkentMonthEnd(month);
+
   return db.bonusAdjustment.findMany({
     where: {
       tenantId,

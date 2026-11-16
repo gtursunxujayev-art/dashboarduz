@@ -618,6 +618,7 @@ export async function processWebhookEvent(eventId: string) {
   try {
     log(LogLevel.INFO, 'Processing webhook event', { eventId });
     const event = await systemPrisma.webhookEvent.findUnique({ where: { id: eventId } });
+
     if (!event) {
       throw new Error(`Webhook event ${eventId} not found`);
     }
@@ -811,6 +812,7 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
 
     if (existingContact) {
       const existingExternalIds = (existingContact.externalIds as Record<string, unknown> | null) || {};
+
       await systemPrisma.contact.update({
         where: { id: existingContact.id },
         data: {
