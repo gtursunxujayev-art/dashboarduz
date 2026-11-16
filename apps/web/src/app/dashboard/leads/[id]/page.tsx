@@ -5,13 +5,7 @@ import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
-
-function formatDate(value: string | Date | null | undefined): string {
-  if (!value) return '-';
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' });
-}
+import { UZ_TASHKENT_DATE_TIME, formatDateTime } from '@/lib/format';
 
 export default function LeadDetailsPage() {
   const params = useParams<{ id: string | string[] }>();
@@ -71,11 +65,11 @@ export default function LeadDetailsPage() {
                 </div>
                 <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3">
                   <p className="text-xs uppercase tracking-wide text-gray-500">Yaratilgan sana</p>
-                  <p className="mt-1 text-sm font-semibold text-gray-900">{formatDate(lead.createdAt)}</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-900">{formatDateTime(lead.createdAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-', invalidText: '-' })}</p>
                 </div>
                 <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3">
                   <p className="text-xs uppercase tracking-wide text-gray-500">Yangilangan sana</p>
-                  <p className="mt-1 text-sm font-semibold text-gray-900">{formatDate(lead.updatedAt)}</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-900">{formatDateTime(lead.updatedAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-', invalidText: '-' })}</p>
                 </div>
               </div>
 

@@ -4,6 +4,7 @@ import {
   getPreviousWeekRange,
   getTashkentDateShift,
   getTashkentToday,
+  getRangeLabel,
   toApiDateRange,
 } from './date-range';
 
@@ -32,5 +33,16 @@ describe('date-range helpers', () => {
     expect(toApiDateRange('month', custom, now)).toEqual({ range: 'month' });
     expect(toApiDateRange('last_week', custom, now)).toEqual({ range: 'custom', dateFrom: '2026-10-26', dateTo: '2026-11-01' });
     expect(toApiDateRange('custom', custom, now)).toEqual({ range: 'custom', ...custom });
+  });
+});
+
+describe('getRangeLabel', () => {
+  it('has short labels (dashboard, analytics) and long labels (calls)', () => {
+    expect(getRangeLabel('week')).toBe('Hafta');
+    expect(getRangeLabel('custom')).toBe('Ixtiyoriy');
+    expect(getRangeLabel('week', 'long')).toBe('Bu hafta');
+    expect(getRangeLabel('month', 'long')).toBe('Bu oy');
+    expect(getRangeLabel('custom', 'long')).toBe('Ixtiyoriy sana');
+    expect(getRangeLabel('today', 'long')).toBe('Bugun');
   });
 });

@@ -2,14 +2,7 @@
 
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
-
-function formatCompactMoney(amount: number) {
-  const value = Math.round(amount || 0);
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
-  return String(value);
-}
+import { formatCompactMoney } from '@/lib/format';
 
 type SelectedCourse = {
   courseId: string;

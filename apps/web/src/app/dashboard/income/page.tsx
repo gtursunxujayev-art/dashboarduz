@@ -4,6 +4,9 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { formatAmountDigits, parseAmountInput } from '@/lib/format';
+import { getTashkentToday } from '@/lib/date-range';
+import { groupDigits, normalizeDigits } from '@dashboarduz/shared';
 
 type IncomeType = 'new_sale' | 'repayment';
 type IncomeTypeChoice = '' | IncomeType;
@@ -37,46 +40,6 @@ type SubTariffOptionLike = {
 };
 
 const TELEGRAM_USERNAME_PATTERN = /^@?[A-Za-z0-9_]+$/;
-
-function getTashkentToday(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
-  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
-  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
-  return `${year}-${month}-${day}`;
-}
-
-function toDigits(value: string): string {
-  return value.replace(/\D/g, '');
-}
-
-function formatDigits(value: string): string {
-  if (!value) {
-    return '';
-  }
-  return value.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-function parseAmount(value: string): number {
-  const digits = toDigits(value);
-  if (!digits) {
-    return 0;
-  }
-  return Number.parseInt(digits, 10);
-}
-
-function formatAmount(value: number | null | undefined): string {
-  if (value === null || value === undefined) {
-    return '0';
-  }
-  return formatDigits(String(Math.max(value, 0)));
-}
 
 function getDisplayedRemainingDebtForIncomeRow(income: any): number {
   if (!income || typeof income !== 'object') {
@@ -141,10 +104,6 @@ function getSubTariffOptionValue(option: SubTariffOptionLike): string {
     return id;
   }
   return normalizeTextToken(option.name);
-}
-
-function sanitizeCustomerNumber(value: string): string {
-  return value.replace(/\s+/g, '').replace(/\D/g, '');
 }
 
 function sanitizeTelegramUsername(value: string): string {
@@ -420,13 +379,13 @@ export default function IncomePage() {
     if (!editForm || editForm.type !== 'new_sale') {
       return 0;
     }
-    const agreementAmount = parseAmount(editForm.coursePriceInput);
-    const firstPaymentAmount = parseAmount(editForm.paymentInput);
+    const agreementAmount = parseAmountInput(editForm.coursePriceInput);
+    const firstPaymentAmount = parseAmountInput(editForm.paymentInput);
     return Math.max(agreementAmount - firstPaymentAmount, 0);
   }, [editForm]);
 
-  const coursePriceAmount = parseAmount(coursePriceInput);
-  const paymentAmount = parseAmount(paymentInput);
+  const coursePriceAmount = parseAmountInput(coursePriceInput);
+  const paymentAmount = parseAmountInput(paymentInput);
   const sourceDebtAmount = selectedDebt?.remainingDebtAmount || 0;
   const remainingDebtAmount = type === 'new_sale'
     ? Math.max(coursePriceAmount - paymentAmount, 0)
@@ -504,7 +463,7 @@ export default function IncomePage() {
     if (!debt) {
       return;
     }
-    setCustomerNumber(sanitizeCustomerNumber(debt.customerNumber || ''));
+    setCustomerNumber(normalizeDigits(debt.customerNumber || ''));
     setCustomerName(debt.customerName || '');
   }, [debtOptionsForCustomer, debtSourceIncomeId]);
 
@@ -666,9 +625,9 @@ export default function IncomePage() {
         row.telegramUsername || '',
         [row.courseName, row.tariffName, row.subTariffName].filter(Boolean).join(' / ') || '-',
         formatIncomeType(row.type),
-        row.agreementAmount == null ? '' : formatAmount(row.agreementAmount),
-        formatAmount(row.paymentAmount),
-        formatAmount(row.remainingDebtAmount),
+        row.agreementAmount == null ? '' : formatAmountDigits(row.agreementAmount),
+        formatAmountDigits(row.paymentAmount),
+        formatAmountDigits(row.remainingDebtAmount),
         formatDateForInput(row.deadline),
       ]));
 
@@ -702,7 +661,7 @@ export default function IncomePage() {
       type: income.type,
       entryDate: formatDateForInput(income.entryDate) || getTashkentToday(),
       managerUserId: income.managerUserId || managerUserId || '',
-      paymentInput: formatAmount(income.paymentAmount),
+      paymentInput: formatAmountDigits(income.paymentAmount),
       deadline: formatDateForInput(income.deadline),
       courseId: income.courseId || '',
       tariffId: income.tariffId || '',
@@ -714,7 +673,7 @@ export default function IncomePage() {
         ? (income.customer?.profileSubTariffId || '')
         : ''
       ),
-      coursePriceInput: formatAmount(income.coursePriceAmount || 0),
+      coursePriceInput: formatAmountDigits(income.coursePriceAmount || 0),
     });
   };
 
@@ -732,7 +691,7 @@ export default function IncomePage() {
     setError(null);
     setSuccess(null);
 
-    const paymentAmountValue = parseAmount(editForm.paymentInput);
+    const paymentAmountValue = parseAmountInput(editForm.paymentInput);
     if (!editForm.entryDate) {
       setEditError('Sana majburiy.');
       return;
@@ -755,7 +714,7 @@ export default function IncomePage() {
     };
 
     if (editForm.type === 'new_sale') {
-      const coursePriceAmountValue = parseAmount(editForm.coursePriceInput);
+      const coursePriceAmountValue = parseAmountInput(editForm.coursePriceInput);
       if (!editForm.courseId) {
         setEditError('Kurs tanlang.');
         return;
@@ -800,7 +759,7 @@ export default function IncomePage() {
     if (!entryDate) nextErrors.entryDate = 'Sana majburiy.';
     if (!managerUserId) nextErrors.managerUserId = 'Sotuv menedjeri majburiy.';
 
-    const customerNumberValue = sanitizeCustomerNumber(customerNumber);
+    const customerNumberValue = normalizeDigits(customerNumber);
     if (!customerNumberValue) nextErrors.customerNumber = 'Mijoz raqami majburiy.';
     if (customerNumberValue && !/^\d+$/.test(customerNumberValue)) nextErrors.customerNumber = "Mijoz raqami faqat raqamlardan iborat bo'lishi kerak.";
 
@@ -1008,7 +967,7 @@ export default function IncomePage() {
                     value={customerNumber}
                     onFocus={() => setIsCustomerSuggestionsOpen(true)}
                     onChange={(event) => {
-                      setCustomerNumber(sanitizeCustomerNumber(event.target.value));
+                      setCustomerNumber(normalizeDigits(event.target.value));
                       setIsCustomerSuggestionsOpen(true);
                       clearFieldError('customerNumber');
                     }}
@@ -1144,7 +1103,7 @@ export default function IncomePage() {
                     <option value="">Qarzni tanlang</option>
                     {debtOptionsForCustomer.map((debt) => (
                       <option key={debt.id} value={debt.id}>
-                        {debt.customerNumber} - {debt.customerName} | {debt.courseName || "Kurs yo'q"} / {debt.tariffName || "Tarif yo'q"} | Qarz: {formatAmount(debt.remainingDebtAmount)}
+                        {debt.customerNumber} - {debt.customerName} | {debt.courseName || "Kurs yo'q"} / {debt.tariffName || "Tarif yo'q"} | Qarz: {formatAmountDigits(debt.remainingDebtAmount)}
                       </option>
                     ))}
                   </select>
@@ -1155,7 +1114,7 @@ export default function IncomePage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Qarz summasi</label>
                     <input
-                      value={formatAmount(sourceDebtAmount)}
+                      value={formatAmountDigits(sourceDebtAmount)}
                       readOnly
                       className={buildFieldClass(fieldErrors, 'sourceDebtAmount', 'read-only:bg-gray-100 read-only:text-gray-700 dark:read-only:bg-slate-700 dark:read-only:text-slate-300')}
                     />
@@ -1165,7 +1124,7 @@ export default function IncomePage() {
                     <input
                       value={paymentInput}
                       onChange={(event) => {
-                        setPaymentInput(formatDigits(toDigits(event.target.value)));
+                        setPaymentInput(groupDigits(normalizeDigits(event.target.value)));
                         clearFieldError('paymentInput');
                       }}
                       inputMode="numeric"
@@ -1177,7 +1136,7 @@ export default function IncomePage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Qarzdorlik</label>
                     <input
-                      value={formatAmount(remainingDebtAmount)}
+                      value={formatAmountDigits(remainingDebtAmount)}
                       readOnly
                       className={buildFieldClass(fieldErrors, 'remainingDebtAmount', 'read-only:bg-gray-100 read-only:text-gray-700 dark:read-only:bg-slate-700 dark:read-only:text-slate-300')}
                     />
@@ -1266,7 +1225,7 @@ export default function IncomePage() {
                     <input
                       value={coursePriceInput}
                       onChange={(event) => {
-                        setCoursePriceInput(formatDigits(toDigits(event.target.value)));
+                        setCoursePriceInput(groupDigits(normalizeDigits(event.target.value)));
                         clearFieldError('coursePriceInput');
                       }}
                       inputMode="numeric"
@@ -1280,7 +1239,7 @@ export default function IncomePage() {
                     <input
                       value={paymentInput}
                       onChange={(event) => {
-                        setPaymentInput(formatDigits(toDigits(event.target.value)));
+                        setPaymentInput(groupDigits(normalizeDigits(event.target.value)));
                         clearFieldError('paymentInput');
                       }}
                       inputMode="numeric"
@@ -1292,7 +1251,7 @@ export default function IncomePage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Qarzdorlik</label>
                     <input
-                      value={formatAmount(remainingDebtAmount)}
+                      value={formatAmountDigits(remainingDebtAmount)}
                       readOnly
                       className={buildFieldClass(fieldErrors, 'remainingDebtAmount', 'read-only:bg-gray-100 read-only:text-gray-700 dark:read-only:bg-slate-700 dark:read-only:text-slate-300')}
                     />
@@ -1406,9 +1365,9 @@ export default function IncomePage() {
                             {getLifecycleStatusBadge(income.lifecycleStatus).label}
                           </span>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(income.paymentAmount)}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmountDigits(income.paymentAmount)}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
-                          {formatAmount(getDisplayedRemainingDebtForIncomeRow(income))}
+                          {formatAmountDigits(getDisplayedRemainingDebtForIncomeRow(income))}
                         </td>
                         {isAdmin && (
                           <td className="whitespace-nowrap px-4 py-3 text-sm">
@@ -1604,7 +1563,7 @@ export default function IncomePage() {
                             prev
                               ? {
                                   ...prev,
-                                  coursePriceInput: formatDigits(toDigits(event.target.value)),
+                                  coursePriceInput: groupDigits(normalizeDigits(event.target.value)),
                                 }
                               : prev,
                           )
@@ -1647,7 +1606,7 @@ export default function IncomePage() {
                       prev
                         ? {
                             ...prev,
-                            paymentInput: formatDigits(toDigits(event.target.value)),
+                            paymentInput: groupDigits(normalizeDigits(event.target.value)),
                           }
                         : prev,
                     )
@@ -1663,7 +1622,7 @@ export default function IncomePage() {
                     Birinchi to'lovdan keyingi qarz
                   </label>
                   <input
-                    value={formatAmount(editDebtAfterFirstPayment)}
+                    value={formatAmountDigits(editDebtAfterFirstPayment)}
                     readOnly
                     className="mt-1 w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
                   />

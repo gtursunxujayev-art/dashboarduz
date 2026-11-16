@@ -14,16 +14,14 @@ import {
   buildDebtorExportRows,
   buildRefundExportRows,
   buildTariffChangeExportRows,
-  formatCourseBundle,
   formatResponseDuration,
-  formatTashkentDate,
-  formatTashkentDateTime,
   getAdjustmentStatusLabel,
   getReportFilename,
   type AdjustmentReportRow,
   type DebtorReportRow,
   type ReportTab,
 } from './reports-export';
+import { formatCourseBundle, formatSomUz, formatTashkentDate, formatTashkentTimestamp } from '@/lib/format';
 
 type AdjustmentStatusFilter = '' | 'pending' | 'approved' | 'rejected';
 
@@ -37,10 +35,6 @@ const inputClass = 'rounded-md border border-gray-300 bg-white px-2.5 py-1.5 tex
 const thClass = 'whitespace-nowrap px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500';
 const tdClass = 'px-3 py-2 text-sm text-gray-700';
 const tdNumClass = 'whitespace-nowrap px-3 py-2 text-right text-sm text-gray-700';
-
-function formatAmount(value: number | null | undefined): string {
-  return `${Math.round(Number(value || 0)).toLocaleString('uz-UZ')} so'm`;
-}
 
 function pendingMinutes(requestDate: Date | string): number {
   return Math.max(Math.round((Date.now() - new Date(requestDate).getTime()) / 60_000), 0);
@@ -260,9 +254,9 @@ export default function ReportsPage() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
           { label: 'Soni', value: String(activeRows.length) },
-          { label: 'Kelishuv', value: formatAmount(totals.agreement) },
-          { label: "To'langan", value: formatAmount(totals.paid) },
-          { label: 'Qarz', value: formatAmount(totals.debt) },
+          { label: 'Kelishuv', value: formatSomUz(totals.agreement) },
+          { label: "To'langan", value: formatSomUz(totals.paid) },
+          { label: 'Qarz', value: formatSomUz(totals.debt) },
         ].map((card) => (
           <div key={card.label} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <p className="text-sm text-gray-500">{card.label}</p>
@@ -296,11 +290,11 @@ export default function ReportsPage() {
                           <td className={tdClass}>{row.customerName}</td>
                           <td className={`whitespace-nowrap ${tdClass}`}>{row.managerLabel}</td>
                           <td className={tdClass}>{formatCourseBundle(row.courseName, row.tariffName)}</td>
-                          <td className={`whitespace-nowrap ${tdClass}`}>{formatTashkentDate(row.firstPaymentDate)}</td>
-                          <td className={tdNumClass}>{formatAmount(row.agreementAmount)}</td>
-                          <td className={tdNumClass}>{formatAmount(row.paidAmount)}</td>
-                          <td className={`${tdNumClass} font-semibold text-red-600`}>{formatAmount(row.debtAmount)}</td>
-                          <td className={`whitespace-nowrap ${tdClass}`}>{formatTashkentDate(row.lastPaymentDate)}</td>
+                          <td className={`whitespace-nowrap ${tdClass}`}>{formatTashkentDate(row.firstPaymentDate, '')}</td>
+                          <td className={tdNumClass}>{formatSomUz(row.agreementAmount)}</td>
+                          <td className={tdNumClass}>{formatSomUz(row.paidAmount)}</td>
+                          <td className={`${tdNumClass} font-semibold text-red-600`}>{formatSomUz(row.debtAmount)}</td>
+                          <td className={`whitespace-nowrap ${tdClass}`}>{formatTashkentDate(row.lastPaymentDate, '')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -327,13 +321,13 @@ export default function ReportsPage() {
                     <tbody className="divide-y divide-gray-100 bg-white">
                       {adjustmentRows.map((row, index) => (
                         <tr key={`${row.customerNumber}-${index}`}>
-                          <td className={`whitespace-nowrap ${tdClass}`}>{formatTashkentDateTime(row.requestDate)}</td>
+                          <td className={`whitespace-nowrap ${tdClass}`}>{formatTashkentTimestamp(row.requestDate, { withSeconds: false })}</td>
                           <td className={tdClass}>
                             <p className="whitespace-nowrap">{row.customerNumber}</p>
                             <p className="text-gray-500">{row.customerName}</p>
                           </td>
                           <td className={`whitespace-nowrap ${tdClass}`}>{row.managerLabel}</td>
-                          <td className={`whitespace-nowrap ${tdClass}`}>{formatTashkentDate(row.firstPaymentDate)}</td>
+                          <td className={`whitespace-nowrap ${tdClass}`}>{formatTashkentDate(row.firstPaymentDate, '')}</td>
                           <td className={tdClass}>
                             {tab === 'tariff_change' ? (
                               <div className="space-y-0.5">
@@ -345,14 +339,14 @@ export default function ReportsPage() {
                             )}
                           </td>
                           <td className={tdNumClass}>
-                            {formatAmount(row.agreementAmount)}
+                            {formatSomUz(row.agreementAmount)}
                             {tab === 'tariff_change' && row.newAgreementAmount != null && row.newAgreementAmount !== row.agreementAmount && (
-                              <p className="font-medium text-gray-900">&rarr; {formatAmount(row.newAgreementAmount)}</p>
+                              <p className="font-medium text-gray-900">&rarr; {formatSomUz(row.newAgreementAmount)}</p>
                             )}
                           </td>
-                          <td className={tdNumClass}>{formatAmount(row.paidAmount)}</td>
-                          <td className={tdNumClass}>{formatAmount(row.debtAmount)}</td>
-                          {tab === 'refund' && <td className={tdNumClass}>{formatAmount(row.requestedAmount)}</td>}
+                          <td className={tdNumClass}>{formatSomUz(row.paidAmount)}</td>
+                          <td className={tdNumClass}>{formatSomUz(row.debtAmount)}</td>
+                          {tab === 'refund' && <td className={tdNumClass}>{formatSomUz(row.requestedAmount)}</td>}
                           <td className={`whitespace-nowrap px-3 py-2 text-sm font-medium ${statusClass(row.status)}`}>{getAdjustmentStatusLabel(row.status)}</td>
                           <td className={`whitespace-nowrap ${tdClass}`}><ResponseCell row={row} /></td>
                           <td className={`whitespace-nowrap ${tdClass}`}>{row.reviewedByLabel || '-'}</td>

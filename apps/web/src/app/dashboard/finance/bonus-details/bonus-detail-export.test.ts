@@ -2,9 +2,9 @@ import { describe, expect, it } from '@jest/globals';
 import {
   BONUS_DETAIL_EXPORT_HEADERS,
   buildBonusDetailExportRows,
-  formatBonusExportDate,
-  sanitizeSpreadsheetText,
 } from './bonus-detail-export';
+import { formatTashkentDate } from '@/lib/format';
+import { sanitizeSpreadsheetText } from '@/lib/spreadsheet';
 
 describe('bonus detail XLS export', () => {
   it('keeps the visible 13-column order and numeric values', () => {
@@ -65,6 +65,6 @@ describe('bonus detail XLS export', () => {
     expect(sanitizeSpreadsheetText('=HYPERLINK("bad")')).toBe("'=HYPERLINK(\"bad\")");
     expect(sanitizeSpreadsheetText('  +cmd')).toBe("'  +cmd");
     expect(sanitizeSpreadsheetText('Normal')).toBe('Normal');
-    expect(formatBonusExportDate('2026-07-31T20:30:00.000Z')).toBe('2026-08-01');
+    expect(formatTashkentDate('2026-07-31T20:30:00.000Z', '')).toBe('2026-08-01');
   });
 });

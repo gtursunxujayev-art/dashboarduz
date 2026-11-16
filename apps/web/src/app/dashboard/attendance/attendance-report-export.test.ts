@@ -8,11 +8,11 @@ import {
   ATTENDANCE_SUMMARY_SHEET_NAME,
   buildAttendanceDailyExportRows,
   buildAttendanceSummaryExportRows,
-  formatTashkentDateTime,
   getAttendanceReportFilename,
-  sanitizeAttendanceSpreadsheetText,
   secondsToExcelDuration,
 } from './attendance-report-export';
+import { formatTashkentTimestamp } from '@/lib/format';
+import { sanitizeSpreadsheetText } from '@/lib/spreadsheet';
 
 describe('attendance period XLSX export', () => {
   it('defines the two worksheets and stable column order', () => {
@@ -109,8 +109,8 @@ describe('attendance period XLSX export', () => {
     expect(rows[0]?.[9]).toBe('2026-08-01 08:00:00');
     expect(rows[0]?.[10]).toBe('2026-08-01 17:00:00');
     expect(rows[1]?.[3]).toBe('Sababli kelmagan');
-    expect(sanitizeAttendanceSpreadsheetText('Normal')).toBe('Normal');
-    expect(formatTashkentDateTime(null)).toBe('');
+    expect(sanitizeSpreadsheetText('Normal')).toBe('Normal');
+    expect(formatTashkentTimestamp(null, { withSeconds: true })).toBe('');
   });
 
   it('uses the selected normalized period in the filename', () => {

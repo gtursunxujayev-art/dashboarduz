@@ -11,49 +11,11 @@ import {
   BONUS_DETAIL_EXPORT_HEADERS,
   buildBonusDetailExportRows,
 } from './bonus-detail-export';
+import { formatSom } from '@/lib/format';
+import { getPreviousMonthRange, getPreviousWeekRange, getTashkentToday } from '@/lib/date-range';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
-
-function getTashkentToday(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
-  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
-  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
-  return `${year}-${month}-${day}`;
-}
-
-function getPreviousWeekRange() {
-  const now = new Date();
-  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
-  local.setHours(0, 0, 0, 0);
-  const day = local.getDay();
-  const daysSinceMonday = (day + 6) % 7;
-  const currentWeekMonday = new Date(local);
-  currentWeekMonday.setDate(local.getDate() - daysSinceMonday);
-  const previousWeekMonday = new Date(currentWeekMonday);
-  previousWeekMonday.setDate(currentWeekMonday.getDate() - 7);
-  const previousWeekSunday = new Date(currentWeekMonday);
-  previousWeekSunday.setDate(currentWeekMonday.getDate() - 1);
-
-  const toIso = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const dayValue = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${dayValue}`;
-  };
-
-  return {
-    dateFrom: toIso(previousWeekMonday),
-    dateTo: toIso(previousWeekSunday),
-  };
-}
 
 function getCurrentWeekRange() {
   const now = new Date();
@@ -94,31 +56,6 @@ function getCurrentMonthRange() {
     dateFrom: toIso(monthStart),
     dateTo: toIso(local),
   };
-}
-
-function getPreviousMonthRange() {
-  const now = new Date();
-  const local = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tashkent' }));
-  const year = local.getFullYear();
-  const month = local.getMonth();
-  const previousMonthStart = new Date(year, month - 1, 1);
-  const previousMonthEnd = new Date(year, month, 0);
-
-  const toIso = (date: Date) => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
-  return {
-    dateFrom: toIso(previousMonthStart),
-    dateTo: toIso(previousMonthEnd),
-  };
-}
-
-function formatAmount(value: number | null | undefined): string {
-  return `${new Intl.NumberFormat('ru-RU').format(value ?? 0)} so'm`;
 }
 
 export default function FinanceBonusDetailsPage() {
@@ -241,10 +178,10 @@ export default function FinanceBonusDetailsPage() {
     try {
       if (action === 'preview') {
         const result = await previewMonth.mutateAsync({ month: operationMonth });
-        setOperationMessage(`${operationMonth}: ${formatAmount(result.totalBonusAmount)} hisoblandi.`);
+        setOperationMessage(`${operationMonth}: ${formatSom(result.totalBonusAmount)} hisoblandi.`);
       } else if (action === 'finalize') {
         const result = await finalizeMonth.mutateAsync({ month: operationMonth });
-        setOperationMessage(`${operationMonth} yakunlandi: ${formatAmount(result.totalBonusAmount)}.`);
+        setOperationMessage(`${operationMonth} yakunlandi: ${formatSom(result.totalBonusAmount)}.`);
       } else {
         const result = await reconcileMonth.mutateAsync({ month: operationMonth });
         setOperationMessage(`${result.pendingCount} ta kutilayotgan tuzatish yangilandi.`);
@@ -342,7 +279,7 @@ export default function FinanceBonusDetailsPage() {
             {(bonusOperationsQuery.data?.snapshots || []).slice(0, 6).map((snapshot) => (
               <div key={snapshot.id} className="rounded-md border border-gray-200 p-3 text-sm">
                 <p className="font-medium text-gray-900">{snapshot.month}</p>
-                <p className="text-gray-600">{formatAmount(snapshot.totalBonusAmount)}</p>
+                <p className="text-gray-600">{formatSom(snapshot.totalBonusAmount)}</p>
                 <p className="text-xs text-emerald-700">Yakunlangan</p>
               </div>
             ))}
@@ -367,7 +304,7 @@ export default function FinanceBonusDetailsPage() {
                   <tr key={adjustment.id}>
                     <td className="px-3 py-2 text-sm text-gray-700">{adjustment.sourceMonth}</td>
                     <td className="px-3 py-2 text-sm text-gray-700">{adjustment.agentUserId}</td>
-                    <td className={`px-3 py-2 text-sm font-medium ${adjustment.deltaAmount < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatAmount(adjustment.deltaAmount)}</td>
+                    <td className={`px-3 py-2 text-sm font-medium ${adjustment.deltaAmount < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatSom(adjustment.deltaAmount)}</td>
                     <td className="px-3 py-2 text-sm text-gray-700">{adjustment.status}</td>
                     <td className="px-3 py-2 text-sm">
                       {isAdmin && adjustment.status === 'pending' ? (
@@ -458,11 +395,11 @@ export default function FinanceBonusDetailsPage() {
         </div>
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-500">Filtr bo'yicha tushum</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summaryTotals?.incomeAmount ?? bonusTotals?.incomeAmount)}</p>
+          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatSom(summaryTotals?.incomeAmount ?? bonusTotals?.incomeAmount)}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-500">Yopilgan tushum (kelishuv)</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summaryTotals?.closedAgreementAmount)}</p>
+          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatSom(summaryTotals?.closedAgreementAmount)}</p>
         </div>
       </div>
 
@@ -494,25 +431,25 @@ export default function FinanceBonusDetailsPage() {
                 {agentSummary.map((row) => (
                   <tr key={row.managerUserId}>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.managerLabel}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.incomeAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.closedAgreementAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(row.totalBonusAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusByCategory?.online)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusByCategory?.offline)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusByCategory?.intensive)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusByCategory?.additional_service)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.incomeAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.closedAgreementAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(row.totalBonusAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusByCategory?.online)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusByCategory?.offline)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusByCategory?.intensive)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusByCategory?.additional_service)}</td>
                   </tr>
                 ))}
                 {summaryTotals && (
                   <tr className="bg-gray-50">
                     <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">Jami</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.incomeAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.closedAgreementAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.totalBonusAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.bonusByCategory?.online)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.bonusByCategory?.offline)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.bonusByCategory?.intensive)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(summaryTotals.bonusByCategory?.additional_service)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.incomeAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.closedAgreementAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.totalBonusAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.bonusByCategory?.online)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.bonusByCategory?.offline)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.bonusByCategory?.intensive)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.bonusByCategory?.additional_service)}</td>
                   </tr>
                 )}
               </tbody>
@@ -575,11 +512,11 @@ export default function FinanceBonusDetailsPage() {
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                       {[row.courseName, row.tariffName, row.subTariffName].filter(Boolean).join(' / ') || '-'}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.agreementAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.paymentAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.remainingDebtAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.agreementAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.paymentAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.remainingDebtAmount)}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm font-medium text-gray-900">
-                      {row.isLastPayment ? formatAmount(row.calculatedBonus) : '—'}
+                      {row.isLastPayment ? formatSom(row.calculatedBonus) : '—'}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-700">{row.bonusDebug?.category || '-'}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-700">{row.bonusDebug?.closedCount ?? '-'}</td>

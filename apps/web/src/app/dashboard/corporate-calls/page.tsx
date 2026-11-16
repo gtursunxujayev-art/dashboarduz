@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { formatDateTime, UZ_TASHKENT_DATE_TIME } from '@/lib/format';
 
 function getTashkentDate(offsetDays = 0): string {
   const now = new Date();
@@ -18,10 +19,6 @@ function getTashkentDate(offsetDays = 0): string {
   const month = parts.find((part) => part.type === 'month')?.value ?? '01';
   const day = parts.find((part) => part.type === 'day')?.value ?? '01';
   return `${year}-${month}-${day}`;
-}
-
-function formatDateTime(value: string | Date): string {
-  return new Date(value).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' });
 }
 
 function normalizeDurationInput(rawValue: string): string {
@@ -325,7 +322,7 @@ export default function CorporateCallsPage() {
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.date}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.managerName}</td>
                       <td className="px-3 py-2 text-sm font-medium text-gray-900 dark:text-slate-100">{row.duration}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.updatedAt || row.createdAt)}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.updatedAt || row.createdAt, UZ_TASHKENT_DATE_TIME)}</td>
                       {canChooseCustomDate && (
                         <td className="px-3 py-2 text-right">
                           <button

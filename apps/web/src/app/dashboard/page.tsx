@@ -12,6 +12,8 @@ import DashboardSelectedCourses from '@/components/dashboard/selected-courses';
 import DashboardLeadOverview from '@/components/dashboard/lead-overview';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
+import { formatDurationHoursMinutes, formatDurationLongWords, formatSom } from '@/lib/format';
+import { getRangeLabel, getTashkentToday } from '@/lib/date-range';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 const RANGE_OPTIONS: DashboardRange[] = ['today', 'week', 'month', 'custom'];
@@ -33,63 +35,11 @@ type DashboardCustomSalesWidget = {
   subTariffId: string | null;
 };
 
-function getTashkentToday(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
-  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
-  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
-  return `${year}-${month}-${day}`;
-}
-
-function formatAmount(value?: number | null): string {
-  return `${new Intl.NumberFormat('ru-RU').format(value ?? 0)} so'm`;
-}
-
-function formatDuration(seconds?: number | null): string {
-  if (seconds === null || seconds === undefined) {
-    return '-';
-  }
-  const safeSeconds = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const remainingSeconds = safeSeconds % 60;
-  return `${hours} soat ${minutes} daqiqa ${remainingSeconds} soniya`;
-}
-
-function formatDurationCompact(seconds?: number | null): string {
-  if (seconds === null || seconds === undefined) {
-    return '-';
-  }
-  const safeSeconds = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  return `${hours} soat ${minutes} daqiqa`;
-}
-
 function renderMetricValue(value?: number | null, suffix = ''): string {
   if (value === null || value === undefined) {
     return '-';
   }
   return `${value}${suffix}`;
-}
-
-function getRangeLabel(range: DashboardRange): string {
-  if (range === 'week') {
-    return 'Hafta';
-  }
-  if (range === 'month') {
-    return 'Oy';
-  }
-  if (range === 'custom') {
-    return 'Ixtiyoriy';
-  }
-  return 'Bugun';
 }
 
 function getPeriodFollowUpLabel(range: DashboardRange): string {
@@ -490,34 +440,34 @@ export default function DashboardPage() {
           id: 'sales-contracts',
           title: 'Sotuv shartnomasi',
           value: String(stats?.newSalesCount ?? 0),
-          subtitle: formatAmount(stats?.newSalesAgreementAmount),
+          subtitle: formatSom(stats?.newSalesAgreementAmount),
           extra: null,
         },
         {
           id: 'online-sales',
           title: 'Sotuv - Onlayn',
           value: String(stats?.onlineSalesCount ?? 0),
-          subtitle: `Kelishuv - ${formatAmount(stats?.onlineSalesAgreementAmount)}`,
-          extra: `Tushum - ${formatAmount(stats?.onlineSalesIncomeAmount)}`,
+          subtitle: `Kelishuv - ${formatSom(stats?.onlineSalesAgreementAmount)}`,
+          extra: `Tushum - ${formatSom(stats?.onlineSalesIncomeAmount)}`,
         },
         {
           id: 'offline-sales',
           title: 'Sotuv - Oflayn',
           value: String(stats?.offlineSalesCount ?? 0),
-          subtitle: `Kelishuv - ${formatAmount(stats?.offlineSalesAgreementAmount)}`,
-          extra: `Tushum - ${formatAmount(stats?.offlineSalesIncomeAmount)}`,
+          subtitle: `Kelishuv - ${formatSom(stats?.offlineSalesAgreementAmount)}`,
+          extra: `Tushum - ${formatSom(stats?.offlineSalesIncomeAmount)}`,
         },
         {
           id: 'intensive-sales',
           title: 'Sotuv - Intensiv',
           value: String(stats?.intensiveSalesCount ?? 0),
-          subtitle: `Kelishuv - ${formatAmount(stats?.intensiveSalesAgreementAmount)}`,
-          extra: `Tushum - ${formatAmount(stats?.intensiveSalesIncomeAmount)}`,
+          subtitle: `Kelishuv - ${formatSom(stats?.intensiveSalesAgreementAmount)}`,
+          extra: `Tushum - ${formatSom(stats?.intensiveSalesIncomeAmount)}`,
         },
         {
           id: 'total-income',
           title: 'Tushum',
-          value: formatAmount(stats?.totalIncomeAmount),
+          value: formatSom(stats?.totalIncomeAmount),
           subtitle: "Tanlangan davr bo'yicha",
           extra: null,
         },
@@ -556,7 +506,7 @@ export default function DashboardPage() {
                 title: "Qo'ng'iroqlar",
                 value: `${stats?.totalCalls ?? 0} ta`,
                 subtitle: "Jami qo'ng'iroq soni",
-                extra: `Davomiylik: ${formatDurationCompact(agentTalkDurationSeconds)}`,
+                extra: `Davomiylik: ${formatDurationHoursMinutes(agentTalkDurationSeconds)}`,
               },
             ]
           : []),
@@ -566,7 +516,7 @@ export default function DashboardPage() {
     {
       id: 'finance-total-income',
       title: 'Jami tushum',
-      value: formatAmount(financeTotals?.totalIncomeAmount),
+      value: formatSom(financeTotals?.totalIncomeAmount),
       subtitle: "Tanlangan davr bo'yicha",
       extra: null,
     },
@@ -594,7 +544,7 @@ export default function DashboardPage() {
     {
       id: 'finance-total-debt',
       title: 'Jami qarzdorlik',
-      value: formatAmount(financeTotals?.totalDebtAmount),
+      value: formatSom(financeTotals?.totalDebtAmount),
       subtitle: "Qolgan qarz summasi",
       extra: null,
     },
@@ -618,7 +568,7 @@ export default function DashboardPage() {
         id: `custom:${widget.id}`,
         title: widget.title,
         value: String(salesCount),
-        subtitle: isTashkiliyOnly ? `${salesCount} ta sotuv` : formatAmount(agreementAmount),
+        subtitle: isTashkiliyOnly ? `${salesCount} ta sotuv` : formatSom(agreementAmount),
         extra: isTashkiliyOnly ? null : `${salesCount} ta sotuv`,
       };
     }),
@@ -776,7 +726,7 @@ export default function DashboardPage() {
       salaryByAgent={salaryByAgent}
       salaryTotals={salaryTotals}
       salaryModeLabel={salaryModeLabel}
-      formatAmount={formatAmount}
+      formatAmount={formatSom}
     />
   );
 
@@ -1027,7 +977,7 @@ export default function DashboardPage() {
                         <tr key={row.courseName}>
                           <td className="px-3 py-2 text-sm text-gray-900">{row.courseName}</td>
                           <td className="px-3 py-2 text-sm text-gray-700">{row.count}</td>
-                          <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.amount)}</td>
+                          <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.amount)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1054,8 +1004,8 @@ export default function DashboardPage() {
             sellerPerformance={sellerPerformance}
             isTashkiliyOnly={isTashkiliyOnly}
             range={range}
-            formatAmount={formatAmount}
-            formatDuration={formatDuration}
+            formatAmount={formatSom}
+            formatDuration={formatDurationLongWords}
             renderMetricValue={renderMetricValue}
             getPeriodFollowUpLabel={getPeriodFollowUpLabel}
             crmSourceStatus={summaryQuery.data?.sourceStatus?.activity}

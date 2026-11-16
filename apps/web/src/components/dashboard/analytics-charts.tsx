@@ -1,6 +1,8 @@
 'use client';
 
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { formatDurationClock, formatPercent, formatSomUz } from '@/lib/format';
+import { KpiCard } from '@/components/dashboard/kpi-card';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 
@@ -64,37 +66,6 @@ interface AnalyticsChartsProps {
   isError?: boolean;
 }
 
-function formatMoney(value: number) {
-  return `${Math.round(value || 0).toLocaleString('uz-UZ')} so'm`;
-}
-
-function formatPercent(value: number | null | undefined) {
-  if (value === null || value === undefined) {
-    return '-';
-  }
-  return `${Number(value).toFixed(2)}%`;
-}
-
-function formatDuration(seconds: number | null | undefined) {
-  if (seconds === null || seconds === undefined) {
-    return '-';
-  }
-  const safe = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const secs = safe % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-}
-
-function KpiCard({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
-      <p className={`mt-2 text-xl font-semibold ${accent ? 'text-blue-700' : 'text-gray-900'}`}>{value}</p>
-    </div>
-  );
-}
-
 function CategoryCard({
   title,
   salesCount,
@@ -110,8 +81,8 @@ function CategoryCard({
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       <p className="text-sm font-semibold text-gray-900">{title}</p>
       <p className="mt-2 text-2xl font-bold text-gray-900">{salesCount}</p>
-      <p className="mt-2 text-sm text-gray-600">Kelishuv: {formatMoney(agreement)}</p>
-      <p className="text-sm text-gray-600">Tushum: {formatMoney(income)}</p>
+      <p className="mt-2 text-sm text-gray-600">Kelishuv: {formatSomUz(agreement)}</p>
+      <p className="text-sm text-gray-600">Tushum: {formatSomUz(income)}</p>
     </div>
   );
 }
@@ -176,9 +147,9 @@ export default function AnalyticsCharts({
         <KpiCard label="Sifatli lidlar" value={(data?.summary.qualifiedLeads || 0).toLocaleString('uz-UZ')} />
         <KpiCard label="Sifatsiz lidlar" value={(data?.summary.nonQualifiedLeads || 0).toLocaleString('uz-UZ')} />
         <KpiCard label="Yangi sotuvlar" value={(data?.summary.newSalesCount || 0).toLocaleString('uz-UZ')} />
-        <KpiCard label="Konversiya" value={formatPercent(data?.summary.conversionPercent)} />
-        <KpiCard label="Kelishuv summasi" value={formatMoney(data?.summary.newSalesAgreementAmount || 0)} accent />
-        <KpiCard label="Tushum" value={formatMoney(data?.summary.totalIncomeAmount || 0)} accent />
+        <KpiCard label="Konversiya" value={formatPercent(data?.summary.conversionPercent, 2)} />
+        <KpiCard label="Kelishuv summasi" value={formatSomUz(data?.summary.newSalesAgreementAmount || 0)} accent />
+        <KpiCard label="Tushum" value={formatSomUz(data?.summary.totalIncomeAmount || 0)} accent />
         <KpiCard label="Follow-up" value={(data?.summary.followUpCount || 0).toLocaleString('uz-UZ')} />
         <KpiCard label="Bosqich o'zgarishi" value={(data?.summary.stageChangeCount || 0).toLocaleString('uz-UZ')} />
       </div>
@@ -209,7 +180,7 @@ export default function AnalyticsCharts({
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
           <KpiCard label="Faol xodimlar" value={rows.length.toLocaleString('uz-UZ')} />
           <KpiCard label="Jami qo'ng'iroqlar" value={teamCalls.toLocaleString('uz-UZ')} />
-          <KpiCard label="Jami suhbat vaqti" value={formatDuration(teamTalkSeconds)} />
+          <KpiCard label="Jami suhbat vaqti" value={formatDurationClock(teamTalkSeconds, '-')} />
           <KpiCard label="Muddati o'tgan follow-up" value={teamOverdue.toLocaleString('uz-UZ')} />
           <KpiCard label="Bugungi/navbatdagi follow-up" value={teamTodayQueue.toLocaleString('uz-UZ')} />
         </div>
@@ -244,11 +215,11 @@ export default function AnalyticsCharts({
                   <td className="px-3 py-2 text-right text-gray-700">{row.newLeads ?? '-'}</td>
                   <td className="px-3 py-2 text-right text-gray-700">{row.qualifiedLeads ?? '-'}</td>
                   <td className="px-3 py-2 text-right text-gray-700">{row.sales.toLocaleString('uz-UZ')}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{formatPercent(row.conversionPercent)}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{formatMoney(row.agreementsAmount)}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{formatMoney(row.incomeAmount)}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{formatPercent(row.conversionPercent, 2)}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{formatSomUz(row.agreementsAmount)}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{formatSomUz(row.incomeAmount)}</td>
                   <td className="px-3 py-2 text-right text-gray-700">{row.callsCount.toLocaleString('uz-UZ')}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{formatDuration(row.talkedSeconds)}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{formatDurationClock(row.talkedSeconds, '-')}</td>
                   <td className="px-3 py-2 text-right text-gray-700">{row.followUpCount.toLocaleString('uz-UZ')}</td>
                   <td className="px-3 py-2 text-right text-gray-700">{row.stageChangeCount.toLocaleString('uz-UZ')}</td>
                   <td className="px-3 py-2 text-right text-gray-700">{row.overdueFollowUpCount.toLocaleString('uz-UZ')}</td>

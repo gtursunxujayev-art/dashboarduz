@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { formatUzs, parseAmountInput } from '@/lib/format';
 
 type BonusMode = 'on_income' | 'on_debt_closed';
 type CourseBonusMode = 'simple' | 'tiered';
@@ -107,19 +108,6 @@ function parsePercentInput(value: string): number {
 function parsePositiveInt(value: string): number {
   const parsed = Number.parseInt(value.replace(/[^\d]/g, ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function parseAmountInput(value: string): number {
-  const digits = value.replace(/[^\d]/g, '');
-  if (!digits) {
-    return 0;
-  }
-  const parsed = Number.parseInt(digits, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function formatAmount(value?: number | null): string {
-  return `${new Intl.NumberFormat('ru-RU').format(value ?? 0)} UZS`;
 }
 
 function getCategoryLabel(category: PlanCategory): string {
@@ -1612,7 +1600,7 @@ export default function BonusPage() {
                         Kurs: {plan.courseId ? (courseNameById.get(plan.courseId) || '-') : 'Barchasi'} | Tarif: {plan.tariffId ? (courseNameById.get(plan.tariffId) || '-') : 'Barchasi'} | Subtarif: {plan.subTariffId ? (courseNameById.get(plan.subTariffId) || '-') : (plan.subTariffName || 'Barchasi')}
                       </p>
                       <p className="text-xs text-gray-600">
-                        Maqsad: {plan.targetClosedSales} ta | Bonus: {formatAmount(plan.bonusAmount)}
+                        Maqsad: {plan.targetClosedSales} ta | Bonus: {formatUzs(plan.bonusAmount)}
                       </p>
                     </div>
 

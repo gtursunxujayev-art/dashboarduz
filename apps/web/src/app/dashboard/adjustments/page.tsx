@@ -4,52 +4,16 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { formatAmountDigits, formatCourseBundle, parseAmountInput } from '@/lib/format';
+import { groupDigits, normalizeDigits } from '@dashboarduz/shared';
+import { getIncomeStatusBadge } from '@/components/dashboard/income-status-badge';
 
 type AdjustmentMode = '' | 'refund' | 'tariff_change';
 type ReviewAction = 'approve' | 'reject';
 
-function toDigits(value: string): string {
-  return value.replace(/\D/g, '');
-}
-
-function formatDigits(value: string): string {
-  if (!value) return '';
-  return value.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-function parseAmount(value: string): number {
-  const digits = toDigits(value);
-  if (!digits) return 0;
-  return Number.parseInt(digits, 10);
-}
-
 function formatCardNumberInput(value: string): string {
-  const digits = toDigits(value).slice(0, 16);
+  const digits = normalizeDigits(value).slice(0, 16);
   return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
-}
-
-function formatAmount(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '0';
-  return formatDigits(String(Math.max(0, value)));
-}
-
-function getIncomeStatusBadge(status: string) {
-  if (status === 'pending_refund') {
-    return {
-      label: "Sariq: Qaytarish so'rovi",
-      className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200',
-    };
-  }
-  if (status === 'refunded') {
-    return {
-      label: 'Qizil: Qaytarilgan',
-      className: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
-    };
-  }
-  return {
-    label: 'Aktiv',
-    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
-  };
 }
 
 function getRequestTypeLabel(type: string): string {
@@ -60,11 +24,6 @@ function getRequestStatusLabel(status: string): string {
   if (status === 'approved') return 'Tasdiqlangan';
   if (status === 'rejected') return 'Rad etilgan';
   return 'Kutilmoqda';
-}
-
-function formatCourseBundle(courseName?: string | null, tariffName?: string | null, subTariffName?: string | null): string {
-  const parts = [courseName, tariffName, subTariffName].filter(Boolean);
-  return parts.length ? parts.join(' / ') : '-';
 }
 
 function getRequestSourceBundle(request: any): string | null {
@@ -243,7 +202,7 @@ export default function AdjustmentsPage() {
     }
 
     if (mode === 'refund') {
-      const refundCardDigits = toDigits(refundCardNumberInput);
+      const refundCardDigits = normalizeDigits(refundCardNumberInput);
       if (refundCardDigits.length !== 16) {
         setError("Pul qaytarish uchun karta raqami 16 ta raqam bo'lishi shart.");
         return;
@@ -251,7 +210,7 @@ export default function AdjustmentsPage() {
     }
 
     if (mode === 'tariff_change') {
-      const agreementAmount = parseAmount(newAgreementInput);
+      const agreementAmount = parseAmountInput(newAgreementInput);
       if (!newCourseId || !newTariffId || agreementAmount <= 0) {
         setError("Tarif o'zgarishi uchun kurs, tarif va kelishuv summasi majburiy.");
         return;
@@ -263,10 +222,10 @@ export default function AdjustmentsPage() {
         type: mode,
         incomeId: selectedIncomeId,
         reason: reason.trim() || undefined,
-        refundCardNumber: mode === 'refund' ? toDigits(refundCardNumberInput) : undefined,
+        refundCardNumber: mode === 'refund' ? normalizeDigits(refundCardNumberInput) : undefined,
         newCourseId: mode === 'tariff_change' ? newCourseId : undefined,
         newTariffId: mode === 'tariff_change' ? newTariffId : undefined,
-        newAgreementAmount: mode === 'tariff_change' ? parseAmount(newAgreementInput) : undefined,
+        newAgreementAmount: mode === 'tariff_change' ? parseAmountInput(newAgreementInput) : undefined,
       });
 
       setSuccess("So'rov yuborildi.");
@@ -431,7 +390,7 @@ export default function AdjustmentsPage() {
                   <option value="">Tranzaksiyani tanlang</option>
                   {incomeOptions.map((income: any) => (
                     <option key={income.id} value={income.id}>
-                      {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })} | {income.type === 'repayment' ? 'Qarzdorlik' : 'Yangi sotuv'} | {formatAmount(income.paymentAmount)} UZS
+                      {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })} | {income.type === 'repayment' ? 'Qarzdorlik' : 'Yangi sotuv'} | {formatAmountDigits(income.paymentAmount)} UZS
                     </option>
                   ))}
                 </select>
@@ -440,14 +399,14 @@ export default function AdjustmentsPage() {
 
             {selectedIncome && (
               <div className="space-y-3 rounded-md border border-gray-200 p-3 dark:border-slate-700">
-                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getIncomeStatusBadge(selectedIncome.lifecycleStatus).className}`}>
-                  {getIncomeStatusBadge(selectedIncome.lifecycleStatus).label}
+                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getIncomeStatusBadge(selectedIncome.lifecycleStatus, { darkMode: true }).className}`}>
+                  {getIncomeStatusBadge(selectedIncome.lifecycleStatus, { darkMode: true }).label}
                 </span>
                 <div className="grid grid-cols-1 gap-3 text-sm text-gray-700 md:grid-cols-2 dark:text-slate-200">
                   <p><span className="font-medium">Kurs/Tarif:</span> {[selectedIncome.course?.name, selectedIncome.tariff?.name].filter(Boolean).join(' / ') || '-'}</p>
-                  <p><span className="font-medium">To&apos;lov:</span> {formatAmount(selectedIncome.paymentAmount)} UZS</p>
-                  <p><span className="font-medium">Kelishuv:</span> {formatAmount(selectedIncome.coursePriceAmount)} UZS</p>
-                  <p><span className="font-medium">Qolgan qarz:</span> {formatAmount(selectedIncome.remainingDebtAmount)} UZS</p>
+                  <p><span className="font-medium">To&apos;lov:</span> {formatAmountDigits(selectedIncome.paymentAmount)} UZS</p>
+                  <p><span className="font-medium">Kelishuv:</span> {formatAmountDigits(selectedIncome.coursePriceAmount)} UZS</p>
+                  <p><span className="font-medium">Qolgan qarz:</span> {formatAmountDigits(selectedIncome.remainingDebtAmount)} UZS</p>
                 </div>
               </div>
             )}
@@ -485,7 +444,7 @@ export default function AdjustmentsPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Yangi kelishuv summasi</label>
                   <input
                     value={newAgreementInput}
-                    onChange={(event) => setNewAgreementInput(formatDigits(toDigits(event.target.value)))}
+                    onChange={(event) => setNewAgreementInput(groupDigits(normalizeDigits(event.target.value)))}
                     inputMode="numeric"
                     placeholder="0"
                     className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
@@ -654,7 +613,7 @@ export default function AdjustmentsPage() {
                           reviewRequest.income.profileSubTariffName,
                         )}
                       </p>
-                      <p><span className="font-medium">Kelishuv:</span> {formatAmount(reviewRequest.income.coursePriceAmount)} UZS</p>
+                      <p><span className="font-medium">Kelishuv:</span> {formatAmountDigits(reviewRequest.income.coursePriceAmount)} UZS</p>
                     </div>
                   </div>
 
@@ -671,13 +630,13 @@ export default function AdjustmentsPage() {
                       </p>
                       <p>
                         <span className="font-medium">Kelishuv:</span>{' '}
-                        {formatAmount(reviewRequest.newAgreementAmount ?? reviewRequest.income.coursePriceAmount)} UZS
+                        {formatAmountDigits(reviewRequest.newAgreementAmount ?? reviewRequest.income.coursePriceAmount)} UZS
                       </p>
                       {reviewRequest.type === 'refund' && (
                         <>
                           <p>
                             <span className="font-medium">Qaytariladigan summa:</span>{' '}
-                            {formatAmount(reviewRequest.requestedAmount ?? reviewRequest.income.paymentAmount)} UZS
+                            {formatAmountDigits(reviewRequest.requestedAmount ?? reviewRequest.income.paymentAmount)} UZS
                           </p>
                           <p>
                             <span className="font-medium">Karta raqami:</span>{' '}

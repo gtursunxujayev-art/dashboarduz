@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { formatSom, formatTashkentDate } from '@/lib/format';
 
 type CourseTypeCategory = 'online' | 'offline' | 'intensive';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
@@ -14,21 +15,6 @@ const CATEGORY_LABELS: Record<CourseTypeCategory, string> = {
   offline: 'Oflayn',
   intensive: 'Intensiv',
 };
-
-function formatAmount(value?: number | null): string {
-  return `${new Intl.NumberFormat('ru-RU').format(value ?? 0)} so'm`;
-}
-
-function formatDate(value?: string | null): string {
-  if (!value) {
-    return '-';
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '-';
-  }
-  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
-}
 
 function toSlug(value: string): string {
   return value
@@ -307,7 +293,7 @@ export default function CourseTypeSalesView({
         Kelishuv: row.agreementAmount || 0,
         "To'langan": row.paidAmount || 0,
         Qarz: row.debtAmount || 0,
-        "Oxirgi faollik": formatDate(row.lastActivityAt),
+        "Oxirgi faollik": formatTashkentDate(row.lastActivityAt),
       }));
       const sheet = XLSX.utils.json_to_sheet(data);
       const workbook = XLSX.utils.book_new();
@@ -587,20 +573,20 @@ export default function CourseTypeSalesView({
         {!isTashkiliyOnly && (
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <p className="text-xs uppercase tracking-wide text-gray-500">Kelishuv summasi</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summary?.agreementAmount)}</p>
+            <p className="mt-1 text-2xl font-semibold text-gray-900">{formatSom(summary?.agreementAmount)}</p>
           </div>
         )}
 
         {!isTashkiliyOnly && (
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <p className="text-xs uppercase tracking-wide text-gray-500">To'langan summasi</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summary?.paidAmount)}</p>
+            <p className="mt-1 text-2xl font-semibold text-gray-900">{formatSom(summary?.paidAmount)}</p>
           </div>
         )}
 
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-500">Qolgan qarz</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summary?.remainingDebtAmount)}</p>
+          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatSom(summary?.remainingDebtAmount)}</p>
         </div>
 
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -677,13 +663,13 @@ export default function CourseTypeSalesView({
                       </div>
                     </td>
                     {!isTashkiliyOnly && (
-                      <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.agreementAmount)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.agreementAmount)}</td>
                     )}
                     {!isTashkiliyOnly && (
-                      <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.paidAmount)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.paidAmount)}</td>
                     )}
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.debtAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatDate(row.lastActivityAt)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.debtAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatTashkentDate(row.lastActivityAt)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -754,7 +740,7 @@ export default function CourseTypeSalesView({
                     <div>
                       <p className="text-sm font-semibold text-gray-900">{entry.label}</p>
                       <p className="mt-1 text-xs text-gray-500">
-                        Sana: {formatDate(entry.entryDate)} | Joriy qarz: {formatAmount(entry.remainingDebtAmount || 0)}
+                        Sana: {formatTashkentDate(entry.entryDate)} | Joriy qarz: {formatSom(entry.remainingDebtAmount || 0)}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">

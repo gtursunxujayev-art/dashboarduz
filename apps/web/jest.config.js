@@ -15,6 +15,8 @@ const customJestConfig = {
     '^@/components/(.*)$': '<rootDir>/src/components/$1',
     '^@/lib/(.*)$': '<rootDir>/src/lib/$1',
     '^@/contexts/(.*)$': '<rootDir>/src/contexts/$1',
+    // Use the shared package's source so tests do not depend on a prior build of packages/shared.
+    '^@dashboarduz/shared$': '<rootDir>/../../packages/shared/src',
   },
   collectCoverageFrom: [
     'src/**/*.{js,jsx,ts,tsx}',

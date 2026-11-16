@@ -1,3 +1,5 @@
+import { sanitizeSpreadsheetText } from '@/lib/spreadsheet';
+import { formatCourseBundle, formatTashkentDate, formatTashkentTimestamp } from '@/lib/format';
 export type ReportTab = 'debtors' | 'tariff_change' | 'refund';
 
 export type DebtorReportRow = {
@@ -55,38 +57,6 @@ export const REFUND_EXPORT_HEADERS = [
 ] as const;
 export const REFUND_EXPORT_COLUMN_WIDTHS = [20, 16, 28, 22, 14, 32, 16, 16, 16, 18, 14, 20, 12, 22, 40, 40] as const;
 
-export function sanitizeSpreadsheetText(value: unknown): string {
-  const text = value == null ? '' : String(value);
-  return /^\s*[=+\-@]/.test(text) ? `'${text}` : text;
-}
-
-function toDate(value: Date | string | null | undefined): Date | null {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-export function formatTashkentDate(value: Date | string | null | undefined): string {
-  const date = toDate(value);
-  return date ? date.toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' }) : '';
-}
-
-export function formatTashkentDateTime(value: Date | string | null | undefined): string {
-  const date = toDate(value);
-  if (!date) return '';
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
-  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
-  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
-}
-
 export function formatResponseDuration(minutes: number | null | undefined): string {
   if (minutes == null) return '';
   const total = Math.max(Math.round(minutes), 0);
@@ -104,10 +74,6 @@ export function getAdjustmentStatusLabel(status: string): string {
   return 'Kutilmoqda';
 }
 
-export function formatCourseBundle(courseName?: string | null, tariffName?: string | null): string {
-  return [courseName, tariffName].filter(Boolean).join(' / ') || '-';
-}
-
 function responseText(row: AdjustmentReportRow): string {
   return row.responseMinutes == null ? 'Kutilmoqda' : formatResponseDuration(row.responseMinutes);
 }
@@ -118,21 +84,21 @@ export function buildDebtorExportRows(rows: DebtorReportRow[]): Array<Array<stri
     sanitizeSpreadsheetText(row.customerName),
     sanitizeSpreadsheetText(row.managerLabel),
     sanitizeSpreadsheetText(formatCourseBundle(row.courseName, row.tariffName)),
-    formatTashkentDate(row.firstPaymentDate),
+    formatTashkentDate(row.firstPaymentDate, ''),
     Number(row.agreementAmount || 0),
     Number(row.paidAmount || 0),
     Number(row.debtAmount || 0),
-    formatTashkentDate(row.lastPaymentDate),
+    formatTashkentDate(row.lastPaymentDate, ''),
   ]);
 }
 
 export function buildTariffChangeExportRows(rows: AdjustmentReportRow[]): Array<Array<string | number | null>> {
   return rows.map((row) => [
-    formatTashkentDateTime(row.requestDate),
+    formatTashkentTimestamp(row.requestDate, { withSeconds: false }),
     sanitizeSpreadsheetText(row.customerNumber),
     sanitizeSpreadsheetText(row.customerName),
     sanitizeSpreadsheetText(row.managerLabel),
-    formatTashkentDate(row.firstPaymentDate),
+    formatTashkentDate(row.firstPaymentDate, ''),
     sanitizeSpreadsheetText(formatCourseBundle(row.fromCourseName, row.fromTariffName)),
     sanitizeSpreadsheetText(formatCourseBundle(row.toCourseName, row.toTariffName)),
     Number(row.agreementAmount || 0),
@@ -150,11 +116,11 @@ export function buildTariffChangeExportRows(rows: AdjustmentReportRow[]): Array<
 
 export function buildRefundExportRows(rows: AdjustmentReportRow[]): Array<Array<string | number | null>> {
   return rows.map((row) => [
-    formatTashkentDateTime(row.requestDate),
+    formatTashkentTimestamp(row.requestDate, { withSeconds: false }),
     sanitizeSpreadsheetText(row.customerNumber),
     sanitizeSpreadsheetText(row.customerName),
     sanitizeSpreadsheetText(row.managerLabel),
-    formatTashkentDate(row.firstPaymentDate),
+    formatTashkentDate(row.firstPaymentDate, ''),
     sanitizeSpreadsheetText(formatCourseBundle(row.fromCourseName, row.fromTariffName)),
     Number(row.agreementAmount || 0),
     Number(row.paidAmount || 0),

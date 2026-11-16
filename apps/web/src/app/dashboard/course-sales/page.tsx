@@ -6,38 +6,11 @@ import { useAuth } from '@/contexts/auth-context';
 import { trpc } from '@/lib/trpc';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { formatSom, formatTashkentDate } from '@/lib/format';
+import { getTashkentToday } from '@/lib/date-range';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
-
-function getTashkentToday(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
-  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
-  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
-  return `${year}-${month}-${day}`;
-}
-
-function formatAmount(value?: number | null): string {
-  return `${new Intl.NumberFormat('ru-RU').format(value ?? 0)} so'm`;
-}
-
-function formatDate(value?: string | null): string {
-  if (!value) {
-    return '-';
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '-';
-  }
-  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
-}
 
 export default function CourseSalesPage() {
   const { user } = useAuth();
@@ -338,7 +311,7 @@ export default function CourseSalesPage() {
         Kelishuv: row.agreementAmount || 0,
         "To'langan": row.paidAmount || 0,
         Qarz: row.debtAmount || 0,
-        "Oxirgi faollik": formatDate(row.lastActivityAt),
+        "Oxirgi faollik": formatTashkentDate(row.lastActivityAt),
       }));
       const sheet = XLSX.utils.json_to_sheet(data);
       const workbook = XLSX.utils.book_new();
@@ -668,7 +641,7 @@ export default function CourseSalesPage() {
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                 <p className="text-xs uppercase tracking-wide text-gray-500">Kelishuv summasi</p>
                 <p className="mt-1 text-2xl font-semibold text-gray-900">
-                  {formatAmount(summary?.currentAgreementAmount ?? summary?.rangeAgreementAmount)}
+                  {formatSom(summary?.currentAgreementAmount ?? summary?.rangeAgreementAmount)}
                 </p>
               </div>
             )}
@@ -677,14 +650,14 @@ export default function CourseSalesPage() {
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                 <p className="text-xs uppercase tracking-wide text-gray-500">Tushum</p>
                 <p className="mt-1 text-2xl font-semibold text-gray-900">
-                  {formatAmount(summary?.currentIncomeAmount ?? summary?.rangeIncomeAmount)}
+                  {formatSom(summary?.currentIncomeAmount ?? summary?.rangeIncomeAmount)}
                 </p>
               </div>
             )}
 
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
               <p className="text-xs uppercase tracking-wide text-gray-500">Joriy qarz</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-900">{formatAmount(summary?.currentDebtAmount)}</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-900">{formatSom(summary?.currentDebtAmount)}</p>
             </div>
           </div>
 
@@ -806,13 +779,13 @@ export default function CourseSalesPage() {
                           </div>
                         </td>
                         {!isTashkiliyOnly && (
-                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.agreementAmount)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.agreementAmount)}</td>
                         )}
                         {!isTashkiliyOnly && (
-                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.paidAmount)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.paidAmount)}</td>
                         )}
-                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.debtAmount)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatDate(row.lastActivityAt)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.debtAmount)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatTashkentDate(row.lastActivityAt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -885,7 +858,7 @@ export default function CourseSalesPage() {
                     <div>
                       <p className="text-sm font-semibold text-gray-900">{entry.label}</p>
                       <p className="mt-1 text-xs text-gray-500">
-                        Sana: {formatDate(entry.entryDate)} | Joriy qarz: {formatAmount(entry.remainingDebtAmount || 0)}
+                        Sana: {formatTashkentDate(entry.entryDate)} | Joriy qarz: {formatSom(entry.remainingDebtAmount || 0)}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">

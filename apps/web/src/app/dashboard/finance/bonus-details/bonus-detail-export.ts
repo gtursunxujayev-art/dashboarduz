@@ -1,3 +1,5 @@
+import { sanitizeSpreadsheetText } from '@/lib/spreadsheet';
+import { formatTashkentDate } from '@/lib/format';
 export const BONUS_DETAIL_EXPORT_HEADERS = [
   'Sana',
   'Turi',
@@ -40,22 +42,9 @@ export type BonusDetailExportRow = {
   } | null;
 };
 
-export function sanitizeSpreadsheetText(value: unknown): string {
-  const text = value == null ? '' : String(value);
-  return /^\s*[=+\-@]/.test(text) ? `'${text}` : text;
-}
-
-export function formatBonusExportDate(value: Date | string): string {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
-}
-
 export function buildBonusDetailExportRows(rows: BonusDetailExportRow[]): Array<Array<string | number | null>> {
   return rows.map((row) => [
-    formatBonusExportDate(row.entryDate),
+    formatTashkentDate(row.entryDate, ''),
     row.type === 'repayment' ? "Qarzdorlik to'lovi" : 'Yangi sotuv',
     sanitizeSpreadsheetText([row.customerNumber, row.customerName].filter(Boolean).join(' - ')),
     sanitizeSpreadsheetText(row.managerLabel || ''),

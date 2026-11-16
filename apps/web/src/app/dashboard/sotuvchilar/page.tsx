@@ -4,116 +4,9 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
-
-function getTodayTashkent(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
-  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
-  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
-  return `${year}-${month}-${day}`;
-}
-
-function getTashkentDateDaysAgo(daysAgo: number): string {
-  const now = new Date();
-  const shifted = new Date(now.getTime() + (5 * 60 * 60 * 1000));
-  shifted.setUTCDate(shifted.getUTCDate() - daysAgo);
-  const year = shifted.getUTCFullYear();
-  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(shifted.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function formatAmount(value: number | null | undefined): string {
-  return `${Math.round(value || 0).toLocaleString('ru-RU')} so'm`;
-}
-
-function formatDuration(seconds: number | null | undefined): string {
-  const safe = Math.max(0, Math.floor(seconds || 0));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const secs = safe % 60;
-  if (hours > 0) {
-    return `${hours} soat ${minutes} daqiqa`;
-  }
-  if (minutes > 0) {
-    return `${minutes} daqiqa ${secs} soniya`;
-  }
-  return `${secs} soniya`;
-}
-
-function formatPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '-';
-  return `${value.toFixed(1)}%`;
-}
-
-type KpiBadge = 'good' | 'warning' | 'critical' | 'neutral';
-
-function getConversionBadge(rate: number | null | undefined): KpiBadge {
-  if (rate === null || rate === undefined) return 'neutral';
-  if (rate >= 15) return 'good';
-  if (rate >= 10) return 'warning';
-  return 'critical';
-}
-
-function getFollowUpBadge(completed: number, overdue: number): KpiBadge {
-  const total = completed + overdue;
-  if (total === 0) return 'neutral';
-  const rate = (completed / total) * 100;
-  if (rate >= 90) return 'good';
-  if (rate >= 80) return 'warning';
-  return 'critical';
-}
-
-function getOutboundBadge(outbound: number, total: number): KpiBadge {
-  if (total === 0) return 'neutral';
-  const rate = (outbound / total) * 100;
-  if (rate >= 60) return 'good';
-  if (rate >= 50) return 'warning';
-  return 'critical';
-}
-
-function getMissedCallBadge(rate: number | null | undefined): KpiBadge {
-  if (rate === null || rate === undefined) return 'neutral';
-  if (rate <= 5) return 'good';
-  if (rate <= 10) return 'warning';
-  return 'critical';
-}
-
-function getDebtCollectionBadge(rate: number | null | undefined): KpiBadge {
-  if (rate === null || rate === undefined) return 'neutral';
-  if (rate >= 85) return 'good';
-  if (rate >= 70) return 'warning';
-  return 'critical';
-}
-
-function getRefundBadge(rate: number | null | undefined): KpiBadge {
-  if (rate === null || rate === undefined) return 'neutral';
-  if (rate <= 5) return 'good';
-  if (rate <= 8) return 'warning';
-  return 'critical';
-}
-
-function getResponseTimeBadge(seconds: number): KpiBadge {
-  if (seconds <= 0) return 'neutral';
-  if (seconds <= 300) return 'good';
-  if (seconds <= 1800) return 'warning';
-  return 'critical';
-}
-
-function formatResponseTime(seconds: number): string {
-  if (seconds <= 0) return '-';
-  if (seconds < 60) return `${seconds} son`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)} daq`;
-  const h = Math.floor(seconds / 3600);
-  const m = Math.round((seconds % 3600) / 60);
-  return `${h} soat ${m} daq`;
-}
+import { formatDurationCompact, formatPercent, formatResponseTime, formatSomRounded } from '@/lib/format';
+import { getTashkentDateShift, getTashkentToday } from '@/lib/date-range';
+import { getConversionBadge, getDebtCollectionBadge, getFollowUpBadge, getMissedCallBadge, getOutboundBadge, getRefundBadge, getResponseTimeBadge, type KpiBadge } from '@/components/dashboard/seller-kpi-badges';
 
 const BADGE_COLORS: Record<KpiBadge, string> = {
   good: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
@@ -161,17 +54,17 @@ function AgentCard({ seller }: { seller: any }) {
         <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-3 text-center">
           <p className="text-xs text-slate-400">Sotuvlar</p>
           <p className="mt-1 text-2xl font-bold text-white">{salesCount}</p>
-          <p className="mt-1 text-xs text-slate-400">{formatAmount(m.incomeAmount)}</p>
+          <p className="mt-1 text-xs text-slate-400">{formatSomRounded(m.incomeAmount)}</p>
           <p className="mt-1 text-xs text-slate-500">Yangi lid: {newLeadsInRange}</p>
         </div>
         <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-3 text-center">
           <p className="text-xs text-slate-400">Qo'ng'iroqlar</p>
           <p className="mt-1 text-2xl font-bold text-white">{m.totalCalls ?? 0}</p>
-          <p className="mt-1 text-xs text-slate-400">{formatDuration(m.totalCallDuration)}</p>
+          <p className="mt-1 text-xs text-slate-400">{formatDurationCompact(m.totalCallDuration)}</p>
         </div>
         <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-3 text-center">
           <p className="text-xs text-slate-400">O'rtacha sotuv</p>
-          <p className="mt-1 text-2xl font-bold text-white">{formatAmount(avgDeal)}</p>
+          <p className="mt-1 text-2xl font-bold text-white">{formatSomRounded(avgDeal)}</p>
           <p className="mt-1 text-xs text-slate-400">Kelishuv</p>
         </div>
       </div>
@@ -180,7 +73,7 @@ function AgentCard({ seller }: { seller: any }) {
       <div className="mt-3 grid grid-cols-3 gap-2">
         <KpiPill
           label="Konversiya"
-          value={formatPercent(m.conversionRate)}
+          value={formatPercent(m.conversionRate, 1)}
           badge={getConversionBadge(m.conversionRate)}
         />
         <KpiPill
@@ -200,17 +93,17 @@ function AgentCard({ seller }: { seller: any }) {
         />
         <KpiPill
           label="O'tkazib yub."
-          value={formatPercent(m.missedCallRate)}
+          value={formatPercent(m.missedCallRate, 1)}
           badge={getMissedCallBadge(m.missedCallRate)}
         />
         <KpiPill
           label="Qarz yig'ish"
-          value={formatPercent(m.debtCollectionRate)}
+          value={formatPercent(m.debtCollectionRate, 1)}
           badge={getDebtCollectionBadge(m.debtCollectionRate)}
         />
         <KpiPill
           label="Qaytarish"
-          value={formatPercent(m.refundRate)}
+          value={formatPercent(m.refundRate, 1)}
           badge={getRefundBadge(m.refundRate)}
         />
         <KpiPill
@@ -224,8 +117,8 @@ function AgentCard({ seller }: { seller: any }) {
 }
 
 export default function SotuvchilarPage() {
-  const dateFrom = getTashkentDateDaysAgo(29);
-  const dateTo = getTodayTashkent();
+  const dateFrom = getTashkentDateShift(-29);
+  const dateTo = getTashkentToday();
 
   const { data: sellers, isLoading, error } = trpc.sellers.list.useQuery(
     {

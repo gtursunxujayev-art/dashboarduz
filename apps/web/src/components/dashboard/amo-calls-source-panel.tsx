@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import { formatDateTime } from '@/lib/format';
 
 type CallsSource = 'utel' | 'amocrm';
 
@@ -9,10 +10,6 @@ const SOURCE_OPTIONS: Array<{ value: CallsSource; label: string; hint: string }>
   { value: 'utel', label: 'Utel webhook', hint: "Qo'ng'iroqlar Utel webhook orqali keladi." },
   { value: 'amocrm', label: 'AmoCRM', hint: "Qo'ng'iroqlar har 5 daqiqada AmoCRM qo'ng'iroq yozuvlaridan olinadi." },
 ];
-
-function formatDateTime(value: string | null | undefined): string {
-  return value ? new Date(value).toLocaleString() : '—';
-}
 
 export function AmoCallsSourcePanel() {
   const [error, setError] = useState<string | null>(null);
@@ -76,8 +73,8 @@ export function AmoCallsSourcePanel() {
       {status?.source === 'amocrm' && (
         <div className="mt-3 space-y-1 text-xs text-gray-600">
           <p>AmoCRM dan olingan qo&apos;ng&apos;iroqlar: {status.importedCalls.toLocaleString()}</p>
-          <p>Oxirgi sinxron: {formatDateTime(status.lastRunAt)}</p>
-          <p>Shu vaqtgacha yuklangan: {formatDateTime(status.syncedUntil)}</p>
+          <p>Oxirgi sinxron: {formatDateTime(status.lastRunAt, { emptyText: '—' })}</p>
+          <p>Shu vaqtgacha yuklangan: {formatDateTime(status.syncedUntil, { emptyText: '—' })}</p>
           {!status.backfillComplete && (
             <p className="text-amber-700">O&apos;tgan oydan beri bo&apos;lgan qo&apos;ng&apos;iroqlar yuklanmoqda — raqamlar hali to&apos;liq emas.</p>
           )}

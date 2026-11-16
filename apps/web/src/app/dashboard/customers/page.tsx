@@ -4,28 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { formatNumberEn, formatTashkentDate } from '@/lib/format';
+import { normalizeDigits } from '@dashboarduz/shared';
 
 type DebtFilter = 'all' | 'with_debt' | 'without_debt';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
-
-function formatAmount(value: number): string {
-  return value.toLocaleString('en-US');
-}
-
-function formatDate(value: string | Date | null): string {
-  if (!value) {
-    return '-';
-  }
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '-';
-  }
-  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
-}
-
-function sanitizeCustomerNumber(value: string): string {
-  return value.replace(/\D/g, '');
-}
 
 function sanitizeTelegram(value: string): string {
   return value.replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
@@ -380,7 +363,7 @@ export default function CustomersPage() {
       Array.isArray(customer.courses) ? customer.courses.join(' | ') : '',
       customer.totalDebtAmount ?? 0,
       customer.totalPaidAmount ?? 0,
-      formatDate(customer.lastActivityAt),
+      formatTashkentDate(customer.lastActivityAt),
     ]));
 
     const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -645,7 +628,7 @@ export default function CustomersPage() {
     setPageError(null);
     setPageSuccess(null);
 
-    const customerNumber = sanitizeCustomerNumber(identityCustomerNumber);
+    const customerNumber = normalizeDigits(identityCustomerNumber);
     const name = identityCustomerName.trim();
 
     if (!identityCustomerId) {
@@ -682,7 +665,7 @@ export default function CustomersPage() {
     setPageError(null);
     setPageSuccess(null);
 
-    const customerNumber = sanitizeCustomerNumber(newCustomerNumber);
+    const customerNumber = normalizeDigits(newCustomerNumber);
     if (!customerNumber) {
       setPageError("Mijoz raqami kiritilishi shart.");
       return;
@@ -1029,13 +1012,13 @@ export default function CustomersPage() {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm">
                         <span className={customer.hasDebt ? 'font-medium text-amber-700 dark:text-amber-300' : 'text-green-700 dark:text-green-300'}>
-                          {formatAmount(customer.totalDebtAmount || 0)}
+                          {formatNumberEn(customer.totalDebtAmount || 0)}
                         </span>
                       </td>
                       {!isTashkiliyOnly && (
-                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmount(customer.totalPaidAmount || 0)}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(customer.totalPaidAmount || 0)}</td>
                       )}
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatDate(customer.lastActivityAt)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatTashkentDate(customer.lastActivityAt)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm">
                         <button
                           type="button"
@@ -1081,7 +1064,7 @@ export default function CustomersPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mijoz raqami</label>
                   <input
                     value={newCustomerNumber}
-                    onChange={(event) => setNewCustomerNumber(sanitizeCustomerNumber(event.target.value))}
+                    onChange={(event) => setNewCustomerNumber(normalizeDigits(event.target.value))}
                     placeholder="Faqat raqam"
                     className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                   />
@@ -1198,7 +1181,7 @@ export default function CustomersPage() {
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mijoz raqami</label>
                 <input
                   value={identityCustomerNumber}
-                  onChange={(event) => setIdentityCustomerNumber(sanitizeCustomerNumber(event.target.value))}
+                  onChange={(event) => setIdentityCustomerNumber(normalizeDigits(event.target.value))}
                   placeholder="Faqat raqam"
                   className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                 />
@@ -1270,7 +1253,7 @@ export default function CustomersPage() {
                       <div>
                         <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">{entry.label}</p>
                         <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-                          Sana: {formatDate(entry.entryDate)} | Joriy qarz: {formatAmount(entry.remainingDebtAmount || 0)}
+                          Sana: {formatTashkentDate(entry.entryDate)} | Joriy qarz: {formatNumberEn(entry.remainingDebtAmount || 0)}
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -1434,14 +1417,14 @@ export default function CustomersPage() {
                           <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                             {customerHistoryQuery.data.courses.map((item: any) => (
                               <tr key={item.saleIncomeId}>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDate(item.entryDate)}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatTashkentDate(item.entryDate)}</td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
                                   {[item.courseName, item.tariffName, item.subTariffName].filter(Boolean).join(' / ')}
                                 </td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{item.managerLabel}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatAmount(item.agreementAmount || 0)}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatAmount(item.firstPaymentAmount || 0)}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatAmount(item.remainingDebtAmount || 0)}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(item.agreementAmount || 0)}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(item.firstPaymentAmount || 0)}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(item.remainingDebtAmount || 0)}</td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{item.lifecycleStatus}</td>
                               </tr>
                             ))}
@@ -1472,7 +1455,7 @@ export default function CustomersPage() {
                           <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                             {customerHistoryQuery.data.payments.map((payment: any) => (
                               <tr key={payment.id}>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDate(payment.entryDate)}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatTashkentDate(payment.entryDate)}</td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
                                   {payment.type === 'new_sale' ? 'Yangi sotuv' : "Qarzdorlik to'lovi"}
                                 </td>
@@ -1480,8 +1463,8 @@ export default function CustomersPage() {
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
                                   {[payment.courseName, payment.tariffName, payment.subTariffName].filter(Boolean).join(' / ')}
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatAmount(payment.paymentAmount || 0)}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatAmount(payment.remainingDebtAmount || 0)}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(payment.paymentAmount || 0)}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(payment.remainingDebtAmount || 0)}</td>
                                 <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{payment.lifecycleStatus}</td>
                               </tr>
                             ))}

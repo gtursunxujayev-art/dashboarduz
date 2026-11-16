@@ -4,43 +4,16 @@ import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { useAuth } from '@/contexts/auth-context';
+import { getRangeLabel, getTashkentToday } from '@/lib/date-range';
+import { formatDurationShortWords } from '@/lib/format';
 
 type CallsRange = 'today' | 'week' | 'month' | 'custom';
 const RANGE_OPTIONS: CallsRange[] = ['today', 'week', 'month', 'custom'];
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
-function formatDuration(totalSeconds?: number | null): string {
-  const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const seconds = safeSeconds % 60;
-  return `${hours} soat ${minutes} daq ${seconds} son`;
-}
-
 function formatDecimal(value?: number | null): string {
   const safeValue = Number(value || 0);
   return safeValue.toFixed(1);
-}
-
-function getTashkentToday(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
-  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
-  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
-  return `${year}-${month}-${day}`;
-}
-
-function getRangeLabel(range: CallsRange): string {
-  if (range === 'week') return 'Bu hafta';
-  if (range === 'month') return 'Bu oy';
-  if (range === 'custom') return 'Ixtiyoriy sana';
-  return 'Bugun';
 }
 
 export default function CallsPage() {
@@ -96,7 +69,7 @@ export default function CallsPage() {
                     index === RANGE_OPTIONS.length - 1 ? 'rounded-r-md' : ''
                   } ${index !== 0 ? 'border-l-0' : ''}`}
                 >
-                  {getRangeLabel(option)}
+                  {getRangeLabel(option, 'long')}
                 </button>
               ))}
             </div>
@@ -145,7 +118,7 @@ export default function CallsPage() {
               </div>
               <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
                 <p className="text-xs uppercase tracking-wide text-gray-500">Umumiy suhbat vaqti</p>
-                <p className="mt-1 text-lg font-semibold text-gray-900">{formatDuration(totals.totalDurationSeconds)}</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">{formatDurationShortWords(totals.totalDurationSeconds)}</p>
               </div>
             </div>
           )}
@@ -187,7 +160,7 @@ export default function CallsPage() {
                       <td className="px-4 py-3 text-sm text-gray-700">{row.callsToday}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{row.incomingCalls}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{row.outgoingCalls}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{formatDuration(row.totalDurationSeconds)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{formatDurationShortWords(row.totalDurationSeconds)}</td>
                     </tr>
                   ))}
                 </tbody>

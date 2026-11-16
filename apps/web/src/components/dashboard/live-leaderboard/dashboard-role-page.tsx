@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import { sortAgentsForBoard } from './leaderboard-ranking';
+import { formatCompactMoney, formatDurationClock, formatSomUz } from '@/lib/format';
+import { LeaderboardKpiCard } from '@/components/dashboard/kpi-card';
 
 type AgentGroup = 'online' | 'offline';
 
@@ -59,26 +61,6 @@ type BoardWinner = {
   bonus: number;
 };
 
-function formatMoney(amount: number) {
-  return `${Math.round(amount || 0).toLocaleString('uz-UZ')} so'm`;
-}
-
-function formatCompactMoney(amount: number) {
-  const value = Math.round(amount || 0);
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
-  return String(value);
-}
-
-function formatDuration(totalSeconds: number) {
-  const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const seconds = safeSeconds % 60;
-  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
-}
-
 // First payments of new sales get their own cheer; debt repayments keep the original one.
 function playNewIncomeSound(incomeType: string) {
   const audio = new Audio(incomeType === 'new_sale' ? '/sounds/first-payment-cheer.m4a' : '/sounds/new-income.m4a');
@@ -103,16 +85,6 @@ function sortTariffsForPanel<T extends { name: string }>(tariffs: T[]): T[] {
   return [...tariffs].sort((left, right) => rank(left.name) - rank(right.name));
 }
 
-function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {
-  return (
-    <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.07] px-7 py-2.5 shadow-2xl shadow-black/30 backdrop-blur-xl">
-      <div className={`absolute -right-14 -top-20 h-40 w-40 rounded-full ${accent} opacity-30 blur-3xl`} />
-      <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-300">{label}</p>
-      <div className="mt-3 text-4xl font-black tracking-tight text-white md:text-5xl">{formatMoney(value)}</div>
-    </div>
-  );
-}
-
 function AgentRow({ agent, rank, highlight, incomeLabel }: { agent: LeaderboardAgent; rank: number; highlight: boolean; incomeLabel: string }) {
   return (
     <div className={`leaderboard-row grid grid-cols-[40px_minmax(0,1fr)] items-center gap-2 rounded-3xl border px-3 py-2 transition-all duration-700 sm:grid-cols-[46px_minmax(0,1fr)_auto] sm:gap-3 ${highlight ? 'scale-[1.025] border-amber-300/70 bg-amber-300/15 shadow-[0_0_45px_rgba(251,191,36,0.25)]' : 'border-white/10 bg-white/[0.055]'}`}>
@@ -125,7 +97,7 @@ function AgentRow({ agent, rank, highlight, incomeLabel }: { agent: LeaderboardA
           <span>Qo'ng'iroq: <b className="text-cyan-300">{agent.todayCallsCount}</b></span>
         </div>
         <div className="text-sm font-semibold text-slate-300">
-          <span>Vaqt: <b className="font-mono text-cyan-300">{formatDuration(agent.todayCallDurationSeconds)}</b></span>
+          <span>Vaqt: <b className="font-mono text-cyan-300">{formatDurationClock(agent.todayCallDurationSeconds)}</b></span>
         </div>
         <div className="text-sm font-semibold text-slate-300">
           <span>Sotuv: <b className="text-white">{agent.salesCount}</b></span>
@@ -320,7 +292,7 @@ function IncomeCelebrationPopup({ event, onClose }: { event: LatestIncomeEvent; 
         <div className="clap-hand mx-auto mb-5 text-8xl">👏</div>
         <p className="text-sm font-bold uppercase tracking-[0.3em] text-amber-200">Yangi tushum</p>
         <h3 className="mt-4 text-4xl font-black text-white">{event.managerName}</h3>
-        <p className="mt-4 text-5xl font-black text-emerald-300">{formatMoney(event.amount)}</p>
+        <p className="mt-4 text-5xl font-black text-emerald-300">{formatSomUz(event.amount)}</p>
         <button onClick={onClose} className="mt-8 rounded-2xl border border-white/15 px-5 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10">
           Yopish
         </button>
@@ -422,9 +394,9 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
         ) : null}
 
         <section className="grid gap-5 md:grid-cols-3">
-          <KpiCard label="Bugungi tushum" value={data?.kpis.todayIncome || 0} accent="bg-cyan-400" />
-          <KpiCard label="Haftalik tushum" value={data?.kpis.weekIncome || 0} accent="bg-fuchsia-400" />
-          <KpiCard label={isCourseBoard ? 'Kurs tushumi' : 'Oylik tushum'} value={data?.kpis.totalIncome || 0} accent="bg-emerald-400" />
+          <LeaderboardKpiCard label="Bugungi tushum" value={data?.kpis.todayIncome || 0} accent="bg-cyan-400" />
+          <LeaderboardKpiCard label="Haftalik tushum" value={data?.kpis.weekIncome || 0} accent="bg-fuchsia-400" />
+          <LeaderboardKpiCard label={isCourseBoard ? 'Kurs tushumi' : 'Oylik tushum'} value={data?.kpis.totalIncome || 0} accent="bg-emerald-400" />
         </section>
 
         <section className="grid gap-7 lg:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.45fr)]">

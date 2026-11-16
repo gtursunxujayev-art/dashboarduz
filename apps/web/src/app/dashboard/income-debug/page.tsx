@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { formatDateTime, formatSomUz } from '@/lib/format';
 
 const MODE_OPTIONS = [
   { value: 'suspicious', label: 'Shubhali qatorlar' },
@@ -13,15 +14,6 @@ const MODE_OPTIONS = [
   { value: 'hidden', label: 'Yashirilgan qatorlar' },
   { value: 'all', label: 'Barcha qatorlar' },
 ] as const;
-
-function formatDateTime(value: string | Date): string {
-  const date = new Date(value);
-  return date.toLocaleString('uz-UZ');
-}
-
-function formatMoney(value: number): string {
-  return `${Math.round(value || 0).toLocaleString('uz-UZ')} so'm`;
-}
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -364,8 +356,8 @@ export default function IncomeDebugPage() {
                             onChange={() => toggleRow(row.id)}
                           />
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(row.entryDate).slice(0, 10)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500 dark:text-slate-400">{formatDateTime(row.createdAt)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(row.entryDate, { locale: 'uz-UZ' }).slice(0, 10)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500 dark:text-slate-400">{formatDateTime(row.createdAt, { locale: 'uz-UZ' })}</td>
                         <td className="px-4 py-3">
                           <div className="font-medium text-gray-900 dark:text-slate-100">{row.customerNumber}</div>
                           <div className="text-xs text-gray-500 dark:text-slate-400">{row.customerName}</div>
@@ -374,8 +366,8 @@ export default function IncomeDebugPage() {
                         <td className="px-4 py-3 whitespace-nowrap text-xs">{row.createdByLabel}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{row.type === 'new_sale' ? 'Yangi sotuv' : 'Qarzdorlik'}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{row.courseName} / {row.tariffName}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{formatMoney(row.paymentAmount)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{formatMoney(row.remainingDebtAmount)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{formatSomUz(row.paymentAmount)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{formatSomUz(row.remainingDebtAmount)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                             {statusLabel(row.status)}

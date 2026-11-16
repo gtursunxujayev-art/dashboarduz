@@ -17,6 +17,7 @@ import {
   buildAttendanceSummaryExportRows,
   getAttendanceReportFilename,
 } from './attendance-report-export';
+import { formatDateTime, UZ_TASHKENT_DATE_TIME } from '@/lib/format';
 
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
@@ -62,11 +63,6 @@ function formatSeconds(totalSeconds: number): string {
 function formatSecondsOrDash(totalSeconds: number | null | undefined): string {
   if (typeof totalSeconds !== 'number') return '-';
   return formatSeconds(totalSeconds);
-}
-
-function formatDateTime(value: string | Date | null | undefined): string {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' });
 }
 
 function hasInPresence(row: any): boolean {
@@ -296,7 +292,7 @@ export default function AttendancePage() {
         .filter((row: any) => typeof row.id === 'string')
         .map((row: any) => ({
           id: row.id as string,
-          label: `${row.localDate || '-'} | ${row.action || '-'} | ${(row.user?.name as string) || `${row.firstName || ''} ${row.lastName || ''}`.trim() || '-'} | ${formatDateTime(row.eventAt)}`,
+          label: `${row.localDate || '-'} | ${row.action || '-'} | ${(row.user?.name as string) || `${row.firstName || ''} ${row.lastName || ''}`.trim() || '-'} | ${formatDateTime(row.eventAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}`,
         })),
     [eventsQuery.data?.rows],
   );
@@ -665,8 +661,8 @@ export default function AttendancePage() {
                       <td className="px-3 py-2 text-sm font-medium text-gray-900 dark:text-slate-100">{formatSecondsOrDash(row.workedSeconds)}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatSecondsOrDash(row.missingSeconds)}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{typeof row.lateMinutes === 'number' ? `${row.lateMinutes} daq` : '-'}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.firstInAt)}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.lastOutAt)}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.firstInAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.lastOutAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{getPresenceLabel(row)}</td>
                     </tr>
                   ))}
@@ -712,7 +708,7 @@ export default function AttendancePage() {
                         {(row.firstName || '')} {(row.lastName || '')} ({row.externalPhone || '-'})
                       </p>
                       <p className="text-gray-700 dark:text-slate-300">
-                        {row.localDate} | {row.action} | {formatDateTime(row.eventAt)}
+                        {row.localDate} | {row.action} | {formatDateTime(row.eventAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}
                       </p>
                       <p className="text-xs text-red-700 dark:text-red-300">
                         Sabab: {row.matchReason || 'unknown'} | Qadam: {row.matchStepTried || 'unknown'}
@@ -746,7 +742,7 @@ export default function AttendancePage() {
                 <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
                   {(eventsQuery.data?.rows || []).map((row: any) => (
                     <tr key={row.id}>
-                      <td className="px-2 py-2 text-xs text-gray-700 dark:text-slate-300">{formatDateTime(row.eventAt)}</td>
+                      <td className="px-2 py-2 text-xs text-gray-700 dark:text-slate-300">{formatDateTime(row.eventAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}</td>
                       <td className="px-2 py-2 text-xs text-gray-700 dark:text-slate-300">{row.action}</td>
                       <td className="px-2 py-2 text-xs text-gray-700 dark:text-slate-300">{row.user?.name || `${row.firstName || ''} ${row.lastName || ''}`.trim() || '-'}</td>
                       <td className="px-2 py-2 text-xs text-gray-700 dark:text-slate-300">{row.branchName || '-'}</td>

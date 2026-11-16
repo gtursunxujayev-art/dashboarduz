@@ -1,4 +1,5 @@
 import { toApiDateRange, type ExtendedDashboardRange } from '@/lib/date-range';
+import { formatSomRounded } from '@/lib/format';
 
 export type FunnelGroup = 'all' | 'online' | 'offline';
 export type FunnelStageRef = { pipelineId: string; statusId: string };
@@ -135,10 +136,6 @@ export function buildFunnelQueryInput(params: {
     taklifStage: params.taklif,
     refreshKey: params.refreshKey,
   };
-}
-
-export function formatAmount(value: number | null | undefined): string {
-  return `${new Intl.NumberFormat('ru-RU').format(Math.round(Number(value || 0)))} so'm`;
 }
 
 export function formatCount(value: number | null | undefined): string {

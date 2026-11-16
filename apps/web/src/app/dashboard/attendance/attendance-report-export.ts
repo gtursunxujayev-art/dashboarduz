@@ -1,3 +1,5 @@
+import { sanitizeSpreadsheetText } from '@/lib/spreadsheet';
+import { formatTashkentTimestamp } from '@/lib/format';
 export const ATTENDANCE_SUMMARY_SHEET_NAME = 'Xodimlar kesimi';
 export const ATTENDANCE_DAILY_SHEET_NAME = 'Kunlik tafsilot';
 
@@ -91,32 +93,8 @@ export type AttendanceExportReport = {
   dailyRows: AttendanceExportDailyRow[];
 };
 
-export function sanitizeAttendanceSpreadsheetText(value: unknown): string {
-  const text = value == null ? '' : String(value);
-  return /^\s*[=+\-@]/.test(text) ? `'${text}` : text;
-}
-
 export function secondsToExcelDuration(seconds: number): number {
   return Math.max(0, Number(seconds) || 0) / 86_400;
-}
-
-export function formatTashkentDateTime(value: Date | string | null): string {
-  if (!value) return '';
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
-  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
-  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
 }
 
 function attendanceStatusLabel(status: AttendanceExportDailyRow['status']): string {
@@ -129,8 +107,8 @@ export function buildAttendanceSummaryExportRows(
   rows: AttendanceExportEmployeeSummary[],
 ): SpreadsheetValue[][] {
   return rows.map((row) => [
-    sanitizeAttendanceSpreadsheetText(row.employeeName),
-    sanitizeAttendanceSpreadsheetText(row.username),
+    sanitizeSpreadsheetText(row.employeeName),
+    sanitizeSpreadsheetText(row.username),
     Number(row.workdayCount),
     Number(row.presentDays),
     Number(row.absentDays),
@@ -149,16 +127,16 @@ export function buildAttendanceSummaryExportRows(
 export function buildAttendanceDailyExportRows(rows: AttendanceExportDailyRow[]): SpreadsheetValue[][] {
   return rows.map((row) => [
     row.summaryDate,
-    sanitizeAttendanceSpreadsheetText(row.employeeName),
-    sanitizeAttendanceSpreadsheetText(row.username),
+    sanitizeSpreadsheetText(row.employeeName),
+    sanitizeSpreadsheetText(row.username),
     attendanceStatusLabel(row.status),
     secondsToExcelDuration(row.workedSeconds),
     secondsToExcelDuration(row.requiredSeconds),
     secondsToExcelDuration(row.missingSeconds),
     Number(row.lateMinutes),
     Number(row.lateCount),
-    formatTashkentDateTime(row.firstInAt),
-    formatTashkentDateTime(row.lastOutAt),
+    formatTashkentTimestamp(row.firstInAt, { withSeconds: true }),
+    formatTashkentTimestamp(row.lastOutAt, { withSeconds: true }),
     Number(row.anomalyCount),
     Number(row.unmatchedInCount),
     Number(row.unmatchedOutCount),

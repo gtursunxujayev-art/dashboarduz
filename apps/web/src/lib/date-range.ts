@@ -1,16 +1,9 @@
 // Shared Tashkent (GMT+5) date-range helpers for dashboard filters.
+import { DAY_MS, tashkentCalendarDay } from '@dashboarduz/shared';
 
 export type ExtendedDashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
 export type ApiDashboardRange = 'today' | 'week' | 'month' | 'custom';
 
-const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** A UTC Date whose Y/M/D fields equal the current Tashkent calendar day. */
-function tashkentCalendarDay(now: Date): Date {
-  const shifted = new Date(now.getTime() + TASHKENT_OFFSET_MS);
-  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
-}
 
 function toIsoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -56,4 +49,14 @@ export function toApiDateRange(
   if (range === 'last_month') return { range: 'custom', ...getPreviousMonthRange(now) };
   if (range === 'custom') return { range: 'custom', dateFrom: custom.dateFrom, dateTo: custom.dateTo };
   return { range };
+}
+
+const RANGE_LABELS: Record<'short' | 'long', Record<ApiDashboardRange, string>> = {
+  short: { today: 'Bugun', week: 'Hafta', month: 'Oy', custom: 'Ixtiyoriy' },
+  long: { today: 'Bugun', week: 'Bu hafta', month: 'Bu oy', custom: 'Ixtiyoriy sana' },
+};
+
+/** Uzbek button label for a range: short on the dashboard and analytics pages, long on the calls page. */
+export function getRangeLabel(range: ApiDashboardRange, style: 'short' | 'long' = 'short'): string {
+  return RANGE_LABELS[style][range];
 }

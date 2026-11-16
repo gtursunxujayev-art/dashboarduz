@@ -1,12 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import {
-  HOLE_LABELS,
-  formatAmount,
-  formatCount,
-  type FunnelHole,
-} from '@/app/dashboard/analytics/funnel/funnel-view';
+import { HOLE_LABELS, formatCount, type FunnelHole } from '@/app/dashboard/analytics/funnel/funnel-view';
+import { formatSomRounded } from '@/lib/format';
 
 export type FunnelTableRow = {
   userId: string;
@@ -173,7 +169,7 @@ export function FunnelTable({
               <td className={tdClass}>{row.calls}</td>
               <td className={tdClass}>{formatCount(row.taklifLeads)}</td>
               <td className={tdClass}>{row.sales}</td>
-              {showMoney && <td className={tdClass}>{formatAmount(row.avgCheck)}</td>}
+              {showMoney && <td className={tdClass}>{formatSomRounded(row.avgCheck)}</td>}
               <td className={tdClass}>
                 <PlanCell userId={row.userId} plan={row.plan} editable={canEditPlans} onPlanChange={onPlanChange} />
               </td>
@@ -186,7 +182,7 @@ export function FunnelTable({
             <td className={totalTdClass}>{totals.calls}</td>
             <td className={totalTdClass}>{totals.taklifLeads}</td>
             <td className={totalTdClass}>{totals.sales}</td>
-            {showMoney && <td className={totalTdClass}>{formatAmount(totals.avgCheck)}</td>}
+            {showMoney && <td className={totalTdClass}>{formatSomRounded(totals.avgCheck)}</td>}
             <td className={totalTdClass}>{totals.plan > 0 ? totals.plan : '—'}</td>
           </tr>
         </tbody>
@@ -224,18 +220,18 @@ export function LostRevenueTable({
                   key={key}
                   className={`${tdClass} ${row.mainHole === key ? 'bg-red-50 font-semibold text-red-700' : ''}`}
                 >
-                  {formatAmount(row[key])}
+                  {formatSomRounded(row[key])}
                 </td>
               ))}
               <td className={`${tdClass} font-medium`}>{row.mainHole ? HOLE_LABELS[row.mainHole] : '—'}</td>
-              <td className={`${tdClass} font-semibold text-red-700`}>{formatAmount(row.lostRevenue)}</td>
+              <td className={`${tdClass} font-semibold text-red-700`}>{formatSomRounded(row.lostRevenue)}</td>
             </tr>
           ))}
           <tr className="bg-gray-50" data-testid="lost-totals">
             <td className={totalTdClass}>Jami</td>
-            {HOLE_KEYS.map((key) => <td key={key} className={totalTdClass}>{formatAmount(totals[key])}</td>)}
+            {HOLE_KEYS.map((key) => <td key={key} className={totalTdClass}>{formatSomRounded(totals[key])}</td>)}
             <td className={totalTdClass}>—</td>
-            <td className={`${totalTdClass} text-red-700`}>{formatAmount(totals.lostRevenue)}</td>
+            <td className={`${totalTdClass} text-red-700`}>{formatSomRounded(totals.lostRevenue)}</td>
           </tr>
         </tbody>
       </table>

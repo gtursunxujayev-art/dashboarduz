@@ -3,45 +3,11 @@
 import { trpc } from '@/lib/trpc';
 import { useMemo, useState } from 'react';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { formatDurationClock, formatPercent, formatResponseTime, formatSomRounded } from '@/lib/format';
+import { getTashkentDateShift, getTashkentToday } from '@/lib/date-range';
+import { getConversionBadge, getDailyTalkBadge, getDeadlineBadge, getDebtCollectionBadge, getFollowUpBadge, getMissedCallBadge, getOutboundBadge, getRefundBadge, getResponseTimeBadge, type KpiBadge } from '@/components/dashboard/seller-kpi-badges';
 
 type SellerRange = 'today' | 'week' | 'month' | 'last30days' | 'custom';
-
-function getTodayTashkent(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
-  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
-  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
-  return `${year}-${month}-${day}`;
-}
-
-function getTashkentDateDaysAgo(daysAgo: number): string {
-  const now = new Date();
-  const shifted = new Date(now.getTime() + (5 * 60 * 60 * 1000));
-  shifted.setUTCDate(shifted.getUTCDate() - daysAgo);
-  const year = shifted.getUTCFullYear();
-  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(shifted.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function formatAmount(value: number | null | undefined): string {
-  return `${Math.round(value || 0).toLocaleString('ru-RU')} so'm`;
-}
-
-function formatDuration(seconds: number | null | undefined): string {
-  const safe = Math.max(0, Math.floor(seconds || 0));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const secs = safe % 60;
-
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-}
 
 function formatDurationReadable(seconds: number | null | undefined): string {
   const safe = Math.max(0, Math.floor(seconds || 0));
@@ -50,13 +16,6 @@ function formatDurationReadable(seconds: number | null | undefined): string {
   if (hours > 0) return `${hours} soat ${minutes} daqiqa`;
   return `${minutes} daqiqa`;
 }
-
-function formatPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '-';
-  return `${value.toFixed(1)}%`;
-}
-
-type KpiBadge = 'good' | 'warning' | 'critical' | 'neutral';
 
 const BADGE_COLORS: Record<KpiBadge, string> = {
   good: 'border-emerald-500/40 bg-emerald-500/10',
@@ -71,82 +30,6 @@ const BADGE_TEXT: Record<KpiBadge, string> = {
   critical: 'text-red-300',
   neutral: 'text-slate-300',
 };
-
-function getConversionBadge(rate: number | null | undefined): KpiBadge {
-  if (rate === null || rate === undefined) return 'neutral';
-  if (rate >= 15) return 'good';
-  if (rate >= 10) return 'warning';
-  return 'critical';
-}
-
-function getFollowUpBadge(completed: number, overdue: number): KpiBadge {
-  const total = completed + overdue;
-  if (total === 0) return 'neutral';
-  const rate = (completed / total) * 100;
-  if (rate >= 90) return 'good';
-  if (rate >= 80) return 'warning';
-  return 'critical';
-}
-
-function getOutboundBadge(outbound: number, total: number): KpiBadge {
-  if (total === 0) return 'neutral';
-  const rate = (outbound / total) * 100;
-  if (rate >= 60) return 'good';
-  if (rate >= 50) return 'warning';
-  return 'critical';
-}
-
-function getDailyTalkBadge(seconds: number | null | undefined, hasCalls: boolean): KpiBadge {
-  if (!hasCalls) return 'neutral';
-  const s = seconds ?? 0;
-  if (s >= 7200) return 'good';
-  if (s >= 5400) return 'warning';
-  return 'critical';
-}
-
-function getMissedCallBadge(rate: number | null | undefined): KpiBadge {
-  if (rate === null || rate === undefined) return 'neutral';
-  if (rate <= 5) return 'good';
-  if (rate <= 10) return 'warning';
-  return 'critical';
-}
-
-function getDebtCollectionBadge(rate: number | null | undefined): KpiBadge {
-  if (rate === null || rate === undefined) return 'neutral';
-  if (rate >= 85) return 'good';
-  if (rate >= 70) return 'warning';
-  return 'critical';
-}
-
-function getRefundBadge(rate: number | null | undefined): KpiBadge {
-  if (rate === null || rate === undefined) return 'neutral';
-  if (rate <= 5) return 'good';
-  if (rate <= 8) return 'warning';
-  return 'critical';
-}
-
-function getDeadlineBadge(rate: number | null | undefined): KpiBadge {
-  if (rate === null || rate === undefined) return 'neutral';
-  if (rate >= 90) return 'good';
-  if (rate >= 75) return 'warning';
-  return 'critical';
-}
-
-function getResponseTimeBadge(seconds: number): KpiBadge {
-  if (seconds <= 0) return 'neutral';
-  if (seconds <= 300) return 'good';       // <= 5 min
-  if (seconds <= 1800) return 'warning';   // <= 30 min
-  return 'critical';
-}
-
-function formatResponseTime(seconds: number): string {
-  if (seconds <= 0) return '-';
-  if (seconds < 60) return `${seconds} son`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)} daq`;
-  const h = Math.floor(seconds / 3600);
-  const m = Math.round((seconds % 3600) / 60);
-  return `${h} soat ${m} daq`;
-}
 
 function MetricCard({
   title,
@@ -180,8 +63,8 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 
 export default function SellerDetailsPage({ params }: { params: { id: string } }) {
   const [range, setRange] = useState<SellerRange>('last30days');
-  const [dateFrom, setDateFrom] = useState(getTashkentDateDaysAgo(29));
-  const [dateTo, setDateTo] = useState(getTodayTashkent());
+  const [dateFrom, setDateFrom] = useState(getTashkentDateShift(-29));
+  const [dateTo, setDateTo] = useState(getTashkentToday());
   const [sendMessage, setSendMessage] = useState<string | null>(null);
 
   const queryInput = useMemo(() => {
@@ -299,13 +182,13 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
         <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
           <MetricCard
             title="Konversiya"
-            value={formatPercent(m.conversionRate)}
+            value={formatPercent(m.conversionRate, 1)}
             subtitle={`Yangi lidlar: ${m.newLeadsInRange ?? 0} -> Sotuvlar: ${salesCount}`}
             badge={getConversionBadge(m.conversionRate)}
           />
           <MetricCard
             title="O'rtacha sotuv"
-            value={formatAmount(m.averageAgreementAmount ?? m.averageDealAmount)}
+            value={formatSomRounded(m.averageAgreementAmount ?? m.averageDealAmount)}
             subtitle="Bir sotuvga o'rtacha kelishuv"
           />
           <MetricCard
@@ -336,26 +219,26 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
           <MetricCard
             title="Sotuv shartnomasi"
             value={salesCount}
-            subtitle={`Kelishuv - ${formatAmount(m.newSalesAgreementAmount)}`}
-            extra={`Tushum - ${formatAmount(m.incomeAmount)}`}
+            subtitle={`Kelishuv - ${formatSomRounded(m.newSalesAgreementAmount)}`}
+            extra={`Tushum - ${formatSomRounded(m.incomeAmount)}`}
           />
           <MetricCard
             title="Sotuv - Onlayn"
             value={m.onlineSalesCount ?? 0}
-            subtitle={`Kelishuv - ${formatAmount(m.onlineSalesAgreementAmount)}`}
-            extra={`Tushum - ${formatAmount(m.onlineSalesIncomeAmount)}`}
+            subtitle={`Kelishuv - ${formatSomRounded(m.onlineSalesAgreementAmount)}`}
+            extra={`Tushum - ${formatSomRounded(m.onlineSalesIncomeAmount)}`}
           />
           <MetricCard
             title="Sotuv - Oflayn"
             value={m.offlineSalesCount ?? 0}
-            subtitle={`Kelishuv - ${formatAmount(m.offlineSalesAgreementAmount)}`}
-            extra={`Tushum - ${formatAmount(m.offlineSalesIncomeAmount)}`}
+            subtitle={`Kelishuv - ${formatSomRounded(m.offlineSalesAgreementAmount)}`}
+            extra={`Tushum - ${formatSomRounded(m.offlineSalesIncomeAmount)}`}
           />
           <MetricCard
             title="Sotuv - Intensiv"
             value={m.intensiveSalesCount ?? 0}
-            subtitle={`Kelishuv - ${formatAmount(m.intensiveSalesAgreementAmount)}`}
-            extra={`Tushum - ${formatAmount(m.intensiveSalesIncomeAmount)}`}
+            subtitle={`Kelishuv - ${formatSomRounded(m.intensiveSalesAgreementAmount)}`}
+            extra={`Tushum - ${formatSomRounded(m.intensiveSalesIncomeAmount)}`}
           />
         </div>
       </div>
@@ -367,7 +250,7 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
           <MetricCard
             title="Jami qo'ng'iroqlar"
             value={m.totalCalls ?? 0}
-            subtitle={`Davomiylik - ${formatDuration(m.totalCallDuration)}`}
+            subtitle={`Davomiylik - ${formatDurationClock(m.totalCallDuration)}`}
           />
           <MetricCard
             title="Chiquvchi qo'ng'iroqlar"
@@ -382,13 +265,13 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
           />
           <MetricCard
             title="O'tkazib yuborilgan"
-            value={`${m.missedCalls ?? 0} (${formatPercent(m.missedCallRate)})`}
+            value={`${m.missedCalls ?? 0} (${formatPercent(m.missedCallRate, 1)})`}
             subtitle="Javobsiz qo'ng'iroqlar"
             badge={getMissedCallBadge(m.missedCallRate)}
           />
           <MetricCard
             title="O'rtacha davomiylik"
-            value={formatDuration(m.averageCallDuration)}
+            value={formatDurationClock(m.averageCallDuration)}
             subtitle="Har bir qo'ng'iroq uchun"
           />
         </div>
@@ -421,7 +304,7 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
           <MetricCard title="Yo'qotilgan lidlar" value={m.lostLeads ?? 0} subtitle="Yo'qotilgan imkoniyatlar" />
           <MetricCard
             title="Konversiya"
-            value={formatPercent(m.conversionRate)}
+            value={formatPercent(m.conversionRate, 1)}
             subtitle={`Yangi lidlar: ${m.newLeadsInRange ?? 0} -> Sotuvlar: ${salesCount}`}
             badge={getConversionBadge(m.conversionRate)}
           />
@@ -434,26 +317,26 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
         <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <MetricCard
             title="Qarz yig'ish darajasi"
-            value={formatPercent(m.debtCollectionRate)}
-            subtitle={`${formatAmount(m.totalPaidAmount)} / ${formatAmount(m.totalAgreementAmount)}`}
+            value={formatPercent(m.debtCollectionRate, 1)}
+            subtitle={`${formatSomRounded(m.totalPaidAmount)} / ${formatSomRounded(m.totalAgreementAmount)}`}
             badge={getDebtCollectionBadge(m.debtCollectionRate)}
           />
           <MetricCard
             title="Qaytarish darajasi"
-            value={formatPercent(m.refundRate)}
+            value={formatPercent(m.refundRate, 1)}
             subtitle={`${m.refundCount ?? 0} ta qaytarish / ${salesCount} sotuv`}
             badge={getRefundBadge(m.refundRate)}
           />
           <MetricCard
             title="To'lov muddati"
-            value={formatPercent(m.deadlineAdherenceRate)}
+            value={formatPercent(m.deadlineAdherenceRate, 1)}
             subtitle={`${m.deadlineMet ?? 0} / ${m.deadlineTotal ?? 0} o'z vaqtida`}
             badge={getDeadlineBadge(m.deadlineAdherenceRate)}
           />
           <MetricCard
             title="Yangi vs Qayta mijozlar"
             value={`${m.newCustomers ?? 0} / ${m.repeatCustomers ?? 0}`}
-            subtitle={`Yangi mijoz: ${formatPercent(m.newCustomerRate)}`}
+            subtitle={`Yangi mijoz: ${formatPercent(m.newCustomerRate, 1)}`}
           />
         </div>
       </div>

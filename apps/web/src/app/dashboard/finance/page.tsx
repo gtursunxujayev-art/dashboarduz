@@ -21,14 +21,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { formatSom } from '@/lib/format';
+import { getIncomeStatusBadge } from '@/components/dashboard/income-status-badge';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'last_week' | 'last_month' | 'custom';
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
-
-function formatAmount(value: number | null | undefined): string {
-  return `${new Intl.NumberFormat('ru-RU').format(value ?? 0)} so'm`;
-}
 
 function formatCompactAmount(value: number | null | undefined): string {
   const safe = Number(value || 0);
@@ -64,25 +62,6 @@ function getTrendMeta(direction?: string) {
     badgeClass: 'bg-gray-100 text-gray-700',
     label: "O'zgarish yo'q",
     sign: '',
-  };
-}
-
-function getIncomeStatusBadge(status: string) {
-  if (status === 'pending_refund') {
-    return {
-      label: "Sariq: Qaytarish so'rovi",
-      className: 'bg-yellow-100 text-yellow-800',
-    };
-  }
-  if (status === 'refunded') {
-    return {
-      label: 'Qizil: Qaytarilgan',
-      className: 'bg-red-100 text-red-800',
-    };
-  }
-  return {
-    label: 'Aktiv',
-    className: 'bg-emerald-100 text-emerald-800',
   };
 }
 
@@ -294,7 +273,7 @@ export default function FinancePage() {
       <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${canSeeRefundAnalytics ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">Jami tushum</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(totals?.totalIncomeAmount)}</p>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(totals?.totalIncomeAmount)}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">Yangi sotuvlar</p>
@@ -310,12 +289,12 @@ export default function FinancePage() {
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">Jami qarzdorlik</p>
-          <p className="mt-2 text-2xl font-semibold text-amber-700">{formatAmount(totals?.totalDebtAmount)}</p>
+          <p className="mt-2 text-2xl font-semibold text-amber-700">{formatSom(totals?.totalDebtAmount)}</p>
         </div>
         {canSeeRefundAnalytics && (
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <p className="text-sm text-gray-500">Qaytarilgan tushum</p>
-            <p className="mt-2 text-2xl font-semibold text-red-700">{formatAmount(totals?.refundAmount)}</p>
+            <p className="mt-2 text-2xl font-semibold text-red-700">{formatSom(totals?.refundAmount)}</p>
             <p className="mt-1 text-xs text-gray-500">{totals?.refundCount ?? 0} ta qaytarish</p>
           </div>
         )}
@@ -324,23 +303,23 @@ export default function FinancePage() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
           <p className="text-sm text-blue-700">Hisoblangan maosh</p>
-          <p className="mt-2 text-2xl font-semibold text-blue-900">{formatAmount(salaryTotals?.salary)}</p>
+          <p className="mt-2 text-2xl font-semibold text-blue-900">{formatSom(salaryTotals?.salary)}</p>
           <p className="mt-1 text-xs text-blue-700">
             {effectiveDateRange.dateFrom} - {effectiveDateRange.dateTo}
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">Fiks maosh</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.fixedSalary)}</p>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(salaryTotals?.fixedSalary)}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">Asosiy bonus</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.bonus)}</p>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(salaryTotals?.bonus)}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">Qo'shimcha bonuslar</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatAmount(salaryTotals?.planBonus)}</p>
-          <p className="mt-1 text-xs text-gray-500">KPI: {formatAmount(salaryTotals?.kpi)}</p>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(salaryTotals?.planBonus)}</p>
+          <p className="mt-1 text-xs text-gray-500">KPI: {formatSom(salaryTotals?.kpi)}</p>
         </div>
       </div>
 
@@ -372,11 +351,11 @@ export default function FinancePage() {
                 {salaryByAgent.map((row: any) => (
                   <tr key={row.userId}>
                     <td className="px-3 py-2 text-sm text-gray-900">{row.name}</td>
-                    <td className="px-3 py-2 text-sm font-semibold text-gray-900">{formatAmount(row.totalSalary)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.fixedSalary)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.kpiAmount)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.planBonusAmount)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.bonusAmount)}</td>
+                    <td className="px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(row.totalSalary)}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.fixedSalary)}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.kpiAmount)}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.planBonusAmount)}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusAmount)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -407,15 +386,15 @@ export default function FinancePage() {
             <div key={item.title} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
               <p className="text-sm text-gray-500">{item.title}</p>
               <div className="mt-3 space-y-1">
-                <p className="text-sm text-gray-600">Joriy: <span className="font-semibold text-gray-900">{formatAmount(item.data?.currentValue)}</span></p>
-                <p className="text-sm text-gray-600">Taqqoslash: <span className="font-semibold text-gray-900">{formatAmount(item.data?.previousValue)}</span></p>
+                <p className="text-sm text-gray-600">Joriy: <span className="font-semibold text-gray-900">{formatSom(item.data?.currentValue)}</span></p>
+                <p className="text-sm text-gray-600">Taqqoslash: <span className="font-semibold text-gray-900">{formatSom(item.data?.previousValue)}</span></p>
               </div>
               <div className="mt-3 flex items-center gap-2">
                 <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${trend.badgeClass}`}>
                   {trend.label}
                 </span>
                 <span className="text-sm font-semibold text-gray-900">
-                  {trend.sign}{formatAmount(item.data?.diffAmount)} ({trend.sign}{Number(item.data?.diffPercent || 0).toFixed(2)}%)
+                  {trend.sign}{formatSom(item.data?.diffAmount)} ({trend.sign}{Number(item.data?.diffPercent || 0).toFixed(2)}%)
                 </span>
               </div>
             </div>
@@ -434,18 +413,18 @@ export default function FinancePage() {
             </div>
             <div className="text-right">
               <p className="text-xs text-gray-500">Prognoz</p>
-              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.monthEnd?.projectedTotal)}</p>
+              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.monthEnd?.projectedTotal)}</p>
             </div>
           </div>
 
           <div className="mb-3 grid grid-cols-2 gap-3">
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
               <p className="text-xs text-gray-500">Hozirgacha</p>
-              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.monthEnd?.currentToDate)}</p>
+              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.monthEnd?.currentToDate)}</p>
             </div>
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
               <p className="text-xs text-gray-500">Qolgan potensial</p>
-              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.monthEnd?.remainingAmount)}</p>
+              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.monthEnd?.remainingAmount)}</p>
             </div>
           </div>
 
@@ -456,7 +435,7 @@ export default function FinancePage() {
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tickFormatter={(value) => formatCompactAmount(value)} tick={{ fontSize: 11 }} />
                 <Tooltip
-                  formatter={(value: any, name: string) => [formatAmount(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
+                  formatter={(value: any, name: string) => [formatSom(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
                   labelFormatter={(label) => `${label}-kun`}
                 />
                 <Line type="monotone" dataKey="actual" name="actual" stroke="#2563EB" strokeWidth={2.5} dot={false} connectNulls={false} />
@@ -476,18 +455,18 @@ export default function FinancePage() {
             </div>
             <div className="text-right">
               <p className="text-xs text-gray-500">Prognoz</p>
-              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.yearEnd?.projectedTotal)}</p>
+              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.yearEnd?.projectedTotal)}</p>
             </div>
           </div>
 
           <div className="mb-3 grid grid-cols-2 gap-3">
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
               <p className="text-xs text-gray-500">YTD</p>
-              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.yearEnd?.currentToDate)}</p>
+              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.yearEnd?.currentToDate)}</p>
             </div>
             <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
               <p className="text-xs text-gray-500">Qolgan potensial</p>
-              <p className="text-sm font-semibold text-gray-900">{formatAmount(forecast?.yearEnd?.remainingAmount)}</p>
+              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.yearEnd?.remainingAmount)}</p>
             </div>
           </div>
 
@@ -498,7 +477,7 @@ export default function FinancePage() {
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tickFormatter={(value) => formatCompactAmount(value)} tick={{ fontSize: 11 }} />
                 <Tooltip
-                  formatter={(value: any, name: string) => [formatAmount(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
+                  formatter={(value: any, name: string) => [formatSom(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
                 />
                 <Line type="monotone" dataKey="actual" name="actual" stroke="#2563EB" strokeWidth={2.5} dot={false} connectNulls={false} />
                 <Line type="monotone" dataKey="forecast" name="forecast" stroke="#F59E0B" strokeWidth={2} dot={false} strokeDasharray="6 4" />
@@ -529,8 +508,8 @@ export default function FinancePage() {
                     <tr key={row.courseName}>
                       <td className="px-3 py-2 text-sm text-gray-900">{row.courseName}</td>
                       <td className="px-3 py-2 text-sm text-gray-700">{row.count}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.amount)}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.agreementAmount)}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.amount)}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.agreementAmount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -560,7 +539,7 @@ export default function FinancePage() {
                     <tr key={row.agent}>
                       <td className="px-3 py-2 text-sm text-gray-900">{row.agent}</td>
                       <td className="px-3 py-2 text-sm text-gray-700">{row.count}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{formatAmount(row.amount)}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -608,12 +587,12 @@ export default function FinancePage() {
                       {[income.courseName, income.tariffName].filter(Boolean).join(' / ') || '-'}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getIncomeStatusBadge(income.lifecycleStatus).className}`}>
-                        {getIncomeStatusBadge(income.lifecycleStatus).label}
+                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getIncomeStatusBadge(income.lifecycleStatus, { darkMode: false }).className}`}>
+                        {getIncomeStatusBadge(income.lifecycleStatus, { darkMode: false }).label}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(income.paymentAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(income.remainingDebtAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(income.paymentAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(income.remainingDebtAmount)}</td>
                   </tr>
                 ))}
               </tbody>

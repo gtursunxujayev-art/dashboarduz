@@ -6,6 +6,7 @@ import { trpc } from '@/lib/trpc';
 import AnalyticsCharts from '@/components/dashboard/analytics-charts';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
+import { getRangeLabel, getTashkentToday } from '@/lib/date-range';
 
 type DashboardRange = 'today' | 'week' | 'month' | 'custom';
 type AiFocus = 'sales' | 'lead_quality' | 'meta_targeting' | 'agents' | 'courses';
@@ -17,27 +18,6 @@ const AI_FOCUS_OPTIONS: Array<{ value: AiFocus; label: string }> = [
   { value: 'agents', label: 'Agents' },
   { value: 'courses', label: 'Courses' },
 ];
-
-function getTashkentToday(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const year = parts.find((part) => part.type === 'year')?.value ?? '1970';
-  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
-  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
-  return `${year}-${month}-${day}`;
-}
-
-function getRangeLabel(range: DashboardRange): string {
-  if (range === 'week') return 'Hafta';
-  if (range === 'month') return 'Oy';
-  if (range === 'custom') return 'Ixtiyoriy';
-  return 'Bugun';
-}
 
 export default function AnalyticsPage() {
   const [range, setRange] = useState<DashboardRange>('today');
