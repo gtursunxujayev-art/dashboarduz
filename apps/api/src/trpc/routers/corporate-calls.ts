@@ -131,6 +131,7 @@ async function sendCorporateCallAddedTelegram(params: {
   db: DbClient;
 }) {
   const { db } = params;
+
   const groupIds = parseTelegramGroupIdsFromEnvKeys(CORPORATE_GROUP_ENV_KEYS);
   if (!groupIds.length) {
     return { sent: false, reason: 'group_missing' as const };
