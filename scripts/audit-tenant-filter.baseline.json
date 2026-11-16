@@ -18,6 +18,7 @@
   "apps/api/src/trpc/routers/customer-income.ts": {
     "course.findMany": 1,
     "customer.findFirst": 2,
+    "income.findUnique": 1,
     "incomeAdjustmentRequest.count": 3,
     "incomeAdjustmentRequest.findMany": 1
   },
@@ -42,6 +43,6 @@
     "notification.findMany": 1
   },
   "apps/api/src/trpc/routers/users.ts": {
-    "user.findFirst": 1
+    "user.findFirst": 2
   }
 }
