@@ -19,7 +19,7 @@
     "@typescript-eslint/no-explicit-any": 13,
     "@typescript-eslint/no-unsafe-member-access": 6,
     "@typescript-eslint/no-unsafe-return": 1,
-    "@typescript-eslint/no-unused-vars": 3,
+    "@typescript-eslint/no-unused-vars": 1,
     "@typescript-eslint/require-await": 7,
     "no-console": 4
   },
@@ -75,7 +75,7 @@
     "@typescript-eslint/no-explicit-any": 11,
     "@typescript-eslint/no-unsafe-assignment": 19,
     "@typescript-eslint/no-unsafe-member-access": 23,
-    "@typescript-eslint/no-unused-vars": 6,
+    "@typescript-eslint/no-unused-vars": 1,
     "@typescript-eslint/require-await": 6
   },
   "src/services/auth/password.ts": {
@@ -88,14 +88,9 @@
     "@typescript-eslint/no-unsafe-return": 2
   },
   "src/services/bonus-auto-finalize.ts": {
-    "@typescript-eslint/no-explicit-any": 2,
-    "@typescript-eslint/no-unsafe-assignment": 2,
-    "@typescript-eslint/no-unsafe-member-access": 2,
     "import/order": 1
   },
   "src/services/bonus-engine.ts": {
-    "@typescript-eslint/no-explicit-any": 1,
-    "@typescript-eslint/no-unsafe-assignment": 1,
     "@typescript-eslint/no-unused-vars": 1,
     "import/order": 3
   },

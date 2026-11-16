@@ -198,7 +198,7 @@ export default function FinanceBonusDetailsPage() {
   const summaryTotals = bonusDetailsQuery.data?.summaryTotals;
   const agentSummary = useMemo(() => bonusDetailsQuery.data?.agentSummary || [], [bonusDetailsQuery.data]);
   const bonusAgentCount = useMemo(
-    () => agentSummary.length || new Set(bonusRows.map((row: any) => row.managerUserId)).size,
+    () => agentSummary.length || new Set(bonusRows.map((row) => row.managerUserId)).size,
     [agentSummary, bonusRows],
   );
 
@@ -421,7 +421,7 @@ export default function FinanceBonusDetailsPage() {
             className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             <option value="">Barcha kurslar</option>
-            {courseOptions.map((course: any) => (
+            {courseOptions.map((course) => (
               <option key={course.id} value={course.id}>
                 {course.name}
               </option>
@@ -435,7 +435,7 @@ export default function FinanceBonusDetailsPage() {
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value="">Barcha agentlar</option>
-              {managerOptions.map((manager: any) => (
+              {managerOptions.map((manager) => (
                 <option key={manager.id} value={manager.id}>
                   {manager.label}
                 </option>
@@ -491,7 +491,7 @@ export default function FinanceBonusDetailsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
-                {agentSummary.map((row: any) => (
+                {agentSummary.map((row) => (
                   <tr key={row.managerUserId}>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.managerLabel}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatAmount(row.incomeAmount)}</td>
@@ -560,7 +560,7 @@ export default function FinanceBonusDetailsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
-                {bonusRows.map((row: any) => (
+                {bonusRows.map((row) => (
                   <tr key={row.id}>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                       {new Date(row.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}

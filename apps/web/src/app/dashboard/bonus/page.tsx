@@ -351,9 +351,9 @@ export default function BonusPage() {
   const agentUsers = useMemo<AgentUserOption[]>(() => {
     const users = usersQuery.data || [];
     return users
-      .filter((currentUser: any) => Array.isArray(currentUser.roles) && (currentUser.roles.some((role: string) => AGENT_ROLES.has(role)) || currentUser.roles.includes('TeamLeader')))
-      .filter((currentUser: any) => currentUser.isActive !== false)
-      .map((currentUser: any) => ({
+      .filter((currentUser) => Array.isArray(currentUser.roles) && (currentUser.roles.some((role: string) => AGENT_ROLES.has(role)) || currentUser.roles.includes('TeamLeader')))
+      .filter((currentUser) => currentUser.isActive !== false)
+      .map((currentUser) => ({
         id: currentUser.id as string,
         label: (currentUser.name as string | null) || (currentUser.username as string | null) || currentUser.id,
       }));

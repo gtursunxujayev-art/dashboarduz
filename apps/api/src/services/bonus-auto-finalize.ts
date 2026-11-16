@@ -39,12 +39,12 @@ export async function autoFinalizePreviousBonusMonth(now = new Date()): Promise<
       await finalizeBonusMonth({ tenantId: tenant.id, month, userId: SYSTEM_FINALIZER_USER_ID });
       count += 1;
       log(LogLevel.INFO, 'Bonus month auto-finalized', { tenantId: tenant.id, month: getTashkentMonthKey(month) });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // A parallel worker may have finalized it first (unique tenant+month); anything else is retried next hour.
       log(LogLevel.WARN, 'Bonus month auto-finalize failed', {
         tenantId: tenant.id,
         month: getTashkentMonthKey(month),
-        error: error?.message || String(error),
+        error: (error as { message?: string } | null)?.message || String(error),
       });
     }
   }
@@ -55,8 +55,8 @@ export async function autoFinalizePreviousBonusMonth(now = new Date()): Promise<
 export function startBonusAutoFinalizeScheduler(): void {
   if (timer) return;
   const run = () => {
-    autoFinalizePreviousBonusMonth().catch((error: any) => {
-      log(LogLevel.WARN, 'Bonus auto-finalize run failed', { error: error?.message || String(error) });
+    autoFinalizePreviousBonusMonth().catch((error: unknown) => {
+      log(LogLevel.WARN, 'Bonus auto-finalize run failed', { error: (error as { message?: string } | null)?.message || String(error) });
     });
   };
 

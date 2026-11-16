@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { prisma } from '@dashboarduz/db';
+import { prisma, type Prisma } from '@dashboarduz/db';
 import {
   classifyCourseCategoryFromField,
   extractSalarySettings,
@@ -694,7 +694,7 @@ export async function finalizeBonusMonth(params: { tenantId: string; month: Date
         tenantId: params.tenantId,
         month,
         policyVersionId: calculation.policyVersionId,
-        policy: calculation.policy as any,
+        policy: calculation.policy as Prisma.InputJsonValue,
         sourceDigest: calculation.sourceDigest,
         totalBonusAmount: calculation.totalBonusAmount,
         finalizedByUserId: params.userId,

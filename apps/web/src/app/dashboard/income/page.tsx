@@ -271,13 +271,13 @@ export default function IncomePage() {
   const courseOptions = useMemo(() => formOptionsQuery.data?.courses || [], [formOptionsQuery.data]);
   const groupedCourseOptions = useMemo(
     () => [
-      { key: 'online', label: 'Online', courses: courseOptions.filter((course: any) => course.category === 'online') },
-      { key: 'offline', label: 'Offline', courses: courseOptions.filter((course: any) => course.category === 'offline') },
-      { key: 'intensive', label: 'Intensive', courses: courseOptions.filter((course: any) => course.category === 'intensive') },
+      { key: 'online', label: 'Online', courses: courseOptions.filter((course) => course.category === 'online') },
+      { key: 'offline', label: 'Offline', courses: courseOptions.filter((course) => course.category === 'offline') },
+      { key: 'intensive', label: 'Intensive', courses: courseOptions.filter((course) => course.category === 'intensive') },
       {
         key: 'additional_service',
         label: "Qo'shimcha xizmat",
-        courses: courseOptions.filter((course: any) => course.category === 'additional_service'),
+        courses: courseOptions.filter((course) => course.category === 'additional_service'),
       },
     ],
     [courseOptions],
@@ -354,7 +354,7 @@ export default function IncomePage() {
     const fromLookup = Array.isArray(customerOutstandingDebtsQuery.data)
       ? customerOutstandingDebtsQuery.data
       : [];
-    const fallback = debtOptions.filter((debt: any) => debt.customerNumber === selectedCustomer.customerNumber);
+    const fallback = debtOptions.filter((debt) => debt.customerNumber === selectedCustomer.customerNumber);
     const byId = new Map<string, any>();
     for (const debt of [...fromLookup, ...fallback]) {
       byId.set(debt.id, debt);
@@ -368,7 +368,7 @@ export default function IncomePage() {
     if (!debtSourceIncomeId) {
       return null;
     }
-    return debtOptionsForCustomer.find((debt: any) => debt.id === debtSourceIncomeId) || null;
+    return debtOptionsForCustomer.find((debt) => debt.id === debtSourceIncomeId) || null;
   }, [debtOptionsForCustomer, debtSourceIncomeId]);
 
   const clearFieldError = (field: string) => {
@@ -386,7 +386,7 @@ export default function IncomePage() {
     if (!courseId) {
       return [];
     }
-    const course = courseOptions.find((item: any) => item.id === courseId);
+    const course = courseOptions.find((item) => item.id === courseId);
     return Array.isArray(course?.tariffs) ? course.tariffs : [];
   }, [courseId, courseOptions]);
 
@@ -394,7 +394,7 @@ export default function IncomePage() {
     if (!tariffId) {
       return [];
     }
-    const tariff = tariffOptions.find((item: any) => item.id === tariffId);
+    const tariff = tariffOptions.find((item) => item.id === tariffId);
     return Array.isArray(tariff?.subTariffs) ? tariff.subTariffs : [];
   }, [tariffId, tariffOptions]);
 
@@ -402,14 +402,14 @@ export default function IncomePage() {
     if (!editForm?.courseId) {
       return [];
     }
-    const course = courseOptions.find((item: any) => item.id === editForm.courseId);
+    const course = courseOptions.find((item) => item.id === editForm.courseId);
     return Array.isArray(course?.tariffs) ? course.tariffs : [];
   }, [courseOptions, editForm?.courseId]);
   const editSubTariffOptions = useMemo(() => {
     if (!editForm?.tariffId) {
       return [];
     }
-    const tariff = editTariffOptions.find((item: any) => item.id === editForm.tariffId);
+    const tariff = editTariffOptions.find((item) => item.id === editForm.tariffId);
     return Array.isArray(tariff?.subTariffs) ? tariff.subTariffs : [];
   }, [editForm?.tariffId, editTariffOptions]);
   const resolvedEditSubTariffId = useMemo(
@@ -440,7 +440,7 @@ export default function IncomePage() {
     }
 
     if (isTeamLeader && user?.userId) {
-      const selfManager = managers.find((manager: any) => manager.id === user.userId);
+      const selfManager = managers.find((manager) => manager.id === user.userId);
       if (selfManager?.id) {
         setManagerUserId(selfManager.id);
         return;
@@ -500,7 +500,7 @@ export default function IncomePage() {
     if (!debtSourceIncomeId) {
       return;
     }
-    const debt = debtOptionsForCustomer.find((item: any) => item.id === debtSourceIncomeId);
+    const debt = debtOptionsForCustomer.find((item) => item.id === debtSourceIncomeId);
     if (!debt) {
       return;
     }
@@ -531,7 +531,7 @@ export default function IncomePage() {
       setSubTariffId('');
       return;
     }
-    const exists = tariffOptions.some((tariff: any) => tariff.id === tariffId);
+    const exists = tariffOptions.some((tariff) => tariff.id === tariffId);
     if (!exists) {
       setTariffId('');
       setSubTariffId('');
@@ -543,7 +543,7 @@ export default function IncomePage() {
       setSubTariffId('');
       return;
     }
-    const exists = subTariffOptions.some((subTariff: any) => subTariff.id === subTariffId);
+    const exists = subTariffOptions.some((subTariff) => subTariff.id === subTariffId);
     if (!exists) {
       setSubTariffId('');
     }
@@ -559,7 +559,7 @@ export default function IncomePage() {
     if (!editForm.tariffId) {
       return;
     }
-    const exists = editTariffOptions.some((tariff: any) => tariff.id === editForm.tariffId);
+    const exists = editTariffOptions.some((tariff) => tariff.id === editForm.tariffId);
     if (!exists) {
       setEditForm((prev) => (prev ? { ...prev, tariffId: '' } : prev));
     }
@@ -658,7 +658,7 @@ export default function IncomePage() {
         'Deadline',
       ];
 
-      const rows = result.rows.map((row: any) => ([
+      const rows = result.rows.map((row) => ([
         formatDateForInput(row.entryDate),
         row.managerLabel || '-',
         row.customerName || '',
@@ -990,7 +990,7 @@ export default function IncomePage() {
                   className={buildFieldClass(fieldErrors, 'managerUserId')}
                 >
                   <option value="">Menedjerni tanlang</option>
-                  {managers.map((manager: any) => (
+                  {managers.map((manager) => (
                     <option key={manager.id} value={manager.id}>
                       {manager.label}
                     </option>
@@ -1142,7 +1142,7 @@ export default function IncomePage() {
                     className={buildFieldClass(fieldErrors, 'debtSourceIncomeId')}
                   >
                     <option value="">Qarzni tanlang</option>
-                    {debtOptionsForCustomer.map((debt: any) => (
+                    {debtOptionsForCustomer.map((debt) => (
                       <option key={debt.id} value={debt.id}>
                         {debt.customerNumber} - {debt.customerName} | {debt.courseName || "Kurs yo'q"} / {debt.tariffName || "Tarif yo'q"} | Qarz: {formatAmount(debt.remainingDebtAmount)}
                       </option>
@@ -1201,7 +1201,7 @@ export default function IncomePage() {
                       {groupedCourseOptions.map((group) =>
                         group.courses.length ? (
                           <optgroup key={group.key} label={group.label}>
-                            {group.courses.map((course: any) => (
+                            {group.courses.map((course) => (
                               <option key={course.id} value={course.id}>
                                 {course.name}
                               </option>
@@ -1225,7 +1225,7 @@ export default function IncomePage() {
                       className={buildFieldClass(fieldErrors, 'tariffId', 'disabled:bg-gray-100 disabled:text-gray-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400')}
                     >
                       <option value="">Tarifni tanlang</option>
-                      {tariffOptions.map((tariff: any) => (
+                      {tariffOptions.map((tariff) => (
                         <option key={tariff.id} value={tariff.id}>
                           {tariff.name}
                         </option>
@@ -1249,7 +1249,7 @@ export default function IncomePage() {
                         className={buildFieldClass(fieldErrors, 'subTariffId', 'disabled:bg-gray-100 disabled:text-gray-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400')}
                       >
                         <option value="">Subtarifni tanlang</option>
-                        {subTariffOptions.map((subTariff: any) => (
+                        {subTariffOptions.map((subTariff) => (
                           <option key={subTariff.id} value={subTariff.id}>
                             {subTariff.name}
                           </option>
@@ -1381,7 +1381,7 @@ export default function IncomePage() {
                   </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
-                    {incomesQuery.data.map((income: any) => (
+                    {incomesQuery.data.map((income) => (
                       <tr key={income.id}>
                         <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
                           {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
@@ -1494,7 +1494,7 @@ export default function IncomePage() {
                     className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                   >
                     <option value="">Menedjerni tanlang</option>
-                    {managers.map((manager: any) => (
+                    {managers.map((manager) => (
                       <option key={manager.id} value={manager.id}>
                         {manager.label}
                       </option>
@@ -1526,7 +1526,7 @@ export default function IncomePage() {
                         {groupedCourseOptions.map((group) =>
                           group.courses.length ? (
                             <optgroup key={group.key} label={group.label}>
-                              {group.courses.map((course: any) => (
+                              {group.courses.map((course) => (
                                 <option key={course.id} value={course.id}>
                                   {course.name}
                                 </option>
@@ -1553,7 +1553,7 @@ export default function IncomePage() {
                         className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                       >
                         <option value="">Tarifni tanlang</option>
-                        {editTariffOptions.map((tariff: any) => (
+                        {editTariffOptions.map((tariff) => (
                           <option key={tariff.id} value={tariff.id}>
                             {tariff.name}
                           </option>
@@ -1581,7 +1581,7 @@ export default function IncomePage() {
                           className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                         >
                           <option value="">Subtarifni tanlang</option>
-                          {editSubTariffOptions.map((subTariff: any) => (
+                          {editSubTariffOptions.map((subTariff) => (
                             <option
                               key={`${normalizeTextToken(subTariff.id) || normalizeTextToken(subTariff.name)}`}
                               value={getSubTariffOptionValue(subTariff)}
