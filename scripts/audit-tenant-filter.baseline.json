@@ -1,4 +1,10 @@
 {
+  "apps/api/src/services/customer-income/catalog.ts": {
+    "course.findMany": 1
+  },
+  "apps/api/src/services/customer-income/create-income.ts": {
+    "income.findUnique": 1
+  },
   "apps/api/src/trpc/routers/attendance.ts": {
     "attendanceDaySummary.count": 1,
     "attendanceDaySummary.findMany": 1,
@@ -15,12 +21,12 @@
     "income.count": 2,
     "income.findMany": 2
   },
-  "apps/api/src/trpc/routers/customer-income.ts": {
-    "course.findMany": 1,
-    "customer.findFirst": 2,
-    "income.findUnique": 1,
+  "apps/api/src/trpc/routers/customer-income/adjustments.ts": {
     "incomeAdjustmentRequest.count": 3,
     "incomeAdjustmentRequest.findMany": 1
+  },
+  "apps/api/src/trpc/routers/customer-income/payment-history.ts": {
+    "customer.findFirst": 2
   },
   "apps/api/src/trpc/routers/dashboard/salary.ts": {
     "income.count": 1,

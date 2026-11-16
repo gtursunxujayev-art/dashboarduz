@@ -61,6 +61,39 @@
   "src/services/bonus-engine.ts": {
     "@typescript-eslint/no-unused-vars": 1
   },
+  "src/services/customer-income/bulk-import-parsing.ts": {
+    "@typescript-eslint/no-unused-vars": 2
+  },
+  "src/services/customer-income/bulk-import-rows.ts": {
+    "@typescript-eslint/no-unused-vars": 1
+  },
+  "src/services/customer-income/create-income.ts": {
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unnecessary-type-assertion": 1,
+    "@typescript-eslint/no-unsafe-member-access": 2
+  },
+  "src/services/customer-income/historical-import.ts": {
+    "@typescript-eslint/no-explicit-any": 1,
+    "@typescript-eslint/no-unsafe-assignment": 1,
+    "@typescript-eslint/no-unused-vars": 11
+  },
+  "src/services/customer-income/payment-notifications.ts": {
+    "@typescript-eslint/no-explicit-any": 1,
+    "@typescript-eslint/no-unsafe-member-access": 1
+  },
+  "src/services/customer-income/refund-notifications.ts": {
+    "@typescript-eslint/no-explicit-any": 4,
+    "@typescript-eslint/no-unsafe-member-access": 4
+  },
+  "src/services/customer-income/sale-chain.ts": {
+    "@typescript-eslint/no-explicit-any": 1,
+    "@typescript-eslint/no-unsafe-member-access": 1
+  },
+  "src/services/customer-income/tariff-change-notifications.ts": {
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unsafe-member-access": 2,
+    "@typescript-eslint/no-unused-vars": 1
+  },
   "src/services/funnel-metrics.ts": {
     "@typescript-eslint/no-unsafe-assignment": 1
   },
@@ -206,14 +239,24 @@
     "@typescript-eslint/no-unused-vars": 1,
     "object-shorthand": 3
   },
-  "src/trpc/routers/customer-income.ts": {
-    "@typescript-eslint/no-explicit-any": 23,
-    "@typescript-eslint/no-unnecessary-type-assertion": 1,
+  "src/trpc/routers/customer-income/adjustment-review.ts": {
+    "@typescript-eslint/no-explicit-any": 3,
+    "@typescript-eslint/no-unsafe-member-access": 3
+  },
+  "src/trpc/routers/customer-income/adjustments.ts": {
+    "@typescript-eslint/no-explicit-any": 4,
     "@typescript-eslint/no-unsafe-argument": 4,
-    "@typescript-eslint/no-unsafe-assignment": 5,
-    "@typescript-eslint/no-unsafe-member-access": 37,
-    "@typescript-eslint/no-unsafe-return": 4,
-    "@typescript-eslint/no-unused-vars": 16,
+    "@typescript-eslint/no-unsafe-assignment": 4,
+    "@typescript-eslint/no-unsafe-member-access": 22,
+    "@typescript-eslint/no-unsafe-return": 4
+  },
+  "src/trpc/routers/customer-income/customer-courses.ts": {
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unsafe-member-access": 2,
+    "@typescript-eslint/no-unused-vars": 1
+  },
+  "src/trpc/routers/customer-income/historical-import.ts": {
+    "@typescript-eslint/no-explicit-any": 3,
     "@typescript-eslint/require-await": 6
   },
   "src/trpc/routers/dashboard/helpers.ts": {

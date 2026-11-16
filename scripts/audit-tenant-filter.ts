@@ -1,7 +1,8 @@
 /**
  * Static analysis script to audit Prisma queries for tenantId filters.
  *
- * Scans all tRPC router files (excluding calls.ts and webhook handlers)
+ * Scans all tRPC router files (excluding calls.ts and webhook handlers), plus the service folders that hold
+ * query code moved out of those routers (SERVICE_DIRS), so moving a query out of a router keeps it in the audit.
  * and reports any Prisma query that may be missing a tenantId WHERE clause.
  *
  * Usage:
@@ -19,6 +20,9 @@ import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const ROUTERS_DIR = path.resolve(REPO_ROOT, 'apps/api/src/trpc/routers');
+// Services that took over query code from routers when the routers were split into folders.
+const SERVICE_DIRS = ['customer-income'].map((dir) => path.resolve(REPO_ROOT, 'apps/api/src/services', dir));
+const SCAN_DIRS = [ROUTERS_DIR, ...SERVICE_DIRS];
 const BASELINE_PATH = path.resolve(__dirname, 'audit-tenant-filter.baseline.json');
 const SKIP_FILES = new Set(['calls.ts', 'index.ts']);
 const SKIP_DIRS = new Set(['__tests__']);
@@ -103,11 +107,11 @@ function main() {
 
   console.log('Tenant Filter Audit');
   console.log('='.repeat(60));
-  console.log(`Scanning: ${ROUTERS_DIR}`);
+  console.log(`Scanning: ${SCAN_DIRS.join(', ')}`);
   console.log(`Skipping: ${[...SKIP_FILES].join(', ')}`);
   console.log('');
 
-  const files = walkDir(ROUTERS_DIR);
+  const files = SCAN_DIRS.flatMap((dir) => walkDir(dir));
   const allFindings: Finding[] = [];
 
   for (const file of files) {
