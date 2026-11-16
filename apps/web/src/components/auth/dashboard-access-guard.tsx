@@ -40,6 +40,8 @@ const MANAGER_BLOCKED_PATHS = [
   '/dashboard/integrations',
   '/dashboard/notifications',
   '/dashboard/income-problems',
+];
+const ADMIN_ONLY_PATHS = [
   '/dashboard/income-debug',
 ];
 
@@ -108,8 +110,12 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
     ? OFFLINE_LEADERBOARD_PATH
     : LIVE_LEADERBOARD_PATH;
 
+  const isAdmin = Boolean(user?.roles?.includes('Admin'));
+
   const isAllowed = isOnlineDashboardRestriction || isOfflineDashboardRestriction
     ? normalizedPath === restrictedDashboardPath
+    : isPathBlocked(normalizedPath, ADMIN_ONLY_PATHS)
+    ? isAdmin
     : isLeadPath
     ? canAccessLeads
     : isAgentRestriction
