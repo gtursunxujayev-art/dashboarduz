@@ -405,12 +405,45 @@
     "no-duplicate-imports": 1
   },
   "src/workers/index.ts": {
-    "@typescript-eslint/no-explicit-any": 19,
-    "@typescript-eslint/no-unnecessary-type-assertion": 3,
-    "@typescript-eslint/no-unsafe-assignment": 35,
+    "import/no-cycle": 1
+  },
+  "src/workers/processors/amocrm-webhook.ts": {
+    "@typescript-eslint/no-explicit-any": 7,
+    "@typescript-eslint/no-unnecessary-type-assertion": 1,
+    "@typescript-eslint/no-unsafe-assignment": 24,
     "@typescript-eslint/no-unsafe-call": 1,
-    "@typescript-eslint/no-unsafe-member-access": 50,
-    "@typescript-eslint/require-await": 1,
+    "@typescript-eslint/no-unsafe-member-access": 32,
+    "import/no-cycle": 1
+  },
+  "src/workers/processors/faceid-webhook.ts": {
+    "@typescript-eslint/no-explicit-any": 1,
+    "@typescript-eslint/no-unsafe-member-access": 1
+  },
+  "src/workers/processors/integration-sync.ts": {
+    "@typescript-eslint/require-await": 1
+  },
+  "src/workers/processors/notification.ts": {
+    "@typescript-eslint/no-explicit-any": 3,
+    "@typescript-eslint/no-unsafe-assignment": 1,
+    "@typescript-eslint/no-unsafe-member-access": 6,
+    "import/no-cycle": 1
+  },
+  "src/workers/processors/telegram-webhook.ts": {
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unnecessary-type-assertion": 1,
+    "@typescript-eslint/no-unsafe-assignment": 1,
+    "@typescript-eslint/no-unsafe-member-access": 3
+  },
+  "src/workers/processors/voip-webhook.ts": {
+    "@typescript-eslint/no-explicit-any": 3,
+    "@typescript-eslint/no-unnecessary-type-assertion": 1,
+    "@typescript-eslint/no-unsafe-assignment": 4,
+    "@typescript-eslint/no-unsafe-member-access": 2
+  },
+  "src/workers/processors/webhook-event.ts": {
+    "@typescript-eslint/no-explicit-any": 3,
+    "@typescript-eslint/no-unsafe-assignment": 5,
+    "@typescript-eslint/no-unsafe-member-access": 6,
     "import/no-cycle": 1
   },
   "src/workers/worker.ts": {
