@@ -5,8 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# CI never touches a real database. Production/staging migrations are a deliberate release step
+# (see "Release Path" in README.md), not something that runs on every push.
+
 jobs:
   validate:
+    name: Type-check, lint, tenant audit, build
     runs-on: ubuntu-latest
 
     steps:
@@ -25,18 +29,75 @@ jobs:
       - name: Type check
         run: npm run type-check
 
-      - name: Run tests
-        run: npm run test --workspaces --if-present
+      - name: Lint
+        # apps/api: strict rules, existing debt recorded in apps/api/.eslint-baseline.json; new problems fail.
+        run: npm run lint
+
+      - name: Tenant filter audit
+        # Fails only on unfiltered queries that are not in scripts/audit-tenant-filter.baseline.json.
+        run: npm run audit:tenant-filter
 
       - name: Build
         run: npm run build
 
-      - name: Run DB migrations (if DATABASE_URL provided)
+  test:
+    name: Tests (with throwaway Postgres) and coverage
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dashboarduz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Only this job-local container. The integration harness refuses database names without "test".
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dashboarduz_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Migrate the test database
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: npx prisma migrate deploy --schema=packages/db/prisma/schema.prisma
+
+      - name: Run tests with coverage
+        run: npm run test:coverage --workspaces --if-present
+
+      - name: Coverage summary
+        if: always()
         run: |
-          if [ -n "$DATABASE_URL" ]; then
-            npm run db:migrate:deploy
-          else
-            echo "DATABASE_URL not set; skipping migration step."
-          fi
+          {
+            echo "## Coverage"
+            for ws in apps/api apps/web; do
+              f="$ws/coverage/coverage-summary.json"
+              if [ -f "$f" ]; then
+                node -e "const t=require('./$f').total; console.log('**$ws**: ' + ['lines','statements','functions','branches'].map(k => k + ' ' + t[k].pct + '%').join(', '))"
+              else
+                echo "**$ws**: no coverage summary"
+              fi
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"

@@ -15,8 +15,9 @@
     "build:api:railway": "npm ci --include=dev -w @dashboarduz/api -w @dashboarduz/db -w @dashboarduz/shared --include-workspace-root=false && npm run generate --workspace @dashboarduz/db && npm run build --workspace @dashboarduz/api",
     "build:worker:railway": "npm ci --include=dev -w @dashboarduz/api -w @dashboarduz/db -w @dashboarduz/shared --include-workspace-root=false && npm run generate --workspace @dashboarduz/db && npm run build --workspace @dashboarduz/api",
     "build": "npm run build --workspace @dashboarduz/shared && npm run build --workspace @dashboarduz/db && npm run build --workspace @dashboarduz/api && npm run build --workspace @dashboarduz/web",
-    "type-check": "npm run build --workspace @dashboarduz/shared && npm run build --workspace @dashboarduz/db && npm run type-check --workspace @dashboarduz/api && npm run type-check --workspace @dashboarduz/web",
+    "type-check": "npm run build --workspace @dashboarduz/shared && npm run build --workspace @dashboarduz/db && npm run build --workspace @dashboarduz/api && npm run type-check --workspace @dashboarduz/web",
     "lint": "npm run lint --workspace @dashboarduz/api && npm run lint --workspace @dashboarduz/web",
+    "audit:tenant-filter": "tsx scripts/audit-tenant-filter.ts --baseline",
     "db:generate": "npm run generate --workspace @dashboarduz/db",
     "db:migrate": "npm run migrate --workspace @dashboarduz/db",
     "db:migrate:deploy": "npm run migrate:deploy --workspace @dashboarduz/db"
