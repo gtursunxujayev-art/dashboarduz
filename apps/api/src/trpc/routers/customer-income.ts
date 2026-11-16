@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma, type DbClient, type TenantPrismaClient } from '@dashboarduz/db';
 import { NON_TECHNICAL_SALE_WHERE } from '../../services/income-facts';
 import { TRPCError } from '@trpc/server';
 import { Prisma } from '@prisma/client';
@@ -272,7 +272,10 @@ function withSaleSubTariffMeta(
 async function buildActiveSaleChainMetrics(params: {
   tenantId: string;
   sales: SaleChainSaleRow[];
+  db: DbClient;
 }) {
+  const { db } = params;
+
   if (params.sales.length === 0) {
     return new Map<string, {
       agreementAmount: number;
@@ -283,7 +286,7 @@ async function buildActiveSaleChainMetrics(params: {
   }
 
   const saleIds = params.sales.map((sale) => sale.id);
-  const chainRows = await prisma.income.findMany({
+  const chainRows = await db.income.findMany({
     where: {
       tenantId: params.tenantId,
       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -345,18 +348,18 @@ function throwCourseCategoryMigrationError(): never {
 }
 
 async function ensureCourseCategoryConstraintSupportsAdditionalService(): Promise<void> {
-  await prisma.$transaction([
-    prisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '5000ms'`),
-    prisma.$executeRawUnsafe(`SET LOCAL statement_timeout = '15000ms'`),
-    prisma.$executeRawUnsafe(`
+  await systemPrisma.$transaction([
+    systemPrisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '5000ms'`),
+    systemPrisma.$executeRawUnsafe(`SET LOCAL statement_timeout = '15000ms'`),
+    systemPrisma.$executeRawUnsafe(`
       UPDATE "courses"
       SET "category" = 'offline'
       WHERE "category" IS NULL
          OR LENGTH(TRIM("category")) = 0
          OR "category" NOT IN ('online', 'offline', 'intensive', 'additional_service');
     `),
-    prisma.$executeRawUnsafe(`ALTER TABLE "courses" DROP CONSTRAINT IF EXISTS "courses_category_check"`),
-    prisma.$executeRawUnsafe(`
+    systemPrisma.$executeRawUnsafe(`ALTER TABLE "courses" DROP CONSTRAINT IF EXISTS "courses_category_check"`),
+    systemPrisma.$executeRawUnsafe(`
       ALTER TABLE "courses"
       ADD CONSTRAINT "courses_category_check"
       CHECK ("category" IN ('online', 'offline', 'intensive', 'additional_service'));
@@ -591,9 +594,10 @@ async function reconcileBonusAfterIncomeChange(
   tenantId: string,
   actorUserId: string,
   context: Record<string, unknown>,
+  db: DbClient,
 ): Promise<void> {
   try {
-    await reconcileFinalizedBonusMonths({ tenantId, actorUserId });
+    await reconcileFinalizedBonusMonths({ tenantId, actorUserId, db });
   } catch (error) {
     console.error('[Bonus] Finalized month reconciliation failed after income change', {
       tenantId,
@@ -820,7 +824,10 @@ async function fetchCoursesWithTariffsSafe(params: {
   tenantId: string;
   onlyActive: boolean;
   excludeHiddenFromIncomeForm?: boolean;
+  db: DbClient;
 }): Promise<CourseWithTariffsSafe[]> {
+  const { db } = params;
+
   const baseWhere: Prisma.CourseWhereInput = params.onlyActive
     ? { tenantId: params.tenantId, isActive: true }
     : { tenantId: params.tenantId };
@@ -830,7 +837,7 @@ async function fetchCoursesWithTariffsSafe(params: {
   };
 
   try {
-    const courses = await prisma.course.findMany({
+    const courses = await db.course.findMany({
       where,
       orderBy: { name: 'asc' },
       select: {
@@ -882,7 +889,7 @@ async function fetchCoursesWithTariffsSafe(params: {
       throw error;
     }
 
-    const fallbackCourses = await prisma.course.findMany({
+    const fallbackCourses = await db.course.findMany({
       where: baseWhere,
       orderBy: { name: 'asc' },
       select: {
@@ -934,9 +941,9 @@ async function fetchCoursesWithTariffsSafe(params: {
   }
 }
 
-async function fetchCourseOptionsSafe(tenantId: string): Promise<Array<{ id: string; name: string; category: string }>> {
+async function fetchCourseOptionsSafe(tenantId: string, db: DbClient): Promise<Array<{ id: string; name: string; category: string }>> {
   try {
-    const courses = await prisma.course.findMany({
+    const courses = await db.course.findMany({
       where: { tenantId, isActive: true },
       orderBy: { name: 'asc' },
       select: {
@@ -954,7 +961,7 @@ async function fetchCourseOptionsSafe(tenantId: string): Promise<Array<{ id: str
       throw error;
     }
 
-    const fallbackCourses = await prisma.course.findMany({
+    const fallbackCourses = await db.course.findMany({
       where: { tenantId, isActive: true },
       orderBy: { name: 'asc' },
       select: {
@@ -1107,12 +1114,15 @@ async function fetchLatestResponsibleManagerByCustomer(params: {
   tenantId: string;
   customerIds: string[];
   scopedManagerUserId?: string | null;
+  db: DbClient;
 }): Promise<Map<string, { managerUserId: string | null; managerLabel: string | null }>> {
+  const { db } = params;
+
   if (!params.customerIds.length) {
     return new Map();
   }
 
-  const latestIncomes = await prisma.income.findMany({
+  const latestIncomes = await db.income.findMany({
     where: {
       tenantId: params.tenantId,
       customerId: { in: params.customerIds },
@@ -1216,8 +1226,8 @@ function resolvePaymentGroupEnvKeysByCategory(category: string | null | undefine
   return null;
 }
 
-async function resolveTelegramBotTokenForTenant(tenantId: string): Promise<string | null> {
-  const integration = await prisma.integration.findUnique({
+async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient): Promise<string | null> {
+  const integration = await db.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,
@@ -1250,7 +1260,10 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   tenantId: string;
   incomeId: string;
   preferredSubTariffId?: string;
+  db: DbClient;
 }) {
+  const { db } = params;
+
   type TelegramPaymentDispatchResult = {
     attempted: boolean;
     delivered: boolean;
@@ -1260,7 +1273,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     errors?: string[];
   };
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
   if (!botToken) {
     console.warn('[Income][Telegram] Bot token is missing. Connect Telegram integration or set TELEGRAM_BOT_TOKEN.');
     return {
@@ -1272,7 +1285,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     } satisfies TelegramPaymentDispatchResult;
   }
 
-  const createdIncome = await prisma.income.findFirst({
+  const createdIncome = await db.income.findFirst({
     where: {
       id: params.incomeId,
       tenantId: params.tenantId,
@@ -1337,7 +1350,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   let saleIncome: SaleIncomePayload | null = null;
 
   try {
-    const withCategory = await prisma.income.findFirst({
+    const withCategory = await db.income.findFirst({
       where: {
         id: saleIncomeId,
         tenantId: params.tenantId,
@@ -1387,7 +1400,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
       throw error;
     }
 
-    const fallback = await prisma.income.findFirst({
+    const fallback = await db.income.findFirst({
       where: {
         id: saleIncomeId,
         tenantId: params.tenantId,
@@ -1422,7 +1435,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     });
 
     if (fallback?.course?.id) {
-      const safeCourseOptions = await fetchCourseOptionsSafe(params.tenantId);
+      const safeCourseOptions = await fetchCourseOptionsSafe(params.tenantId, db);
       const safeCategory = safeCourseOptions.find((course) => course.id === fallback.course?.id)?.category ?? 'offline';
       saleIncome = fallback
         ? {
@@ -1476,7 +1489,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     } satisfies TelegramPaymentDispatchResult;
   }
 
-  const payments = await prisma.income.findMany({
+  const payments = await db.income.findMany({
     where: {
       tenantId: params.tenantId,
       OR: [
@@ -1497,7 +1510,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
   let subTariffHashtag: string | null = null;
   if (saleIncome.tariffId) {
     if (params.preferredSubTariffId) {
-      const selectedSubTariff = await prisma.subTariff.findFirst({
+      const selectedSubTariff = await db.subTariff.findFirst({
         where: {
           id: params.preferredSubTariffId,
           tenantId: params.tenantId,
@@ -1512,7 +1525,7 @@ async function sendOfflineOrIntensivePaymentTelegram(params: {
     }
 
     if (!subTariffHashtag) {
-      const firstActiveSubTariff = await prisma.subTariff.findFirst({
+      const firstActiveSubTariff = await db.subTariff.findFirst({
         where: {
           tenantId: params.tenantId,
           tariffId: saleIncome.tariffId,
@@ -1648,8 +1661,11 @@ async function sendTariffChangeRequestedTelegram(params: {
   tenantId: string;
   requestId: string;
   requestedByUserId: string;
+  db: DbClient;
 }) {
-  const request = await prisma.incomeAdjustmentRequest.findFirst({
+  const { db } = params;
+
+  const request = await db.incomeAdjustmentRequest.findFirst({
     where: {
       id: params.requestId,
       tenantId: params.tenantId,
@@ -1719,7 +1735,7 @@ async function sendTariffChangeRequestedTelegram(params: {
     return;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
   if (!botToken) {
     return;
   }
@@ -1784,8 +1800,11 @@ async function sendTariffChangeApprovedTelegram(params: {
   tenantId: string;
   requestId: string;
   reviewedByUserId: string;
+  db: DbClient;
 }) {
-  const request = await prisma.incomeAdjustmentRequest.findFirst({
+  const { db } = params;
+
+  const request = await db.incomeAdjustmentRequest.findFirst({
     where: {
       id: params.requestId,
       tenantId: params.tenantId,
@@ -1845,7 +1864,7 @@ async function sendTariffChangeApprovedTelegram(params: {
     return;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
   if (!botToken) {
     return;
   }
@@ -1895,20 +1914,23 @@ async function sendRefundApprovedTelegram(params: {
   tenantId: string;
   requestId: string;
   reviewedByUserId: string;
+  db: DbClient;
 }) {
+  const { db } = params;
+
   const groupIds = resolveRefundGroupIds();
   if (!groupIds.length) {
     console.warn('[Income][Telegram] Refund group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
     return;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
   if (!botToken) {
     console.warn('[Income][Telegram] Bot token is missing for refund message.');
     return;
   }
 
-  const request = await prisma.incomeAdjustmentRequest.findFirst({
+  const request = await db.incomeAdjustmentRequest.findFirst({
     where: {
       id: params.requestId,
       tenantId: params.tenantId,
@@ -2012,20 +2034,23 @@ async function sendRefundRequestedTelegram(params: {
   tenantId: string;
   requestId: string;
   requestedByUserId: string;
+  db: DbClient;
 }) {
+  const { db } = params;
+
   const groupIds = resolveRefundGroupIds();
   if (!groupIds.length) {
     console.warn('[Income][Telegram] Refund request group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
     return;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
   if (!botToken) {
     console.warn('[Income][Telegram] Bot token is missing for refund request message.');
     return;
   }
 
-  const request = await prisma.incomeAdjustmentRequest.findFirst({
+  const request = await db.incomeAdjustmentRequest.findFirst({
     where: {
       id: params.requestId,
       tenantId: params.tenantId,
@@ -2208,14 +2233,17 @@ async function notifyFinanceUsersRefundRequested(params: {
   tenantId: string;
   requestId: string;
   requestedByUserId: string;
+  db: DbClient;
 }) {
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  const { db } = params;
+
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
   if (!botToken) {
     return;
   }
 
   const [request, financeUsers] = await Promise.all([
-    prisma.incomeAdjustmentRequest.findFirst({
+    db.incomeAdjustmentRequest.findFirst({
       where: {
         id: params.requestId,
         tenantId: params.tenantId,
@@ -2257,7 +2285,7 @@ async function notifyFinanceUsersRefundRequested(params: {
         },
       },
     }),
-    prisma.user.findMany({
+    db.user.findMany({
       where: {
         tenantId: params.tenantId,
         isActive: true,
@@ -2317,13 +2345,16 @@ async function notifyRefundRequesterReviewResult(params: {
   tenantId: string;
   requestId: string;
   status: 'approved' | 'rejected';
+  db: DbClient;
 }) {
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  const { db } = params;
+
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
   if (!botToken) {
     return;
   }
 
-  const request = await prisma.incomeAdjustmentRequest.findFirst({
+  const request = await db.incomeAdjustmentRequest.findFirst({
     where: {
       id: params.requestId,
       tenantId: params.tenantId,
@@ -2426,8 +2457,11 @@ async function assertManagerBelongsToTenantWithOptions(params: {
   tenantId: string;
   managerUserId: string;
   includeInactive: boolean;
+  db: DbClient;
 }) {
-  const manager = await prisma.user.findFirst({
+  const { db } = params;
+
+  const manager = await db.user.findFirst({
     where: {
       id: params.managerUserId,
       tenantId: params.tenantId,
@@ -2601,9 +2635,9 @@ function buildLookupKey(courseId: string, tariffToken: string): string {
   return `${courseId}:${normalizeKey(tariffToken)}`;
 }
 
-async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext> {
+async function buildRowLookupContext(tenantId: string, db: DbClient): Promise<RowLookupContext> {
   const [managers, courses] = await Promise.all([
-    prisma.user.findMany({
+    db.user.findMany({
       where: {
         tenantId,
         isActive: true,
@@ -2615,7 +2649,7 @@ async function buildRowLookupContext(tenantId: string): Promise<RowLookupContext
         roles: true,
       },
     }),
-    prisma.course.findMany({
+    db.course.findMany({
       where: {
         tenantId,
         isActive: true,
@@ -3014,7 +3048,10 @@ async function createIncomeEntry(params: {
   writeAuditLog?: boolean;
   allowHiddenCourseSelection?: boolean;
   skipTelegramNotification?: boolean;
+  db: TenantPrismaClient;
 }) {
+  const { db } = params;
+
   const {
     tenantId,
     userId,
@@ -3029,6 +3066,7 @@ async function createIncomeEntry(params: {
     tenantId,
     managerUserId: input.managerUserId,
     includeInactive: canSelectInactiveManagerForIncome(requesterRoles),
+    db,
   });
   const entryDate = parseDateInput(input.entryDate);
   if (entryDate > new Date()) {
@@ -3057,7 +3095,7 @@ async function createIncomeEntry(params: {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Payment amount cannot be negative.' });
   }
 
-  let customer = await prisma.customer.findUnique({
+  let customer = await db.customer.findUnique({
     where: {
       tenantId_customerNumber: {
         tenantId,
@@ -3081,7 +3119,7 @@ async function createIncomeEntry(params: {
       });
     }
 
-    customer = await prisma.customer.create({
+    customer = await db.customer.create({
       data: {
         tenantId,
         customerNumber,
@@ -3119,7 +3157,7 @@ async function createIncomeEntry(params: {
     }
 
     const [course, tariff, activeSubTariffCount] = await Promise.all([
-      prisma.course.findFirst({
+      db.course.findFirst({
         where: {
           id: input.courseId,
           tenantId,
@@ -3129,18 +3167,18 @@ async function createIncomeEntry(params: {
         select: { id: true },
       }).catch((error) => {
         if (!allowHiddenCourseSelection && isMissingCourseHiddenFromIncomeFormColumnError(error)) {
-          return prisma.course.findFirst({
+          return db.course.findFirst({
             where: { id: input.courseId, tenantId, isActive: true },
             select: { id: true },
           });
         }
         throw error;
       }),
-      prisma.tariff.findFirst({
+      db.tariff.findFirst({
         where: { id: input.tariffId, tenantId, courseId: input.courseId, isActive: true },
         select: { id: true },
       }),
-      prisma.subTariff.count({
+      db.subTariff.count({
         where: {
           tenantId,
           tariffId: input.tariffId,
@@ -3161,7 +3199,7 @@ async function createIncomeEntry(params: {
     }
 
     if (input.subTariffId) {
-      const subTariff = await prisma.subTariff.findFirst({
+      const subTariff = await db.subTariff.findFirst({
         where: {
           id: input.subTariffId,
           tenantId,
@@ -3178,7 +3216,7 @@ async function createIncomeEntry(params: {
     }
 
     const remainingDebtAmount = Math.max(input.coursePriceAmount - input.paymentAmount, 0);
-    createdIncome = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    createdIncome = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const createdSale = await tx.income.create({
         data: {
           tenantId,
@@ -3225,7 +3263,7 @@ async function createIncomeEntry(params: {
   } else {
     let debtSourceId = input.debtSourceIncomeId;
     if (!debtSourceId) {
-      const candidateDebts = await prisma.income.findMany({
+      const candidateDebts = await db.income.findMany({
         where: {
           tenantId,
           customerId: customer.id,
@@ -3245,6 +3283,7 @@ async function createIncomeEntry(params: {
       const candidateMetrics = await buildActiveSaleChainMetrics({
         tenantId,
         sales: candidateDebts,
+        db,
       });
       const latestDebt = candidateDebts.find((sale) => (candidateMetrics.get(sale.id)?.currentDebtAmount ?? 0) > 0);
       debtSourceId = latestDebt?.id;
@@ -3257,7 +3296,7 @@ async function createIncomeEntry(params: {
       });
     }
 
-    const debtSource = await prisma.income.findFirst({
+    const debtSource = await db.income.findFirst({
       where: {
         id: debtSourceId,
         tenantId,
@@ -3298,6 +3337,7 @@ async function createIncomeEntry(params: {
     const sourceMetrics = await buildActiveSaleChainMetrics({
       tenantId,
       sales: [debtSource],
+      db,
     });
     const sourceCurrentDebt = sourceMetrics.get(debtSource.id)?.currentDebtAmount ?? debtSource.remainingDebtAmount;
 
@@ -3316,7 +3356,7 @@ async function createIncomeEntry(params: {
     }
 
     const remainingDebtAmount = Math.max(sourceCurrentDebt - input.paymentAmount, 0);
-    createdIncome = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    createdIncome = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const repayment = await tx.income.create({
         data: {
           tenantId,
@@ -3367,7 +3407,7 @@ async function createIncomeEntry(params: {
   }
 
   if (writeAuditLog) {
-    await prisma.auditLog.create({
+    await db.auditLog.create({
       data: {
         tenantId,
         userId,
@@ -3401,6 +3441,7 @@ async function createIncomeEntry(params: {
           tenantId,
           incomeId: createdIncome.id,
           preferredSubTariffId: selectedSubTariffId,
+          db,
         });
       } catch (error) {
         console.error('[Income][Telegram] Payment notification failed (non-blocking)', {
@@ -3551,11 +3592,11 @@ function getHistoricalImportStaleResolution(status: string, progress: Historical
   };
 }
 
-async function buildHistoricalCatalogContext(tenantId: string) {
+async function buildHistoricalCatalogContext(tenantId: string, db: DbClient) {
   const [lookupContext, courses, existingCustomers] = await Promise.all([
-    buildRowLookupContext(tenantId),
-    fetchCoursesWithTariffsSafe({ tenantId, onlyActive: false }),
-    prisma.customer.findMany({
+    buildRowLookupContext(tenantId, db),
+    fetchCoursesWithTariffsSafe({ tenantId, onlyActive: false, db }),
+    db.customer.findMany({
       where: { tenantId },
       select: {
         customerNumber: true,
@@ -3582,7 +3623,10 @@ async function buildHistoricalCatalogContext(tenantId: string) {
 async function ensureHistoricalCatalogItems(params: {
   tenantId: string;
   items: HistoricalCatalogItemPreview[];
+  db: DbClient;
 }) {
+  const { db } = params;
+
   const ensuredCourses = new Map<string, { id: string; name: string; tariffsByKey: Map<string, string> }>();
 
   for (const item of params.items) {
@@ -3593,7 +3637,7 @@ async function ensureHistoricalCatalogItems(params: {
       continue;
     }
 
-    const course = await prisma.course.upsert({
+    const course = await db.course.upsert({
       where: {
         tenantId_name: {
           tenantId: params.tenantId,
@@ -3616,7 +3660,7 @@ async function ensureHistoricalCatalogItems(params: {
 
     const tariffsByKey = ensuredCourses.get(normalizeKey(item.courseName))?.tariffsByKey ?? new Map<string, string>();
     for (const tariffName of item.tariffs) {
-      const tariff = await prisma.tariff.upsert({
+      const tariff = await db.tariff.upsert({
         where: {
           tenantId_courseId_name: {
             tenantId: params.tenantId,
@@ -3649,6 +3693,7 @@ async function ensureHistoricalCatalogItems(params: {
   const courses = await fetchCoursesWithTariffsSafe({
     tenantId: params.tenantId,
     onlyActive: false,
+    db,
   });
 
   const courseIdByKey = new Map<string, string>();
@@ -3682,8 +3727,11 @@ async function annotateHistoricalIncome(params: {
   legacyImportKey: string;
   legacyImportSource: string;
   legacyImportMeta?: Prisma.InputJsonValue | null;
+  db: DbClient;
 }) {
-  await prisma.income.update({
+  const { db } = params;
+
+  await db.income.update({
     where: { id: params.incomeId },
     data: {
       legacyImportKey: params.legacyImportKey,
@@ -3718,7 +3766,7 @@ export const customerIncomeRouter = router({
     const includeInactiveManagers = canSelectInactiveManagerForIncome(ctx.user.roles);
 
     const [managersInitial, customers, outstandingDebts] = await Promise.all([
-      prisma.user.findMany({
+      ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           ...(includeInactiveManagers ? {} : { isActive: true }),
@@ -3737,7 +3785,7 @@ export const customerIncomeRouter = router({
           isActive: true,
         },
       }),
-      prisma.customer.findMany({
+      ctx.db.customer.findMany({
         where: {
           tenantId: ctx.tenantId,
           ...(scopedManagerUserId
@@ -3760,7 +3808,7 @@ export const customerIncomeRouter = router({
           telegramUsername: true,
         },
       }),
-      prisma.income.findMany({
+      ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
@@ -3798,7 +3846,7 @@ export const customerIncomeRouter = router({
 
     let managers = managersInitial;
     if ((managersInitial as Array<unknown>).length === 0) {
-      managers = await prisma.user.findMany({
+      managers = await ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           ...(includeInactiveManagers ? {} : { isActive: true }),
@@ -3835,6 +3883,7 @@ export const customerIncomeRouter = router({
         tenantId: ctx.tenantId,
         onlyActive: true,
         excludeHiddenFromIncomeForm: true,
+        db: ctx.db,
       });
     } catch (courseError) {
       console.error('[Income/FormOptions] Failed to load courses, returning empty course list:', courseError);
@@ -3843,12 +3892,14 @@ export const customerIncomeRouter = router({
     const outstandingDebtMetricsBySaleId = await buildActiveSaleChainMetrics({
       tenantId: ctx.tenantId,
       sales: outstandingDebts as SaleChainSaleRow[],
+      db: ctx.db,
     });
 
     const responsibleManagerMap = await fetchLatestResponsibleManagerByCustomer({
       tenantId: ctx.tenantId,
       customerIds: (customers as Array<{ id: string }>).map((customer) => customer.id),
       scopedManagerUserId,
+      db: ctx.db,
     });
 
     const managerRows = managers as Array<{
@@ -3942,7 +3993,7 @@ export const customerIncomeRouter = router({
     .query(async ({ ctx, input }) => {
       const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
       const query = input.query?.trim();
-      const customers = await prisma.customer.findMany({
+      const customers = await ctx.db.customer.findMany({
         where: {
           tenantId: ctx.tenantId,
           ...(scopedManagerUserId
@@ -3982,6 +4033,7 @@ export const customerIncomeRouter = router({
         tenantId: ctx.tenantId,
         customerIds: customers.map((customer) => customer.id),
         scopedManagerUserId,
+        db: ctx.db,
       });
 
       return customers.map((customer) => {
@@ -4008,7 +4060,7 @@ export const customerIncomeRouter = router({
         return [];
       }
 
-      const debts = await prisma.income.findMany({
+      const debts = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
@@ -4050,6 +4102,7 @@ export const customerIncomeRouter = router({
       const debtMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
         sales: debts as SaleChainSaleRow[],
+        db: ctx.db,
       });
 
       return debts
@@ -4083,7 +4136,7 @@ export const customerIncomeRouter = router({
 
       await ensureAdditionalServiceCategoryReady(input.category);
 
-      const upsertCourse = (params: { withCategory: boolean; withDates: boolean }) => prisma.course.upsert({
+      const upsertCourse = (params: { withCategory: boolean; withDates: boolean }) => ctx.db.course.upsert({
         where: {
           tenantId_name: {
             tenantId: ctx.tenantId,
@@ -4136,7 +4189,7 @@ export const customerIncomeRouter = router({
   createTariff: managerProcedure
     .input(createTariffSchema)
     .mutation(async ({ ctx, input }) => {
-      const course = await prisma.course.findFirst({
+      const course = await ctx.db.course.findFirst({
         where: {
           id: input.courseId,
           tenantId: ctx.tenantId,
@@ -4154,7 +4207,7 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Tariff name is required.' });
       }
 
-      return prisma.tariff.upsert({
+      return ctx.db.tariff.upsert({
         where: {
           tenantId_courseId_name: {
             tenantId: ctx.tenantId,
@@ -4182,7 +4235,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const tariff = await prisma.tariff.findFirst({
+      const tariff = await ctx.db.tariff.findFirst({
         where: {
           id: input.tariffId,
           tenantId: ctx.tenantId,
@@ -4200,7 +4253,7 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Sub-tariff name is required.' });
       }
 
-      return prisma.subTariff.upsert({
+      return ctx.db.subTariff.upsert({
         where: {
           tenantId_tariffId_name: {
             tenantId: ctx.tenantId,
@@ -4225,6 +4278,7 @@ export const customerIncomeRouter = router({
       return await fetchCoursesWithTariffsSafe({
         tenantId: ctx.tenantId,
         onlyActive: false,
+        db: ctx.db,
       });
     } catch (error) {
       const errorText = extractErrorText(error);
@@ -4241,7 +4295,7 @@ export const customerIncomeRouter = router({
         throw error;
       }
 
-      const fallbackCourses = await prisma.course.findMany({
+      const fallbackCourses = await ctx.db.course.findMany({
         where: { tenantId: ctx.tenantId },
         orderBy: { name: 'asc' },
         select: {
@@ -4299,7 +4353,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const course = await prisma.course.findFirst({
+      const course = await ctx.db.course.findFirst({
         where: {
           id: input.courseId,
           tenantId: ctx.tenantId,
@@ -4358,7 +4412,7 @@ export const customerIncomeRouter = router({
 
       await ensureAdditionalServiceCategoryReady(data.category);
 
-      const updateCourse = (updateData: typeof data) => prisma.course.update({
+      const updateCourse = (updateData: typeof data) => ctx.db.course.update({
         where: { id: input.courseId },
         data: updateData,
       });
@@ -4420,7 +4474,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const tariff = await prisma.tariff.findFirst({
+      const tariff = await ctx.db.tariff.findFirst({
         where: {
           id: input.tariffId,
           tenantId: ctx.tenantId,
@@ -4446,7 +4500,7 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
       }
 
-      return prisma.tariff.update({
+      return ctx.db.tariff.update({
         where: { id: input.tariffId },
         data,
       });
@@ -4462,7 +4516,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const subTariff = await prisma.subTariff.findFirst({
+      const subTariff = await ctx.db.subTariff.findFirst({
         where: {
           id: input.subTariffId,
           tenantId: ctx.tenantId,
@@ -4488,7 +4542,7 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
       }
 
-      return prisma.subTariff.update({
+      return ctx.db.subTariff.update({
         where: { id: input.subTariffId },
         data,
       });
@@ -4513,9 +4567,10 @@ export const customerIncomeRouter = router({
         input,
         requesterRoles: ctx.user.roles,
         skipTelegramNotification,
+        db: ctx.db,
       });
 
-      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { incomeId: result.income.id });
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { incomeId: result.income.id }, ctx.db);
 
       return {
         income: result.income,
@@ -4527,7 +4582,7 @@ export const customerIncomeRouter = router({
   updateIncome: adminProcedure
     .input(updateIncomeSchema)
     .mutation(async ({ ctx, input }) => {
-      const income = await prisma.income.findFirst({
+      const income = await ctx.db.income.findFirst({
         where: {
           id: input.incomeId,
           tenantId: ctx.tenantId,
@@ -4569,7 +4624,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const linkedPendingAdjustmentCount = await prisma.incomeAdjustmentRequest.count({
+      const linkedPendingAdjustmentCount = await ctx.db.incomeAdjustmentRequest.count({
         where: {
           tenantId: ctx.tenantId,
           incomeId: income.id,
@@ -4593,7 +4648,7 @@ export const customerIncomeRouter = router({
         : (input.deadline === null ? null : parseDateInput(input.deadline));
 
       if (income.type === 'new_sale') {
-        const linkedRepayments = await prisma.income.findMany({
+        const linkedRepayments = await ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             type: 'repayment',
@@ -4613,6 +4668,7 @@ export const customerIncomeRouter = router({
           tenantId: ctx.tenantId,
           managerUserId: nextManagerUserId,
           includeInactive: true,
+          db: ctx.db,
         });
 
         const nextCourseId = input.courseId ?? income.courseId;
@@ -4650,7 +4706,7 @@ export const customerIncomeRouter = router({
         }
 
         const [course, tariff, activeSubTariffCount] = await Promise.all([
-          prisma.course.findFirst({
+          ctx.db.course.findFirst({
             where: {
               id: nextCourseId,
               tenantId: ctx.tenantId,
@@ -4658,7 +4714,7 @@ export const customerIncomeRouter = router({
             },
             select: { id: true },
           }),
-          prisma.tariff.findFirst({
+          ctx.db.tariff.findFirst({
             where: {
               id: nextTariffId,
               tenantId: ctx.tenantId,
@@ -4667,7 +4723,7 @@ export const customerIncomeRouter = router({
             },
             select: { id: true },
           }),
-          prisma.subTariff.count({
+          ctx.db.subTariff.count({
             where: {
               tenantId: ctx.tenantId,
               tariffId: nextTariffId,
@@ -4689,7 +4745,7 @@ export const customerIncomeRouter = router({
 
         let nextSubTariffId: string | null = null;
         if (requestedSubTariffId) {
-          const subTariff = await prisma.subTariff.findFirst({
+          const subTariff = await ctx.db.subTariff.findFirst({
             where: {
               id: requestedSubTariffId,
               tenantId: ctx.tenantId,
@@ -4725,7 +4781,7 @@ export const customerIncomeRouter = router({
         let chronologyReordered = false;
         let chronologyCanonicalSaleId: string | null = null;
 
-        const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const updated = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
           const updatedSale = await tx.income.update({
             where: { id: income.id },
             data: {
@@ -4802,7 +4858,7 @@ export const customerIncomeRouter = router({
           timeout: 60000,
         });
 
-        await prisma.auditLog.create({
+        await ctx.db.auditLog.create({
           data: {
             tenantId: ctx.tenantId,
             userId: ctx.user.userId,
@@ -4848,6 +4904,7 @@ export const customerIncomeRouter = router({
         tenantId: ctx.tenantId,
         managerUserId: nextManagerUserId,
         includeInactive: true,
+        db: ctx.db,
       });
 
       const nextPaymentAmount = input.paymentAmount ?? income.paymentAmount;
@@ -4865,7 +4922,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const sourceIncome = await prisma.income.findFirst({
+      const sourceIncome = await ctx.db.income.findFirst({
         where: {
           id: income.relatedDebtIncomeId,
           tenantId: ctx.tenantId,
@@ -4912,7 +4969,7 @@ export const customerIncomeRouter = router({
       let chronologyReordered = false;
       let chronologyCanonicalSaleId: string | null = null;
 
-      const updatedRepayment = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updatedRepayment = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.income.update({
           where: { id: sourceIncome.id },
           data: {
@@ -4961,7 +5018,7 @@ export const customerIncomeRouter = router({
         timeout: 60000,
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -4980,7 +5037,7 @@ export const customerIncomeRouter = router({
         },
       });
 
-      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { action: 'updateIncome' });
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { action: 'updateIncome' }, ctx.db);
 
       return {
         success: true,
@@ -4999,7 +5056,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const income = await prisma.income.findFirst({
+      const income = await ctx.db.income.findFirst({
         where: {
           id: input.incomeId,
           tenantId: ctx.tenantId,
@@ -5016,7 +5073,7 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Income entry not found.' });
       }
 
-      const linkedPendingAdjustmentCount = await prisma.incomeAdjustmentRequest.count({
+      const linkedPendingAdjustmentCount = await ctx.db.incomeAdjustmentRequest.count({
         where: {
           tenantId: ctx.tenantId,
           incomeId: income.id,
@@ -5032,7 +5089,7 @@ export const customerIncomeRouter = router({
       }
 
       if (income.type === 'new_sale') {
-        const linkedRepayments = await prisma.income.count({
+        const linkedRepayments = await ctx.db.income.count({
           where: {
             tenantId: ctx.tenantId,
             type: 'repayment',
@@ -5048,7 +5105,7 @@ export const customerIncomeRouter = router({
         }
       }
 
-      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.income.delete({
           where: { id: income.id },
         });
@@ -5066,9 +5123,9 @@ export const customerIncomeRouter = router({
         timeout: 60000,
       });
 
-      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { incomeId: income.id });
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { incomeId: income.id }, ctx.db);
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -5156,7 +5213,7 @@ export const customerIncomeRouter = router({
     .query(async ({ ctx, input }) => {
       const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
       const searchQuery = (input?.query || '').trim();
-        const incomes = await prisma.income.findMany({
+        const incomes = await ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
           ...(scopedManagerUserId
@@ -5220,7 +5277,7 @@ export const customerIncomeRouter = router({
           .map((income) => income.id);
 
         const auditLogs = manualIncomeIds.length
-          ? await prisma.auditLog.findMany({
+          ? await ctx.db.auditLog.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 action: 'income_create',
@@ -5296,7 +5353,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const totalCount = await prisma.income.count({
+      const totalCount = await ctx.db.income.count({
         where: {
           tenantId: ctx.tenantId,
           entryDate: {
@@ -5313,7 +5370,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const incomes = await prisma.income.findMany({
+      const incomes = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           entryDate: {
@@ -5357,7 +5414,7 @@ export const customerIncomeRouter = router({
 
       const subTariffNameById = new Map<string, string>();
       if (subTariffIds.length > 0) {
-        const subTariffs = await prisma.subTariff.findMany({
+        const subTariffs = await ctx.db.subTariff.findMany({
           where: {
             tenantId: ctx.tenantId,
             id: { in: subTariffIds },
@@ -5408,7 +5465,7 @@ export const customerIncomeRouter = router({
     .query(async ({ ctx, input }) => {
       const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
 
-      const customer = await prisma.customer.findFirst({
+      const customer = await ctx.db.customer.findFirst({
         where: {
           id: input.customerId,
           tenantId: ctx.tenantId,
@@ -5437,7 +5494,7 @@ export const customerIncomeRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Customer not found.' });
       }
 
-      const sales = await prisma.income.findMany({
+      const sales = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           customerId: customer.id,
@@ -5467,7 +5524,7 @@ export const customerIncomeRouter = router({
 
       const saleIds = sales.map((sale) => sale.id);
       const saleChainPayments = saleIds.length
-        ? await prisma.income.findMany({
+        ? await ctx.db.income.findMany({
             where: {
               tenantId: ctx.tenantId,
               customerId: customer.id,
@@ -5532,7 +5589,7 @@ export const customerIncomeRouter = router({
           : {}),
       };
 
-      let customer = await prisma.customer.findFirst({
+      let customer = await ctx.db.customer.findFirst({
         where: {
           ...customerWhereBase,
           id: customerLookupValue,
@@ -5549,7 +5606,7 @@ export const customerIncomeRouter = router({
       });
 
       if (!customer && CUSTOMER_NUMBER_REGEX.test(customerLookupValue)) {
-        customer = await prisma.customer.findFirst({
+        customer = await ctx.db.customer.findFirst({
           where: {
             ...customerWhereBase,
             customerNumber: customerLookupValue,
@@ -5571,7 +5628,7 @@ export const customerIncomeRouter = router({
       }
 
       const [courseSales, paymentHistory] = await Promise.all([
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             customerId: customer.id,
@@ -5598,7 +5655,7 @@ export const customerIncomeRouter = router({
             manager: { select: { id: true, name: true, username: true } },
           },
         }),
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             customerId: customer.id,
@@ -5656,7 +5713,7 @@ export const customerIncomeRouter = router({
       const subTariffNameById = new Map<string, string>();
       if (collectedSubTariffIds.size > 0) {
         try {
-          const subTariffs = await prisma.subTariff.findMany({
+          const subTariffs = await ctx.db.subTariff.findMany({
             where: {
               tenantId: ctx.tenantId,
               id: { in: Array.from(collectedSubTariffIds) },
@@ -5810,7 +5867,7 @@ export const customerIncomeRouter = router({
 
       let requests: Array<any> = [];
       try {
-        requests = await prisma.incomeAdjustmentRequest.findMany({
+        requests = await ctx.db.incomeAdjustmentRequest.findMany({
           where,
           orderBy: [{ createdAt: 'desc' }],
           take: input?.limit ?? 80,
@@ -5823,7 +5880,7 @@ export const customerIncomeRouter = router({
         if (!isMissingRefundCardNumberColumnError(error)) {
           throw error;
         }
-        requests = await prisma.incomeAdjustmentRequest.findMany({
+        requests = await ctx.db.incomeAdjustmentRequest.findMany({
           where,
           orderBy: [{ createdAt: 'desc' }],
           take: input?.limit ?? 80,
@@ -5850,7 +5907,7 @@ export const customerIncomeRouter = router({
 
       const [profileSubTariffs, newTariffSubTariffs] = await Promise.all([
         profileSubTariffIds.length
-          ? prisma.subTariff.findMany({
+          ? ctx.db.subTariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 id: { in: profileSubTariffIds },
@@ -5859,7 +5916,7 @@ export const customerIncomeRouter = router({
             })
           : Promise.resolve([]),
         newTariffIds.length
-          ? prisma.subTariff.findMany({
+          ? ctx.db.subTariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 tariffId: { in: newTariffIds },
@@ -5927,16 +5984,16 @@ export const customerIncomeRouter = router({
     };
 
     const [pendingTotal, pendingRefund, pendingTariffChange] = await Promise.all([
-      prisma.incomeAdjustmentRequest.count({
+      ctx.db.incomeAdjustmentRequest.count({
         where: pendingWhereBase,
       }),
-      prisma.incomeAdjustmentRequest.count({
+      ctx.db.incomeAdjustmentRequest.count({
         where: {
           ...pendingWhereBase,
           type: ADJUSTMENT_TYPE_REFUND,
         },
       }),
-      prisma.incomeAdjustmentRequest.count({
+      ctx.db.incomeAdjustmentRequest.count({
         where: {
           ...pendingWhereBase,
           type: ADJUSTMENT_TYPE_TARIFF_CHANGE,
@@ -5966,7 +6023,7 @@ export const customerIncomeRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
-      const sourceIncomeRaw = await prisma.income.findFirst({
+      const sourceIncomeRaw = await ctx.db.income.findFirst({
         where: {
           id: input.incomeId,
           tenantId: ctx.tenantId,
@@ -6004,7 +6061,7 @@ export const customerIncomeRouter = router({
           });
         }
 
-        const rootSaleIncome = await prisma.income.findFirst({
+        const rootSaleIncome = await ctx.db.income.findFirst({
           where: {
             id: sourceIncomeRaw.relatedDebtIncomeId,
             tenantId: ctx.tenantId,
@@ -6047,7 +6104,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const existingPending = await prisma.incomeAdjustmentRequest.findFirst({
+      const existingPending = await ctx.db.incomeAdjustmentRequest.findFirst({
         where: {
           tenantId: ctx.tenantId,
           incomeId: sourceIncome.id,
@@ -6079,7 +6136,7 @@ export const customerIncomeRouter = router({
         }
 
         const [course, tariff] = await Promise.all([
-          prisma.course.findFirst({
+          ctx.db.course.findFirst({
             where: {
               id: input.newCourseId,
               tenantId: ctx.tenantId,
@@ -6087,7 +6144,7 @@ export const customerIncomeRouter = router({
             },
             select: { id: true },
           }),
-          prisma.tariff.findFirst({
+          ctx.db.tariff.findFirst({
             where: {
               id: input.newTariffId,
               tenantId: ctx.tenantId,
@@ -6111,7 +6168,7 @@ export const customerIncomeRouter = router({
 
       // A refund returns the whole sale chain, so the requested amount is everything paid on it.
       const refundChainPaidAmount = input.type === ADJUSTMENT_TYPE_REFUND
-        ? ((await prisma.income.aggregate({
+        ? ((await ctx.db.income.aggregate({
             where: {
               tenantId: ctx.tenantId,
               lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -6121,7 +6178,7 @@ export const customerIncomeRouter = router({
           }))._sum.paymentAmount ?? sourceIncome.paymentAmount)
         : null;
 
-      const createdRequest = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const createdRequest = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         let request: { id: string; type: string; status: string };
         try {
           request = await tx.incomeAdjustmentRequest.create({
@@ -6191,7 +6248,7 @@ export const customerIncomeRouter = router({
         return request;
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -6211,6 +6268,7 @@ export const customerIncomeRouter = router({
             tenantId: ctx.tenantId,
             requestId: createdRequest.id,
             requestedByUserId: ctx.user.userId,
+            db: ctx.db,
           });
         } catch (error) {
           console.error('[Income][Telegram] Refund request notification failed (non-blocking)', {
@@ -6225,6 +6283,7 @@ export const customerIncomeRouter = router({
             tenantId: ctx.tenantId,
             requestId: createdRequest.id,
             requestedByUserId: ctx.user.userId,
+            db: ctx.db,
           });
         } catch (error) {
           console.error('[Income][Telegram] Finance direct notification for refund request failed (non-blocking)', {
@@ -6239,6 +6298,7 @@ export const customerIncomeRouter = router({
             tenantId: ctx.tenantId,
             requestId: createdRequest.id,
             requestedByUserId: ctx.user.userId,
+            db: ctx.db,
           });
         } catch (error) {
           console.error('[Income][Telegram] Tariff-change request notification failed (non-blocking)', {
@@ -6260,7 +6320,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const request = await prisma.incomeAdjustmentRequest.findFirst({
+      const request = await ctx.db.incomeAdjustmentRequest.findFirst({
         where: {
           id: input.requestId,
           tenantId: ctx.tenantId,
@@ -6305,7 +6365,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         if (request.type === ADJUSTMENT_TYPE_REFUND) {
           await tx.income.updateMany({
             where: {
@@ -6433,9 +6493,9 @@ export const customerIncomeRouter = router({
         timeout: 60000,
       });
 
-      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { requestId: request.id });
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { requestId: request.id }, ctx.db);
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -6455,6 +6515,7 @@ export const customerIncomeRouter = router({
             tenantId: ctx.tenantId,
             requestId: request.id,
             reviewedByUserId: ctx.user.userId,
+            db: ctx.db,
           });
         } catch (error) {
           console.error('[Income][Telegram] Refund notification failed (non-blocking)', {
@@ -6469,6 +6530,7 @@ export const customerIncomeRouter = router({
             tenantId: ctx.tenantId,
             requestId: request.id,
             status: 'approved',
+            db: ctx.db,
           });
         } catch (error) {
           console.error('[Income][Telegram] Requester approved-refund notification failed (non-blocking)', {
@@ -6490,7 +6552,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const request = await prisma.incomeAdjustmentRequest.findFirst({
+      const request = await ctx.db.incomeAdjustmentRequest.findFirst({
         where: {
           id: input.requestId,
           tenantId: ctx.tenantId,
@@ -6532,7 +6594,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         // Restore every row of the chain that the refund request put on hold, not just the sale row.
         await tx.income.updateMany({
           where: {
@@ -6577,7 +6639,7 @@ export const customerIncomeRouter = router({
         timeout: 60000,
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -6591,7 +6653,7 @@ export const customerIncomeRouter = router({
         },
       });
 
-      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { requestId: request.id });
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { requestId: request.id }, ctx.db);
 
       if (request.type === ADJUSTMENT_TYPE_REFUND) {
         try {
@@ -6599,6 +6661,7 @@ export const customerIncomeRouter = router({
             tenantId: ctx.tenantId,
             requestId: request.id,
             status: 'rejected',
+            db: ctx.db,
           });
         } catch (error) {
           console.error('[Income][Telegram] Requester rejected-refund notification failed (non-blocking)', {
@@ -6616,6 +6679,7 @@ export const customerIncomeRouter = router({
     const courses = await fetchCoursesWithTariffsSafe({
       tenantId: ctx.tenantId,
       onlyActive: true,
+      db: ctx.db,
     });
 
     return (courses as Array<{
@@ -6695,7 +6759,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const existing = await prisma.customer.findUnique({
+      const existing = await ctx.db.customer.findUnique({
         where: {
           tenantId_customerNumber: {
             tenantId: ctx.tenantId,
@@ -6712,7 +6776,7 @@ export const customerIncomeRouter = router({
       }
 
       if (input.courseId) {
-        const course = await prisma.course.findFirst({
+        const course = await ctx.db.course.findFirst({
           where: { id: input.courseId, tenantId: ctx.tenantId, isActive: true },
           select: { id: true },
         });
@@ -6721,7 +6785,7 @@ export const customerIncomeRouter = router({
         }
       }
       if (input.tariffId && input.courseId) {
-        const tariff = await prisma.tariff.findFirst({
+        const tariff = await ctx.db.tariff.findFirst({
           where: {
             id: input.tariffId,
             tenantId: ctx.tenantId,
@@ -6735,7 +6799,7 @@ export const customerIncomeRouter = router({
         }
       }
       if (input.subTariffId && input.tariffId) {
-        const subTariff = await prisma.subTariff.findFirst({
+        const subTariff = await ctx.db.subTariff.findFirst({
           where: {
             id: input.subTariffId,
             tenantId: ctx.tenantId,
@@ -6749,7 +6813,7 @@ export const customerIncomeRouter = router({
         }
       }
 
-      const created = await prisma.customer.create({
+      const created = await ctx.db.customer.create({
         data: {
           tenantId: ctx.tenantId,
           customerNumber,
@@ -6761,7 +6825,7 @@ export const customerIncomeRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -6802,7 +6866,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const current = await prisma.customer.findFirst({
+      const current = await ctx.db.customer.findFirst({
         where: {
           tenantId: ctx.tenantId,
           id: input.customerId,
@@ -6821,7 +6885,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const duplicate = await prisma.customer.findFirst({
+      const duplicate = await ctx.db.customer.findFirst({
         where: {
           tenantId: ctx.tenantId,
           customerNumber,
@@ -6837,7 +6901,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const updated = await prisma.customer.update({
+      const updated = await ctx.db.customer.update({
         where: { id: current.id },
         data: {
           customerNumber,
@@ -6850,7 +6914,7 @@ export const customerIncomeRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -6898,7 +6962,7 @@ export const customerIncomeRouter = router({
       }
 
       if (courseId) {
-        const course = await prisma.course.findFirst({
+        const course = await ctx.db.course.findFirst({
           where: { id: courseId, tenantId: ctx.tenantId, isActive: true },
           select: { id: true },
         });
@@ -6907,7 +6971,7 @@ export const customerIncomeRouter = router({
         }
       }
       if (courseId && tariffId) {
-        const tariff = await prisma.tariff.findFirst({
+        const tariff = await ctx.db.tariff.findFirst({
           where: { id: tariffId, tenantId: ctx.tenantId, courseId, isActive: true },
           select: { id: true },
         });
@@ -6916,7 +6980,7 @@ export const customerIncomeRouter = router({
         }
       }
       if (tariffId && subTariffId) {
-        const subTariff = await prisma.subTariff.findFirst({
+        const subTariff = await ctx.db.subTariff.findFirst({
           where: { id: subTariffId, tenantId: ctx.tenantId, tariffId, isActive: true },
           select: { id: true },
         });
@@ -6925,7 +6989,7 @@ export const customerIncomeRouter = router({
         }
       }
 
-      const updateResult = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updateResult = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         const customerUpdate = await tx.customer.updateMany({
           where: {
             tenantId: ctx.tenantId,
@@ -6991,7 +7055,7 @@ export const customerIncomeRouter = router({
         };
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -7024,7 +7088,7 @@ export const customerIncomeRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const customerIds = Array.from(new Set(input.customerIds));
-      const customers = await prisma.customer.findMany({
+      const customers = await ctx.db.customer.findMany({
         where: {
           tenantId: ctx.tenantId,
           id: { in: customerIds },
@@ -7040,14 +7104,14 @@ export const customerIncomeRouter = router({
       }
 
       const existingCustomerIds = customers.map((customer) => customer.id);
-      const deleteResult = await prisma.customer.deleteMany({
+      const deleteResult = await ctx.db.customer.deleteMany({
         where: {
           tenantId: ctx.tenantId,
           id: { in: existingCustomerIds },
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -7075,7 +7139,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const saleIncome = await prisma.income.findFirst({
+      const saleIncome = await ctx.db.income.findFirst({
         where: {
           id: input.saleIncomeId,
           tenantId: ctx.tenantId,
@@ -7099,7 +7163,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const saleChain = await prisma.income.findMany({
+      const saleChain = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           OR: [
@@ -7124,7 +7188,7 @@ export const customerIncomeRouter = router({
         };
       }
 
-      const pendingAdjustmentCount = await prisma.incomeAdjustmentRequest.count({
+      const pendingAdjustmentCount = await ctx.db.incomeAdjustmentRequest.count({
         where: {
           tenantId: ctx.tenantId,
           incomeId: { in: saleChainIds },
@@ -7161,7 +7225,7 @@ export const customerIncomeRouter = router({
         }
       }
 
-      const resultPayload = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const resultPayload = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         if (input.action === 'refund') {
           const existingPending = await tx.incomeAdjustmentRequest.findFirst({
             where: {
@@ -7350,7 +7414,7 @@ export const customerIncomeRouter = router({
         timeout: 60000,
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -7383,6 +7447,7 @@ export const customerIncomeRouter = router({
             tenantId: ctx.tenantId,
             requestId: createdRefundRequestId,
             requestedByUserId: ctx.user.userId,
+            db: ctx.db,
           });
         } catch (error) {
           console.error('[Income][Telegram] Refund request notification failed (non-blocking)', {
@@ -7397,6 +7462,7 @@ export const customerIncomeRouter = router({
             tenantId: ctx.tenantId,
             requestId: createdRefundRequestId,
             requestedByUserId: ctx.user.userId,
+            db: ctx.db,
           });
         } catch (error) {
           console.error('[Income][Telegram] Finance direct notification for refund request failed (non-blocking)', {
@@ -7407,7 +7473,7 @@ export const customerIncomeRouter = router({
         }
       }
 
-      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { action: 'deleteCustomerCourse' });
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { action: 'deleteCustomerCourse' }, ctx.db);
 
       return {
         success: true,
@@ -7436,7 +7502,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      const saleIncome = await prisma.income.findFirst({
+      const saleIncome = await ctx.db.income.findFirst({
         where: {
           id: input.saleIncomeId,
           tenantId: ctx.tenantId,
@@ -7458,7 +7524,7 @@ export const customerIncomeRouter = router({
       }
 
       const [course, tariff, activeSubTariffs] = await Promise.all([
-        prisma.course.findFirst({
+        ctx.db.course.findFirst({
           where: {
             id: input.newCourseId,
             tenantId: ctx.tenantId,
@@ -7467,7 +7533,7 @@ export const customerIncomeRouter = router({
           select: { id: true },
         }),
         input.newTariffId
-          ? prisma.tariff.findFirst({
+          ? ctx.db.tariff.findFirst({
               where: {
                 id: input.newTariffId,
                 tenantId: ctx.tenantId,
@@ -7478,7 +7544,7 @@ export const customerIncomeRouter = router({
             })
           : Promise.resolve(null),
         input.newTariffId
-          ? prisma.subTariff.findMany({
+          ? ctx.db.subTariff.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 tariffId: input.newTariffId,
@@ -7517,7 +7583,7 @@ export const customerIncomeRouter = router({
         }
       }
 
-      const saleChain = await prisma.income.findMany({
+      const saleChain = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           OR: [{ id: saleIncome.id }, { relatedDebtIncomeId: saleIncome.id }],
@@ -7526,7 +7592,7 @@ export const customerIncomeRouter = router({
       });
       const saleChainIds = saleChain.map((row) => row.id);
 
-      const pendingAdjustmentCount = await prisma.incomeAdjustmentRequest.count({
+      const pendingAdjustmentCount = await ctx.db.incomeAdjustmentRequest.count({
         where: {
           tenantId: ctx.tenantId,
           incomeId: { in: saleChainIds },
@@ -7540,7 +7606,7 @@ export const customerIncomeRouter = router({
         });
       }
 
-      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.income.update({
           where: { id: saleIncome.id },
           data: {
@@ -7587,7 +7653,7 @@ export const customerIncomeRouter = router({
         timeout: 60000,
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -7602,7 +7668,7 @@ export const customerIncomeRouter = router({
         },
       });
 
-      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { action: 'updateCustomerCourseSale' });
+      await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { action: 'updateCustomerCourseSale' }, ctx.db);
 
       return {
         success: true,
@@ -7680,7 +7746,7 @@ export const customerIncomeRouter = router({
       };
 
       const [allMatchedCustomersLite, courseOptions, catalogCourses] = await Promise.all([
-        prisma.customer.findMany({
+        ctx.db.customer.findMany({
           where,
           orderBy: { createdAt: 'desc' },
           select: {
@@ -7690,10 +7756,11 @@ export const customerIncomeRouter = router({
             profileSubTariffId: true,
           },
         }),
-        fetchCourseOptionsSafe(ctx.tenantId),
+        fetchCourseOptionsSafe(ctx.tenantId, ctx.db),
         fetchCoursesWithTariffsSafe({
           tenantId: ctx.tenantId,
           onlyActive: true,
+          db: ctx.db,
         }),
       ]);
 
@@ -7737,19 +7804,19 @@ export const customerIncomeRouter = router({
       const profileSubTariffIds = Array.from(new Set(allMatchedCustomersLite.map((customer) => customer.profileSubTariffId).filter(Boolean))) as string[];
       const [profileCourses, profileTariffs, profileSubTariffs] = await Promise.all([
         profileCourseIds.length > 0
-          ? prisma.course.findMany({
+          ? ctx.db.course.findMany({
               where: { tenantId: ctx.tenantId, id: { in: profileCourseIds } },
               select: { id: true, name: true },
             })
           : Promise.resolve([]),
         profileTariffIds.length > 0
-          ? prisma.tariff.findMany({
+          ? ctx.db.tariff.findMany({
               where: { tenantId: ctx.tenantId, id: { in: profileTariffIds } },
               select: { id: true, name: true },
             })
           : Promise.resolve([]),
         profileSubTariffIds.length > 0
-          ? prisma.subTariff.findMany({
+          ? ctx.db.subTariff.findMany({
               where: { tenantId: ctx.tenantId, id: { in: profileSubTariffIds } },
               select: { id: true, name: true },
             })
@@ -7769,7 +7836,7 @@ export const customerIncomeRouter = router({
         ]),
       );
       const [relatedIncomes, activeSales] = await Promise.all([
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             customerId: { in: customerIds },
@@ -7802,7 +7869,7 @@ export const customerIncomeRouter = router({
             },
           },
         }),
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             customerId: { in: customerIds },
@@ -7849,7 +7916,7 @@ export const customerIncomeRouter = router({
       );
       const missingSaleSubTariffIds = saleSubTariffIds.filter((id) => !profileSubTariffNameById.has(id));
       if (missingSaleSubTariffIds.length > 0) {
-        const additionalSubTariffs = await prisma.subTariff.findMany({
+        const additionalSubTariffs = await ctx.db.subTariff.findMany({
           where: {
             tenantId: ctx.tenantId,
             id: { in: missingSaleSubTariffIds },
@@ -7891,6 +7958,7 @@ export const customerIncomeRouter = router({
       const activeSaleChainMetricsBySaleId = await buildActiveSaleChainMetrics({
         tenantId: ctx.tenantId,
         sales: activeSales as SaleChainSaleRow[],
+        db: ctx.db,
       });
 
       for (const sale of activeSales as Array<{
@@ -8028,7 +8096,7 @@ export const customerIncomeRouter = router({
       // Filter first, then limit: limiting before the debt/sub-tariff filter dropped most matching customers.
       const filteredCustomerIds = Array.from(customersAfterDebtFilterIds);
       const customersAfterDebtFilter = filteredCustomerIds.length > 0
-        ? await prisma.customer.findMany({
+        ? await ctx.db.customer.findMany({
             where: {
               tenantId: ctx.tenantId,
               id: { in: filteredCustomerIds },
