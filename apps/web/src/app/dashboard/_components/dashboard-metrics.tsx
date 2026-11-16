@@ -1,7 +1,7 @@
 'use client';
 
-import DashboardMetricCards from '@/components/dashboard/DashboardMetricCards';
-import DashboardSellerTable from '@/components/dashboard/DashboardSellerTable';
+import DashboardMetricCards from '@/components/dashboard/dashboard-metric-cards';
+import DashboardSellerTable from '@/components/dashboard/dashboard-seller-table';
 import DashboardIncomeOverview from '@/components/dashboard/income-overview';
 import DashboardLeadOverview from '@/components/dashboard/lead-overview';
 import LoadingBlock from '@/components/dashboard/loading-block';

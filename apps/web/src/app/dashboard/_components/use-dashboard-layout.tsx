@@ -1,6 +1,6 @@
 'use client';
 
-import DashboardSalarySection from '@/components/dashboard/DashboardSalarySection';
+import DashboardSalarySection from '@/components/dashboard/dashboard-salary-section';
 import { formatSom } from '@/lib/format';
 import { useMemo } from 'react';
 import type { DashboardCustomSalesWidget } from './dashboard-helpers';

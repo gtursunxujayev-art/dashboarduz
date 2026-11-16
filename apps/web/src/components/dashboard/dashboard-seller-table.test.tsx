@@ -1,8 +1,8 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import DashboardSellerTable from '@/components/dashboard/DashboardSellerTable';
+import DashboardSellerTable from '@/components/dashboard/dashboard-seller-table';
 
-jest.mock('@/components/ui/VirtualTable', () => ({
+jest.mock('@/components/ui/virtual-table', () => ({
   __esModule: true,
   default: ({ rows, headerContent, renderRowCells }: any) => (
     <table><thead>{headerContent}</thead><tbody>{rows.map((row: any) => <tr key={row.userId}>{renderRowCells(row)}</tr>)}</tbody></table>

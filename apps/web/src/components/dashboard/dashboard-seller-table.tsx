@@ -1,6 +1,6 @@
 'use client';
 
-import VirtualTable from '@/components/ui/VirtualTable';
+import VirtualTable from '@/components/ui/virtual-table';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { type ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
 
