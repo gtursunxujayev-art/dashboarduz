@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -40,12 +40,12 @@ function buildDateRange(filters: ReportFilters): Prisma.DateTimeFilter | undefin
   return range.gte || range.lte ? range : undefined;
 }
 
-async function loadChainMetrics(tenantId: string, sales: SaleChainSaleRow[], lifecycleStatuses: string[]) {
+async function loadChainMetrics(tenantId: string, sales: SaleChainSaleRow[], lifecycleStatuses: string[], db: DbClient) {
   if (!sales.length) {
     return buildSaleChainMetricsBySaleId({ sales: [], chainRows: [] });
   }
   const saleIds = sales.map((sale) => sale.id);
-  const chainRows = await prisma.income.findMany({
+  const chainRows = await db.income.findMany({
     where: {
       tenantId,
       lifecycleStatus: { in: lifecycleStatuses },
@@ -70,7 +70,7 @@ export const reportsRouter = router({
   filterOptions: protectedProcedure.query(async ({ ctx }) => {
     const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
     const [managers, courses] = await Promise.all([
-      prisma.user.findMany({
+      ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           ...(scopedManagerUserId
@@ -80,7 +80,7 @@ export const reportsRouter = router({
         orderBy: { name: 'asc' },
         select: { id: true, name: true, username: true },
       }),
-      prisma.course.findMany({
+      ctx.db.course.findMany({
         where: { tenantId: ctx.tenantId },
         orderBy: { name: 'asc' },
         select: {
@@ -103,7 +103,7 @@ export const reportsRouter = router({
       const entryDate = buildDateRange(filters);
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
 
-      const sales = await prisma.income.findMany({
+      const sales = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
@@ -132,7 +132,7 @@ export const reportsRouter = router({
         },
       });
 
-      const chainMetricsBySaleId = await loadChainMetrics(ctx.tenantId, sales, ['active']);
+      const chainMetricsBySaleId = await loadChainMetrics(ctx.tenantId, sales, ['active'], ctx.db);
       const technicalSaleIds = buildTechnicalSaleIdSetByAgreement({ sales, chainMetricsBySaleId });
 
       return selectDebtorSales({ sales, chainMetricsBySaleId, technicalSaleIds }).map((row) => ({
@@ -195,7 +195,7 @@ export const reportsRouter = router({
         tariff: courseSelect,
       } as const;
 
-      const requests = await prisma.incomeAdjustmentRequest.findMany({
+      const requests = await ctx.db.incomeAdjustmentRequest.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: input.type,
@@ -238,7 +238,7 @@ export const reportsRouter = router({
           : request.income;
         rootSaleById.set(resolveRootSaleId(request.income), rootSale);
       }
-      const chainMetricsBySaleId = await loadChainMetrics(ctx.tenantId, [...rootSaleById.values()], CHAIN_LIFECYCLES_ALL);
+      const chainMetricsBySaleId = await loadChainMetrics(ctx.tenantId, [...rootSaleById.values()], CHAIN_LIFECYCLES_ALL, ctx.db);
 
       return requests.map((request) => {
         const rootSaleId = resolveRootSaleId(request.income);
