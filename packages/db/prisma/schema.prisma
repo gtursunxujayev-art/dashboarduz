@@ -194,10 +194,10 @@ model MetaAdInsight {
   adName       String?
   impressions  Int      @default(0)
   clicks       Int      @default(0)
-  spend        Float    @default(0)
-  ctr          Float    @default(0)
-  cpc          Float    @default(0)
-  cpm          Float    @default(0)
+  spend        Decimal  @default(0) @db.Decimal(18, 4)
+  ctr          Decimal  @default(0) @db.Decimal(12, 6)
+  cpc          Decimal  @default(0) @db.Decimal(18, 4)
+  cpm          Decimal  @default(0) @db.Decimal(18, 4)
   leads        Int      @default(0)
   raw          Json?
   createdAt    DateTime @default(now())

@@ -211,6 +211,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
     campaignId: row.campaignId || null,
     adSetId: row.adSetId || null,
     adId: row.adId || null,
+    spend: Number(row.spend),
   })));
 
   const sourceCounts = new Map<string, number>();
