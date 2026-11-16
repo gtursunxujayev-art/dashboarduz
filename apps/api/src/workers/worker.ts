@@ -8,6 +8,7 @@ import { startTelegramReportScheduler, stopTelegramReportScheduler } from '../se
 import { startTelegramAgentPerformanceScheduler, stopTelegramAgentPerformanceScheduler } from '../services/reports/telegram-agent-performance-scheduler';
 import { startTelegramGroupSummaryScheduler, stopTelegramGroupSummaryScheduler } from '../services/reports/telegram-group-summary-scheduler';
 import { startBonusAutoFinalizeScheduler, stopBonusAutoFinalizeScheduler } from '../services/bonus-auto-finalize';
+import { startWebhookEventRetentionScheduler, stopWebhookEventRetentionScheduler } from '../services/webhook-event-retention';
 import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from '../services/integrations/amocrm-call-sync';
 
 // Initialize observability
@@ -19,6 +20,7 @@ function startWorkerService(): void {
   startTelegramAgentPerformanceScheduler();
   startTelegramGroupSummaryScheduler();
   startBonusAutoFinalizeScheduler();
+  startWebhookEventRetentionScheduler();
   startAmoCallsSyncScheduler();
   log(LogLevel.INFO, 'Worker service started');
 }
@@ -38,6 +40,7 @@ process.on('SIGTERM', () => {
   log(LogLevel.INFO, 'SIGTERM received, shutting down gracefully');
   stopTelegramGroupSummaryScheduler();
   stopBonusAutoFinalizeScheduler();
+  stopWebhookEventRetentionScheduler();
   stopAmoCallsSyncScheduler();
   stopTelegramAgentPerformanceScheduler();
   stopTelegramReportScheduler();
@@ -48,6 +51,7 @@ process.on('SIGINT', () => {
   log(LogLevel.INFO, 'SIGINT received, shutting down gracefully');
   stopTelegramGroupSummaryScheduler();
   stopBonusAutoFinalizeScheduler();
+  stopWebhookEventRetentionScheduler();
   stopAmoCallsSyncScheduler();
   stopTelegramAgentPerformanceScheduler();
   stopTelegramReportScheduler();
