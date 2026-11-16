@@ -109,6 +109,9 @@
   "src/services/dashboard/bonus-income-details.ts": {
     "@typescript-eslint/no-unused-vars": 1
   },
+  "src/services/dashboard/live-leaderboard.ts": {
+    "@typescript-eslint/no-unsafe-argument": 1
+  },
   "src/services/funnel-metrics.ts": {
     "@typescript-eslint/no-unsafe-assignment": 1
   },
@@ -309,9 +312,6 @@
     "@typescript-eslint/no-explicit-any": 3,
     "@typescript-eslint/require-await": 6
   },
-  "src/trpc/routers/dashboard/helpers.ts": {
-    "no-duplicate-imports": 1
-  },
   "src/trpc/routers/dashboard/index.ts": {
     "import/order": 7
   },
@@ -321,9 +321,6 @@
   "src/trpc/routers/dashboard/lead-overview.ts": {
     "@typescript-eslint/no-explicit-any": 2,
     "@typescript-eslint/no-unsafe-member-access": 5
-  },
-  "src/trpc/routers/dashboard/live-leaderboard.ts": {
-    "@typescript-eslint/no-unsafe-argument": 1
   },
   "src/trpc/routers/dashboard/salary.ts": {
     "object-shorthand": 3
