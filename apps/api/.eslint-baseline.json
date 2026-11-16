@@ -94,6 +94,9 @@
     "@typescript-eslint/no-unsafe-member-access": 2,
     "@typescript-eslint/no-unused-vars": 1
   },
+  "src/services/dashboard/bonus-income-details.ts": {
+    "@typescript-eslint/no-unused-vars": 1
+  },
   "src/services/funnel-metrics.ts": {
     "@typescript-eslint/no-unsafe-assignment": 1
   },
@@ -303,7 +306,6 @@
     "@typescript-eslint/no-unsafe-argument": 1
   },
   "src/trpc/routers/dashboard/salary.ts": {
-    "@typescript-eslint/no-unused-vars": 1,
     "object-shorthand": 3
   },
   "src/trpc/routers/dashboard/summary.ts": {

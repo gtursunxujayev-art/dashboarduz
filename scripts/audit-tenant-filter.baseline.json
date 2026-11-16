@@ -5,6 +5,11 @@
   "apps/api/src/services/customer-income/create-income.ts": {
     "income.findUnique": 1
   },
+  "apps/api/src/services/dashboard/bonus-income-details.ts": {
+    "income.count": 1,
+    "income.findMany": 1,
+    "income.groupBy": 1
+  },
   "apps/api/src/trpc/routers/attendance.ts": {
     "attendanceDaySummary.count": 1,
     "attendanceDaySummary.findMany": 1,
@@ -32,12 +37,7 @@
   "apps/api/src/trpc/routers/customer-income/payment-history.ts": {
     "customer.findFirst": 2
   },
-  "apps/api/src/trpc/routers/dashboard/salary.ts": {
-    "income.count": 1,
-    "income.findMany": 1,
-    "income.groupBy": 1
-  },
-  "apps/api/src/trpc/routers/dashboard/summary.ts": {
+  "apps/api/src/trpc/routers/dashboard/finance-summary.ts": {
     "income.findMany": 2
   },
   "apps/api/src/trpc/routers/funnel.ts": {
