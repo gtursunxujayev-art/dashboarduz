@@ -31,11 +31,11 @@ type MetaInsightRow = {
 export type NormalizedMetaInsight = {
   date: Date;
   accountId: string;
-  campaignId: string | null;
+  campaignId: string;
   campaignName: string | null;
-  adSetId: string | null;
+  adSetId: string;
   adSetName: string | null;
-  adId: string | null;
+  adId: string;
   adName: string | null;
   impressions: number;
   clicks: number;
@@ -175,11 +175,11 @@ export async function fetchMetaInsights(
       rows.push({
         date: parseMetaDate(row.date_start),
         accountId,
-        campaignId: row.campaign_id || null,
+        campaignId: row.campaign_id || '',
         campaignName: row.campaign_name || null,
-        adSetId: row.adset_id || null,
+        adSetId: row.adset_id || '',
         adSetName: row.adset_name || null,
-        adId: row.ad_id || null,
+        adId: row.ad_id || '',
         adName: row.ad_name || null,
         impressions: toInteger(row.impressions),
         clicks: toInteger(row.clicks),
@@ -228,18 +228,6 @@ export async function syncMetaAdInsightsForTenant(
   let imported = 0;
 
   for (const insight of insights) {
-    const existing = await db.metaAdInsight.findFirst({
-      where: {
-        tenantId,
-        date: insight.date,
-        accountId: insight.accountId,
-        campaignId: insight.campaignId,
-        adSetId: insight.adSetId,
-        adId: insight.adId,
-      },
-      select: { id: true },
-    });
-
     const data = {
       campaignName: insight.campaignName,
       adSetName: insight.adSetName,
@@ -254,24 +242,21 @@ export async function syncMetaAdInsightsForTenant(
       raw: insight.raw as any,
     };
 
-    if (existing) {
-      await db.metaAdInsight.update({
-        where: { id: existing.id },
-        data,
-      });
-    } else {
-      await db.metaAdInsight.create({
-        data: {
-          tenantId,
-          date: insight.date,
-          accountId: insight.accountId,
-          campaignId: insight.campaignId,
-          adSetId: insight.adSetId,
-          adId: insight.adId,
-          ...data,
-        },
-      });
-    }
+    const key = {
+      tenantId,
+      date: insight.date,
+      accountId: insight.accountId,
+      campaignId: insight.campaignId,
+      adSetId: insight.adSetId,
+      adId: insight.adId,
+    };
+
+    // Atomic insert-or-update on the null-safe unique key (no find-then-create race).
+    await db.metaAdInsight.upsert({
+      where: { tenantId_date_accountId_campaignId_adSetId_adId: key },
+      create: { ...key, ...data },
+      update: data,
+    });
     imported += 1;
   }
 

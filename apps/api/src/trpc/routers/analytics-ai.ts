@@ -205,7 +205,13 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
       leads: true,
     },
     orderBy: [{ date: 'asc' }, { spend: 'desc' }],
-  });
+  }).then((rows) => rows.map((row) => ({
+    ...row,
+    // '' marks a level Meta did not return; downstream code expects null for that.
+    campaignId: row.campaignId || null,
+    adSetId: row.adSetId || null,
+    adId: row.adId || null,
+  })));
 
   const sourceCounts = new Map<string, number>();
   const attributionTokens = new Set<string>();

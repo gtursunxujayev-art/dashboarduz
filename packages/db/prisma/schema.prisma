@@ -185,11 +185,12 @@ model MetaAdInsight {
   tenantId     String
   date         DateTime
   accountId    String
-  campaignId   String?
+  /// '' when Meta did not return the level (kept non-null so the unique key is null-safe)
+  campaignId   String   @default("")
   campaignName String?
-  adSetId      String?
+  adSetId      String   @default("")
   adSetName    String?
-  adId         String?
+  adId         String   @default("")
   adName       String?
   impressions  Int      @default(0)
   clicks       Int      @default(0)
@@ -204,7 +205,7 @@ model MetaAdInsight {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, date, accountId, campaignId, adSetId, adId])
+  @@unique([tenantId, date, accountId, campaignId, adSetId, adId], map: "meta_ad_insights_tenant_date_account_campaign_adset_ad_key")
   @@index([tenantId])
   @@index([tenantId, date])
   @@index([tenantId, accountId, date])
