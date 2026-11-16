@@ -66,6 +66,8 @@
     "import/no-self-import": "error",
     
     // General rules
+    // Keep files small enough to review; split by topic (see trpc/routers/<name>/ and services/<domain>/).
+    "max-lines": ["warn", { "max": 600, "skipBlankLines": true, "skipComments": true }],
     "eqeqeq": ["error", "always"],
     "no-var": "error",
     "prefer-const": "error",

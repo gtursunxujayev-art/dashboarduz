@@ -140,7 +140,8 @@
     "@typescript-eslint/no-unsafe-assignment": 9,
     "@typescript-eslint/no-unsafe-member-access": 16,
     "@typescript-eslint/no-unsafe-return": 3,
-    "import/order": 2
+    "import/order": 2,
+    "max-lines": 1
   },
   "src/services/integrations/meta-ads.ts": {
     "@typescript-eslint/no-explicit-any": 1,
@@ -330,7 +331,8 @@
     "@typescript-eslint/no-unsafe-argument": 1,
     "@typescript-eslint/no-unsafe-assignment": 6,
     "@typescript-eslint/no-unsafe-member-access": 14,
-    "@typescript-eslint/no-unsafe-return": 1
+    "@typescript-eslint/no-unsafe-return": 1,
+    "max-lines": 1
   },
   "src/trpc/routers/income-problems.ts": {
     "@typescript-eslint/require-await": 2,
@@ -380,7 +382,8 @@
     "@typescript-eslint/no-unnecessary-type-assertion": 1
   },
   "src/trpc/routers/sellers/list.ts": {
-    "@typescript-eslint/no-unsafe-return": 1
+    "@typescript-eslint/no-unsafe-return": 1,
+    "max-lines": 1
   },
   "src/trpc/routers/telegram-bot.ts": {
     "@typescript-eslint/no-explicit-any": 1,
