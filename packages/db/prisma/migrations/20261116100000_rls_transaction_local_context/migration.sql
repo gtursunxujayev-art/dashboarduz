@@ -47,43 +47,152 @@ END;
 $$;
 
 -- Tenant-keyed tables that already had a policy: recreate with WITH CHECK.
-DO $$
-DECLARE
-  tbl text;
-BEGIN
-  FOREACH tbl IN ARRAY ARRAY[
-    'users',
-    'integrations',
-    'telegram_recipients',
-    'leads',
-    'contacts',
-    'calls',
-    'notifications',
-    'audit_logs',
-    'customers',
-    'courses',
-    'tariffs',
-    'sub_tariffs',
-    'incomes',
-    'income_adjustment_requests',
-    'bonus_policy_versions',
-    'bonus_month_snapshots',
-    'bonus_snapshot_lines',
-    'bonus_snapshot_items',
-    'bonus_adjustments',
-    'bonus_adjustment_audits',
-    'bonus_adjustment_applications'
-  ]
-  LOOP
-    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
-    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', tbl || '_isolation_policy', tbl);
-    EXECUTE format(
-      'CREATE POLICY %I ON %I FOR ALL USING ("tenantId"::uuid = app.current_tenant_id()) WITH CHECK ("tenantId"::uuid = app.current_tenant_id())',
-      tbl || '_isolation_policy',
-      tbl
-    );
-  END LOOP;
-END $$;
+ALTER TABLE "users" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS users_isolation_policy ON "users";
+CREATE POLICY users_isolation_policy ON "users"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "integrations" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS integrations_isolation_policy ON "integrations";
+CREATE POLICY integrations_isolation_policy ON "integrations"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "telegram_recipients" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS telegram_recipients_isolation_policy ON "telegram_recipients";
+CREATE POLICY telegram_recipients_isolation_policy ON "telegram_recipients"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "leads" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS leads_isolation_policy ON "leads";
+CREATE POLICY leads_isolation_policy ON "leads"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "contacts" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS contacts_isolation_policy ON "contacts";
+CREATE POLICY contacts_isolation_policy ON "contacts"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "calls" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS calls_isolation_policy ON "calls";
+CREATE POLICY calls_isolation_policy ON "calls"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "notifications" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS notifications_isolation_policy ON "notifications";
+CREATE POLICY notifications_isolation_policy ON "notifications"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "audit_logs" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS audit_logs_isolation_policy ON "audit_logs";
+CREATE POLICY audit_logs_isolation_policy ON "audit_logs"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "customers" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS customers_isolation_policy ON "customers";
+CREATE POLICY customers_isolation_policy ON "customers"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "courses" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS courses_isolation_policy ON "courses";
+CREATE POLICY courses_isolation_policy ON "courses"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "tariffs" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tariffs_isolation_policy ON "tariffs";
+CREATE POLICY tariffs_isolation_policy ON "tariffs"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "sub_tariffs" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS sub_tariffs_isolation_policy ON "sub_tariffs";
+CREATE POLICY sub_tariffs_isolation_policy ON "sub_tariffs"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "incomes" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS incomes_isolation_policy ON "incomes";
+CREATE POLICY incomes_isolation_policy ON "incomes"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "income_adjustment_requests" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS income_adjustment_requests_isolation_policy ON "income_adjustment_requests";
+CREATE POLICY income_adjustment_requests_isolation_policy ON "income_adjustment_requests"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "bonus_policy_versions" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS bonus_policy_versions_isolation_policy ON "bonus_policy_versions";
+CREATE POLICY bonus_policy_versions_isolation_policy ON "bonus_policy_versions"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "bonus_month_snapshots" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS bonus_month_snapshots_isolation_policy ON "bonus_month_snapshots";
+CREATE POLICY bonus_month_snapshots_isolation_policy ON "bonus_month_snapshots"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "bonus_snapshot_lines" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS bonus_snapshot_lines_isolation_policy ON "bonus_snapshot_lines";
+CREATE POLICY bonus_snapshot_lines_isolation_policy ON "bonus_snapshot_lines"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "bonus_snapshot_items" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS bonus_snapshot_items_isolation_policy ON "bonus_snapshot_items";
+CREATE POLICY bonus_snapshot_items_isolation_policy ON "bonus_snapshot_items"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "bonus_adjustments" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS bonus_adjustments_isolation_policy ON "bonus_adjustments";
+CREATE POLICY bonus_adjustments_isolation_policy ON "bonus_adjustments"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "bonus_adjustment_audits" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS bonus_adjustment_audits_isolation_policy ON "bonus_adjustment_audits";
+CREATE POLICY bonus_adjustment_audits_isolation_policy ON "bonus_adjustment_audits"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
+
+ALTER TABLE "bonus_adjustment_applications" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS bonus_adjustment_applications_isolation_policy ON "bonus_adjustment_applications";
+CREATE POLICY bonus_adjustment_applications_isolation_policy ON "bonus_adjustment_applications"
+  FOR ALL
+  USING ("tenantId"::uuid = app.current_tenant_id())
+  WITH CHECK ("tenantId"::uuid = app.current_tenant_id());
 
 ALTER TABLE "tenants" ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenants_isolation_policy ON "tenants";
