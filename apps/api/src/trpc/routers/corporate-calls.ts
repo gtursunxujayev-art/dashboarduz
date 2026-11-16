@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
@@ -92,8 +92,8 @@ function toHashtag(value: string | null | undefined): string {
   return normalized ? `#${normalized}` : '#manager';
 }
 
-async function resolveTelegramBotTokenForTenant(tenantId: string): Promise<string | null> {
-  const integration = await prisma.integration.findUnique({
+async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient): Promise<string | null> {
+  const integration = await db.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,
@@ -128,13 +128,15 @@ async function sendCorporateCallAddedTelegram(params: {
   date: string;
   managerName: string;
   duration: string;
+  db: DbClient;
 }) {
+  const { db } = params;
   const groupIds = parseTelegramGroupIdsFromEnvKeys(CORPORATE_GROUP_ENV_KEYS);
   if (!groupIds.length) {
     return { sent: false, reason: 'group_missing' as const };
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
   if (!botToken) {
     return { sent: false, reason: 'token_missing' as const };
   }
@@ -196,7 +198,7 @@ export const corporateCallsRouter = router({
     const admin = isAdmin(ctx.user.roles || []);
 
     const users = admin
-      ? await prisma.user.findMany({
+      ? await ctx.db.user.findMany({
           where: {
             tenantId: ctx.tenantId,
             isActive: true,
@@ -209,7 +211,7 @@ export const corporateCallsRouter = router({
             username: true,
           },
         })
-      : await prisma.user.findMany({
+      : await ctx.db.user.findMany({
           where: {
             tenantId: ctx.tenantId,
             isActive: true,
@@ -255,7 +257,7 @@ export const corporateCallsRouter = router({
         ? (input.managerUserId || ctx.user.userId)
         : ctx.user.userId;
 
-      const manager = await prisma.user.findFirst({
+      const manager = await ctx.db.user.findFirst({
         where: {
           id: targetManagerUserId,
           tenantId: ctx.tenantId,
@@ -273,7 +275,7 @@ export const corporateCallsRouter = router({
       }
 
       const durationSeconds = parseDurationToSeconds(input.duration);
-      const entry = await prisma.corporateCallDuration.upsert({
+      const entry = await ctx.db.corporateCallDuration.upsert({
         where: {
           tenantId_managerUserId_callDate: {
             tenantId: ctx.tenantId,
@@ -315,6 +317,7 @@ export const corporateCallsRouter = router({
         date,
         managerName,
         duration: formatDurationToHms(entry.durationSeconds),
+        db: ctx.db,
       });
 
       if (!telegram.sent) {
@@ -372,7 +375,7 @@ export const corporateCallsRouter = router({
         },
       };
 
-      const rows = await prisma.corporateCallDuration.findMany({
+      const rows = await ctx.db.corporateCallDuration.findMany({
         where,
         orderBy: [{ callDate: 'desc' }, { createdAt: 'desc' }],
         take: input?.limit || 60,
@@ -415,7 +418,7 @@ export const corporateCallsRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: "Faqat admin o'chira oladi." });
       }
 
-      const existing = await prisma.corporateCallDuration.findFirst({
+      const existing = await ctx.db.corporateCallDuration.findFirst({
         where: {
           id: input.id,
           tenantId: ctx.tenantId,
@@ -429,7 +432,7 @@ export const corporateCallsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: "Yozuv topilmadi." });
       }
 
-      await prisma.corporateCallDuration.delete({
+      await ctx.db.corporateCallDuration.delete({
         where: { id: existing.id },
       });
 
