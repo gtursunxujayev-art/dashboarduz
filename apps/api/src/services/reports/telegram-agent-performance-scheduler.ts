@@ -1,14 +1,16 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
 import { AGENT_ROLES } from '@dashboarduz/shared';
+
+import { asObject, getCaseInsensitiveValue } from '../../lib/object';
+import { getCallsProvider } from '../calls-source';
+import { getCorporateCallDurationByManager } from '../corporate-call-durations';
+import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
 import { type AmoCRMTask, amocrmService } from '../integrations/amocrm';
 import { getTenantAmoCRMContext } from '../integrations/amocrm-live';
 import { telegramService } from '../integrations/telegram';
+import { LogLevel, log } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
-import { LogLevel, log } from '../observability';
-import { getCorporateCallDurationByManager } from '../corporate-call-durations';
-import { getCallsProvider } from '../calls-source';
 
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5 (Asia/Tashkent)
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
@@ -106,29 +108,6 @@ function isAllowedUtelManagerExtension(value: unknown): boolean {
   const parsed = Number.parseInt(digits, 10);
 
   return Number.isFinite(parsed) && parsed >= UTEL_MIN_EXTENSION && parsed <= UTEL_MAX_EXTENSION;
-}
-
-function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
-}
-
-function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): unknown {
-  if (key in source) {
-    return source[key];
-  }
-  const normalizedKey = key.toLowerCase();
-
-  for (const [entryKey, entryValue] of Object.entries(source)) {
-    if (entryKey.toLowerCase() === normalizedKey) {
-      return entryValue;
-    }
-  }
-
-  return undefined;
 }
 
 function parseDuration(value: unknown): number | null {

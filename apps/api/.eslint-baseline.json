@@ -49,8 +49,7 @@
   },
   "src/services/attendance/faceid.ts": {
     "@typescript-eslint/no-explicit-any": 2,
-    "@typescript-eslint/no-unsafe-assignment": 2,
-    "import/order": 1
+    "@typescript-eslint/no-unsafe-assignment": 2
   },
   "src/services/auth/jwt.ts": {
     "import/no-named-as-default-member": 2,
@@ -70,8 +69,7 @@
     "import/order": 1
   },
   "src/services/bonus-engine.ts": {
-    "@typescript-eslint/no-unused-vars": 1,
-    "import/order": 3
+    "@typescript-eslint/no-unused-vars": 1
   },
   "src/services/funnel-metrics.ts": {
     "@typescript-eslint/no-unsafe-assignment": 1
@@ -91,9 +89,6 @@
     "@typescript-eslint/no-unsafe-member-access": 6,
     "import/order": 2
   },
-  "src/services/integrations/amocrm-live.ts": {
-    "import/order": 1
-  },
   "src/services/integrations/amocrm.ts": {
     "@typescript-eslint/no-explicit-any": 11,
     "@typescript-eslint/no-unsafe-assignment": 9,
@@ -105,11 +100,7 @@
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-argument": 1,
     "@typescript-eslint/no-unsafe-assignment": 4,
-    "@typescript-eslint/no-unsafe-member-access": 3,
-    "import/order": 1
-  },
-  "src/services/integrations/telegram-recipient-store.ts": {
-    "import/order": 1
+    "@typescript-eslint/no-unsafe-member-access": 3
   },
   "src/services/integrations/telegram-update.ts": {
     "@typescript-eslint/no-explicit-any": 1,
@@ -160,15 +151,13 @@
   },
   "src/services/reports/telegram-agent-performance-scheduler.ts": {
     "@typescript-eslint/no-explicit-any": 6,
-    "@typescript-eslint/no-unsafe-member-access": 7,
-    "import/order": 7
+    "@typescript-eslint/no-unsafe-member-access": 7
   },
   "src/services/reports/telegram-group-summary-scheduler.ts": {
     "@typescript-eslint/no-explicit-any": 5,
     "@typescript-eslint/no-unsafe-argument": 1,
     "@typescript-eslint/no-unsafe-assignment": 4,
-    "@typescript-eslint/no-unsafe-member-access": 5,
-    "import/order": 3
+    "@typescript-eslint/no-unsafe-member-access": 5
   },
   "src/services/reports/telegram-report-scheduler.ts": {
     "@typescript-eslint/no-explicit-any": 9,
@@ -231,15 +220,13 @@
   },
   "src/trpc/routers/bonus.ts": {
     "@typescript-eslint/no-explicit-any": 4,
-    "@typescript-eslint/no-unsafe-assignment": 11,
-    "import/order": 3
+    "@typescript-eslint/no-unsafe-assignment": 11
   },
   "src/trpc/routers/calls.ts": {
     "@typescript-eslint/no-explicit-any": 2,
     "@typescript-eslint/no-unsafe-assignment": 2,
     "@typescript-eslint/no-unsafe-member-access": 3,
-    "@typescript-eslint/require-await": 1,
-    "import/order": 6
+    "@typescript-eslint/require-await": 1
   },
   "src/trpc/routers/corporate-calls.ts": {
     "@typescript-eslint/no-explicit-any": 3,
@@ -267,7 +254,6 @@
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-member-access": 1,
     "@typescript-eslint/no-unused-vars": 1,
-    "import/order": 5,
     "no-duplicate-imports": 1
   },
   "src/trpc/routers/dashboard/income-overview.ts": {
@@ -310,15 +296,11 @@
   "src/trpc/routers/funnel.ts": {
     "import/order": 2
   },
-  "src/trpc/routers/income-debug.ts": {
-    "import/order": 3
-  },
   "src/trpc/routers/income-problems.ts": {
     "@typescript-eslint/no-unsafe-assignment": 1,
     "@typescript-eslint/require-await": 2,
     "@typescript-eslint/restrict-template-expressions": 2,
-    "eqeqeq": 2,
-    "import/order": 1
+    "eqeqeq": 2
   },
   "src/trpc/routers/index.ts": {
     "import/order": 17
@@ -329,14 +311,12 @@
     "@typescript-eslint/no-unsafe-assignment": 10,
     "@typescript-eslint/no-unsafe-member-access": 17,
     "@typescript-eslint/require-await": 2,
-    "import/order": 14,
     "prefer-const": 1
   },
   "src/trpc/routers/leads.ts": {
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-member-access": 1,
-    "@typescript-eslint/require-await": 3,
-    "import/order": 4
+    "@typescript-eslint/require-await": 3
   },
   "src/trpc/routers/notifications.ts": {
     "@typescript-eslint/no-explicit-any": 1,
@@ -386,7 +366,6 @@
     "@typescript-eslint/no-unsafe-member-access": 18,
     "@typescript-eslint/require-await": 2,
     "import/no-named-as-default-member": 1,
-    "import/order": 7,
     "no-duplicate-imports": 1
   },
   "src/workers/index.ts": {
@@ -397,8 +376,7 @@
     "@typescript-eslint/no-unsafe-member-access": 50,
     "@typescript-eslint/no-unused-vars": 1,
     "@typescript-eslint/require-await": 1,
-    "import/no-cycle": 1,
-    "import/order": 7
+    "import/no-cycle": 1
   },
   "src/workers/worker.ts": {
     "@typescript-eslint/no-explicit-any": 1,

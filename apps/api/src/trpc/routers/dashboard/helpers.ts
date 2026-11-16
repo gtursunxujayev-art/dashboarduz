@@ -1,13 +1,14 @@
 import type { DbClient } from '@dashboarduz/db';
+import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+
+import { asObject, getCaseInsensitiveValue, toFiniteNumber } from '../../../lib/object';
+import { amocrmService } from '../../../services/integrations/amocrm';
 import {
-  asObject,
   asStringArray,
   type LeadFieldOption,
 } from '../../../services/integrations/amocrm-live';
-import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
-import { amocrmService } from '../../../services/integrations/amocrm';
 import { normalizeIdentifier, getSystemLeadFieldOptions } from '../../../services/integrations/amocrm-live';
 
 export const dashboardRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
@@ -242,16 +243,6 @@ export function resolveCallExtension(call: { from: string; to: string; direction
   if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
 
   return null;
-}
-
-function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): unknown {
-  if (key in source) {
-    return source[key];
-  }
-  const normalizedKey = key.toLowerCase();
-  const matchingEntry = Object.entries(source).find(([entryKey]) => entryKey.toLowerCase() === normalizedKey);
-
-  return matchingEntry?.[1];
 }
 
 function parseCallDuration(value: unknown): number | null {
@@ -632,19 +623,6 @@ export function getCurrentMonthRange(now: Date) {
   };
 }
 
-export function toFiniteNumber(value: unknown, fallback = 0): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value.trim());
-
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-
-  return fallback;
-}
-
 export function normalizePercentage(value: unknown): number {
   const parsed = toFiniteNumber(value, 0);
 
@@ -963,8 +941,8 @@ export function getBonusAmount(amount: number, percentage: number): number {
 // Re-export commonly used items from dependencies so procedure files can import from helpers
 export { TRPCError } from '@trpc/server';
 export { z } from 'zod';
+export { asObject, toFiniteNumber } from '../../../lib/object';
 export {
-  asObject,
   asStringArray,
   extractLeadValue,
   getSystemLeadFieldOptions,

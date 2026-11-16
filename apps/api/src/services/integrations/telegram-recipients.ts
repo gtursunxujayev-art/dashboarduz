@@ -1,3 +1,4 @@
+import { asObject } from '../../lib/object';
 type TelegramRecipientRecord = {
   chatId: string;
   username: string | null;
@@ -9,14 +10,6 @@ type TelegramRecipientRecord = {
   startedAt: string | null;
   lastSeenAt: string | null;
 };
-
-function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
-}
 
 function normalizeString(value: unknown): string | null {
   if (typeof value !== 'string') {

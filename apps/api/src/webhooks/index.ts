@@ -1,14 +1,17 @@
 import crypto from 'crypto';
-import express from 'express';
+
 import { systemPrisma } from '@dashboarduz/db';
+import express from 'express';
 import type { Request, Response } from 'express';
-import { getDLQMetrics, getQueue, getQueueMetrics, QueueName } from '../services/queue/queues';
-import { amocrmService } from '../services/integrations/amocrm';
+
 import { logger } from '../lib/logger';
-import { rateLimiter } from '../services/security/rate-limiter';
-import { EncryptionService } from '../services/security/encryption';
+import { asObject, textFromUnknown } from '../lib/object';
+import { amocrmService } from '../services/integrations/amocrm';
 import { upsertTelegramRecipientRecord } from '../services/integrations/telegram-recipient-store';
 import { extractTelegramRecipientFromPayload } from '../services/integrations/telegram-update';
+import { getDLQMetrics, getQueue, getQueueMetrics, QueueName } from '../services/queue/queues';
+import { EncryptionService } from '../services/security/encryption';
+import { rateLimiter } from '../services/security/rate-limiter';
 
 const router = express.Router();
 
@@ -197,45 +200,6 @@ function normalizeDirection(value: string | null | undefined): 'inbound' | 'outb
   }
 
   return 'inbound';
-}
-
-function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
-}
-
-function textFromUnknown(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  if (typeof value === 'string') {
-    const normalized = value.trim();
-
-    return normalized || null;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-
-  if (typeof value === 'object' && !Array.isArray(value)) {
-    const objectValue = value as Record<string, unknown>;
-    const preferredKeys = ['name', 'title', 'label', 'value', 'status', 'state', 'code', 'text'];
-
-    for (const key of preferredKeys) {
-      const nested = textFromUnknown(objectValue[key]);
-
-      if (nested) {
-        return nested;
-      }
-    }
-  }
-
-  return null;
 }
 
 function firstTextValue(values: unknown[]): string | null {

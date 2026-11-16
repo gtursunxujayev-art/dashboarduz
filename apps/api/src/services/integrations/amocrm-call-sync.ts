@@ -4,6 +4,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 import type { Prisma } from '@prisma/client';
 
+import { toNumberOrNull } from '../../lib/object';
 import { getPreviousTashkentMonthStart } from '../bonus-auto-finalize';
 import { AMOCRM_CALL_PROVIDER, readCallsSource } from '../calls-source';
 import { CALL_NOTE_TYPES } from '../funnel-metrics';
@@ -33,12 +34,6 @@ export type CallsSyncState = {
 
 export type CallManager = { userId: string; extension: string | null };
 
-function toNumber(value: unknown): number | null {
-  const parsed = Number(value);
-
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 function normalizeDigits(value: unknown): string {
   return String(value ?? '').replace(/[^\d]/g, '');
 }
@@ -50,7 +45,7 @@ export function readCallsSyncState(config: unknown): CallsSyncState {
   const cursors: CallsSyncState['cursors'] = {};
 
   for (const entityType of CALL_NOTE_ENTITY_TYPES) {
-    const cursor = toNumber(rawCursors[entityType]);
+    const cursor = toNumberOrNull(rawCursors[entityType]);
 
     if (cursor !== null && cursor > 0) cursors[entityType] = cursor;
   }
@@ -76,7 +71,7 @@ export function noteToCallRow(
   const noteType = String(note.note_type || '');
 
   if (!CALL_NOTE_TYPES.includes(noteType) || note.id === undefined || note.id === null) return null;
-  const createdAt = toNumber(note.created_at);
+  const createdAt = toNumberOrNull(note.created_at);
 
   if (createdAt === null || createdAt <= 0) return null;
 
@@ -87,7 +82,7 @@ export function noteToCallRow(
   const manager = amoUserId ? managersByAmoUserId.get(amoUserId) : undefined;
   const extension = manager?.extension || '';
   const phone = String(params.phone ?? '').trim();
-  const duration = Math.max(0, Math.round(toNumber(params.duration) ?? 0));
+  const duration = Math.max(0, Math.round(toNumberOrNull(params.duration) ?? 0));
   const direction = noteType === 'call_in' ? 'inbound' : 'outbound';
   const startedAt = new Date(createdAt * 1000);
   const uniq = String(params.uniq ?? '').trim();
@@ -223,7 +218,7 @@ async function syncTenantAmoCalls(tenantId: string, now = new Date()): Promise<C
           imported += result.count;
         }
         for (const note of notes) {
-          const updatedAt = toNumber(note.updated_at) ?? toNumber(note.created_at);
+          const updatedAt = toNumberOrNull(note.updated_at) ?? toNumberOrNull(note.created_at);
 
           if (updatedAt !== null && updatedAt > newest) newest = updatedAt;
         }

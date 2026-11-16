@@ -1,3 +1,4 @@
+import { trimmedString } from '../../lib/object';
 export type TelegramRecipientFromUpdate = {
   chatId: string;
   username: string | null;
@@ -5,10 +6,6 @@ export type TelegramRecipientFromUpdate = {
   lastName: string | null;
   started: boolean;
 };
-
-function normalizeText(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
 
 export function extractTelegramRecipientFromPayload(payload: any): TelegramRecipientFromUpdate | null {
   const message = payload?.message
@@ -21,7 +18,7 @@ export function extractTelegramRecipientFromPayload(payload: any): TelegramRecip
 
   if (!chat || chat.id === null || chat.id === undefined) return null;
 
-  const chatType = normalizeText(chat.type || 'private').toLowerCase();
+  const chatType = trimmedString(chat.type || 'private').toLowerCase();
 
   if (chatType && chatType !== 'private') return null;
 
@@ -31,15 +28,15 @@ export function extractTelegramRecipientFromPayload(payload: any): TelegramRecip
     || payload?.channel_post?.from
     || payload?.edited_channel_post?.from
     || null;
-  const messageText = normalizeText(
+  const messageText = trimmedString(
     message?.text || message?.caption || payload?.callback_query?.data || '',
   );
 
   return {
     chatId: String(chat.id),
-    username: normalizeText(from?.username || chat.username || '') || null,
-    firstName: normalizeText(from?.first_name || chat.first_name || '') || null,
-    lastName: normalizeText(from?.last_name || chat.last_name || '') || null,
+    username: trimmedString(from?.username || chat.username || '') || null,
+    firstName: trimmedString(from?.first_name || chat.first_name || '') || null,
+    lastName: trimmedString(from?.last_name || chat.last_name || '') || null,
     started: /^\/start\b/i.test(messageText) || Boolean(from || message),
   };
 }

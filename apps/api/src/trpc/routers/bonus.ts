@@ -1,8 +1,9 @@
 import type { DbClient } from '@dashboarduz/db';
+import { AGENT_ROLES } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { AGENT_ROLES } from '@dashboarduz/shared';
-import { adminProcedure, protectedProcedure, router } from '../trpc';
+
+import { asObjectOrEmpty, toFiniteNumber } from '../../lib/object';
 import {
   buildLegacyBonusPolicy,
   calculateBonusMonth,
@@ -15,6 +16,7 @@ import {
   resolveEffectiveBonusPolicy,
   reviewBonusAdjustment,
 } from '../../services/bonus-engine';
+import { adminProcedure, protectedProcedure, router } from '../trpc';
 
 const BONUS_PLAN_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 const BONUS_PLAN_PERIODS = ['monthly', 'all_time'] as const;
@@ -99,14 +101,6 @@ type KpiSettings = {
   thresholds: Record<KpiMetricKey, KpiThreshold>;
 };
 
-function asObject(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  return value as Record<string, unknown>;
-}
-
 function canReadBonusPlans(roles: string[]): boolean {
   return roles.some((role) => BONUS_READ_ROLES.has(role));
 }
@@ -123,19 +117,6 @@ function getCategoryLabel(category: BonusRuleCategory): string {
   return "Qo'shimcha xizmat";
 }
 
-function toFiniteNumber(value: unknown, fallback = 0): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value.trim());
-
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-
-  return fallback;
-}
-
 function normalizePercentage(value: unknown): number {
   const parsed = toFiniteNumber(value, 0);
 
@@ -150,7 +131,7 @@ function normalizePercentage(value: unknown): number {
 }
 
 function normalizeTier(raw: unknown): BonusRuleTier | null {
-  const row = asObject(raw);
+  const row = asObjectOrEmpty(raw);
   const minSales = Math.floor(toFiniteNumber(row.minSales, 0));
   const maxValue = row.maxSales;
   const maxSales =
@@ -221,7 +202,7 @@ function createSimpleRule(percent: unknown): SalaryCategoryBonusRule {
 }
 
 function sanitizeCategoryRule(rawRule: unknown, fallbackPercent: unknown): SalaryCategoryBonusRule {
-  const row = asObject(rawRule);
+  const row = asObjectOrEmpty(rawRule);
   const mode = BONUS_RULE_MODES.includes(row.mode as BonusRuleMode)
     ? (row.mode as BonusRuleMode)
     : 'simple';
@@ -248,13 +229,13 @@ function sanitizeCategoryRule(rawRule: unknown, fallbackPercent: unknown): Salar
 }
 
 function parseFixedSalaries(settings: unknown): FixedSalaryRow[] {
-  const settingsObject = asObject(settings);
-  const salarySettings = asObject(settingsObject.salary);
+  const settingsObject = asObjectOrEmpty(settings);
+  const salarySettings = asObjectOrEmpty(settingsObject.salary);
   const fixedRows = Array.isArray(salarySettings.fixedSalaries) ? salarySettings.fixedSalaries : [];
 
   return fixedRows
     .map((raw) => {
-      const row = asObject(raw);
+      const row = asObjectOrEmpty(raw);
       const userId = typeof row.userId === 'string' ? row.userId.trim() : '';
       const amount = Math.max(0, Math.round(toFiniteNumber(row.amount, 0)));
 
@@ -271,10 +252,10 @@ function parseBonusRules(settings: unknown): {
   bonusMode: BonusBaseMode;
   bonusRules: SalaryBonusRules;
 } {
-  const settingsObject = asObject(settings);
-  const salarySettings = asObject(settingsObject.salary);
-  const rawPercentages = asObject(salarySettings.bonusPercentages);
-  const rawRules = asObject(salarySettings.bonusRules);
+  const settingsObject = asObjectOrEmpty(settings);
+  const salarySettings = asObjectOrEmpty(settingsObject.salary);
+  const rawPercentages = asObjectOrEmpty(salarySettings.bonusPercentages);
+  const rawRules = asObjectOrEmpty(salarySettings.bonusRules);
   const bonusMode: BonusBaseMode = salarySettings.bonusMode === 'on_debt_closed' ? 'on_debt_closed' : 'on_income';
 
   return {
@@ -289,9 +270,9 @@ function parseBonusRules(settings: unknown): {
 }
 
 function parseAttendancePenaltySettings(settings: unknown): AttendancePenaltySettings {
-  const settingsObject = asObject(settings);
-  const salarySettings = asObject(settingsObject.salary);
-  const raw = asObject(salarySettings.attendancePenaltySettings);
+  const settingsObject = asObjectOrEmpty(settings);
+  const salarySettings = asObjectOrEmpty(settingsObject.salary);
+  const raw = asObjectOrEmpty(salarySettings.attendancePenaltySettings);
   const parseTarget = (value: unknown, fallback: 'fixed' | 'kpi'): 'fixed' | 'kpi' => {
     return value === 'fixed' || value === 'kpi' ? value : fallback;
   };
@@ -313,7 +294,7 @@ function parseAttendancePenaltySettings(settings: unknown): AttendancePenaltySet
 }
 
 function parseThreshold(raw: unknown): KpiThreshold {
-  const row = asObject(raw);
+  const row = asObjectOrEmpty(raw);
 
   return {
     full: Math.max(0, toFiniteNumber(row.full, 0)),
@@ -322,10 +303,10 @@ function parseThreshold(raw: unknown): KpiThreshold {
 }
 
 function parseKpiSettings(settings: unknown): KpiSettings {
-  const settingsObject = asObject(settings);
-  const salarySettings = asObject(settingsObject.salary);
-  const rawKpi = asObject(salarySettings.kpiSettings);
-  const rawThresholds = asObject(rawKpi.thresholds);
+  const settingsObject = asObjectOrEmpty(settings);
+  const salarySettings = asObjectOrEmpty(settingsObject.salary);
+  const rawKpi = asObjectOrEmpty(salarySettings.kpiSettings);
+  const rawThresholds = asObjectOrEmpty(rawKpi.thresholds);
 
   const legacyMetricMap: Record<KpiMetricKey, unknown> = {
     conversion: rawThresholds.conversion ?? rawThresholds.conversionRate,
@@ -366,7 +347,7 @@ function parseKpiSettings(settings: unknown): KpiSettings {
 }
 
 function sanitizePlan(raw: unknown): BonusPlan | null {
-  const row = asObject(raw);
+  const row = asObjectOrEmpty(raw);
   const id = typeof row.id === 'string' ? row.id.trim() : '';
   const name = typeof row.name === 'string' ? row.name.trim() : '';
   const periodMode = typeof row.periodMode === 'string' ? row.periodMode.trim() : '';
@@ -417,8 +398,8 @@ function sanitizePlan(raw: unknown): BonusPlan | null {
 }
 
 function parsePlanBonuses(settings: unknown): BonusPlan[] {
-  const settingsObject = asObject(settings);
-  const salarySettings = asObject(settingsObject.salary);
+  const settingsObject = asObjectOrEmpty(settings);
+  const salarySettings = asObjectOrEmpty(settingsObject.salary);
   const rawPlans = Array.isArray(salarySettings.planBonuses) ? salarySettings.planBonuses : [];
 
   const plans: BonusPlan[] = [];
@@ -438,8 +419,8 @@ function mergeSalarySettings(params: {
   currentSettings: unknown;
   nextPlans: BonusPlan[];
 }): Record<string, unknown> {
-  const settingsObject = asObject(params.currentSettings);
-  const salarySettings = asObject(settingsObject.salary);
+  const settingsObject = asObjectOrEmpty(params.currentSettings);
+  const salarySettings = asObjectOrEmpty(settingsObject.salary);
 
   return {
     ...settingsObject,
@@ -789,8 +770,8 @@ export const bonusRouter = router({
       bonusRules: normalizedRules,
       courseOverrides: input.courseOverrides,
     }, tenant.settings);
-    const settingsObject = asObject(tenant.settings);
-    const salarySettings = asObject(settingsObject.salary);
+    const settingsObject = asObjectOrEmpty(tenant.settings);
+    const salarySettings = asObjectOrEmpty(settingsObject.salary);
 
     await ctx.db.$transaction(async (tx) => {
       const count = await tx.bonusPolicyVersion.count({ where: { tenantId: ctx.tenantId } });
@@ -935,8 +916,8 @@ export const bonusRouter = router({
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
     }
 
-    const settingsObject = asObject(tenant.settings);
-    const salarySettings = asObject(settingsObject.salary);
+    const settingsObject = asObjectOrEmpty(tenant.settings);
+    const salarySettings = asObjectOrEmpty(settingsObject.salary);
     const normalizedRules: SalaryBonusRules = {
       online: sanitizeCategoryRule(input.bonusRules.online, input.bonusRules.online.simplePercent),
       offline: sanitizeCategoryRule(input.bonusRules.offline, input.bonusRules.offline.simplePercent),
@@ -1016,8 +997,8 @@ export const bonusRouter = router({
       }))
       .filter((row) => allowedSet.has(row.userId) && row.amount > 0);
 
-    const settingsObject = asObject(tenant.settings);
-    const salarySettings = asObject(settingsObject.salary);
+    const settingsObject = asObjectOrEmpty(tenant.settings);
+    const salarySettings = asObjectOrEmpty(settingsObject.salary);
     const nextSettings = {
       ...settingsObject,
       salary: {
@@ -1089,8 +1070,8 @@ export const bonusRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
       }
 
-      const settingsObject = asObject(tenant.settings);
-      const salarySettings = asObject(settingsObject.salary);
+      const settingsObject = asObjectOrEmpty(tenant.settings);
+      const salarySettings = asObjectOrEmpty(settingsObject.salary);
       const nextSettings = {
         ...settingsObject,
         salary: {
@@ -1136,8 +1117,8 @@ export const bonusRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
       }
 
-      const settingsObject = asObject(tenant.settings);
-      const salarySettings = asObject(settingsObject.salary);
+      const settingsObject = asObjectOrEmpty(tenant.settings);
+      const salarySettings = asObjectOrEmpty(settingsObject.salary);
       const nextSettings = {
         ...settingsObject,
         salary: {

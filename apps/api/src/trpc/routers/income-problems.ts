@@ -1,6 +1,8 @@
 import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+
+import { asObjectOrEmpty } from '../../lib/object';
 import { adminProcedure, router } from '../trpc';
 
 type SnapshotMapping = {
@@ -104,12 +106,6 @@ const HEADER_ALIASES: Record<keyof SnapshotMapping, string[]> = {
   remainingDebtAmount: ['qarzi', 'qarz', 'remaining debt', 'qoldiq qarz'],
   deadline: ['deadline', 'muddat'],
 };
-
-function asSettingsObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
 
 function normalizeHeader(value: unknown): string {
   return String(value ?? '')
@@ -269,7 +265,7 @@ async function readTenantSettings(tenantId: string, db: DbClient) {
 
   if (!tenant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ish maydoni topilmadi.' });
 
-  return asSettingsObject(tenant.settings);
+  return asObjectOrEmpty(tenant.settings);
 }
 
 async function writeTenantSettings(tenantId: string, settings: Record<string, unknown>, db: DbClient) {
@@ -281,7 +277,7 @@ async function writeTenantSettings(tenantId: string, settings: Record<string, un
 
 async function getActiveSnapshot(tenantId: string, db: DbClient): Promise<ActiveSnapshot | null> {
   const settings = await readTenantSettings(tenantId, db);
-  const incomeProblems = asSettingsObject(settings.incomeProblems);
+  const incomeProblems = asObjectOrEmpty(settings.incomeProblems);
   const activeSnapshot = incomeProblems.activeSnapshot;
 
   if (!activeSnapshot || typeof activeSnapshot !== 'object' || Array.isArray(activeSnapshot)) return null;
@@ -613,7 +609,7 @@ export const incomeProblemsRouter = router({
       await writeTenantSettings(ctx.tenantId, {
         ...settings,
         incomeProblems: {
-          ...asSettingsObject(settings.incomeProblems),
+          ...asObjectOrEmpty(settings.incomeProblems),
           activeSnapshot: {
             version: 1,
             workbookName: input.workbookName,

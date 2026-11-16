@@ -1,4 +1,6 @@
 import { systemPrisma, type DbClient } from '@dashboarduz/db';
+
+import { parseFloatOrZero } from '../../lib/object';
 import { decryptIntegrationTokens } from '../security/encryption';
 
 const META_API_VERSION = process.env.META_API_VERSION || 'v20.0';
@@ -47,14 +49,8 @@ export type NormalizedMetaInsight = {
   raw: unknown;
 };
 
-function toNumber(value: unknown): number {
-  const parsed = Number.parseFloat(String(value ?? '0'));
-
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function toInteger(value: unknown): number {
-  return Math.max(0, Math.round(toNumber(value)));
+  return Math.max(0, Math.round(parseFloatOrZero(value)));
 }
 
 function formatDateKey(date: Date): string {
@@ -198,10 +194,10 @@ async function fetchMetaInsights(
         adName: row.ad_name || null,
         impressions: toInteger(row.impressions),
         clicks: toInteger(row.clicks),
-        spend: toNumber(row.spend),
-        ctr: toNumber(row.ctr),
-        cpc: toNumber(row.cpc),
-        cpm: toNumber(row.cpm),
+        spend: parseFloatOrZero(row.spend),
+        ctr: parseFloatOrZero(row.ctr),
+        cpc: parseFloatOrZero(row.cpc),
+        cpm: parseFloatOrZero(row.cpm),
         leads: getLeadCount(row.actions),
         raw: row,
       });

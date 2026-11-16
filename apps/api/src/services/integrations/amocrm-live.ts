@@ -1,4 +1,6 @@
 import { systemPrisma, type DbClient } from '@dashboarduz/db';
+
+import { asObject } from '../../lib/object';
 import { decryptIntegrationTokens } from '../security/encryption';
 
 export type FieldOptionSource = 'catalog' | 'system';
@@ -37,14 +39,6 @@ export function humanizeKey(input: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
-}
-
-export function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
 }
 
 export function getSelectedPipelineIds(config: unknown): string[] | null {

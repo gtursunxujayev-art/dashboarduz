@@ -1,36 +1,39 @@
 import crypto from 'crypto';
-import { adminProcedure, router } from '../trpc';
-import { z } from 'zod';
+
 import { amocrmConnectSchema, faceIdConnectSchema, metaAdsConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
-import { decryptIntegrationTokens, encryptIntegrationTokens } from '../../services/security/encryption';
-import { amocrmService } from '../../services/integrations/amocrm';
-import { telegramService } from '../../services/integrations/telegram';
-import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
-import {
-  CALL_NOTE_ENTITY_TYPES,
-  readCallsSyncState,
-  triggerTenantAmoCallsSync,
-} from '../../services/integrations/amocrm-call-sync';
+import { z } from 'zod';
+
+import { asObjectOrEmpty } from '../../lib/object';
 import {
   AMOCRM_CALL_PROVIDER,
   CALLS_SOURCE_CONFIG_KEY,
   invalidateCallsProvider,
   readCallsSource,
 } from '../../services/calls-source';
-import { normalizeMetaAdAccountId, syncMetaAdInsightsForTenant, validateMetaAdAccount } from '../../services/integrations/meta-ads';
+import { amocrmService } from '../../services/integrations/amocrm';
 import {
-  applyTelegramRecipientsToConfig,
-  parseTelegramRecipients,
-} from '../../services/integrations/telegram-recipients';
+  CALL_NOTE_ENTITY_TYPES,
+  readCallsSyncState,
+  triggerTenantAmoCallsSync,
+} from '../../services/integrations/amocrm-call-sync';
+import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
+import { normalizeMetaAdAccountId, syncMetaAdInsightsForTenant, validateMetaAdAccount } from '../../services/integrations/meta-ads';
+import { telegramService } from '../../services/integrations/telegram';
+import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../../services/integrations/telegram-groups';
 import {
   importLegacyTelegramRecipients,
   listTelegramRecipients,
   updateTelegramRecipientSelection,
 } from '../../services/integrations/telegram-recipient-store';
-import { sendImmediateTodayReportForTenant, sendManualTelegramReportForTenant } from '../../services/reports/telegram-report-scheduler';
+import {
+  applyTelegramRecipientsToConfig,
+  parseTelegramRecipients,
+} from '../../services/integrations/telegram-recipients';
 import { sendTelegramGroupSummariesForTenant } from '../../services/reports/telegram-group-summary-scheduler';
-import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../../services/integrations/telegram-groups';
+import { sendImmediateTodayReportForTenant, sendManualTelegramReportForTenant } from '../../services/reports/telegram-report-scheduler';
+import { decryptIntegrationTokens, encryptIntegrationTokens } from '../../services/security/encryption';
+import { adminProcedure, router } from '../trpc';
 
 function normalizeBaseUrl(url?: string): string | null {
   if (!url) {
@@ -82,16 +85,8 @@ function amoFailureHelp(reason: AmoFailureReason): string | null {
   return null;
 }
 
-function asObject(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  return value as Record<string, unknown>;
-}
-
 function parseTelegramDailyReportCourseIds(config: unknown): string[] {
-  const raw = asObject(config).telegramDailyReportCourseIds;
+  const raw = asObjectOrEmpty(config).telegramDailyReportCourseIds;
 
   if (!Array.isArray(raw)) {
     return [];
@@ -177,7 +172,7 @@ function normalizeUnmatchedUserPolicy(value: unknown): 'store' | 'ignore' {
 }
 
 function parseFaceIdUserExternalMap(config: unknown): Record<string, string> {
-  const raw = asObject(asObject(config).userExternalMap);
+  const raw = asObjectOrEmpty(asObjectOrEmpty(config).userExternalMap);
   const result: Record<string, string> = {};
 
   for (const [externalUserIdRaw, userIdRaw] of Object.entries(raw)) {
@@ -860,7 +855,7 @@ export const integrationsRouter = router({
       };
     }
 
-    const config = asObject(integration.config);
+    const config = asObjectOrEmpty(integration.config);
     let recipientCount = 0;
     let latestRecipient: { lastSeenAt: Date | null; lastUpdateId: string | null } | null = null;
     let recipientStorageReady = true;
@@ -952,7 +947,7 @@ export const integrationsRouter = router({
       const botToken = resolveTelegramBotToken(integration.tokensEncrypted);
 
       if (!botToken) throw new Error('Telegram bot token is missing.');
-      const config = asObject(integration.config);
+      const config = asObjectOrEmpty(integration.config);
       const webhookSecret = String(config.webhookSecret || '').trim() || crypto.randomBytes(24).toString('hex');
       const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/telegram`;
       const result = await telegramService.setWebhook(botToken, webhookUrl, webhookSecret);
@@ -1265,7 +1260,7 @@ export const integrationsRouter = router({
       };
     }
 
-    const config = asObject(integration.config);
+    const config = asObjectOrEmpty(integration.config);
 
     return {
       connected: true,
@@ -1493,7 +1488,7 @@ export const integrationsRouter = router({
         });
       }
 
-      const existingConfig = asObject(integration.config);
+      const existingConfig = asObjectOrEmpty(integration.config);
       const nextConfig = {
         ...existingConfig,
         enabled: true,
@@ -1653,7 +1648,7 @@ export const integrationsRouter = router({
       };
 
       const nextConfig = {
-        ...asObject(integration.config),
+        ...asObjectOrEmpty(integration.config),
         userExternalMap: nextMap,
         lastValidatedAt: new Date().toISOString(),
       };
@@ -1725,7 +1720,7 @@ export const integrationsRouter = router({
       delete nextMap[externalUserId];
 
       const nextConfig = {
-        ...asObject(integration.config),
+        ...asObjectOrEmpty(integration.config),
         userExternalMap: nextMap,
         lastValidatedAt: new Date().toISOString(),
       };
@@ -1778,7 +1773,7 @@ export const integrationsRouter = router({
 
       const webhookToken = buildFaceIdWebhookToken();
       const webhookTokenHash = hashFaceIdWebhookToken(webhookToken);
-      const existingConfig = asObject(integration.config);
+      const existingConfig = asObjectOrEmpty(integration.config);
       const nextConfig = {
         ...existingConfig,
         enabled: true,
@@ -1858,7 +1853,7 @@ export const integrationsRouter = router({
       };
     }
 
-    const config = asObject(integration.config);
+    const config = asObjectOrEmpty(integration.config);
     const now = new Date();
     const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const last7dLocal = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);

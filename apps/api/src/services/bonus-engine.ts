@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
+
 import { systemPrisma, type DbClient, type Prisma, type TenantPrismaClient } from '@dashboarduz/db';
+
+import { asObjectOrEmpty } from '../lib/object';
 import {
   classifyCourseCategoryFromField,
   extractSalarySettings,
@@ -9,6 +12,7 @@ import {
   type SalaryBonusRules,
   type SalaryCategory,
 } from '../trpc/routers/dashboard/helpers';
+
 import { buildTechnicalSaleIdSet } from './technical-income';
 
 const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
@@ -96,10 +100,6 @@ export type BonusIncomeRow = {
 };
 type IncomeRow = BonusIncomeRow;
 
-function asObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
 function amount(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(value);
 
@@ -128,7 +128,7 @@ export function getTashkentMonthKey(value: Date | string): string {
 }
 
 function normalizeCourseTier(raw: unknown): CourseIncomeTier | null {
-  const row = asObject(raw);
+  const row = asObjectOrEmpty(raw);
   const minAmount = amount(row.minAmount);
   const maxAmount = row.maxAmount === null || row.maxAmount === undefined || row.maxAmount === ''
     ? null
@@ -141,7 +141,7 @@ function normalizeCourseTier(raw: unknown): CourseIncomeTier | null {
 }
 
 export function normalizeCourseOverride(raw: unknown): CourseBonusOverride | null {
-  const row = asObject(raw);
+  const row = asObjectOrEmpty(raw);
 
   if (row.mode !== 'monthly_team_income_tiered') return null;
   const tiers = (Array.isArray(row.tiers) ? row.tiers : [])
@@ -181,7 +181,7 @@ export function buildLegacyBonusPolicy(settings: unknown): BonusPolicy {
 }
 
 export function normalizeBonusPolicy(raw: unknown, fallbackSettings?: unknown): BonusPolicy {
-  const row = asObject(raw);
+  const row = asObjectOrEmpty(raw);
   const fallback = buildLegacyBonusPolicy(fallbackSettings);
   const parsedSalary = extractSalarySettings({
     salary: {
@@ -189,7 +189,7 @@ export function normalizeBonusPolicy(raw: unknown, fallbackSettings?: unknown): 
       bonusRules: row.bonusRules ?? fallback.bonusRules,
     },
   });
-  const rawOverrides = asObject(row.courseOverrides);
+  const rawOverrides = asObjectOrEmpty(row.courseOverrides);
   const courseOverrides: Record<string, CourseBonusOverride> = {};
 
   for (const [courseId, candidate] of Object.entries(rawOverrides)) {
@@ -626,7 +626,7 @@ async function getBonusMonth(params: { tenantId: string; month: Date; preferSnap
           sourceCount: line.sourceCount,
         })),
         items: snapshot.items.map((item) => {
-          const metadata = asObject(item.metadata);
+          const metadata = asObjectOrEmpty(item.metadata);
 
           return {
             sourceKey: item.sourceKey,

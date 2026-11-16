@@ -1,10 +1,12 @@
-import { router, protectedProcedure } from '../trpc';
 import type { DbClient } from '@dashboarduz/db';
-import { z } from 'zod';
-import { TRPCError } from '@trpc/server';
 import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
-import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
+import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
+import { asObject, getCaseInsensitiveValue, textFromScalar } from '../../lib/object';
 import { getCallsProvider, getCallsProviderFilter } from '../../services/calls-source';
+import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
+import { router, protectedProcedure } from '../trpc';
 
 const callsListSchema = z.object({
   page: z.number().int().positive().default(1),
@@ -43,46 +45,6 @@ function isAllowedUtelManagerExtension(value: unknown): boolean {
   const parsed = Number.parseInt(digits, 10);
 
   return Number.isFinite(parsed) && parsed >= UTEL_MIN_EXTENSION && parsed <= UTEL_MAX_EXTENSION;
-}
-
-function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
-}
-
-function textFromUnknown(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim();
-
-    return normalized.length > 0 ? normalized : null;
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return String(value);
-  }
-
-  return null;
-}
-
-function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): unknown {
-  if (key in source) {
-    return source[key];
-  }
-
-  const normalizedKey = key.toLowerCase();
-
-  for (const [entryKey, entryValue] of Object.entries(source)) {
-    if (entryKey.toLowerCase() === normalizedKey) {
-      return entryValue;
-    }
-  }
-
-  return undefined;
 }
 
 function parseDuration(value: unknown): number | null {
@@ -453,7 +415,7 @@ export const callsRouter = router({
 
         return {
           id: user.id,
-          name: textFromUnknown(user.name) || textFromUnknown(user.username) || extension || 'Agent',
+          name: textFromScalar(user.name) || textFromScalar(user.username) || extension || 'Agent',
           extension,
         };
       })

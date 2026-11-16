@@ -1,5 +1,8 @@
 import crypto from 'crypto';
+
 import { systemPrisma, type DbClient } from '@dashboarduz/db';
+
+import { asObject } from '../../lib/object';
 
 const REPORT_TZ_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const REQUIRED_WORK_SECONDS_MON_TO_SAT = 9 * 60 * 60;
@@ -66,14 +69,6 @@ type FaceIdMatchResult = {
     phone: string | null;
   };
 };
-
-function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
-}
 
 function normalizePhone(value: string | null | undefined): string {
   return String(value || '').replace(/\D/g, '').trim();

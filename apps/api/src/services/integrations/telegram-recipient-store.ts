@@ -1,4 +1,7 @@
 import { systemPrisma, type DbClient, type TenantPrismaClient } from '@dashboarduz/db';
+
+import { trimmedStringOrNull } from '../../lib/object';
+
 import { parseTelegramRecipients, type TelegramRecipientRecord } from './telegram-recipients';
 
 type RecipientUpsertInput = {
@@ -13,21 +16,15 @@ type RecipientUpsertInput = {
   lastUpdateId?: string | null;
 };
 
-function normalizeText(value: unknown): string | null {
-  const normalized = typeof value === 'string' ? value.trim() : '';
-
-  return normalized || null;
-}
-
 function displayName(input: {
   chatId: string;
   username?: string | null;
   firstName?: string | null;
   lastName?: string | null;
 }): string {
-  const fullName = [normalizeText(input.firstName), normalizeText(input.lastName)].filter(Boolean).join(' ');
+  const fullName = [trimmedStringOrNull(input.firstName), trimmedStringOrNull(input.lastName)].filter(Boolean).join(' ');
 
-  return fullName || (normalizeText(input.username) ? `@${normalizeText(input.username)}` : input.chatId);
+  return fullName || (trimmedStringOrNull(input.username) ? `@${trimmedStringOrNull(input.username)}` : input.chatId);
 }
 
 function toRecord(row: {
@@ -114,13 +111,13 @@ export async function listTelegramRecipients(params: {
 }
 
 export async function upsertTelegramRecipientRecord(input: RecipientUpsertInput, db: DbClient = systemPrisma) {
-  const chatId = normalizeText(input.chatId);
+  const chatId = trimmedStringOrNull(input.chatId);
 
   if (!chatId) throw new Error('chatId is required to upsert Telegram recipient');
 
-  const username = normalizeText(input.username);
-  const firstName = normalizeText(input.firstName);
-  const lastName = normalizeText(input.lastName);
+  const username = trimmedStringOrNull(input.username);
+  const firstName = trimmedStringOrNull(input.firstName);
+  const lastName = trimmedStringOrNull(input.lastName);
   const seenAt = input.lastSeenAt || new Date();
   const started = Boolean(input.started);
   const row = await db.telegramRecipient.upsert({
@@ -141,7 +138,7 @@ export async function upsertTelegramRecipientRecord(input: RecipientUpsertInput,
       started,
       startedAt: started ? seenAt : null,
       lastSeenAt: seenAt,
-      lastUpdateId: normalizeText(input.lastUpdateId),
+      lastUpdateId: trimmedStringOrNull(input.lastUpdateId),
     },
     update: {
       ...(username ? { username } : {}),
@@ -152,7 +149,7 @@ export async function upsertTelegramRecipientRecord(input: RecipientUpsertInput,
         : {}),
       ...(started ? { started: true } : {}),
       lastSeenAt: seenAt,
-      lastUpdateId: normalizeText(input.lastUpdateId),
+      lastUpdateId: trimmedStringOrNull(input.lastUpdateId),
     },
   });
 

@@ -1,11 +1,13 @@
 import { systemPrisma } from '@dashboarduz/db';
+
+import { asObjectOrEmpty } from '../../lib/object';
 import { classifyIncomeCategory, type IncomeCategory } from '../income-facts';
 import { telegramService } from '../integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../integrations/telegram-groups';
-import { decryptIntegrationTokens } from '../security/encryption';
-import { getRedisClient } from '../queue/redis-client';
-import { isTechnicalNewSale } from '../technical-income';
 import { log, LogLevel } from '../observability';
+import { getRedisClient } from '../queue/redis-client';
+import { decryptIntegrationTokens } from '../security/encryption';
+import { isTechnicalNewSale } from '../technical-income';
 
 const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
 const POLL_INTERVAL_MS = 30_000;
@@ -52,14 +54,8 @@ type TelegramIntegration = {
 let schedulerTimer: NodeJS.Timeout | null = null;
 let schedulerInProgress = false;
 
-function asObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
-}
-
 function selectedCourseIds(config: unknown): Set<string> {
-  const raw = asObject(config).telegramDailyReportCourseIds;
+  const raw = asObjectOrEmpty(config).telegramDailyReportCourseIds;
 
   if (!Array.isArray(raw)) return new Set();
 

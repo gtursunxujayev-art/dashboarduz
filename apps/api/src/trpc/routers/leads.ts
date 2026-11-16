@@ -1,14 +1,15 @@
-import { router, protectedProcedure } from '../trpc';
-import { createLeadSchema, updateLeadSchema, leadQuerySchema, hasAgentRole } from '@dashboarduz/shared';
 import type { DbClient } from '@dashboarduz/db';
+import { createLeadSchema, updateLeadSchema, leadQuerySchema, hasAgentRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+
+import { asObject } from '../../lib/object';
 import { amocrmService, type AmoCRMLead } from '../../services/integrations/amocrm';
 import {
-  asObject,
   extractLeadValue,
   getTenantAmoCRMContext,
 } from '../../services/integrations/amocrm-live';
+import { router, protectedProcedure } from '../trpc';
 
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 

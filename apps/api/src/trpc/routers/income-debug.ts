@@ -1,13 +1,15 @@
+import type { DbClient } from '@dashboarduz/db';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import type { DbClient } from '@dashboarduz/db';
-import { adminProcedure, router } from '../trpc';
+
+import { asObject, asObjectOrEmpty } from '../../lib/object';
 import {
   buildSaleChainMetricsBySaleId,
   evaluateSaleChainConsistency,
   getSaleAgreementAmount,
 } from '../../services/income-chain';
+import { adminProcedure, router } from '../trpc';
 
 const incomeDebugInput = z.object({
   mode: z.enum(['suspicious', 'future', 'unresolved', 'relink', 'imported', 'hidden', 'all']).default('suspicious'),
@@ -17,14 +19,6 @@ const incomeDebugInput = z.object({
 
 function normalizeDigits(value: unknown): string {
   return String(value || '').replace(/\D/g, '');
-}
-
-function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
 }
 
 function resolveUserLabel(user: { name: string | null; username: string | null; id: string } | null | undefined): string {
@@ -78,12 +72,6 @@ type ActiveSnapshot = {
   rows: FinanceSnapshotRow[];
 };
 
-function asSettingsObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function normalizeName(value: unknown): string {
   return String(value ?? '')
     .trim()
@@ -121,8 +109,8 @@ async function getActiveSnapshot(tenantId: string, db: DbClient): Promise<Active
   if (!tenant) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Ish maydoni topilmadi.' });
   }
-  const settings = asSettingsObject(tenant.settings);
-  const incomeProblems = asSettingsObject(settings.incomeProblems);
+  const settings = asObjectOrEmpty(tenant.settings);
+  const incomeProblems = asObjectOrEmpty(settings.incomeProblems);
   const activeSnapshot = incomeProblems.activeSnapshot;
 
   if (!activeSnapshot || typeof activeSnapshot !== 'object' || Array.isArray(activeSnapshot)) {

@@ -1,13 +1,15 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { queueService } from '../services/queue';
-import { log, LogLevel } from '../services/observability';
+
+import { asObject, getCaseInsensitiveValue, textFromUnknownOrEmpty } from '../lib/object';
+import { ingestFaceIdEvent } from '../services/attendance/faceid';
+import { getSelectedPipelineIds } from '../services/integrations/amocrm-live';
 import { telegramService } from '../services/integrations/telegram';
-import { decryptIntegrationTokens } from '../services/security/encryption';
-import { rateLimiter } from '../services/security/rate-limiter';
-import { asObject, getSelectedPipelineIds } from '../services/integrations/amocrm-live';
 import { upsertTelegramRecipientRecord } from '../services/integrations/telegram-recipient-store';
 import { extractTelegramRecipientFromPayload } from '../services/integrations/telegram-update';
-import { ingestFaceIdEvent } from '../services/attendance/faceid';
+import { log, LogLevel } from '../services/observability';
+import { queueService } from '../services/queue';
+import { decryptIntegrationTokens } from '../services/security/encryption';
+import { rateLimiter } from '../services/security/rate-limiter';
 
 function normalizePhone(phone?: string | null): string {
   if (!phone) {
@@ -15,35 +17,6 @@ function normalizePhone(phone?: string | null): string {
   }
 
   return phone.replace(/[^\d+]/g, '');
-}
-
-function textFromUnknown(value: unknown): string {
-  if (value === null || value === undefined) {
-    return '';
-  }
-
-  if (typeof value === 'string') {
-    return value.trim();
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-
-  if (typeof value === 'object' && !Array.isArray(value)) {
-    const objectValue = value as Record<string, unknown>;
-    const preferredKeys = ['name', 'title', 'label', 'value', 'status', 'state', 'code', 'text'];
-
-    for (const key of preferredKeys) {
-      const nested = textFromUnknown(objectValue[key]);
-
-      if (nested) {
-        return nested;
-      }
-    }
-  }
-
-  return '';
 }
 
 function extractAmoEntities(payload: any, key: 'leads' | 'contacts'): any[] {
@@ -192,22 +165,6 @@ function getObjectCandidates(entry: Record<string, unknown>): Record<string, unk
   }
 
   return candidates;
-}
-
-function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): unknown {
-  if (key in source) {
-    return source[key];
-  }
-
-  const normalizedKey = key.toLowerCase();
-
-  for (const [currentKey, value] of Object.entries(source)) {
-    if (currentKey.toLowerCase() === normalizedKey) {
-      return value;
-    }
-  }
-
-  return undefined;
 }
 
 function pickVoipValue(entry: Record<string, unknown>, keys: string[]): unknown {
@@ -362,7 +319,7 @@ function extractVoipCallEntries(payload: Record<string, unknown>): Array<Record<
 }
 
 function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: string): NormalizedVoipCall {
-  const rawDirection = textFromUnknown(pickVoipValue(entry, [
+  const rawDirection = textFromUnknownOrEmpty(pickVoipValue(entry, [
     'direction',
     'call_direction',
     'call_type',
@@ -371,7 +328,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'event_type',
   ]));
 
-  const phone = normalizePhone(textFromUnknown(pickVoipValue(entry, [
+  const phone = normalizePhone(textFromUnknownOrEmpty(pickVoipValue(entry, [
     'phone',
     'phone_number',
     'client_phone',
@@ -390,7 +347,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'did',
     'cid_num',
   ])));
-  const extensionRaw = normalizePhone(textFromUnknown(pickVoipValue(entry, [
+  const extensionRaw = normalizePhone(textFromUnknownOrEmpty(pickVoipValue(entry, [
     'extension',
     'extension_number',
     'ext',
@@ -405,7 +362,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'callerid',
   ])));
   const extension = isInternalNumber(extensionRaw) ? extensionRaw : '';
-  const manager = textFromUnknown(pickVoipValue(entry, [
+  const manager = textFromUnknownOrEmpty(pickVoipValue(entry, [
     'manager',
     'managerName',
     'manager_name',
@@ -426,7 +383,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'responsible',
   ])) || null;
 
-  let from = normalizePhone(textFromUnknown(pickVoipValue(entry, [
+  let from = normalizePhone(textFromUnknownOrEmpty(pickVoipValue(entry, [
     'from',
     'caller',
     'caller_id',
@@ -434,7 +391,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'from_number',
     'src',
   ])));
-  let to = normalizePhone(textFromUnknown(pickVoipValue(entry, [
+  let to = normalizePhone(textFromUnknownOrEmpty(pickVoipValue(entry, [
     'to',
     'callee',
     'callee_number',
@@ -501,7 +458,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
 
   const pickLikelyExternal = (values: unknown[]): string | null => {
     for (const value of values) {
-      const candidate = normalizePhone(textFromUnknown(value) || '');
+      const candidate = normalizePhone(textFromUnknownOrEmpty(value) || '');
 
       if (isLikelyExternalPhone(candidate)) {
         return candidate;
@@ -561,7 +518,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     ? Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000))
     : null);
 
-  const callIdExternal = textFromUnknown(pickVoipValue(entry, [
+  const callIdExternal = textFromUnknownOrEmpty(pickVoipValue(entry, [
     'call_id',
     'linkedid',
     'session_id',
@@ -578,7 +535,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     from,
     to,
     direction,
-    status: textFromUnknown(pickVoipValue(entry, ['status', 'call_status', 'state', 'result'])) || 'completed',
+    status: textFromUnknownOrEmpty(pickVoipValue(entry, ['status', 'call_status', 'state', 'result'])) || 'completed',
     startedAt,
     endedAt,
     duration,
