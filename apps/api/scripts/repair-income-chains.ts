@@ -5,7 +5,7 @@
  * Apply changes:                       npx tsx apps/api/scripts/repair-income-chains.ts --apply
  * Limit to one tenant:                 ... --tenant=<tenantId>
  */
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import { planChainRepair, type RepairChainRow } from '../src/services/income-chain-repair';
 
 const rowSelect = {
@@ -26,7 +26,7 @@ async function main() {
   const tenantArg = process.argv.find((arg) => arg.startsWith('--tenant='));
   const tenantId = tenantArg ? tenantArg.slice('--tenant='.length) : undefined;
 
-  const tenants = await prisma.tenant.findMany({
+  const tenants = await systemPrisma.tenant.findMany({
     where: tenantId ? { id: tenantId } : {},
     select: { id: true, name: true },
   });
@@ -37,12 +37,12 @@ async function main() {
 
   for (const tenant of tenants) {
     const [sales, repayments, pendingRefunds] = await Promise.all([
-      prisma.income.findMany({ where: { tenantId: tenant.id, type: 'new_sale' }, select: rowSelect }),
-      prisma.income.findMany({
+      systemPrisma.income.findMany({ where: { tenantId: tenant.id, type: 'new_sale' }, select: rowSelect }),
+      systemPrisma.income.findMany({
         where: { tenantId: tenant.id, type: 'repayment', relatedDebtIncomeId: { not: null } },
         select: rowSelect,
       }),
-      prisma.incomeAdjustmentRequest.findMany({
+      systemPrisma.incomeAdjustmentRequest.findMany({
         where: { tenantId: tenant.id, type: 'refund', status: 'pending' },
         select: { incomeId: true },
       }),
@@ -72,12 +72,12 @@ async function main() {
       console.log(JSON.stringify({ tenant: tenant.name, saleId: sale.id, saleStatus: sale.lifecycleStatus, ...plan }));
 
       if (apply) {
-        await prisma.$transaction([
-          ...plan.lifecycleUpdates.map((update) => prisma.income.update({
+        await systemPrisma.$transaction([
+          ...plan.lifecycleUpdates.map((update) => systemPrisma.income.update({
             where: { id: update.id },
             data: { lifecycleStatus: update.to },
           })),
-          ...plan.debtUpdates.map((update) => prisma.income.update({
+          ...plan.debtUpdates.map((update) => systemPrisma.income.update({
             where: { id: update.id },
             data: { debtAmount: update.debtAmount, remainingDebtAmount: update.remainingDebtAmount },
           })),
@@ -97,4 +97,4 @@ main()
     console.error(error);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(() => systemPrisma.$disconnect());

@@ -6,7 +6,7 @@ import webhookRouter from './webhooks';
 import { initSentry, log, LogLevel } from './services/observability';
 import { checkRedisHealth } from './services/queue/redis-client';
 import { applyObservabilityMiddleware } from './middleware/observability';
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import { decryptIntegrationTokens } from './services/security/encryption';
 import { telegramService } from './services/integrations/telegram';
 import { startTelegramReportScheduler, stopTelegramReportScheduler } from './services/reports/telegram-report-scheduler';
@@ -124,7 +124,7 @@ app.get('/health', async (_req, res) => {
   try {
     const [redisHealth, dbHealth] = await Promise.all([
       checkRedisHealth(),
-      prisma.$queryRaw`SELECT 1`,
+      systemPrisma.$queryRaw`SELECT 1`,
     ]);
     const healthStatus = {
       status: redisHealth.status === 'healthy' ? 'healthy' : 'degraded',
@@ -157,7 +157,7 @@ app.get('/health/ready', async (_req, res) => {
         return queueService.healthCheck();
       })(),
     ]);
-    await prisma.$queryRaw`SELECT 1`;
+    await systemPrisma.$queryRaw`SELECT 1`;
 
     if (redisHealth.status !== 'healthy' || queueHealth.status === 'unhealthy') {
       return res.status(503).json({
@@ -272,7 +272,7 @@ async function resolveTelegramDebugContext(req: express.Request): Promise<{
 
   const envToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim() || null;
 
-  const integration = await prisma.integration.findFirst({
+  const integration = await systemPrisma.integration.findFirst({
     where: {
       ...(tenantId ? { tenantId } : {}),
       type: 'telegram',

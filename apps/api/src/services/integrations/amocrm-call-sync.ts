@@ -1,7 +1,7 @@
 // Imports call notes (call_in / call_out) from amoCRM into the `calls` table as provider "amocrm".
 // Each row carries the manager's Utel extension in from/to and metadata.normalized_extension, so every page that
 // attributes calls by extension counts these rows exactly like Utel webhook rows.
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import type { Prisma } from '@prisma/client';
 
 import { getPreviousTashkentMonthStart } from '../bonus-auto-finalize';
@@ -119,7 +119,7 @@ export function noteToCallRow(
 }
 
 async function loadManagersByAmoUserId(tenantId: string): Promise<Map<string, CallManager>> {
-  const users = await prisma.user.findMany({
+  const users = await systemPrisma.user.findMany({
     where: { tenantId, amocrmResponsibleUserId: { not: null } },
     select: { id: true, amocrmResponsibleUserId: true, utelManagerExternalId: true },
   });
@@ -140,7 +140,7 @@ async function loadManagersByAmoUserId(tenantId: string): Promise<Map<string, Ca
  * calls start counting for that manager.
  */
 async function attachLateExtensions(tenantId: string, managers: ReadonlyMap<string, CallManager>): Promise<number> {
-  const pending = await prisma.$queryRaw<Array<{ amo_user_id: string | null }>>`
+  const pending = await systemPrisma.$queryRaw<Array<{ amo_user_id: string | null }>>`
     SELECT DISTINCT metadata->>'amocrm_user_id' AS amo_user_id
     FROM calls
     WHERE "tenantId" = ${tenantId}
@@ -156,8 +156,8 @@ async function attachLateExtensions(tenantId: string, managers: ReadonlyMap<stri
     if (!amoUserId || !extension) continue;
     const base = { tenantId, provider: AMOCRM_CALL_PROVIDER, metadata: { path: ['amocrm_user_id'], equals: amoUserId } };
     const [outbound, inbound] = await Promise.all([
-      prisma.call.updateMany({ where: { ...base, direction: 'outbound', from: '' }, data: { from: extension } }),
-      prisma.call.updateMany({ where: { ...base, direction: 'inbound', to: '' }, data: { to: extension } }),
+      systemPrisma.call.updateMany({ where: { ...base, direction: 'outbound', from: '' }, data: { from: extension } }),
+      systemPrisma.call.updateMany({ where: { ...base, direction: 'inbound', to: '' }, data: { to: extension } }),
     ]);
 
     updated += outbound.count + inbound.count;
@@ -168,10 +168,10 @@ async function attachLateExtensions(tenantId: string, managers: ReadonlyMap<stri
 
 async function saveSyncState(integrationId: string, state: CallsSyncState): Promise<void> {
   // Re-read the config so settings saved while the sync ran are not overwritten.
-  const fresh = await prisma.integration.findUnique({ where: { id: integrationId }, select: { config: true } });
+  const fresh = await systemPrisma.integration.findUnique({ where: { id: integrationId }, select: { config: true } });
   const config = fresh?.config && typeof fresh.config === 'object' ? (fresh.config as Record<string, unknown>) : {};
 
-  await prisma.integration.update({
+  await systemPrisma.integration.update({
     where: { id: integrationId },
     data: { config: { ...config, [CALLS_SYNC_CONFIG_KEY]: state } as Prisma.InputJsonValue },
   });
@@ -218,7 +218,7 @@ export async function syncTenantAmoCalls(tenantId: string, now = new Date()): Pr
           .filter((row): row is Prisma.CallCreateManyInput => row !== null);
 
         if (rows.length) {
-          const result = await prisma.call.createMany({ data: rows, skipDuplicates: true });
+          const result = await systemPrisma.call.createMany({ data: rows, skipDuplicates: true });
 
           imported += result.count;
         }
@@ -273,7 +273,7 @@ export async function triggerTenantAmoCallsSync(tenantId: string): Promise<void>
 
 /** Syncs every tenant whose amoCRM integration is set to be the calls source. */
 export async function syncAllAmoCalls(): Promise<void> {
-  const integrations = await prisma.integration.findMany({
+  const integrations = await systemPrisma.integration.findMany({
     where: { type: 'amocrm', status: 'active' },
     select: { tenantId: true, config: true },
   });

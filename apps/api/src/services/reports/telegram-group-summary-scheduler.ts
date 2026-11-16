@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import { classifyIncomeCategory, type IncomeCategory } from '../income-facts';
 import { telegramService } from '../integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../integrations/telegram-groups';
@@ -199,7 +199,7 @@ async function loadSummaryRows(tenantId: string, start: Date, end: Date) {
     courseId: true,
     course: { select: { id: true, name: true, category: true } },
   } as const;
-  const rows = await prisma.income.findMany({
+  const rows = await systemPrisma.income.findMany({
     where: { tenantId, lifecycleStatus: 'active', entryDate: { gte: start, lte: end } },
     select,
   });
@@ -208,7 +208,7 @@ async function loadSummaryRows(tenantId: string, start: Date, end: Date) {
   while (pending.length > 0) {
     const missing = pending.filter((id) => !known.has(id));
     if (!missing.length) break;
-    const ancestors = await prisma.income.findMany({ where: { tenantId, id: { in: missing } }, select });
+    const ancestors = await systemPrisma.income.findMany({ where: { tenantId, id: { in: missing } }, select });
     if (!ancestors.length) break;
     for (const row of ancestors) known.set(row.id, row);
     pending = Array.from(new Set(ancestors.map((row) => row.relatedDebtIncomeId).filter((id): id is string => Boolean(id))));
@@ -239,7 +239,7 @@ async function recordDeliveryAudit(
   result: TelegramGroupDeliveryResult,
 ): Promise<void> {
   try {
-    await prisma.auditLog.create({
+    await systemPrisma.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: result.status === 'sent' ? 'telegram_group_summary_sent' : 'telegram_group_summary_failed',
@@ -312,7 +312,7 @@ async function calculateForIntegration(integration: TelegramIntegration, now: Da
   const window = getTashkentDayWindow(now);
   const selectedIds = selectedCourseIds(integration.config);
   const selectedCourses = selectedIds.size > 0
-    ? await prisma.course.findMany({
+    ? await systemPrisma.course.findMany({
       where: { tenantId: integration.tenantId, id: { in: Array.from(selectedIds) } },
       select: { id: true, category: true, name: true },
     })
@@ -332,7 +332,7 @@ export async function sendTelegramGroupSummariesForTenant(
   tenantId: string,
   now = new Date(),
 ): Promise<{ date: string; schedule: 'manual'; results: TelegramGroupDeliveryResult[] }> {
-  const integration = await prisma.integration.findFirst({
+  const integration = await systemPrisma.integration.findFirst({
     where: { tenantId, type: 'telegram', status: 'active' },
     select: { id: true, tenantId: true, tokensEncrypted: true, config: true },
   });
@@ -391,7 +391,7 @@ async function tickScheduler(): Promise<void> {
     const now = new Date();
     const cutoffs = resolveDueTelegramGroupSummaryCutoffs(now);
     if (!cutoffs.length) return;
-    const integrations = await prisma.integration.findMany({
+    const integrations = await systemPrisma.integration.findMany({
       where: { type: 'telegram', status: 'active' },
       select: { id: true, tenantId: true, tokensEncrypted: true, config: true },
     });

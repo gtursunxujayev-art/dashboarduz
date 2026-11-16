@@ -10,7 +10,7 @@ import {
   USER_ROLES,
   type UserRole,
 } from '@dashboarduz/shared';
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { rateLimiter } from '../../services/security/rate-limiter';
 import { hashPassword, verifyPassword } from '../../services/auth/password';
@@ -35,7 +35,7 @@ export const authRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Passwords do not match' });
       }
 
-      const existingUser = await prisma.user.findFirst({
+      const existingUser = await systemPrisma.user.findFirst({
         where: { username: normalizedLogin },
         select: {
           id: true,
@@ -56,7 +56,7 @@ export const authRouter = router({
       let roles: string[];
 
       if (existingUser) {
-        const updatedUser = await prisma.user.update({
+        const updatedUser = await systemPrisma.user.update({
           where: { id: existingUser.id },
           data: {
             username: normalizedLogin,
@@ -73,14 +73,14 @@ export const authRouter = router({
         tenantId = updatedUser.tenantId;
         roles = updatedUser.roles;
       } else {
-        const tenant = await prisma.tenant.create({
+        const tenant = await systemPrisma.tenant.create({
           data: {
             name: normalizedLogin,
             plan: 'free',
           },
         });
 
-        const createdUser = await prisma.user.create({
+        const createdUser = await systemPrisma.user.create({
           data: {
             tenantId: tenant.id,
             username: normalizedLogin,
@@ -109,7 +109,7 @@ export const authRouter = router({
 
       const token = signJWT(jwtPayload);
 
-      await prisma.auditLog.create({
+      await systemPrisma.auditLog.create({
         data: {
           tenantId,
           userId,
@@ -135,7 +135,7 @@ export const authRouter = router({
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Too many login attempts. Try again later.' });
       }
 
-      const user = await prisma.user.findFirst({
+      const user = await systemPrisma.user.findFirst({
         where: {
           OR: [
             { username: normalizedLogin },
@@ -166,7 +166,7 @@ export const authRouter = router({
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid credentials' });
       }
 
-      const updatedUser = await prisma.user.update({
+      const updatedUser = await systemPrisma.user.update({
         where: { id: user.id },
         data: { lastLoginAt: new Date() },
         select: {
@@ -188,7 +188,7 @@ export const authRouter = router({
 
       const token = signJWT(jwtPayload);
 
-      await prisma.auditLog.create({
+      await systemPrisma.auditLog.create({
         data: {
           tenantId: updatedUser.tenantId,
           userId: updatedUser.id,
@@ -273,7 +273,7 @@ export const authRouter = router({
         }
 
         // Find or create user
-        let user = await prisma.user.findFirst({
+        let user = await systemPrisma.user.findFirst({
           where: { phone: input.phone },
           select: {
             id: true,
@@ -288,14 +288,14 @@ export const authRouter = router({
         
         if (!user) {
           // Create tenant and user for first signup
-          const tenant = await prisma.tenant.create({
+          const tenant = await systemPrisma.tenant.create({
             data: {
               name: `Tenant ${input.phone}`,
               plan: 'free',
             },
           });
 
-          user = await prisma.user.create({
+          user = await systemPrisma.user.create({
             data: {
               tenantId: tenant.id,
               phone: input.phone,
@@ -330,7 +330,7 @@ export const authRouter = router({
         }
 
         // Update last login
-        await prisma.user.update({
+        await systemPrisma.user.update({
           where: { id: user.id },
           data: { lastLoginAt: new Date() },
           select: { id: true },
@@ -346,7 +346,7 @@ export const authRouter = router({
 
         const token = signJWT(jwtPayload);
 
-        await prisma.auditLog.create({
+        await systemPrisma.auditLog.create({
           data: {
             tenantId,
             userId: user.id,
@@ -390,7 +390,7 @@ export const authRouter = router({
       throw new TRPCError({ code: 'UNAUTHORIZED' });
     }
 
-    const user = await prisma.user.findUnique({
+    const user = await ctx.db.user.findUnique({
       where: { id: ctx.user.userId },
       select: {
         id: true,
@@ -419,7 +419,7 @@ export const authRouter = router({
   changeCredentials: protectedProcedure
     .input(changeCredentialsSchema)
     .mutation(async ({ ctx, input }) => {
-      const user = await prisma.user.findUnique({
+      const user = await ctx.db.user.findUnique({
         where: { id: ctx.user.userId },
         select: {
           id: true,
@@ -444,7 +444,7 @@ export const authRouter = router({
 
       const nextLogin = input.newLogin?.trim().toLowerCase();
       if (nextLogin && nextLogin !== user.username) {
-        const duplicate = await prisma.user.findFirst({
+        const duplicate = await ctx.db.user.findFirst({
           where: {
             username: nextLogin,
             NOT: { id: user.id },
@@ -461,7 +461,7 @@ export const authRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No changes provided.' });
       }
 
-      const updated = await prisma.user.update({
+      const updated = await ctx.db.user.update({
         where: { id: user.id },
         data: {
           ...(nextLogin ? { username: nextLogin } : {}),
@@ -473,7 +473,7 @@ export const authRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: user.tenantId,
           userId: user.id,
@@ -506,7 +506,7 @@ export const authRouter = router({
       }
 
       // Create auth link
-      await prisma.userAuthLink.create({
+      await ctx.db.userAuthLink.create({
         data: {
           userId: ctx.user.userId,
           provider: input.provider,
@@ -515,7 +515,7 @@ export const authRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.user.tenantId,
           userId: ctx.user.userId,

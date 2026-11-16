@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import {
   buildTechnicalSaleIdSet,
   classifyIncomeCategory,
@@ -947,7 +947,7 @@ async function collectMetrics(params: {
   const selectedCourseIds = Array.from(new Set(params.selectedReportCourseIds.map((id) => id.trim()).filter(Boolean))).slice(0, 3);
 
   const [callAggregate, incomesRaw, users, corporateDurationTotal, selectedReportCourses, selectedCourseIncomesRaw] = await Promise.all([
-    prisma.call.aggregate({
+    systemPrisma.call.aggregate({
       where: {
         tenantId: params.tenantId,
         provider: await getCallsProviderFilter(params.tenantId),
@@ -959,7 +959,7 @@ async function collectMetrics(params: {
       _count: { id: true },
       _sum: { duration: true },
     }),
-    prisma.income.findMany({
+    systemPrisma.income.findMany({
       where: {
         tenantId: params.tenantId,
         lifecycleStatus: 'active',
@@ -991,7 +991,7 @@ async function collectMetrics(params: {
         },
       },
     }),
-    prisma.user.findMany({
+    systemPrisma.user.findMany({
       where: {
         tenantId: params.tenantId,
         isActive: true,
@@ -1011,7 +1011,7 @@ async function collectMetrics(params: {
       rangeEnd: params.periodEnd,
     }),
     selectedCourseIds.length > 0
-      ? prisma.course.findMany({
+      ? systemPrisma.course.findMany({
           where: {
             tenantId: params.tenantId,
             id: { in: selectedCourseIds },
@@ -1023,7 +1023,7 @@ async function collectMetrics(params: {
         })
       : Promise.resolve([]),
     selectedCourseIds.length > 0
-      ? prisma.income.findMany({
+      ? systemPrisma.income.findMany({
           where: {
             tenantId: params.tenantId,
             lifecycleStatus: 'active',
@@ -1155,16 +1155,16 @@ async function collectMetrics(params: {
 
   if (!usedLiveAmoLeads) {
     const [dbNewLeads, dbQualifiedLeads, leadsDetailed] = await Promise.all([
-      prisma.lead.count({ where: leadWhere as any }),
+      systemPrisma.lead.count({ where: leadWhere as any }),
       qualifiedStageIds.length > 0
-        ? prisma.lead.count({
+        ? systemPrisma.lead.count({
             where: {
               ...(leadWhere as any),
               status: { in: qualifiedStageIds },
             },
           })
         : Promise.resolve(0),
-      prisma.lead.findMany({
+      systemPrisma.lead.findMany({
         where: leadWhere as any,
         select: {
           status: true,
@@ -1303,7 +1303,7 @@ async function collectMetrics(params: {
     rangeEnd: params.periodEnd,
   });
   if (extensionValues.length > 0) {
-    const managerCalls = await prisma.call.findMany({
+    const managerCalls = await systemPrisma.call.findMany({
       where: {
         tenantId: params.tenantId,
         provider: await getCallsProvider(params.tenantId),
@@ -1476,7 +1476,7 @@ async function collectMetrics(params: {
 }
 
 async function getSelectedPipelineIdsForTenant(tenantId: string): Promise<string[]> {
-  const amocrmIntegration = await prisma.integration.findUnique({
+  const amocrmIntegration = await systemPrisma.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,
@@ -1557,7 +1557,7 @@ async function sendWindowToIntegration(
 }
 
 async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void> {
-  const integrations = await prisma.integration.findMany({
+  const integrations = await systemPrisma.integration.findMany({
     where: {
       type: 'telegram',
       status: 'active',
@@ -1580,7 +1580,7 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
   const redis = getRedisClient();
 
   for (const integration of integrations as TelegramIntegrationWithTenant[]) {
-    const recipientsSelected = await prisma.telegramRecipient.count({
+    const recipientsSelected = await systemPrisma.telegramRecipient.count({
       where: {
         tenantId: integration.tenantId,
         integrationId: integration.id,
@@ -1601,7 +1601,7 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
     try {
       const sent = await sendWindowToIntegration(integration, window, nowUtc);
 
-      await prisma.auditLog.create({
+      await systemPrisma.auditLog.create({
         data: {
           tenantId: integration.tenantId,
           action: 'telegram_report_sent',
@@ -1624,7 +1624,7 @@ async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promise<void>
       });
     } catch (error: any) {
       await redis.del(lockKey);
-      await prisma.auditLog.create({
+      await systemPrisma.auditLog.create({
         data: {
           tenantId: integration.tenantId,
           action: 'telegram_report_failed',
@@ -1717,7 +1717,7 @@ export async function sendManualTelegramReportForTenant(
   periodEnd: string;
   schedule: 'manual_today' | 'manual_weekly' | 'manual_monthly';
 }> {
-  const integration = await prisma.integration.findFirst({
+  const integration = await systemPrisma.integration.findFirst({
     where: {
       tenantId,
       type: 'telegram',
@@ -1773,7 +1773,7 @@ export async function sendManualTelegramReportForTenant(
   try {
     const sent = await sendWindowToIntegration(integration as TelegramIntegrationWithTenant, window, nowUtc);
 
-    await prisma.auditLog.create({
+    await systemPrisma.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: 'telegram_report_sent',

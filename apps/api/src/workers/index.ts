@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import { queueService } from '../services/queue';
 import { log, LogLevel } from '../services/observability';
 import { telegramService } from '../services/integrations/telegram';
@@ -581,7 +581,7 @@ export async function processWebhookEvent(eventId: string) {
 
   try {
     log(LogLevel.INFO, 'Processing webhook event', { eventId });
-    const event = await prisma.webhookEvent.findUnique({ where: { id: eventId } });
+    const event = await systemPrisma.webhookEvent.findUnique({ where: { id: eventId } });
     if (!event) {
       throw new Error(`Webhook event ${eventId} not found`);
     }
@@ -595,7 +595,7 @@ export async function processWebhookEvent(eventId: string) {
     if (!tenantId && event.source === 'amocrm') {
       const accountId = (event.rawPayload as any)?.account?.id ?? (event.rawPayload as any)?.account_id;
       if (accountId) {
-        const integration = await prisma.integration.findFirst({
+        const integration = await systemPrisma.integration.findFirst({
           where: {
             type: 'amocrm',
             config: {
@@ -609,7 +609,7 @@ export async function processWebhookEvent(eventId: string) {
     }
 
     if (!tenantId) {
-      await prisma.webhookEvent.update({
+      await systemPrisma.webhookEvent.update({
         where: { id: eventId },
         data: {
           processed: true,
@@ -639,7 +639,7 @@ export async function processWebhookEvent(eventId: string) {
         log(LogLevel.WARN, 'Unknown webhook source', { eventId, source: event.source });
     }
 
-    await prisma.webhookEvent.update({
+    await systemPrisma.webhookEvent.update({
       where: { id: eventId },
       data: {
         processed: true,
@@ -648,7 +648,7 @@ export async function processWebhookEvent(eventId: string) {
       },
     });
 
-    await prisma.auditLog.create({
+    await systemPrisma.auditLog.create({
       data: {
         tenantId,
         action: 'webhook_processed',
@@ -658,7 +658,7 @@ export async function processWebhookEvent(eventId: string) {
       },
     });
   } catch (error: any) {
-    await prisma.webhookEvent.update({
+    await systemPrisma.webhookEvent.update({
       where: { id: eventId },
       data: {
         errorMessage: error.message,
@@ -667,7 +667,7 @@ export async function processWebhookEvent(eventId: string) {
     });
 
     if (tenantIdForAudit) {
-      await prisma.auditLog.create({
+      await systemPrisma.auditLog.create({
         data: {
           tenantId: tenantIdForAudit,
           action: 'webhook_failed',
@@ -691,7 +691,7 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
   const payload = event.rawPayload as any;
   const leads = extractAmoEntities(payload, 'leads');
   const contacts = extractAmoEntities(payload, 'contacts');
-  const integration = await prisma.integration.findUnique({
+  const integration = await systemPrisma.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,
@@ -718,7 +718,7 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
     const externalCreatedAt = parseAmoTimestamp(leadData.created_at);
     const externalUpdatedAt = parseAmoTimestamp(leadData.updated_at);
 
-    await prisma.lead.upsert({
+    await systemPrisma.lead.upsert({
       where: {
         tenantId_amocrmId: {
           tenantId,
@@ -756,7 +756,7 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
     const email = extractContactField(contactData, 'EMAIL') || contactData.email?.[0]?.value || null;
     const name = contactData.name || null;
 
-    const existingContact = await prisma.contact.findFirst({
+    const existingContact = await systemPrisma.contact.findFirst({
       where: {
         tenantId,
         OR: [
@@ -768,7 +768,7 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
 
     if (existingContact) {
       const existingExternalIds = (existingContact.externalIds as Record<string, unknown> | null) || {};
-      await prisma.contact.update({
+      await systemPrisma.contact.update({
         where: { id: existingContact.id },
         data: {
           name: name || existingContact.name,
@@ -782,7 +782,7 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
         },
       });
     } else {
-      await prisma.contact.create({
+      await systemPrisma.contact.create({
         data: {
           tenantId,
           name,
@@ -796,17 +796,17 @@ async function processAmoCRMWebhook(event: any, tenantId: string) {
   }
 
   const [telegramIntegration, tenant] = await Promise.all([
-    prisma.integration.findFirst({
+    systemPrisma.integration.findFirst({
       where: { tenantId, type: 'telegram', status: 'active' },
     }),
-    prisma.tenant.findUnique({
+    systemPrisma.tenant.findUnique({
       where: { id: tenantId },
       select: { settings: true },
     }),
   ]);
   const chatId = String(((tenant?.settings as any)?.notificationChatId || '')).trim() || undefined;
   if (telegramIntegration && chatId && leads.length > 0) {
-    const notification = await prisma.notification.create({
+    const notification = await systemPrisma.notification.create({
       data: {
         tenantId,
         type: 'telegram',
@@ -831,7 +831,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
     return;
   }
 
-  const contacts = await prisma.contact.findMany({
+  const contacts = await systemPrisma.contact.findMany({
     where: {
       tenantId,
       phone: { not: null },
@@ -841,7 +841,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
   });
   let utelManagersByKey = new Map<string, string>();
   try {
-    const mappedUsers = await prisma.user.findMany({
+    const mappedUsers = await systemPrisma.user.findMany({
       where: {
         tenantId,
         isActive: true,
@@ -889,7 +889,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
       normalized_duration: normalizedCall.duration,
     } as any;
 
-    const existingCall = await prisma.call.findUnique({
+    const existingCall = await systemPrisma.call.findUnique({
       where: {
         tenantId_provider_callIdExternal: {
           tenantId,
@@ -930,7 +930,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
         ? normalizedCall.duration
         : existingDuration;
 
-      upsertedCall = await prisma.call.update({
+      upsertedCall = await systemPrisma.call.update({
         where: { id: existingCall.id },
         data: {
           provider,
@@ -947,7 +947,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
         },
       });
     } else {
-      upsertedCall = await prisma.call.create({
+      upsertedCall = await systemPrisma.call.create({
         data: {
           tenantId,
           provider,
@@ -979,12 +979,12 @@ async function processVoIPWebhook(event: any, tenantId: string) {
       continue;
     }
 
-    const lead = await prisma.lead.findFirst({
+    const lead = await systemPrisma.lead.findFirst({
       where: { tenantId, contactId: matchedContact.id },
       orderBy: { updatedAt: 'desc' },
     });
 
-    await prisma.call.update({
+    await systemPrisma.call.update({
       where: { id: upsertedCall.id },
       data: {
         contactId: matchedContact.id,
@@ -996,7 +996,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
 
 async function processTelegramWebhook(event: any, tenantId: string) {
   const payload = event.rawPayload as any;
-  const integration = await prisma.integration.findFirst({
+  const integration = await systemPrisma.integration.findFirst({
     where: { tenantId, type: 'telegram' },
   });
   if (!integration) {
@@ -1028,14 +1028,14 @@ async function processTelegramWebhook(event: any, tenantId: string) {
     });
   }
 
-  await prisma.integration.update({
+  await systemPrisma.integration.update({
     where: { id: integration.id },
     data: { lastSyncAt: new Date() },
   });
 }
 
 async function processFaceIdWebhook(event: any, tenantId: string) {
-  const integration = await prisma.integration.findFirst({
+  const integration = await systemPrisma.integration.findFirst({
     where: {
       tenantId,
       type: 'faceid_attendance',
@@ -1059,7 +1059,7 @@ async function processFaceIdWebhook(event: any, tenantId: string) {
 
 export async function processNotification(notificationId: string) {
   try {
-    const notification = await prisma.notification.findUnique({
+    const notification = await systemPrisma.notification.findUnique({
       where: { id: notificationId },
     });
     if (!notification) {
@@ -1079,7 +1079,7 @@ export async function processNotification(notificationId: string) {
     }
 
     if (notification.type === 'telegram') {
-      const integration = await prisma.integration.findFirst({
+      const integration = await systemPrisma.integration.findFirst({
         where: {
           tenantId: notification.tenantId,
           type: 'telegram',
@@ -1104,7 +1104,7 @@ export async function processNotification(notificationId: string) {
       throw new Error(`Unsupported notification type: ${notification.type}`);
     }
 
-    await prisma.notification.update({
+    await systemPrisma.notification.update({
       where: { id: notificationId },
       data: {
         status: 'sent',
@@ -1114,7 +1114,7 @@ export async function processNotification(notificationId: string) {
       },
     });
   } catch (error: any) {
-    const notification = await prisma.notification.findUnique({
+    const notification = await systemPrisma.notification.findUnique({
       where: { id: notificationId },
     });
     if (!notification) {
@@ -1127,7 +1127,7 @@ export async function processNotification(notificationId: string) {
       ? new Date(Date.now() + Math.pow(2, Math.max(0, notification.attempts)) * 1000)
       : null;
 
-    await prisma.notification.update({
+    await systemPrisma.notification.update({
       where: { id: notificationId },
       data: {
         attempts: { increment: 1 },
@@ -1165,7 +1165,7 @@ export async function processExport(exportId: string) {
 }
 
 export async function processIntegrationSync(integrationType: string, tenantId: string) {
-  const integration = await prisma.integration.findFirst({
+  const integration = await systemPrisma.integration.findFirst({
     where: {
       tenantId,
       type: integrationType,
@@ -1177,12 +1177,12 @@ export async function processIntegrationSync(integrationType: string, tenantId: 
     throw new Error(`Active integration not found for type=${integrationType}, tenant=${tenantId}`);
   }
 
-  await prisma.integration.update({
+  await systemPrisma.integration.update({
     where: { id: integration.id },
     data: { lastSyncAt: new Date() },
   });
 
-  await prisma.auditLog.create({
+  await systemPrisma.auditLog.create({
     data: {
       tenantId,
       action: 'integration_sync',
