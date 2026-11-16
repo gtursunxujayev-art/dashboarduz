@@ -29,10 +29,10 @@ const customJestConfig = {
   // Raise these as coverage grows; they exist so it cannot drop.
   coverageThreshold: {
     global: {
-      branches: 6.2,
-      functions: 6.1,
-      lines: 6.5,
-      statements: 6.6,
+      branches: 7.5,
+      functions: 7.0,
+      lines: 7.5,
+      statements: 7.5,
     },
   },
   testPathIgnorePatterns: [
