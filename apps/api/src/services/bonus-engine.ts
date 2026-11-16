@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { systemPrisma, type DbClient, type Prisma, type TenantPrismaClient } from '@dashboarduz/db';
+import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
 import { asObjectOrEmpty } from '../lib/object';
 import {
@@ -14,8 +15,6 @@ import {
 } from '../trpc/routers/dashboard/helpers';
 
 import { buildTechnicalSaleIdSet } from './technical-income';
-
-const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
 
 export const SYSTEM_FINALIZER_USER_ID = 'system:auto-finalize';
 const ELIGIBLE_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent', 'TeamLeader']);

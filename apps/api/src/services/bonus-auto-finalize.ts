@@ -1,4 +1,6 @@
 import { systemPrisma } from '@dashboarduz/db';
+import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
+
 import {
   finalizeBonusMonth,
   getTashkentMonthKey,
@@ -8,7 +10,6 @@ import {
 import { log, LogLevel } from './observability';
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
-const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
 
 let timer: NodeJS.Timeout | null = null;
 

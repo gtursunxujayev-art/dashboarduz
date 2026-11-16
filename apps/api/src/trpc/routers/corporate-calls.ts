@@ -1,12 +1,11 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
+import { AGENT_ROLES, hasAgentRole, toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import {
   formatDurationToHms,
-  formatReportDate,
   isTodayOrYesterdayInReportTz,
   parseDurationToSeconds,
   parseReportDateInput,
@@ -234,7 +233,7 @@ export const corporateCallsRouter = router({
       });
 
       const managerName = String(entry.manager.name || entry.manager.username || entry.managerUserId);
-      const date = formatReportDate(entry.callDate);
+      const date = toTashkentDateKey(entry.callDate);
       const telegram = await sendCorporateCallAddedTelegram({
         tenantId: ctx.tenantId,
         date,
@@ -280,8 +279,8 @@ export const corporateCallsRouter = router({
 
       const admin = isAdmin(ctx.user.roles || []);
       const now = new Date();
-      const defaultDateTo = formatReportDate(now);
-      const defaultDateFrom = formatReportDate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+      const defaultDateTo = toTashkentDateKey(now);
+      const defaultDateFrom = toTashkentDateKey(new Date(now.getTime() - 24 * 60 * 60 * 1000));
 
       const dateFrom = parseReportDateInput(input?.dateFrom || defaultDateFrom);
       const dateTo = parseReportDateInput(input?.dateTo || defaultDateTo);
@@ -324,7 +323,7 @@ export const corporateCallsRouter = router({
           id: row.id,
           managerUserId: row.managerUserId,
           managerName: String(row.manager.name || row.manager.username || row.managerUserId),
-          date: formatReportDate(row.callDate),
+          date: toTashkentDateKey(row.callDate),
           durationSeconds: row.durationSeconds,
           duration: formatDurationToHms(row.durationSeconds),
           createdAt: row.createdAt,

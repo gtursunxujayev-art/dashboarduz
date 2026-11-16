@@ -64,9 +64,6 @@
   "src/services/auth/password.ts": {
     "@typescript-eslint/require-await": 2
   },
-  "src/services/bonus-auto-finalize.ts": {
-    "import/order": 1
-  },
   "src/services/bonus-engine.ts": {
     "@typescript-eslint/no-unused-vars": 1
   },
@@ -85,8 +82,7 @@
   },
   "src/services/integrations/amocrm-activity.ts": {
     "@typescript-eslint/no-explicit-any": 6,
-    "@typescript-eslint/no-unsafe-member-access": 6,
-    "import/order": 2
+    "@typescript-eslint/no-unsafe-member-access": 6
   },
   "src/services/integrations/amocrm.ts": {
     "@typescript-eslint/no-explicit-any": 11,
@@ -193,21 +189,14 @@
     "@typescript-eslint/no-unsafe-argument": 4,
     "@typescript-eslint/no-unsafe-assignment": 3,
     "@typescript-eslint/no-unsafe-member-access": 9,
-    "@typescript-eslint/no-unsafe-return": 2,
-    "import/no-duplicates": 2,
-    "import/order": 11,
-    "no-duplicate-imports": 1
+    "@typescript-eslint/no-unsafe-return": 2
   },
   "src/trpc/routers/analytics-ai.ts": {
     "@typescript-eslint/no-explicit-any": 4,
     "@typescript-eslint/no-unsafe-argument": 1,
     "@typescript-eslint/no-unsafe-assignment": 4,
     "@typescript-eslint/no-unsafe-member-access": 9,
-    "@typescript-eslint/no-unsafe-return": 1,
-    "import/order": 6
-  },
-  "src/trpc/routers/attendance.ts": {
-    "import/order": 6
+    "@typescript-eslint/no-unsafe-return": 1
   },
   "src/trpc/routers/auth.ts": {
     "@typescript-eslint/no-explicit-any": 2,
@@ -233,7 +222,6 @@
   },
   "src/trpc/routers/course-sales.ts": {
     "@typescript-eslint/no-unused-vars": 1,
-    "import/order": 5,
     "object-shorthand": 3
   },
   "src/trpc/routers/customer-income.ts": {
@@ -251,9 +239,6 @@
     "@typescript-eslint/no-unsafe-member-access": 1,
     "no-duplicate-imports": 1
   },
-  "src/trpc/routers/dashboard/income-overview.ts": {
-    "import/order": 3
-  },
   "src/trpc/routers/dashboard/index.ts": {
     "import/order": 7
   },
@@ -268,8 +253,7 @@
     "@typescript-eslint/no-unsafe-argument": 1
   },
   "src/trpc/routers/dashboard/salary.ts": {
-    "@typescript-eslint/no-unused-vars": 5,
-    "import/order": 15,
+    "@typescript-eslint/no-unused-vars": 1,
     "object-shorthand": 3
   },
   "src/trpc/routers/dashboard/summary.ts": {
@@ -277,11 +261,7 @@
     "@typescript-eslint/no-unsafe-argument": 1,
     "@typescript-eslint/no-unsafe-assignment": 6,
     "@typescript-eslint/no-unsafe-member-access": 14,
-    "@typescript-eslint/no-unsafe-return": 1,
-    "@typescript-eslint/no-unused-vars": 1
-  },
-  "src/trpc/routers/dashboard/widgets.ts": {
-    "import/order": 1
+    "@typescript-eslint/no-unsafe-return": 1
   },
   "src/trpc/routers/income-problems.ts": {
     "@typescript-eslint/no-unsafe-assignment": 1,
@@ -310,9 +290,6 @@
     "@typescript-eslint/no-unsafe-assignment": 2,
     "@typescript-eslint/no-unsafe-member-access": 2,
     "import/order": 4
-  },
-  "src/trpc/routers/reports.ts": {
-    "import/order": 5
   },
   "src/trpc/routers/sellers.ts": {
     "@typescript-eslint/no-explicit-any": 3,

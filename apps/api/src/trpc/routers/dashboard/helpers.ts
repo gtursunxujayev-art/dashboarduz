@@ -1,8 +1,8 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
-import { TRPCError } from '@trpc/server';
+import { AGENT_ROLES, hasAgentRole, shiftToTashkent } from '@dashboarduz/shared';
 import { z } from 'zod';
 
+import { getRangeStart } from '../../../lib/dates';
 import { asObject, toFiniteNumber } from '../../../lib/object';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import {
@@ -40,8 +40,6 @@ export const PIE_COLORS = [
 
 export type DashboardRange = z.infer<typeof dashboardRangeSchema>;
 
-export const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
-export const REPORT_TZ_OFFSET_MS = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
 export const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 export const SALARY_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 export const SALARY_RULE_MODES = ['simple', 'tiered'] as const;
@@ -224,59 +222,12 @@ export async function getAgentResponsibleScope(tenantId: string, userId: string,
   };
 }
 
-export function getRangeStart(range: DashboardRange, now: Date): Date {
-  const offsetMs = REPORT_TZ_OFFSET_MS;
-  const shiftedNow = new Date(now.getTime() + offsetMs);
-
-  const year = shiftedNow.getUTCFullYear();
-  const month = shiftedNow.getUTCMonth();
-  const date = shiftedNow.getUTCDate();
-
-  if (range === 'today') {
-    return new Date(Date.UTC(year, month, date) - offsetMs);
-  }
-
-  if (range === 'week') {
-    const day = shiftedNow.getUTCDay();
-    const daysSinceMonday = (day + 6) % 7;
-
-    return new Date(Date.UTC(year, month, date - daysSinceMonday) - offsetMs);
-  }
-
-  return new Date(Date.UTC(year, month, 1) - offsetMs);
-}
-
-export function shiftToReportTimezone(date: Date): Date {
-  return new Date(date.getTime() + REPORT_TZ_OFFSET_MS);
-}
-
-export function fromReportLocalParts(
-  year: number,
-  month: number,
-  day: number,
-  hour = 0,
-  minute = 0,
-  second = 0,
-  millisecond = 0,
-): Date {
-  return new Date(Date.UTC(year, month, day, hour, minute, second, millisecond) - REPORT_TZ_OFFSET_MS);
-}
-
 export function getDaysInReportLocalMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
 }
 
-export function getReportLocalDayKey(date: Date): string {
-  const shifted = shiftToReportTimezone(date);
-  const year = shifted.getUTCFullYear();
-  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(shifted.getUTCDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
 export function getReportLocalDayOfYear(date: Date): number {
-  const shifted = shiftToReportTimezone(date);
+  const shifted = shiftToTashkent(date);
   const year = shifted.getUTCFullYear();
   const yearStart = Date.UTC(year, 0, 1);
   const currentDay = Date.UTC(year, shifted.getUTCMonth(), shifted.getUTCDate());
@@ -316,46 +267,6 @@ export function buildTrend(currentValue: number, previousValue: number) {
     diffPercent: Number(diffPercent.toFixed(2)),
     direction,
   };
-}
-
-export function parseCustomDate(input: string, endOfDay: boolean): Date {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Custom date must be in YYYY-MM-DD format.' });
-  }
-
-  const timestamp = `${input}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
-  const parsed = new Date(timestamp);
-
-  if (Number.isNaN(parsed.getTime())) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid custom date: ${input}` });
-  }
-
-  return parsed;
-}
-
-export function resolveDateRange(range: DashboardRange, now: Date, dateFrom?: string, dateTo?: string) {
-  if (range !== 'custom') {
-    return {
-      rangeStart: getRangeStart(range, now),
-      rangeEnd: now,
-    };
-  }
-
-  if (!dateFrom || !dateTo) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: 'Both dateFrom and dateTo are required when range is custom.',
-    });
-  }
-
-  const rangeStart = parseCustomDate(dateFrom, false);
-  const rangeEnd = parseCustomDate(dateTo, true);
-
-  if (rangeEnd < rangeStart) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'dateTo must be greater than or equal to dateFrom.' });
-  }
-
-  return { rangeStart, rangeEnd };
 }
 
 export function isFinanceOnly(roles: string[]): boolean {

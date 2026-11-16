@@ -3,6 +3,7 @@ import { AGENT_ROLES, hasAgentRole, normalizeDigits } from '@dashboarduz/shared'
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { resolveDateRange } from '../../lib/dates';
 import { textFromScalar } from '../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';
 import { getCallsProvider, getCallsProviderFilter } from '../../services/calls-source';
@@ -24,10 +25,7 @@ const clickToCallSchema = z.object({
 });
 const callsRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 
-type CallsRange = z.infer<typeof callsRangeSchema>;
-
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
-const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 const AGENT_MOTIVATION_ABOVE = "Bugungi harakatlaringizga baraka bersin, ko'proq suhbat ko'proq savdo degani";
 const AGENT_MOTIVATION_BELOW = "Bugun qolganlardan ortda qolyapsiz, qo'ng'iroqlarni ko'paytiring, ko'proq bonus ko'proq harakat qilganlarga nasib qiladi ";
 
@@ -53,68 +51,6 @@ function getTashkentDayKey(date: Date): string {
   const day = parts.find((part) => part.type === 'day')?.value ?? '01';
 
   return `${year}-${month}-${day}`;
-}
-
-function getRangeStart(range: CallsRange, now: Date): Date {
-  const offsetMs = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
-  const shiftedNow = new Date(now.getTime() + offsetMs);
-
-  const year = shiftedNow.getUTCFullYear();
-  const month = shiftedNow.getUTCMonth();
-  const date = shiftedNow.getUTCDate();
-
-  if (range === 'today') {
-    return new Date(Date.UTC(year, month, date) - offsetMs);
-  }
-
-  if (range === 'week') {
-    const day = shiftedNow.getUTCDay();
-    const daysSinceMonday = (day + 6) % 7;
-
-    return new Date(Date.UTC(year, month, date - daysSinceMonday) - offsetMs);
-  }
-
-  return new Date(Date.UTC(year, month, 1) - offsetMs);
-}
-
-function parseCustomDate(input: string, endOfDay: boolean): Date {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Custom date must be in YYYY-MM-DD format.' });
-  }
-
-  const timestamp = `${input}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
-  const parsed = new Date(timestamp);
-
-  if (Number.isNaN(parsed.getTime())) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid custom date: ${input}` });
-  }
-
-  return parsed;
-}
-
-function resolveDateRange(range: CallsRange, now: Date, dateFrom?: string, dateTo?: string) {
-  if (range !== 'custom') {
-    return {
-      rangeStart: getRangeStart(range, now),
-      rangeEnd: now,
-    };
-  }
-
-  if (!dateFrom || !dateTo) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: 'Both dateFrom and dateTo are required when range is custom.',
-    });
-  }
-
-  const rangeStart = parseCustomDate(dateFrom, false);
-  const rangeEnd = parseCustomDate(dateTo, true);
-
-  if (rangeEnd < rangeStart) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'dateTo must be greater than or equal to dateFrom.' });
-  }
-
-  return { rangeStart, rangeEnd };
 }
 
 async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {

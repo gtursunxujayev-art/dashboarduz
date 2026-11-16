@@ -1,12 +1,16 @@
-import { protectedProcedure, router } from '../trpc';
-import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
-import { TRPCError } from '@trpc/server';
-import { z } from 'zod';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { collectAnalyticsInput } from './analytics-ai';
-import { parseCustomDate } from './dashboard/helpers';
+
 import type { DbClient } from '@dashboarduz/db';
+import { TASHKENT_OFFSET_MS, toTashkentDateKey } from '@dashboarduz/shared';
+import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
+import { parseCustomDate } from '../../lib/dates';
+import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
+import { protectedProcedure, router } from '../trpc';
+
+import { collectAnalyticsInput } from './analytics-ai';
 import { INCOME_LIFECYCLE_ACTIVE } from './dashboard/helpers';
 
 const aiHelperMessageSchema = z.object({
@@ -84,53 +88,47 @@ Format:
 `;
 
 function startOfTashkentDay(date: Date): Date {
-  const shifted = new Date(date.getTime() + 5 * 60 * 60 * 1000);
+  const shifted = new Date(date.getTime() + TASHKENT_OFFSET_MS);
   const y = shifted.getUTCFullYear();
   const m = shifted.getUTCMonth();
   const d = shifted.getUTCDate();
 
-  return new Date(Date.UTC(y, m, d) - 5 * 60 * 60 * 1000);
-}
-
-// Calendar date in Tashkent (GMT+5). Plain toISOString() gives the UTC date, which is the previous day
-// for Tashkent midnight, so "bugun" and month/week windows started a day early.
-function toDateOnly(date: Date): string {
-  return new Date(date.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return new Date(Date.UTC(y, m, d) - TASHKENT_OFFSET_MS);
 }
 
 function getCurrentMonthWindow(now: Date): { dateFrom: string; dateTo: string } {
-  const shifted = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+  const shifted = new Date(now.getTime() + TASHKENT_OFFSET_MS);
   const y = shifted.getUTCFullYear();
   const m = shifted.getUTCMonth();
-  const monthStart = new Date(Date.UTC(y, m, 1) - 5 * 60 * 60 * 1000);
+  const monthStart = new Date(Date.UTC(y, m, 1) - TASHKENT_OFFSET_MS);
 
-  return { dateFrom: toDateOnly(monthStart), dateTo: toDateOnly(now) };
+  return { dateFrom: toTashkentDateKey(monthStart), dateTo: toTashkentDateKey(now) };
 }
 
 function getLastMonthWindow(now: Date): { dateFrom: string; dateTo: string } {
-  const shifted = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+  const shifted = new Date(now.getTime() + TASHKENT_OFFSET_MS);
   const y = shifted.getUTCFullYear();
   const m = shifted.getUTCMonth();
-  const start = new Date(Date.UTC(y, m - 1, 1) - 5 * 60 * 60 * 1000);
-  const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999) - 5 * 60 * 60 * 1000);
+  const start = new Date(Date.UTC(y, m - 1, 1) - TASHKENT_OFFSET_MS);
+  const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999) - TASHKENT_OFFSET_MS);
 
-  return { dateFrom: toDateOnly(start), dateTo: toDateOnly(end) };
+  return { dateFrom: toTashkentDateKey(start), dateTo: toTashkentDateKey(end) };
 }
 
 function getCurrentWeekWindow(now: Date): { dateFrom: string; dateTo: string } {
-  const localDay = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+  const localDay = new Date(now.getTime() + TASHKENT_OFFSET_MS);
   const day = localDay.getUTCDay();
   const daysSinceMonday = (day + 6) % 7;
   const monday = new Date(localDay);
 
   monday.setUTCDate(localDay.getUTCDate() - daysSinceMonday);
-  const mondayUtc = new Date(Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate()) - 5 * 60 * 60 * 1000);
+  const mondayUtc = new Date(Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate()) - TASHKENT_OFFSET_MS);
 
-  return { dateFrom: toDateOnly(mondayUtc), dateTo: toDateOnly(now) };
+  return { dateFrom: toTashkentDateKey(mondayUtc), dateTo: toTashkentDateKey(now) };
 }
 
 function getLastWeekWindow(now: Date): { dateFrom: string; dateTo: string } {
-  const localDay = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+  const localDay = new Date(now.getTime() + TASHKENT_OFFSET_MS);
   const day = localDay.getUTCDay();
   const daysSinceMonday = (day + 6) % 7;
   const currentMonday = new Date(localDay);
@@ -143,10 +141,10 @@ function getLastWeekWindow(now: Date): { dateFrom: string; dateTo: string } {
 
   lastSunday.setUTCDate(currentMonday.getUTCDate() - 1);
 
-  const fromUtc = new Date(Date.UTC(lastMonday.getUTCFullYear(), lastMonday.getUTCMonth(), lastMonday.getUTCDate()) - 5 * 60 * 60 * 1000);
-  const toUtc = new Date(Date.UTC(lastSunday.getUTCFullYear(), lastSunday.getUTCMonth(), lastSunday.getUTCDate(), 23, 59, 59, 999) - 5 * 60 * 60 * 1000);
+  const fromUtc = new Date(Date.UTC(lastMonday.getUTCFullYear(), lastMonday.getUTCMonth(), lastMonday.getUTCDate()) - TASHKENT_OFFSET_MS);
+  const toUtc = new Date(Date.UTC(lastSunday.getUTCFullYear(), lastSunday.getUTCMonth(), lastSunday.getUTCDate(), 23, 59, 59, 999) - TASHKENT_OFFSET_MS);
 
-  return { dateFrom: toDateOnly(fromUtc), dateTo: toDateOnly(toUtc) };
+  return { dateFrom: toTashkentDateKey(fromUtc), dateTo: toTashkentDateKey(toUtc) };
 }
 
 function normalizeDatePair(a: string, b: string): { dateFrom: string; dateTo: string } {
@@ -184,7 +182,7 @@ function detectDateWindowFromMessage(message: string, now: Date): { dateFrom: st
     return getCurrentWeekWindow(now);
   }
   if (text.includes('bugun') || text.includes('today')) {
-    const today = toDateOnly(startOfTashkentDay(now));
+    const today = toTashkentDateKey(startOfTashkentDay(now));
 
     return { dateFrom: today, dateTo: today };
   }
@@ -214,7 +212,7 @@ function resolveDateWindow(
   const rangeMode = String(pageContext?.rangeMode || '').trim().toLowerCase();
 
   if (rangeMode === 'today') {
-    const today = toDateOnly(startOfTashkentDay(now));
+    const today = toTashkentDateKey(startOfTashkentDay(now));
 
     return { dateFrom: today, dateTo: today, reason: 'page_context' };
   }

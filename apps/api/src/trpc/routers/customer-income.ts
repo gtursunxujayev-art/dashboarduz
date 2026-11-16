@@ -8,11 +8,13 @@ import {
   customerSearchSchema,
   hasAgentRole,
   normalizeDigits,
+  TASHKENT_OFFSET_MS,
 } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { DATE_RANGE_MESSAGES_EN, parseCustomDate, type ParseCustomDateOptions } from '../../lib/dates';
 import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, sanitizeTelegramUsername, sendMessageToTelegramChat, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import { reconcileFinalizedBonusMonths } from '../../services/bonus-engine';
 import {
@@ -29,6 +31,15 @@ import { NON_TECHNICAL_SALE_WHERE } from '../../services/income-facts';
 import { telegramService } from '../../services/integrations/telegram';
 import { parseTelegramGroupIdsFromEnvKeys } from '../../services/integrations/telegram-groups';
 import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
+
+const CUSTOM_DATE_OPTIONS: ParseCustomDateOptions = {
+  trimInput: true,
+  messages: {
+    ...DATE_RANGE_MESSAGES_EN,
+    invalidFormat: (input) => `Invalid date format: ${input}`,
+    invalidDate: (input) => `Invalid date: ${input}`,
+  },
+};
 
 const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
   requireActiveIntegration: false,
@@ -55,7 +66,6 @@ const ADJUSTMENT_STATUS_REJECTED = 'rejected';
 const REFUND_CARD_NUMBER_REGEX = /^\d{16}$/;
 const CUSTOMER_NUMBER_REGEX = /^\d+$/;
 const TELEGRAM_USERNAME_REGEX = /^@?[A-Za-z0-9_]+$/;
-const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
 const OFFLINE_PAYMENT_GROUP_ENV_KEY = 'OFLINE_GROUP_ID';
 const OFFLINE_PAYMENT_GROUP_ENV_KEY_LEGACY = 'OFFLINE_GROUP_ID';
@@ -848,22 +858,6 @@ function parseDateInput(input: string): Date {
   return date;
 }
 
-function parseCustomDateInReportTimezone(input: string, endOfDay: boolean): Date {
-  const value = String(input || '').trim();
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date format: ${input}` });
-  }
-  const timestamp = `${value}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
-  const date = new Date(timestamp);
-
-  if (Number.isNaN(date.getTime())) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date: ${input}` });
-  }
-
-  return date;
-}
-
 function resolveRefundGroupIds(): string[] {
   const preferred = parseTelegramGroupIdsFromEnvKeys(['REFUND_GROUP_ID', 'REFUND_GROUP_IDS']);
 
@@ -936,7 +930,7 @@ function formatAmountUz(value: number | null | undefined): string {
 }
 
 function formatDateGmt5(dateValue: Date): string {
-  const local = new Date(dateValue.getTime() + REPORT_TIMEZONE_OFFSET_MS);
+  const local = new Date(dateValue.getTime() + TASHKENT_OFFSET_MS);
   const year = local.getUTCFullYear();
   const month = String(local.getUTCMonth() + 1).padStart(2, '0');
   const day = String(local.getUTCDate()).padStart(2, '0');
@@ -4932,8 +4926,8 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const rangeStart = parseCustomDateInReportTimezone(input.dateFrom, false);
-      const rangeEnd = parseCustomDateInReportTimezone(input.dateTo, true);
+      const rangeStart = parseCustomDate(input.dateFrom, false, CUSTOM_DATE_OPTIONS);
+      const rangeEnd = parseCustomDate(input.dateTo, true, CUSTOM_DATE_OPTIONS);
 
       if (rangeEnd < rangeStart) {
         throw new TRPCError({

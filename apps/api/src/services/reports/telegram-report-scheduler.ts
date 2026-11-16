@@ -1,5 +1,5 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { normalizeDigits } from '@dashboarduz/shared';
+import { fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey } from '@dashboarduz/shared';
 
 import { parseTelegramDailyReportCourseIds } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension } from '../../lib/utel';
@@ -20,7 +20,6 @@ import { log, LogLevel } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 
-const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
 const POLL_INTERVAL_MS = 30_000;
 const LOCK_TTL_SECONDS = 60 * 60 * 24 * 14; // 14 days
@@ -100,33 +99,8 @@ type TelegramIntegrationWithTenant = {
 let schedulerTimer: NodeJS.Timeout | null = null;
 let schedulerInProgress = false;
 
-function toLocalDate(date: Date): Date {
-  return new Date(date.getTime() + REPORT_TIMEZONE_OFFSET_MS);
-}
-
-function fromLocalParts(
-  year: number,
-  month: number,
-  day: number,
-  hour = 0,
-  minute = 0,
-  second = 0,
-  millisecond = 0,
-): Date {
-  return new Date(Date.UTC(year, month, day, hour, minute, second, millisecond) - REPORT_TIMEZONE_OFFSET_MS);
-}
-
-function formatLocalDate(date: Date): string {
-  const local = toLocalDate(date);
-  const year = local.getUTCFullYear();
-  const month = String(local.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(local.getUTCDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
 function formatLocalDateTime(date: Date): string {
-  const local = toLocalDate(date);
+  const local = shiftToTashkent(date);
   const year = local.getUTCFullYear();
   const month = String(local.getUTCMonth() + 1).padStart(2, '0');
   const day = String(local.getUTCDate()).padStart(2, '0');
@@ -448,7 +422,7 @@ export function createStyledReportPdf(params: {
   const textDark: PdfColor = [0.11, 0.16, 0.24];
   const accent: PdfColor = [0.12, 0.4, 0.95];
   const white: PdfColor = [1, 1, 1];
-  const headerDateRange = `${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`;
+  const headerDateRange = `${toTashkentDateKey(params.periodStart)} - ${toTashkentDateKey(params.periodEnd)}`;
   const fontDelta = 0;
   const size = (base: number): number => Math.max(6, base + fontDelta);
   const pageContentBottom = 800;
@@ -467,7 +441,7 @@ export function createStyledReportPdf(params: {
   c.text(28, 44, params.tenantName, { font: 'F2', size: size(20), color: white });
   c.text(52, 270, params.title, { font: 'F1', size: size(12), color: [0.76, 0.82, 0.92] });
   c.text(28, 360, `Sana: ${headerDateRange}`, { size: size(10), color: [0.76, 0.82, 0.92] });
-  c.text(92, 44, `Davr: ${formatLocalDate(params.periodStart)} - ${formatLocalDate(params.periodEnd)}`, { size: size(10), color: textDark });
+  c.text(92, 44, `Davr: ${toTashkentDateKey(params.periodStart)} - ${toTashkentDateKey(params.periodEnd)}`, { size: size(10), color: textDark });
   c.text(106, 44, `Tayyorlangan: ${formatLocalDateTime(params.generatedAt)}`, { size: size(10), color: textDark });
   drawFooter();
 
@@ -735,7 +709,7 @@ function isLostLeadStatus(value: unknown): boolean {
 }
 
 function resolveReportWindows(nowUtc: Date): ReportWindow[] {
-  const nowLocal = toLocalDate(nowUtc);
+  const nowLocal = shiftToTashkent(nowUtc);
   const year = nowLocal.getUTCFullYear();
   const month = nowLocal.getUTCMonth();
   const day = nowLocal.getUTCDate();
@@ -744,10 +718,10 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
   const windows: ReportWindow[] = [];
 
   // Daily report for yesterday at 08:00 local.
-  const dailyDispatchAt = fromLocalParts(year, month, day, 8, 0, 0, 0);
+  const dailyDispatchAt = fromTashkentLocalParts(year, month, day, 8, 0, 0, 0);
 
   if (nowUtc >= dailyDispatchAt) {
-    const todayStart = fromLocalParts(year, month, day, 0, 0, 0, 0);
+    const todayStart = fromTashkentLocalParts(year, month, day, 0, 0, 0, 0);
     const periodStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
     const periodEnd = new Date(todayStart.getTime() - 1);
 
@@ -756,14 +730,14 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
       title: 'Kunlik hisobot (Kecha)',
       periodStart,
       periodEnd,
-      periodKey: formatLocalDate(periodStart),
+      periodKey: toTashkentDateKey(periodStart),
     });
   }
 
   // Weekly report at Monday 07:55 local for previous week.
   if (weekday === 1) {
-    const mondayStart = fromLocalParts(year, month, day, 0, 0, 0, 0);
-    const weeklyDispatchAt = fromLocalParts(year, month, day, 7, 55, 0, 0);
+    const mondayStart = fromTashkentLocalParts(year, month, day, 0, 0, 0, 0);
+    const weeklyDispatchAt = fromTashkentLocalParts(year, month, day, 7, 55, 0, 0);
 
     if (nowUtc >= weeklyDispatchAt) {
       const periodStart = new Date(mondayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -774,20 +748,20 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
         title: 'Haftalik hisobot (O`tgan hafta)',
         periodStart,
         periodEnd,
-        periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(periodEnd)}`,
+        periodKey: `${toTashkentDateKey(periodStart)}_${toTashkentDateKey(periodEnd)}`,
       });
     }
   }
 
   // Monthly report at first day 07:50 local for previous month.
   if (day === 1) {
-    const currentMonthStart = fromLocalParts(year, month, 1, 0, 0, 0, 0);
-    const monthlyDispatchAt = fromLocalParts(year, month, 1, 7, 50, 0, 0);
+    const currentMonthStart = fromTashkentLocalParts(year, month, 1, 0, 0, 0, 0);
+    const monthlyDispatchAt = fromTashkentLocalParts(year, month, 1, 7, 50, 0, 0);
 
     if (nowUtc >= monthlyDispatchAt) {
       const periodEnd = new Date(currentMonthStart.getTime() - 1);
-      const previousMonthLocal = toLocalDate(new Date(currentMonthStart.getTime() - 24 * 60 * 60 * 1000));
-      const periodStart = fromLocalParts(
+      const previousMonthLocal = shiftToTashkent(new Date(currentMonthStart.getTime() - 24 * 60 * 60 * 1000));
+      const periodStart = fromTashkentLocalParts(
         previousMonthLocal.getUTCFullYear(),
         previousMonthLocal.getUTCMonth(),
         1,
@@ -802,7 +776,7 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
         title: 'Oylik hisobot (O`tgan oy)',
         periodStart,
         periodEnd,
-        periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(periodEnd)}`,
+        periodKey: `${toTashkentDateKey(periodStart)}_${toTashkentDateKey(periodEnd)}`,
       });
     }
   }
@@ -811,28 +785,28 @@ function resolveReportWindows(nowUtc: Date): ReportWindow[] {
 }
 
 function buildTodayWindow(nowUtc: Date): ReportWindow {
-  const nowLocal = toLocalDate(nowUtc);
+  const nowLocal = shiftToTashkent(nowUtc);
   const year = nowLocal.getUTCFullYear();
   const month = nowLocal.getUTCMonth();
   const day = nowLocal.getUTCDate();
-  const periodStart = fromLocalParts(year, month, day, 0, 0, 0, 0);
+  const periodStart = fromTashkentLocalParts(year, month, day, 0, 0, 0, 0);
 
   return {
     kind: 'daily',
     title: 'Tezkor hisobot (Bugun)',
     periodStart,
     periodEnd: nowUtc,
-    periodKey: formatLocalDate(periodStart),
+    periodKey: toTashkentDateKey(periodStart),
   };
 }
 
 function buildPreviousWeekWindow(nowUtc: Date): ReportWindow {
-  const nowLocal = toLocalDate(nowUtc);
+  const nowLocal = shiftToTashkent(nowUtc);
   const year = nowLocal.getUTCFullYear();
   const month = nowLocal.getUTCMonth();
   const day = nowLocal.getUTCDate();
   const daysSinceMonday = (nowLocal.getUTCDay() + 6) % 7;
-  const currentWeekStart = fromLocalParts(year, month, day - daysSinceMonday, 0, 0, 0, 0);
+  const currentWeekStart = fromTashkentLocalParts(year, month, day - daysSinceMonday, 0, 0, 0, 0);
   const periodStart = new Date(currentWeekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
   const periodEnd = new Date(currentWeekStart.getTime() - 1);
 
@@ -841,35 +815,35 @@ function buildPreviousWeekWindow(nowUtc: Date): ReportWindow {
     title: 'Haftalik hisobot (O`tgan hafta)',
     periodStart,
     periodEnd,
-    periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(periodEnd)}`,
+    periodKey: `${toTashkentDateKey(periodStart)}_${toTashkentDateKey(periodEnd)}`,
   };
 }
 
 function buildCurrentWeekWindow(nowUtc: Date): ReportWindow {
-  const nowLocal = toLocalDate(nowUtc);
+  const nowLocal = shiftToTashkent(nowUtc);
   const year = nowLocal.getUTCFullYear();
   const month = nowLocal.getUTCMonth();
   const day = nowLocal.getUTCDate();
   const daysSinceMonday = (nowLocal.getUTCDay() + 6) % 7;
-  const periodStart = fromLocalParts(year, month, day - daysSinceMonday, 0, 0, 0, 0);
+  const periodStart = fromTashkentLocalParts(year, month, day - daysSinceMonday, 0, 0, 0, 0);
 
   return {
     kind: 'weekly',
     title: 'Haftalik hisobot (Joriy hafta)',
     periodStart,
     periodEnd: nowUtc,
-    periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(nowUtc)}`,
+    periodKey: `${toTashkentDateKey(periodStart)}_${toTashkentDateKey(nowUtc)}`,
   };
 }
 
 function buildPreviousMonthWindow(nowUtc: Date): ReportWindow {
-  const nowLocal = toLocalDate(nowUtc);
+  const nowLocal = shiftToTashkent(nowUtc);
   const year = nowLocal.getUTCFullYear();
   const month = nowLocal.getUTCMonth();
-  const currentMonthStart = fromLocalParts(year, month, 1, 0, 0, 0, 0);
+  const currentMonthStart = fromTashkentLocalParts(year, month, 1, 0, 0, 0, 0);
   const periodEnd = new Date(currentMonthStart.getTime() - 1);
-  const previousMonthLocal = toLocalDate(new Date(currentMonthStart.getTime() - 24 * 60 * 60 * 1000));
-  const periodStart = fromLocalParts(
+  const previousMonthLocal = shiftToTashkent(new Date(currentMonthStart.getTime() - 24 * 60 * 60 * 1000));
+  const periodStart = fromTashkentLocalParts(
     previousMonthLocal.getUTCFullYear(),
     previousMonthLocal.getUTCMonth(),
     1,
@@ -884,22 +858,22 @@ function buildPreviousMonthWindow(nowUtc: Date): ReportWindow {
     title: 'Oylik hisobot (O`tgan oy)',
     periodStart,
     periodEnd,
-    periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(periodEnd)}`,
+    periodKey: `${toTashkentDateKey(periodStart)}_${toTashkentDateKey(periodEnd)}`,
   };
 }
 
 function buildCurrentMonthWindow(nowUtc: Date): ReportWindow {
-  const nowLocal = toLocalDate(nowUtc);
+  const nowLocal = shiftToTashkent(nowUtc);
   const year = nowLocal.getUTCFullYear();
   const month = nowLocal.getUTCMonth();
-  const periodStart = fromLocalParts(year, month, 1, 0, 0, 0, 0);
+  const periodStart = fromTashkentLocalParts(year, month, 1, 0, 0, 0, 0);
 
   return {
     kind: 'monthly',
     title: 'Oylik hisobot (Joriy oy)',
     periodStart,
     periodEnd: nowUtc,
-    periodKey: `${formatLocalDate(periodStart)}_${formatLocalDate(nowUtc)}`,
+    periodKey: `${toTashkentDateKey(periodStart)}_${toTashkentDateKey(nowUtc)}`,
   };
 }
 
@@ -1597,7 +1571,7 @@ async function sendWindowToIntegration(
     metrics,
   });
   const fileName = `dashboard-report-${window.kind}-${window.periodKey}.pdf`;
-  const caption = `${window.title}\n${formatLocalDate(window.periodStart)} - ${formatLocalDate(window.periodEnd)}`;
+  const caption = `${window.title}\n${toTashkentDateKey(window.periodStart)} - ${toTashkentDateKey(window.periodEnd)}`;
 
   const tokens = decryptIntegrationTokens<{ botToken?: string }>(integration.tokensEncrypted || '');
 

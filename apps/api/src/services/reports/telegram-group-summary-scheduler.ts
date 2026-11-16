@@ -1,4 +1,5 @@
 import { systemPrisma } from '@dashboarduz/db';
+import { fromTashkentLocalParts, shiftToTashkent } from '@dashboarduz/shared';
 
 import { asObjectOrEmpty } from '../../lib/object';
 import { classifyIncomeCategory, type IncomeCategory } from '../income-facts';
@@ -9,7 +10,6 @@ import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 import { isTechnicalNewSale } from '../technical-income';
 
-const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
 const POLL_INTERVAL_MS = 30_000;
 const LOCK_TTL_SECONDS = 2 * 24 * 60 * 60;
 
@@ -66,29 +66,21 @@ function classifyCourse(value: string | null | undefined): IncomeCategory {
   return classifyIncomeCategory({ category: value });
 }
 
-function toLocal(date: Date): Date {
-  return new Date(date.getTime() + TASHKENT_OFFSET_MS);
-}
-
-function fromLocalParts(year: number, month: number, day: number, hour = 0, minute = 0): Date {
-  return new Date(Date.UTC(year, month, day, hour, minute) - TASHKENT_OFFSET_MS);
-}
-
 export function getTashkentDayWindow(now: Date): { dateKey: string; start: Date; end: Date } {
-  const local = toLocal(now);
+  const local = shiftToTashkent(now);
   const year = local.getUTCFullYear();
   const month = local.getUTCMonth();
   const day = local.getUTCDate();
 
   return {
     dateKey: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-    start: fromLocalParts(year, month, day),
+    start: fromTashkentLocalParts(year, month, day),
     end: now,
   };
 }
 
 export function resolveDueTelegramGroupSummaryCutoffs(now: Date): Array<'18:00' | '23:59'> {
-  const local = toLocal(now);
+  const local = shiftToTashkent(now);
   const minutes = local.getUTCHours() * 60 + local.getUTCMinutes();
   const due: Array<'18:00' | '23:59'> = [];
 

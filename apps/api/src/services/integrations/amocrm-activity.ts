@@ -1,5 +1,8 @@
-import { type AmoCRMEvent, type AmoCRMTask, amocrmService } from './amocrm';
+import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
+
 import { LogLevel, log } from '../observability';
+
+import { type AmoCRMEvent, type AmoCRMTask, amocrmService } from './amocrm';
 
 export type AmoCRMActivityMetrics = {
   followUpCount: number;
@@ -192,7 +195,7 @@ function taskDueDate(task: AmoCRMTask): Date | null {
 }
 
 function getTashkentDayBounds(baseDate: Date): { start: Date; end: Date } {
-  const offsetMs = 5 * 60 * 60 * 1000;
+  const offsetMs = TASHKENT_OFFSET_MS;
   const shifted = new Date(baseDate.getTime() + offsetMs);
   const year = shifted.getUTCFullYear();
   const month = shifted.getUTCMonth();
@@ -204,7 +207,7 @@ function getTashkentDayBounds(baseDate: Date): { start: Date; end: Date } {
 }
 
 function getTashkentWeekBounds(baseDate: Date): { start: Date; end: Date } {
-  const offsetMs = 5 * 60 * 60 * 1000;
+  const offsetMs = TASHKENT_OFFSET_MS;
   const shifted = new Date(baseDate.getTime() + offsetMs);
   const year = shifted.getUTCFullYear();
   const month = shifted.getUTCMonth();
@@ -218,7 +221,7 @@ function getTashkentWeekBounds(baseDate: Date): { start: Date; end: Date } {
 }
 
 function getTashkentMonthBounds(baseDate: Date): { start: Date; end: Date } {
-  const offsetMs = 5 * 60 * 60 * 1000;
+  const offsetMs = TASHKENT_OFFSET_MS;
   const shifted = new Date(baseDate.getTime() + offsetMs);
   const year = shifted.getUTCFullYear();
   const month = shifted.getUTCMonth();

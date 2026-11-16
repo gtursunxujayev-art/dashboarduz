@@ -1,13 +1,14 @@
 import type { DbClient } from '@dashboarduz/db';
 
+import { getRangeStart } from '../../../lib/dates';
+import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
+
 import {
   classifyCourseCategoryFromField,
   getAgentResponsibleScope,
-  getRangeStart,
   INCOME_LIFECYCLE_ACTIVE,
   protectedProcedure,
 } from './helpers';
-import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 import { loadSelectedReportCourses, type SelectedCourseCategory } from './selected-report-courses';
 
 type IncomeSplit = { online: number; offline: number };

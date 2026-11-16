@@ -1,5 +1,5 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { AGENT_ROLES, normalizeDigits } from '@dashboarduz/shared';
+import { AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey } from '@dashboarduz/shared';
 
 import { buildLooseTelegramChatIdCandidates, normalizeTelegramSecret, sendMessageToTelegramChat } from '../../lib/telegram';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';
@@ -12,7 +12,6 @@ import { LogLevel, log } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 
-const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5 (Asia/Tashkent)
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
 const POLL_INTERVAL_MS = 30_000;
 const LOCK_TTL_SECONDS = 60 * 60 * 24 * 2; // 2 days
@@ -55,31 +54,6 @@ type AgentMetricRow = {
 let schedulerTimer: NodeJS.Timeout | null = null;
 let schedulerInProgress = false;
 
-function toLocalDate(date: Date): Date {
-  return new Date(date.getTime() + REPORT_TIMEZONE_OFFSET_MS);
-}
-
-function fromLocalParts(
-  year: number,
-  month: number,
-  day: number,
-  hour = 0,
-  minute = 0,
-  second = 0,
-  millisecond = 0,
-): Date {
-  return new Date(Date.UTC(year, month, day, hour, minute, second, millisecond) - REPORT_TIMEZONE_OFFSET_MS);
-}
-
-function formatLocalDate(date: Date): string {
-  const local = toLocalDate(date);
-  const year = local.getUTCFullYear();
-  const month = String(local.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(local.getUTCDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
 function formatCurrency(value: number): string {
   return `${Math.max(0, Math.round(value)).toLocaleString('ru-RU')} so'm`;
 }
@@ -94,21 +68,21 @@ function formatDurationUz(totalSeconds: number): string {
 }
 
 function resolveNoonWindow(nowUtc: Date): NoonWindow | null {
-  const nowLocal = toLocalDate(nowUtc);
+  const nowLocal = shiftToTashkent(nowUtc);
   const year = nowLocal.getUTCFullYear();
   const month = nowLocal.getUTCMonth();
   const day = nowLocal.getUTCDate();
 
-  const dispatchAt = fromLocalParts(year, month, day, 12, 0, 0, 0);
+  const dispatchAt = fromTashkentLocalParts(year, month, day, 12, 0, 0, 0);
 
   if (nowUtc < dispatchAt) {
     return null;
   }
 
   return {
-    periodStart: fromLocalParts(year, month, day, 0, 0, 0, 0),
+    periodStart: fromTashkentLocalParts(year, month, day, 0, 0, 0, 0),
     periodEnd: nowUtc,
-    periodKey: formatLocalDate(nowUtc),
+    periodKey: toTashkentDateKey(nowUtc),
   };
 }
 

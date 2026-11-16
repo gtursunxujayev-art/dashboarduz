@@ -1,6 +1,7 @@
 import type { DbClient } from '@dashboarduz/db';
 import { normalizeDigits } from '@dashboarduz/shared';
 
+import { getRangeStart } from '../../../lib/dates';
 import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
 import {
@@ -17,7 +18,6 @@ import { buildTechnicalSaleIdSet } from '../../../services/technical-income';
 
 import {
   classifyCourseCategoryFromField,
-  getRangeStart,
   INCOME_LIFECYCLE_ACTIVE,
   protectedProcedure,
   resolveBonusPercent,

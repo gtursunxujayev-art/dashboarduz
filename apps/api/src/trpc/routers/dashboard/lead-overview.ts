@@ -1,3 +1,4 @@
+import { getRangeStart } from '../../../lib/dates';
 import { asObject } from '../../../lib/object';
 
 import {
@@ -5,7 +6,6 @@ import {
   asStringArray,
   extractLeadValue,
   getAgentResponsibleScope,
-  getRangeStart,
   getTenantAmoCRMContext,
   isMappedValue,
   protectedProcedure,

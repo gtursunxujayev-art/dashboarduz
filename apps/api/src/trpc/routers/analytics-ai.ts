@@ -1,15 +1,14 @@
-import { protectedProcedure, router } from '../trpc';
-import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import type { DbClient } from '@dashboarduz/db';
+import { toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import {
-  classifyCourseCategoryFromField,
-  dashboardRangeSchema,
-  INCOME_LIFECYCLE_ACTIVE,
-  resolveDateRange,
-} from './dashboard/helpers';
+
+import { resolveDateRange } from '../../lib/dates';
 import { getCallsProviderFilter } from '../../services/calls-source';
+import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
+import { protectedProcedure, router } from '../trpc';
+
+import { classifyCourseCategoryFromField, dashboardRangeSchema, INCOME_LIFECYCLE_ACTIVE } from './dashboard/helpers';
 
 const ANALYTICS_AI_PROMPT_VERSION = 'sales-intelligence-v1';
 
@@ -67,11 +66,6 @@ const analyticsAiInputSchema = z.object({
   dateTo: z.string().optional(),
   focus: aiFocusSchema.default('sales'),
 });
-
-// Calendar date in Tashkent (GMT+5); range bounds are Tashkent midnights, which are the previous UTC day.
-function toDateOnly(date: Date): string {
-  return new Date(date.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
 
 function round(value: number, digits = 2): number {
   const multiplier = 10 ** digits;
@@ -197,7 +191,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
   metaRows = await db.metaAdInsight.findMany({
     where: {
       tenantId,
-      date: { gte: new Date(`${toDateOnly(rangeStart)}T00:00:00.000Z`), lte: new Date(`${toDateOnly(rangeEnd)}T00:00:00.000Z`) },
+      date: { gte: new Date(`${toTashkentDateKey(rangeStart)}T00:00:00.000Z`), lte: new Date(`${toTashkentDateKey(rangeEnd)}T00:00:00.000Z`) },
     },
     select: {
       campaignId: true,

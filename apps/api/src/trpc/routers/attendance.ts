@@ -1,8 +1,8 @@
+import { AGENT_ROLES, TASHKENT_OFFSET_MS, toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
+
 import { recomputeAttendanceDaySummary, recomputeAttendanceSummariesForRange } from '../../services/attendance/faceid';
-import { AGENT_ROLES } from '@dashboarduz/shared';
 import {
   ATTENDANCE_REPORT_MAX_CALENDAR_DAYS,
   buildAttendancePeriodReport,
@@ -13,6 +13,7 @@ import {
   parseAttendanceReportDateKey,
   resolveAttendanceReportScopedUserId,
 } from '../../services/attendance/report';
+import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
 
 const privilegedReadRoles = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 
@@ -46,17 +47,8 @@ function parseDateTime(value: string, fieldName: string): Date {
   return parsed;
 }
 
-function toLocalDateKey(date: Date): string {
-  const shifted = new Date(date.getTime() + 5 * 60 * 60 * 1000);
-  const year = shifted.getUTCFullYear();
-  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(shifted.getUTCDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
 function toLocalTimeValue(date: Date): string {
-  const shifted = new Date(date.getTime() + 5 * 60 * 60 * 1000);
+  const shifted = new Date(date.getTime() + TASHKENT_OFFSET_MS);
   const hh = String(shifted.getUTCHours()).padStart(2, '0');
   const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
   const ss = String(shifted.getUTCSeconds()).padStart(2, '0');
@@ -516,7 +508,7 @@ export const attendanceRouter = router({
     .mutation(async ({ ctx, input }) => {
       if (input.action === 'add_missing_in') {
         const eventAt = parseDateTime(input.timestamp, 'timestamp');
-        const localDate = toLocalDateKey(eventAt);
+        const localDate = toTashkentDateKey(eventAt);
         const localTime = toLocalTimeValue(eventAt);
 
         const createdEvent = await ctx.db.attendanceEvent.create({
@@ -588,7 +580,7 @@ export const attendanceRouter = router({
 
       if (input.action === 'add_missing_out') {
         const eventAt = parseDateTime(input.timestamp, 'timestamp');
-        const localDate = toLocalDateKey(eventAt);
+        const localDate = toTashkentDateKey(eventAt);
         const localTime = toLocalTimeValue(eventAt);
 
         const createdEvent = await ctx.db.attendanceEvent.create({
@@ -679,7 +671,7 @@ export const attendanceRouter = router({
         }
 
         const newEventAt = parseDateTime(input.timestamp, 'timestamp');
-        const newLocalDate = toLocalDateKey(newEventAt);
+        const newLocalDate = toTashkentDateKey(newEventAt);
         const newLocalTime = toLocalTimeValue(newEventAt);
 
         const updated = await ctx.db.attendanceEvent.update({

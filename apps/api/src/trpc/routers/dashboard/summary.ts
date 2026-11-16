@@ -1,5 +1,6 @@
-import { AGENT_ROLES, normalizeDigits } from '@dashboarduz/shared';
+import { AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent } from '@dashboarduz/shared';
 
+import { resolveDateRange } from '../../../lib/dates';
 import { asObject } from '../../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
 import { getOrSet, buildCacheKey } from '../../../services/cache';
@@ -28,19 +29,15 @@ import {
   INCOME_LIFECYCLE_ACTIVE,
   INCOME_LIFECYCLE_REFUNDED,
   REPORT_MONTH_LABELS_UZ,
-  REPORT_TZ_OFFSET_MS,
   normalizeTextToken,
   extractUtelManagerKey,
   getAgentResponsibleScope,
-  resolveDateRange,
   isTashkiliyOnly,
   classifyCourseCategoryFromField,
   isMappedValue,
   toPieData,
   buildFieldLabelMap,
   collectCatalogFieldOptions,
-  shiftToReportTimezone,
-  fromReportLocalParts,
   getDaysInReportLocalMonth,
   getReportLocalDayOfYear,
   getReportLocalDaysInYear,
@@ -870,7 +867,7 @@ export const summaryProcedures = {
           : {}),
       };
 
-      const nowLocal = shiftToReportTimezone(now);
+      const nowLocal = shiftToTashkent(now);
       const currentYear = nowLocal.getUTCFullYear();
       const currentMonth = nowLocal.getUTCMonth();
       const currentDay = nowLocal.getUTCDate();
@@ -885,9 +882,9 @@ export const summaryProcedures = {
       const lastYearSameMonthDay = Math.min(currentDay, getDaysInReportLocalMonth(currentYear - 1, currentMonth));
       const currentMonthTotalDays = getDaysInReportLocalMonth(currentYear, currentMonth);
 
-      const currentMonthStart = fromReportLocalParts(currentYear, currentMonth, 1, 0, 0, 0, 0);
-      const previousMonthStart = fromReportLocalParts(previousMonthYear, previousMonth, 1, 0, 0, 0, 0);
-      const previousMonthSameMoment = fromReportLocalParts(
+      const currentMonthStart = fromTashkentLocalParts(currentYear, currentMonth, 1, 0, 0, 0, 0);
+      const previousMonthStart = fromTashkentLocalParts(previousMonthYear, previousMonth, 1, 0, 0, 0, 0);
+      const previousMonthSameMoment = fromTashkentLocalParts(
         previousMonthYear,
         previousMonth,
         previousMonthSameDay,
@@ -896,8 +893,8 @@ export const summaryProcedures = {
         currentSecond,
         currentMillisecond,
       );
-      const lastYearSameMonthStart = fromReportLocalParts(currentYear - 1, currentMonth, 1, 0, 0, 0, 0);
-      const lastYearSameMonthMoment = fromReportLocalParts(
+      const lastYearSameMonthStart = fromTashkentLocalParts(currentYear - 1, currentMonth, 1, 0, 0, 0, 0);
+      const lastYearSameMonthMoment = fromTashkentLocalParts(
         currentYear - 1,
         currentMonth,
         lastYearSameMonthDay,
@@ -906,9 +903,9 @@ export const summaryProcedures = {
         currentSecond,
         currentMillisecond,
       );
-      const currentYearStart = fromReportLocalParts(currentYear, 0, 1, 0, 0, 0, 0);
-      const previousYearStart = fromReportLocalParts(currentYear - 1, 0, 1, 0, 0, 0, 0);
-      const previousYearYtdMoment = fromReportLocalParts(
+      const currentYearStart = fromTashkentLocalParts(currentYear, 0, 1, 0, 0, 0, 0);
+      const previousYearStart = fromTashkentLocalParts(currentYear - 1, 0, 1, 0, 0, 0, 0);
+      const previousYearYtdMoment = fromTashkentLocalParts(
         currentYear - 1,
         currentMonth,
         lastYearSameMonthDay,
@@ -1119,7 +1116,7 @@ export const summaryProcedures = {
 
         if (entryTime >= currentMonthStart.getTime() && entryTime <= now.getTime()) {
           currentMonthToDateIncome += amount;
-          const localDate = shiftToReportTimezone(income.entryDate);
+          const localDate = shiftToTashkent(income.entryDate);
           const day = localDate.getUTCDate();
 
           monthDailyMap.set(day, (monthDailyMap.get(day) || 0) + amount);
@@ -1135,7 +1132,7 @@ export const summaryProcedures = {
 
         if (entryTime >= currentYearStart.getTime() && entryTime <= now.getTime()) {
           currentYearToDateIncome += amount;
-          const localDate = shiftToReportTimezone(income.entryDate);
+          const localDate = shiftToTashkent(income.entryDate);
           const monthIndex = localDate.getUTCMonth();
 
           yearMonthlyMap.set(monthIndex, (yearMonthlyMap.get(monthIndex) || 0) + amount);
@@ -1314,7 +1311,7 @@ export const summaryProcedures = {
             progressPercent: monthProgressPercent,
             runRatePerDay: Number(monthRunRatePerDay.toFixed(2)),
             periodStart: currentMonthStart.toISOString(),
-            periodEnd: fromReportLocalParts(currentYear, currentMonth, currentMonthTotalDays, 23, 59, 59, 999).toISOString(),
+            periodEnd: fromTashkentLocalParts(currentYear, currentMonth, currentMonthTotalDays, 23, 59, 59, 999).toISOString(),
           },
           yearEnd: {
             currentToDate: Math.round(currentYearToDateIncome),
@@ -1323,7 +1320,7 @@ export const summaryProcedures = {
             progressPercent: yearProgressPercent,
             runRatePerDay: Number(yearRunRatePerDay.toFixed(2)),
             periodStart: currentYearStart.toISOString(),
-            periodEnd: fromReportLocalParts(currentYear, 11, 31, 23, 59, 59, 999).toISOString(),
+            periodEnd: fromTashkentLocalParts(currentYear, 11, 31, 23, 59, 59, 999).toISOString(),
           },
           monthSeries: monthForecastSeries,
           yearSeries: yearForecastSeries,

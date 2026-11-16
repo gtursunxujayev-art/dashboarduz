@@ -1,11 +1,10 @@
 import crypto from 'crypto';
 
 import { systemPrisma, type DbClient } from '@dashboarduz/db';
-import { normalizeDigits } from '@dashboarduz/shared';
+import { normalizeDigits, shiftToTashkent, toTashkentDateKey } from '@dashboarduz/shared';
 
 import { asObject } from '../../lib/object';
 
-const REPORT_TZ_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const REQUIRED_WORK_SECONDS_MON_TO_SAT = 9 * 60 * 60;
 
 type FaceIdPayloadUser = {
@@ -83,21 +82,8 @@ function buildNormalizedFullName(firstName: string | null | undefined, lastName:
   return normalizeFullNameToken(`${String(firstName || '').trim()} ${String(lastName || '').trim()}`);
 }
 
-function toReportLocal(date: Date): Date {
-  return new Date(date.getTime() + REPORT_TZ_OFFSET_MS);
-}
-
-function formatReportDate(date: Date): string {
-  const local = toReportLocal(date);
-  const y = local.getUTCFullYear();
-  const m = String(local.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(local.getUTCDate()).padStart(2, '0');
-
-  return `${y}-${m}-${d}`;
-}
-
 function formatReportTime(date: Date): string {
-  const local = toReportLocal(date);
+  const local = shiftToTashkent(date);
   const hh = String(local.getUTCHours()).padStart(2, '0');
   const mm = String(local.getUTCMinutes()).padStart(2, '0');
   const ss = String(local.getUTCSeconds()).padStart(2, '0');
@@ -166,7 +152,7 @@ function parseFaceIdEvent(input: unknown): FaceIdParsedEvent | null {
   }
 
   const eventAt = parseTimestampOrNow(payload.timestamp);
-  const localDate = String(payload.local_date || '').trim() || formatReportDate(eventAt);
+  const localDate = String(payload.local_date || '').trim() || toTashkentDateKey(eventAt);
   const localTime = String(payload.local_time_only || '').trim()
     || String(payload.local_time || '').trim()
     || formatReportTime(eventAt);

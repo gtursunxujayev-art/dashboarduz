@@ -1,15 +1,12 @@
+import { TASHKENT_OFFSET_MS, shiftToTashkent, toTashkentDateKey } from '@dashboarduz/shared';
+
+import { getRangeStart, parseCustomDate, resolveDateRange } from '../../../lib/dates';
 import {
-  getRangeStart,
-  shiftToReportTimezone,
-  getReportLocalDayKey,
   getReportLocalDayOfYear,
   getReportLocalDaysInYear,
   getDaysInReportLocalMonth,
-  resolveDateRange,
-  parseCustomDate,
   buildTrend,
   getCurrentMonthRange,
-  REPORT_TZ_OFFSET_MS,
 } from '../dashboard/helpers';
 
 describe('getRangeStart', () => {
@@ -49,29 +46,29 @@ describe('getRangeStart', () => {
   });
 });
 
-describe('shiftToReportTimezone', () => {
+describe('shiftToTashkent', () => {
   it('adds GMT+5 offset', () => {
     const utc = new Date('2024-01-01T00:00:00.000Z');
-    const shifted = shiftToReportTimezone(utc);
+    const shifted = shiftToTashkent(utc);
 
-    expect(shifted.getTime()).toBe(utc.getTime() + REPORT_TZ_OFFSET_MS);
+    expect(shifted.getTime()).toBe(utc.getTime() + TASHKENT_OFFSET_MS);
     expect(shifted.getUTCHours()).toBe(5);
   });
 });
 
-describe('getReportLocalDayKey', () => {
+describe('toTashkentDateKey', () => {
   it('formats as YYYY-MM-DD in GMT+5', () => {
     // 2024-03-15T20:00:00Z = 2024-03-16 01:00:00 Tashkent
     const date = new Date('2024-03-15T20:00:00.000Z');
 
-    expect(getReportLocalDayKey(date)).toBe('2024-03-16');
+    expect(toTashkentDateKey(date)).toBe('2024-03-16');
   });
 
   it('handles month boundaries', () => {
     // 2024-01-31T19:30:00Z = 2024-02-01 00:30:00 Tashkent
     const date = new Date('2024-01-31T19:30:00.000Z');
 
-    expect(getReportLocalDayKey(date)).toBe('2024-02-01');
+    expect(toTashkentDateKey(date)).toBe('2024-02-01');
   });
 });
 

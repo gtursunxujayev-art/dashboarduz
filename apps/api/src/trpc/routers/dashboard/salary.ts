@@ -1,5 +1,24 @@
 import type { DbClient } from '@dashboarduz/db';
+import { AGENT_ROLES, shiftToTashkent, TASHKENT_OFFSET_MS, toTashkentDateKey, type UserRole } from '@dashboarduz/shared';
 import { z } from 'zod';
+
+import { resolveDateRange } from '../../../lib/dates';
+import {
+  BONUS_DETAIL_EXPORT_LIMIT,
+  buildBonusDetailIncomeWhere,
+  isBonusDetailExportOverLimit,
+} from '../../../services/bonus-detail-export';
+import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthStart, loadSaleClosures, resolveEffectiveBonusPolicy } from '../../../services/bonus-engine';
+import { buildCacheKey, getOrSet } from '../../../services/cache';
+import { getCallsProvider } from '../../../services/calls-source';
+import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
+import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
+import { amocrmService } from '../../../services/integrations/amocrm';
+import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
+import { computePlanProgressByAgent } from '../../../services/plan-bonus';
+import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
+
 import {
   TRPCError,
   protectedProcedure,
@@ -8,39 +27,18 @@ import {
   isTashkiliyOnly,
   getCurrentMonthRange,
   dashboardRangeSchema,
-  resolveDateRange,
-  shiftToReportTimezone,
   getDaysInReportLocalMonth,
   classifyCourseCategoryFromField,
   extractSalarySettings,
   createZeroBreakdown,
-  resolveBonusPercent,
-  getBonusAmount,
   normalizeSubTariffName,
   type SalaryBreakdown,
   type SalaryCategory,
   type PlanBonusPeriodMode,
   type KpiThreshold,
   type KpiMetricKey,
-  type KpiSettings,
   KPI_METRIC_KEYS,
 } from './helpers';
-import { amocrmService, type AmoCRMLead } from '../../../services/integrations/amocrm';
-import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
-import { AGENT_ROLES, type UserRole } from '@dashboarduz/shared';
-import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
-import { buildSaleChainMetricsBySaleId } from '../../../services/income-chain';
-import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
-import { buildCacheKey, getOrSet } from '../../../services/cache';
-import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthStart, loadSaleClosures, resolveEffectiveBonusPolicy } from '../../../services/bonus-engine';
-import { computePlanProgressByAgent } from '../../../services/plan-bonus';
-import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
-import {
-  BONUS_DETAIL_EXPORT_LIMIT,
-  buildBonusDetailIncomeWhere,
-  isBonusDetailExportOverLimit,
-} from '../../../services/bonus-detail-export';
-import { getCallsProvider } from '../../../services/calls-source';
 
 function calculateProratedFixedSalary(
   monthlyFixedSalary: number,
@@ -51,8 +49,8 @@ function calculateProratedFixedSalary(
     return 0;
   }
 
-  const localStart = shiftToReportTimezone(rangeStart);
-  const localEnd = shiftToReportTimezone(rangeEnd);
+  const localStart = shiftToTashkent(rangeStart);
+  const localEnd = shiftToTashkent(rangeEnd);
 
   let year = localStart.getUTCFullYear();
   let month = localStart.getUTCMonth();
@@ -116,15 +114,6 @@ type KpiBreakdownEntry = {
   amount: number;
 };
 
-function toLocalDateKey(date: Date): string {
-  const shifted = shiftToReportTimezone(date);
-  const year = shifted.getUTCFullYear();
-  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(shifted.getUTCDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
 function parseLocalDateKey(value: string): { year: number; month: number; day: number } | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
 
@@ -166,8 +155,8 @@ function addOneDayToLocalDateKey(value: string): string {
 
 function buildRequiredWorkdaysByMonth(rangeStart: Date, rangeEnd: Date): Map<string, number> {
   const result = new Map<string, number>();
-  let cursor = toLocalDateKey(rangeStart);
-  const end = toLocalDateKey(rangeEnd);
+  let cursor = toTashkentDateKey(rangeStart);
+  const end = toTashkentDateKey(rangeEnd);
 
   while (cursor <= end) {
     const dayOfWeek = getDayOfWeekFromLocalDateKey(cursor);
@@ -559,7 +548,7 @@ const salarySummary = protectedProcedure
         callCountByAgent.set(agentId, (callCountByAgent.get(agentId) || 0) + 1);
         if (call.startedAt) {
           // Working day in Tashkent time, not the UTC date.
-          const dayKey = new Date(call.startedAt.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          const dayKey = new Date(call.startedAt.getTime() + TASHKENT_OFFSET_MS).toISOString().slice(0, 10);
           const days = callDaysByAgent.get(agentId) || new Set<string>();
 
           days.add(dayKey);
@@ -659,8 +648,8 @@ const salarySummary = protectedProcedure
       || attendancePenaltySettings.absenceDayPenaltyUZS > 0;
 
     if (hasAttendancePenalty) {
-      const dateFrom = toLocalDateKey(rangeStart);
-      const dateTo = toLocalDateKey(rangeEnd);
+      const dateFrom = toTashkentDateKey(rangeStart);
+      const dateTo = toTashkentDateKey(rangeEnd);
       const summaries = await ctx.db.attendanceDaySummary.findMany({
         where: {
           tenantId: ctx.tenantId,

@@ -1,9 +1,10 @@
 import type { DbClient } from '@dashboarduz/db';
+import { hasAgentRole } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { hasAgentRole } from '@dashboarduz/shared';
-import { protectedProcedure, router } from '../trpc';
+
+import { parseCustomDate } from '../../lib/dates';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
 import {
   computeResponseMinutes,
@@ -11,9 +12,10 @@ import {
   resolveRootSaleId,
   selectDebtorSales,
 } from '../../services/reports/report-rows';
+import { protectedProcedure, router } from '../trpc';
+
 import { buildTechnicalSaleIdSetByAgreement } from './course-sales';
 import { getAdjustmentRoleScope } from './customer-income';
-import { parseCustomDate } from './dashboard/helpers';
 
 const REPORT_ROW_LIMIT = 20_000;
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);

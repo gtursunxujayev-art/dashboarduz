@@ -1,85 +1,30 @@
 import type { DbClient } from '@dashboarduz/db';
+import { hasAgentRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { hasAgentRole } from '@dashboarduz/shared';
-import { protectedProcedure, router } from '../trpc';
+
+import { resolveDateRange, type DateRangeMessages } from '../../lib/dates';
 import { buildSaleChainMetricsBySaleId, type SaleChainSaleRow } from '../../services/income-chain';
-import { resolveEffectiveAgreementAmount } from '../../services/technical-income';
 import { resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../services/income-facts';
 import { buildTariffBreakdown, type TariffBreakdownRow } from '../../services/tariff-breakdown';
+import { resolveEffectiveAgreementAmount } from '../../services/technical-income';
+import { protectedProcedure, router } from '../trpc';
+
+const COURSE_SALES_DATE_MESSAGES: DateRangeMessages = {
+  invalidFormat: () => "Sana formati YYYY-MM-DD bo'lishi kerak.",
+  invalidDate: (input) => `Noto'g'ri sana: ${input}`,
+  missingBounds: "Ixtiyoriy davr uchun 'dan' va 'gacha' sanalari majburiy.",
+  endBeforeStart: "'gacha' sanasi 'dan' sanasidan oldin bo'lishi mumkin emas.",
+};
 
 const courseSalesRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 const courseSalesTypeCategorySchema = z.enum(['online', 'offline', 'intensive']);
-const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 const INCOME_LIFECYCLE_ACTIVE = 'active';
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
 
-type CourseSalesRange = z.infer<typeof courseSalesRangeSchema>;
-
 function isAgentOnly(roles: string[]): boolean {
   return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
-}
-
-function parseCustomDate(input: string, endOfDay: boolean): Date {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: "Sana formati YYYY-MM-DD bo'lishi kerak." });
-  }
-
-  const timestamp = `${input}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`;
-  const parsed = new Date(timestamp);
-
-  if (Number.isNaN(parsed.getTime())) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: `Noto'g'ri sana: ${input}` });
-  }
-
-  return parsed;
-}
-
-function getRangeStart(range: CourseSalesRange, now: Date): Date {
-  const offsetMs = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
-  const shiftedNow = new Date(now.getTime() + offsetMs);
-  const year = shiftedNow.getUTCFullYear();
-  const month = shiftedNow.getUTCMonth();
-  const date = shiftedNow.getUTCDate();
-
-  if (range === 'today') {
-    return new Date(Date.UTC(year, month, date) - offsetMs);
-  }
-
-  if (range === 'week') {
-    const day = shiftedNow.getUTCDay();
-    const daysSinceMonday = (day + 6) % 7;
-
-    return new Date(Date.UTC(year, month, date - daysSinceMonday) - offsetMs);
-  }
-
-  return new Date(Date.UTC(year, month, 1) - offsetMs);
-}
-
-function resolveDateRange(range: CourseSalesRange, now: Date, dateFrom?: string, dateTo?: string) {
-  if (range !== 'custom') {
-    return { rangeStart: getRangeStart(range, now), rangeEnd: now };
-  }
-
-  if (!dateFrom || !dateTo) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: "Ixtiyoriy davr uchun 'dan' va 'gacha' sanalari majburiy.",
-    });
-  }
-
-  const rangeStart = parseCustomDate(dateFrom, false);
-  const rangeEnd = parseCustomDate(dateTo, true);
-
-  if (rangeEnd < rangeStart) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: "'gacha' sanasi 'dan' sanasidan oldin bo'lishi mumkin emas.",
-    });
-  }
-
-  return { rangeStart, rangeEnd };
 }
 
 function normalizeSubTariffName(value: unknown): string {
@@ -989,7 +934,7 @@ export const courseSalesRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const now = new Date();
-      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
+      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo, COURSE_SALES_DATE_MESSAGES);
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
       const scopedFilters: Record<string, unknown>[] = [];
 
@@ -1290,7 +1235,7 @@ export const courseSalesRouter = router({
       const query = input.query?.trim();
       const skip = (input.page - 1) * input.limit;
       const now = new Date();
-      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
+      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo, COURSE_SALES_DATE_MESSAGES);
       const scopedFilters: Record<string, unknown>[] = [];
 
       if (input.courseId) {
@@ -1576,7 +1521,7 @@ export const courseSalesRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const now = new Date();
-      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
+      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo, COURSE_SALES_DATE_MESSAGES);
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
       const scopedFilters: Record<string, unknown>[] = [];
 

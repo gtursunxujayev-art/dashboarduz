@@ -1,11 +1,12 @@
+import { resolveDateRange } from '../../../lib/dates';
 import { buildTechnicalSaleIdSet, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
+
 import {
   z,
   protectedProcedure,
   dashboardRangeSchema,
   INCOME_LIFECYCLE_ACTIVE,
   getAgentResponsibleScope,
-  resolveDateRange,
 } from './helpers';
 
 export const widgetProcedures = {

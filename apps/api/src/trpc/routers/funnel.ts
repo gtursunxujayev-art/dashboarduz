@@ -3,6 +3,7 @@ import type { DbClient } from '@dashboarduz/db';
 import { AGENT_ROLES, normalizeDigits } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 
+import { resolveDateRange } from '../../lib/dates';
 import { asObject, toFiniteNumber } from '../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallExtension } from '../../lib/utel';
 import { buildCacheKey, getOrSet } from '../../services/cache';
@@ -46,7 +47,6 @@ import {
   log,
   LogLevel,
   protectedProcedure,
-  resolveDateRange,
   router,
   TRPCError,
   z,

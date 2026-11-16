@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-import { amocrmConnectSchema, faceIdConnectSchema, metaAdsConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
+import { TASHKENT_OFFSET_MS, amocrmConnectSchema, faceIdConnectSchema, metaAdsConnectSchema, telegramBotConnectSchema, voipConnectSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -176,7 +176,7 @@ function parseFaceIdUserExternalMap(config: unknown): Record<string, string> {
 }
 
 function toTashkentDateKey(date: Date): string {
-  const shifted = new Date(date.getTime() + 5 * 60 * 60 * 1000);
+  const shifted = new Date(date.getTime() + TASHKENT_OFFSET_MS);
   const year = shifted.getUTCFullYear();
   const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
   const day = String(shifted.getUTCDate()).padStart(2, '0');

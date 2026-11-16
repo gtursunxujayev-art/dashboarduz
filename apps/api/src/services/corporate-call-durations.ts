@@ -1,37 +1,11 @@
 import { systemPrisma, type DbClient } from '@dashboarduz/db';
+import { fromTashkentLocalParts, shiftToTashkent, toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
-const REPORT_TZ_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
-
-function toReportLocal(date: Date): Date {
-  return new Date(date.getTime() + REPORT_TZ_OFFSET_MS);
-}
-
-function fromReportLocalParts(
-  year: number,
-  month: number,
-  day: number,
-  hour = 0,
-  minute = 0,
-  second = 0,
-  millisecond = 0,
-): Date {
-  return new Date(Date.UTC(year, month, day, hour, minute, second, millisecond) - REPORT_TZ_OFFSET_MS);
-}
-
-export function formatReportDate(date: Date): string {
-  const local = toReportLocal(date);
-  const year = local.getUTCFullYear();
-  const month = String(local.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(local.getUTCDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
 function getReportDayStart(date: Date): Date {
-  const local = toReportLocal(date);
+  const local = shiftToTashkent(date);
 
-  return fromReportLocalParts(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), 0, 0, 0, 0);
+  return fromTashkentLocalParts(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), 0, 0, 0, 0);
 }
 
 export function parseReportDateInput(input: string): Date {
@@ -83,10 +57,10 @@ export function formatDurationToHms(totalSeconds: number): string {
 }
 
 export function isTodayOrYesterdayInReportTz(targetDate: Date, now = new Date()): boolean {
-  const target = formatReportDate(targetDate);
+  const target = toTashkentDateKey(targetDate);
   const todayStart = getReportDayStart(now);
   const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
-  const allowed = new Set([formatReportDate(todayStart), formatReportDate(yesterdayStart)]);
+  const allowed = new Set([toTashkentDateKey(todayStart), toTashkentDateKey(yesterdayStart)]);
 
   return allowed.has(target);
 }
