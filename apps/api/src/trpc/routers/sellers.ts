@@ -1,6 +1,6 @@
 import { router, protectedProcedure } from '../trpc';
 import { classifyIncomeCategory, isRowLinkedToTechnicalSale, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { hasAgentRole } from '@dashboarduz/shared';
@@ -210,11 +210,12 @@ function resolveSellerIncomeCategory(source: SellerIncomeMetricSource): 'online'
 async function excludeTechnicalSellerIncomes<T extends { id?: string; type: string | null; relatedDebtIncomeId?: string | null }>(
   tenantId: string,
   rows: T[],
+  db: DbClient,
 ): Promise<T[]> {
   const refs = rows
     .filter((row): row is T & { id: string } => Boolean(row.id))
     .map((row) => ({ ...row, type: row.type || '' }));
-  const technicalSaleIds = await loadTechnicalSaleIdsForRows(tenantId, refs);
+  const technicalSaleIds = await loadTechnicalSaleIdsForRows(tenantId, refs, db);
   if (!technicalSaleIds.size) return rows;
   return rows.filter((row) => !row.id || !isRowLinkedToTechnicalSale({
     rowType: row.type || '',
@@ -373,8 +374,8 @@ function buildSellerReportPdf(params: SellerReportPayload): Buffer {
   return Buffer.from(pdf, 'utf8');
 }
 
-async function resolveTelegramBotTokenForTenant(tenantId: string): Promise<string | null> {
-  const integration = await prisma.integration.findUnique({
+async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient): Promise<string | null> {
+  const integration = await db.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,
@@ -437,7 +438,7 @@ function toManagerRole(user: AmoCRMUser): string[] {
   return user.rights?.is_admin ? ['Manager'] : ['Agent'];
 }
 
-async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
+async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
   const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
@@ -445,7 +446,7 @@ async function getAgentResponsibleScope(tenantId: string, userId: string, roles:
 
   let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
   try {
-    currentUser = await prisma.user.findFirst({
+    currentUser = await db.user.findFirst({
       where: {
         id: userId,
         tenantId,
@@ -770,13 +771,13 @@ async function fetchLeadsByStatusFilters(
   }
 }
 
-async function getManagerExtensionsMap(tenantId: string, managerIds: string[]): Promise<Map<string, string[]>> {
+async function getManagerExtensionsMap(tenantId: string, managerIds: string[], db: DbClient): Promise<Map<string, string[]>> {
   if (managerIds.length === 0) {
     return new Map();
   }
 
   try {
-    const mappedUsers = await prisma.user.findMany({
+    const mappedUsers = await db.user.findMany({
       where: {
         tenantId,
         isActive: true,
@@ -859,11 +860,11 @@ export const sellersRouter = router({
     const now = new Date();
     const range = input?.range || 'last30days';
     const { rangeStart, rangeEnd } = resolveDateRange(range, now, input?.dateFrom, input?.dateTo);
-    const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+    const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
     timings.scopeMs = Date.now() - startedAtMs;
 
     const amoContextStartedMs = Date.now();
-    const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+    const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
     timings.amoContextMs = Date.now() - amoContextStartedMs;
 
     if (!amoContext) {
@@ -911,7 +912,7 @@ export const sellersRouter = router({
     const managerIdList = Array.from(managerIds);
     let corporateRevision: { _max: { updatedAt: Date | null } } = { _max: { updatedAt: null } };
     try {
-      corporateRevision = await prisma.corporateCallDuration.aggregate({
+      corporateRevision = await ctx.db.corporateCallDuration.aggregate({
         where: { tenantId: ctx.tenantId },
         _max: { updatedAt: true },
       });
@@ -995,10 +996,10 @@ export const sellersRouter = router({
     });
 
     const extensionMappingStartedMs = Date.now();
-    const extensionsByManagerPromise = getManagerExtensionsMap(ctx.tenantId, managerIdList);
+    const extensionsByManagerPromise = getManagerExtensionsMap(ctx.tenantId, managerIdList, ctx.db);
     const userMappingsPromise = (async () => {
       try {
-        return await prisma.user.findMany({
+        return await ctx.db.user.findMany({
           where: {
             tenantId: ctx.tenantId,
             isActive: true,
@@ -1084,10 +1085,10 @@ export const sellersRouter = router({
     let calls: Array<{ from: string; to: string; duration: number | null; direction: string; status: string; startedAt: Date | null }> = [];
     if (extensionValues.length > 0) {
       try {
-        calls = await prisma.call.findMany({
+        calls = await ctx.db.call.findMany({
           where: {
             tenantId: ctx.tenantId,
-            provider: await getCallsProvider(ctx.tenantId),
+            provider: await getCallsProvider(ctx.tenantId, ctx.db),
             startedAt: {
               gte: rangeStart,
               lte: rangeEnd,
@@ -1125,7 +1126,7 @@ export const sellersRouter = router({
       allManagerUserIds.length > 0
         ? (async () => {
             try {
-              return await prisma.income.findMany({
+              return await ctx.db.income.findMany({
                 where: {
                   tenantId: ctx.tenantId,
                   lifecycleStatus: 'active',
@@ -1159,7 +1160,7 @@ export const sellersRouter = router({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
               });
-              return await prisma.income.findMany({
+              return await ctx.db.income.findMany({
                 where: {
                   tenantId: ctx.tenantId,
                   managerUserId: { in: allManagerUserIds },
@@ -1190,7 +1191,7 @@ export const sellersRouter = router({
       allManagerUserIds.length > 0
         ? (async () => {
             try {
-              return await prisma.incomeAdjustmentRequest.findMany({
+              return await ctx.db.incomeAdjustmentRequest.findMany({
                 where: {
                   tenantId: ctx.tenantId,
                   type: 'refund',
@@ -1225,7 +1226,7 @@ export const sellersRouter = router({
       allManagerUserIds.length > 0
         ? (async () => {
             try {
-              return await prisma.income.findMany({
+              return await ctx.db.income.findMany({
                 where: {
                   tenantId: ctx.tenantId,
                   lifecycleStatus: 'active',
@@ -1249,7 +1250,7 @@ export const sellersRouter = router({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
               });
-              return await prisma.income.findMany({
+              return await ctx.db.income.findMany({
                 where: {
                   tenantId: ctx.tenantId,
                   type: 'new_sale',
@@ -1271,7 +1272,7 @@ export const sellersRouter = router({
       allManagerUserIds.length > 0
         ? (async () => {
             try {
-              return await prisma.income.findMany({
+              return await ctx.db.income.findMany({
                 where: {
                   tenantId: ctx.tenantId,
                   lifecycleStatus: 'active',
@@ -1298,7 +1299,7 @@ export const sellersRouter = router({
                 tenantId: ctx.tenantId,
                 error: String((error as Error)?.message || error),
               });
-              return await prisma.income.findMany({
+              return await ctx.db.income.findMany({
                 where: {
                   tenantId: ctx.tenantId,
                   managerUserId: { in: allManagerUserIds },
@@ -1320,7 +1321,7 @@ export const sellersRouter = router({
           })()
         : [],
     ]);
-    const incomes = await excludeTechnicalSellerIncomes(ctx.tenantId, incomesRaw);
+    const incomes = await excludeTechnicalSellerIncomes(ctx.tenantId, incomesRaw, ctx.db);
     timings.incomeFetchMs = Date.now() - incomeFetchStartedMs;
 
     const callsGroupingStartedMs = Date.now();
@@ -1365,6 +1366,7 @@ export const sellersRouter = router({
         managerUserIds: Array.from(managerIdByUserId.keys()),
         rangeStart,
         rangeEnd,
+        db: ctx.db,
       });
     } catch (error) {
       if (!isSchemaCompatibilityError(error, ['corporatecallduration', 'durationseconds', 'calldate'])) {
@@ -1414,7 +1416,7 @@ export const sellersRouter = router({
     const allCustomerIds = [...new Set(incomesWithCustomer.map((i) => i.customerId))];
     const repeatCustomerIds = new Set<string>();
     if (allCustomerIds.length > 0) {
-      const priorIncomes = await prisma.income.findMany({
+      const priorIncomes = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           lifecycleStatus: 'active',
@@ -1555,7 +1557,7 @@ export const sellersRouter = router({
       }),
     )
     .query(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
       if (scope.isScoped && input.id !== scope.responsibleUserId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
@@ -1563,7 +1565,7 @@ export const sellersRouter = router({
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
 
-      const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+      const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       if (!amoContext) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -1625,14 +1627,14 @@ export const sellersRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 
-      const extensionsByManager = await getManagerExtensionsMap(ctx.tenantId, [input.id]);
+      const extensionsByManager = await getManagerExtensionsMap(ctx.tenantId, [input.id], ctx.db);
       const extensions = extensionsByManager.get(input.id) || [];
 
       const callsForMetrics = extensions.length > 0
-        ? await prisma.call.findMany({
+        ? await ctx.db.call.findMany({
             where: {
               tenantId: ctx.tenantId,
-              provider: await getCallsProvider(ctx.tenantId),
+              provider: await getCallsProvider(ctx.tenantId, ctx.db),
               startedAt: {
                 gte: rangeStart,
                 lte: rangeEnd,
@@ -1652,10 +1654,10 @@ export const sellersRouter = router({
       : [];
 
       const recentCalls = extensions.length > 0
-        ? await prisma.call.findMany({
+        ? await ctx.db.call.findMany({
             where: {
               tenantId: ctx.tenantId,
-              provider: await getCallsProvider(ctx.tenantId),
+              provider: await getCallsProvider(ctx.tenantId, ctx.db),
               startedAt: {
                 gte: rangeStart,
                 lte: rangeEnd,
@@ -1684,7 +1686,7 @@ export const sellersRouter = router({
       let mappedManagerUserIds: string[] = [];
       try {
         mappedManagerUserIds = (
-          await prisma.user.findMany({
+          await ctx.db.user.findMany({
             where: {
               tenantId: ctx.tenantId,
               isActive: true,
@@ -1701,7 +1703,7 @@ export const sellersRouter = router({
 
       const [sellerIncomesRaw, detailRefundRequests, detailIncomesWithCustomer, detailIncomesWithDeadline] = await Promise.all([
         mappedManagerUserIds.length > 0
-          ? prisma.income.findMany({
+          ? ctx.db.income.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 lifecycleStatus: 'active',
@@ -1728,7 +1730,7 @@ export const sellersRouter = router({
             })
           : [],
         mappedManagerUserIds.length > 0
-          ? prisma.incomeAdjustmentRequest.findMany({
+          ? ctx.db.incomeAdjustmentRequest.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 type: 'refund',
@@ -1745,7 +1747,7 @@ export const sellersRouter = router({
             })
           : [],
         mappedManagerUserIds.length > 0
-          ? prisma.income.findMany({
+          ? ctx.db.income.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 lifecycleStatus: 'active',
@@ -1760,7 +1762,7 @@ export const sellersRouter = router({
             })
           : [],
         mappedManagerUserIds.length > 0
-          ? prisma.income.findMany({
+          ? ctx.db.income.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 lifecycleStatus: 'active',
@@ -1780,13 +1782,14 @@ export const sellersRouter = router({
             })
           : [],
       ]);
-      const sellerIncomes = await excludeTechnicalSellerIncomes(ctx.tenantId, sellerIncomesRaw);
+      const sellerIncomes = await excludeTechnicalSellerIncomes(ctx.tenantId, sellerIncomesRaw, ctx.db);
       const [corporateDurationByUserId, newLeadsForManager, activityMetricsMap] = await Promise.all([
         getCorporateCallDurationByManager({
           tenantId: ctx.tenantId,
           managerUserIds: mappedManagerUserIds,
           rangeStart,
           rangeEnd,
+          db: ctx.db,
         }),
         amocrmService.fetchAllLeads(
           amoContext.accessToken,
@@ -1882,7 +1885,7 @@ export const sellersRouter = router({
       let detailNewCustomers = 0;
       let detailRepeatCustomers = 0;
       if (detailCustomerIds.length > 0) {
-        const detailPriorCustomers = await prisma.income.findMany({
+        const detailPriorCustomers = await ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             lifecycleStatus: 'active',
@@ -1973,19 +1976,19 @@ export const sellersRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
       if (scope.isScoped && input.id !== scope.responsibleUserId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 
-      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId);
+      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db);
       if (!botToken) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram bot token topilmadi.' });
       }
 
       const [amoContext, adminUsers] = await Promise.all([
-        getTenantAmoCRMContext(ctx.tenantId),
-        prisma.user.findMany({
+        getTenantAmoCRMContext(ctx.tenantId, ctx.db),
+        ctx.db.user.findMany({
           where: {
             tenantId: ctx.tenantId,
             isActive: true,
@@ -2048,8 +2051,8 @@ export const sellersRouter = router({
           rangeEnd,
           false,
         ),
-        getManagerExtensionsMap(ctx.tenantId, [input.id]),
-        prisma.user.findMany({
+        getManagerExtensionsMap(ctx.tenantId, [input.id], ctx.db),
+        ctx.db.user.findMany({
           where: {
             tenantId: ctx.tenantId,
             isActive: true,
@@ -2067,10 +2070,10 @@ export const sellersRouter = router({
       const extensions = extensionsByManager.get(input.id) || [];
       const [callsForMetrics, sellerIncomesRaw, activityMetricsMap] = await Promise.all([
         extensions.length > 0
-          ? prisma.call.findMany({
+          ? ctx.db.call.findMany({
               where: {
                 tenantId: ctx.tenantId,
-                provider: await getCallsProvider(ctx.tenantId),
+                provider: await getCallsProvider(ctx.tenantId, ctx.db),
                 startedAt: {
                   gte: rangeStart,
                   lte: rangeEnd,
@@ -2086,7 +2089,7 @@ export const sellersRouter = router({
             })
           : Promise.resolve([]),
         mappedUsers.length > 0
-          ? prisma.income.findMany({
+          ? ctx.db.income.findMany({
               where: {
                 tenantId: ctx.tenantId,
                 lifecycleStatus: 'active',
@@ -2122,12 +2125,13 @@ export const sellersRouter = router({
           rangeKind: input.range === 'last30days' ? 'custom' : input.range,
         }),
       ]);
-      const sellerIncomes = await excludeTechnicalSellerIncomes(ctx.tenantId, sellerIncomesRaw);
+      const sellerIncomes = await excludeTechnicalSellerIncomes(ctx.tenantId, sellerIncomesRaw, ctx.db);
       const corporateDurationByUserId = await getCorporateCallDurationByManager({
         tenantId: ctx.tenantId,
         managerUserIds: mappedUsers.map((row) => row.id),
         rangeStart,
         rangeEnd,
+        db: ctx.db,
       });
       const manualDurationSeconds = Array.from(corporateDurationByUserId.values())
         .reduce((sum, value) => sum + value, 0);
