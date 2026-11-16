@@ -37,6 +37,11 @@ jobs:
         # Fails only on unfiltered queries that are not in scripts/audit-tenant-filter.baseline.json.
         run: npm run audit:tenant-filter
 
+      - name: Duplicate helper check
+        # Fails when a top-level function name is defined in more than one non-test file of apps/api/src,
+        # apps/web/src or packages/shared/src (or in more than one of them) and is not allowlisted with a reason.
+        run: npm run check:duplicates
+
       - name: Build
         run: npm run build
 
