@@ -43,9 +43,11 @@
   "apps/api/src/trpc/routers/funnel.ts": {
     "user.findMany": 1
   },
-  "apps/api/src/trpc/routers/income-debug.ts": {
+  "apps/api/src/trpc/routers/income-debug/list.ts": {
     "income.count": 2,
-    "income.findMany": 1,
+    "income.findMany": 1
+  },
+  "apps/api/src/trpc/routers/income-debug/relink.ts": {
     "income.findUnique": 1
   },
   "apps/api/src/trpc/routers/notifications.ts": {
