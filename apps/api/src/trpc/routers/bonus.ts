@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { AGENT_ROLES } from '@dashboarduz/shared';
@@ -437,7 +437,10 @@ async function validatePlanScope(params: {
   tariffId: string | null;
   subTariffId: string | null;
   subTariffName: string | null;
+  db: DbClient;
 }) {
+  const { db } = params;
+
   const normalizedSubTariffName = params.subTariffName ? normalizeName(params.subTariffName) : '';
 
   if (!params.courseId && (params.tariffId || params.subTariffId || normalizedSubTariffName)) {
@@ -460,7 +463,7 @@ async function validatePlanScope(params: {
   }
 
   if (params.courseId) {
-    const course = await prisma.course.findFirst({
+    const course = await db.course.findFirst({
       where: {
         id: params.courseId,
         tenantId: params.tenantId,
@@ -483,7 +486,7 @@ async function validatePlanScope(params: {
   }
 
   if (params.tariffId) {
-    const tariff = await prisma.tariff.findFirst({
+    const tariff = await db.tariff.findFirst({
       where: {
         id: params.tariffId,
         tenantId: params.tenantId,
@@ -499,7 +502,7 @@ async function validatePlanScope(params: {
   }
 
   if (params.subTariffId) {
-    const subTariff = await prisma.subTariff.findFirst({
+    const subTariff = await db.subTariff.findFirst({
       where: {
         id: params.subTariffId,
         tenantId: params.tenantId,
@@ -515,7 +518,7 @@ async function validatePlanScope(params: {
   }
 
   if (!params.tariffId && normalizedSubTariffName && params.courseId) {
-    const courseSubTariffs = await prisma.subTariff.findMany({
+    const courseSubTariffs = await db.subTariff.findMany({
       where: {
         tenantId: params.tenantId,
         isActive: true,
@@ -645,7 +648,7 @@ export const bonusRouter = router({
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus settings are available for Admin/Manager/TeamLeader only.' });
     }
 
-    const tenant = await prisma.tenant.findUnique({
+    const tenant = await ctx.db.tenant.findUnique({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
@@ -672,13 +675,13 @@ export const bonusRouter = router({
     const now = new Date();
     const requestedMonth = input?.effectiveMonth ? getTashkentMonthStart(input.effectiveMonth) : now;
     const [resolved, versions, courses] = await Promise.all([
-      resolveEffectiveBonusPolicy(ctx.tenantId, requestedMonth),
-      prisma.bonusPolicyVersion.findMany({
+      resolveEffectiveBonusPolicy(ctx.tenantId, requestedMonth, ctx.db),
+      ctx.db.bonusPolicyVersion.findMany({
         where: { tenantId: ctx.tenantId },
         orderBy: { effectiveMonth: 'desc' },
         select: { id: true, effectiveMonth: true, createdAt: true, updatedAt: true },
       }),
-      prisma.course.findMany({
+      ctx.db.course.findMany({
         where: { tenantId: ctx.tenantId },
         orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
         select: { id: true, name: true, category: true, isActive: true },
@@ -737,7 +740,7 @@ export const bonusRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: `${courseId}: oxirgi tier ochiq bo'lishi kerak.` });
       }
     }
-    const tenant = await prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } });
+    const tenant = await ctx.db.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } });
     if (!tenant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
     const normalizedRules: SalaryBonusRules = {
       online: sanitizeCategoryRule(input.bonusRules.online, input.bonusRules.online.simplePercent),
@@ -753,7 +756,7 @@ export const bonusRouter = router({
     }, tenant.settings);
     const settingsObject = asObject(tenant.settings);
     const salarySettings = asObject(settingsObject.salary);
-    await prisma.$transaction(async (tx) => {
+    await ctx.db.$transaction(async (tx) => {
       const count = await tx.bonusPolicyVersion.count({ where: { tenantId: ctx.tenantId } });
       if (count === 0) {
         await tx.bonusPolicyVersion.create({
@@ -798,16 +801,16 @@ export const bonusRouter = router({
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
     if (ctx.user.roles.includes('Admin')) {
-      await reconcileFinalizedBonusMonths({ tenantId: ctx.tenantId, actorUserId: ctx.user.userId });
+      await reconcileFinalizedBonusMonths({ tenantId: ctx.tenantId, actorUserId: ctx.user.userId, db: ctx.db });
     }
     const [snapshots, adjustments] = await Promise.all([
-      prisma.bonusMonthSnapshot.findMany({
+      ctx.db.bonusMonthSnapshot.findMany({
         where: { tenantId: ctx.tenantId },
         orderBy: { month: 'desc' },
         take: 24,
         select: { id: true, month: true, totalBonusAmount: true, sourceDigest: true, finalizedAt: true },
       }),
-      prisma.bonusAdjustment.findMany({
+      ctx.db.bonusAdjustment.findMany({
         where: { tenantId: ctx.tenantId },
         orderBy: { createdAt: 'desc' },
         take: 200,
@@ -825,13 +828,13 @@ export const bonusRouter = router({
   }),
 
   previewBonusMonth: adminProcedure.input(bonusMonthInput).mutation(async ({ ctx, input }) => {
-    const result = await calculateBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month) });
+    const result = await calculateBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month), db: ctx.db });
     return { ...result, month: getTashkentMonthKey(result.month) };
   }),
 
   finalizeBonusMonth: adminProcedure.input(bonusMonthInput).mutation(async ({ ctx, input }) => {
     try {
-      const result = await finalizeBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month), userId: ctx.user.userId });
+      const result = await finalizeBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month), userId: ctx.user.userId, db: ctx.db });
       return { ...result, month: getTashkentMonthKey(result.month) };
     } catch (error) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: error instanceof Error ? error.message : 'Bonus month could not be finalized.' });
@@ -839,7 +842,7 @@ export const bonusRouter = router({
   }),
 
   reconcileBonusMonth: adminProcedure.input(bonusMonthInput).mutation(async ({ ctx, input }) => ({
-    pendingCount: await reconcileBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month), actorUserId: ctx.user.userId }),
+    pendingCount: await reconcileBonusMonth({ tenantId: ctx.tenantId, month: getTashkentMonthStart(input.month), actorUserId: ctx.user.userId, db: ctx.db }),
   })),
 
   reviewBonusAdjustment: adminProcedure.input(z.object({
@@ -848,7 +851,7 @@ export const bonusRouter = router({
     note: z.string().trim().max(1000).optional(),
   })).mutation(async ({ ctx, input }) => {
     try {
-      return await reviewBonusAdjustment({ tenantId: ctx.tenantId, userId: ctx.user.userId, ...input });
+      return await reviewBonusAdjustment({ tenantId: ctx.tenantId, userId: ctx.user.userId, ...input, db: ctx.db });
     } catch (error) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: error instanceof Error ? error.message : 'Adjustment review failed.' });
     }
@@ -879,7 +882,7 @@ export const bonusRouter = router({
       }
     }
 
-    const tenant = await prisma.tenant.findUnique({
+    const tenant = await ctx.db.tenant.findUnique({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
@@ -918,14 +921,14 @@ export const bonusRouter = router({
       },
     };
 
-    await prisma.tenant.update({
+    await ctx.db.tenant.update({
       where: { id: ctx.tenantId },
       data: {
         settings: JSON.parse(JSON.stringify(nextSettings)),
       },
     });
 
-    await prisma.auditLog.create({
+    await ctx.db.auditLog.create({
       data: {
         tenantId: ctx.tenantId,
         userId: ctx.user.userId,
@@ -939,7 +942,7 @@ export const bonusRouter = router({
   }),
 
   updateFixedSalaries: adminProcedure.input(updateFixedSalariesInput).mutation(async ({ ctx, input }) => {
-    const tenant = await prisma.tenant.findUnique({
+    const tenant = await ctx.db.tenant.findUnique({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
@@ -949,7 +952,7 @@ export const bonusRouter = router({
 
     const requestedUserIds = Array.from(new Set(input.fixedSalaries.map((item) => item.userId)));
     const allowedAgents = requestedUserIds.length
-      ? await prisma.user.findMany({
+      ? await ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           id: { in: requestedUserIds },
@@ -977,14 +980,14 @@ export const bonusRouter = router({
       },
     };
 
-    await prisma.tenant.update({
+    await ctx.db.tenant.update({
       where: { id: ctx.tenantId },
       data: {
         settings: JSON.parse(JSON.stringify(nextSettings)),
       },
     });
 
-    await prisma.auditLog.create({
+    await ctx.db.auditLog.create({
       data: {
         tenantId: ctx.tenantId,
         userId: ctx.user.userId,
@@ -1027,7 +1030,7 @@ export const bonusRouter = router({
         }
       }
 
-      const tenant = await prisma.tenant.findUnique({
+      const tenant = await ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
         select: { settings: true },
       });
@@ -1050,14 +1053,14 @@ export const bonusRouter = router({
         },
       };
 
-      await prisma.tenant.update({
+      await ctx.db.tenant.update({
         where: { id: ctx.tenantId },
         data: {
           settings: JSON.parse(JSON.stringify(nextSettings)),
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1073,7 +1076,7 @@ export const bonusRouter = router({
   updateAttendancePenaltySettings: adminProcedure
     .input(updateAttendancePenaltySettingsInput)
     .mutation(async ({ ctx, input }) => {
-      const tenant = await prisma.tenant.findUnique({
+      const tenant = await ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
         select: { settings: true },
       });
@@ -1101,14 +1104,14 @@ export const bonusRouter = router({
         },
       };
 
-      await prisma.tenant.update({
+      await ctx.db.tenant.update({
         where: { id: ctx.tenantId },
         data: {
           settings: JSON.parse(JSON.stringify(nextSettings)),
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
@@ -1126,7 +1129,7 @@ export const bonusRouter = router({
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus plans are available for Admin/Manager/TeamLeader only.' });
     }
 
-    const tenant = await prisma.tenant.findUnique({
+    const tenant = await ctx.db.tenant.findUnique({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
@@ -1144,7 +1147,7 @@ export const bonusRouter = router({
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus plan catalog is available for Admin/Manager/TeamLeader only.' });
     }
 
-    const courses = await prisma.course.findMany({
+    const courses = await ctx.db.course.findMany({
       where: {
         tenantId: ctx.tenantId,
         isActive: true,
@@ -1188,7 +1191,7 @@ export const bonusRouter = router({
   }),
 
   createPlan: adminProcedure.input(createPlanInput).mutation(async ({ ctx, input }) => {
-    const tenant = await prisma.tenant.findUnique({
+    const tenant = await ctx.db.tenant.findUnique({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
@@ -1203,6 +1206,7 @@ export const bonusRouter = router({
       tariffId: input.tariffId ?? null,
       subTariffId: input.tariffId ? (input.subTariffId ?? null) : null,
       subTariffName: input.tariffId ? null : (input.subTariffName ?? null),
+      db: ctx.db,
     });
 
     const currentPlans = parsePlanBonuses(tenant.settings);
@@ -1228,14 +1232,14 @@ export const bonusRouter = router({
       nextPlans: [...currentPlans, newPlan],
     });
 
-    await prisma.tenant.update({
+    await ctx.db.tenant.update({
       where: { id: ctx.tenantId },
       data: {
         settings: JSON.parse(JSON.stringify(settingsPayload)),
       },
     });
 
-    await prisma.auditLog.create({
+    await ctx.db.auditLog.create({
       data: {
         tenantId: ctx.tenantId,
         userId: ctx.user.userId,
@@ -1253,7 +1257,7 @@ export const bonusRouter = router({
   }),
 
   updatePlan: adminProcedure.input(updatePlanInput).mutation(async ({ ctx, input }) => {
-    const tenant = await prisma.tenant.findUnique({
+    const tenant = await ctx.db.tenant.findUnique({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
@@ -1298,6 +1302,7 @@ export const bonusRouter = router({
       tariffId: normalizedNextPlan.tariffId,
       subTariffId: normalizedNextPlan.subTariffId,
       subTariffName: normalizedNextPlan.subTariffName,
+      db: ctx.db,
     });
 
     const nextPlans = [...currentPlans];
@@ -1308,14 +1313,14 @@ export const bonusRouter = router({
       nextPlans,
     });
 
-    await prisma.tenant.update({
+    await ctx.db.tenant.update({
       where: { id: ctx.tenantId },
       data: {
         settings: JSON.parse(JSON.stringify(settingsPayload)),
       },
     });
 
-    await prisma.auditLog.create({
+    await ctx.db.auditLog.create({
       data: {
         tenantId: ctx.tenantId,
         userId: ctx.user.userId,
@@ -1335,7 +1340,7 @@ export const bonusRouter = router({
   deletePlan: adminProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const tenant = await prisma.tenant.findUnique({
+      const tenant = await ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
         select: { settings: true },
       });
@@ -1355,14 +1360,14 @@ export const bonusRouter = router({
         nextPlans,
       });
 
-      await prisma.tenant.update({
+      await ctx.db.tenant.update({
         where: { id: ctx.tenantId },
         data: {
           settings: JSON.parse(JSON.stringify(settingsPayload)),
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
