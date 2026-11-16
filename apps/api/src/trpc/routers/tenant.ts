@@ -1,11 +1,10 @@
 import { router, protectedProcedure, adminProcedure } from '../trpc';
-import { prisma } from '@dashboarduz/db';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 
 export const tenantRouter = router({
   get: protectedProcedure.query(async ({ ctx }) => {
-    const tenant = await prisma.tenant.findUnique({
+    const tenant = await ctx.db.tenant.findUnique({
       where: { id: ctx.tenantId },
     });
 
@@ -24,7 +23,7 @@ export const tenantRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const tenant = await prisma.tenant.findUnique({
+      const tenant = await ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
       });
       if (!tenant) {
@@ -45,7 +44,7 @@ export const tenantRouter = router({
         ? JSON.parse(JSON.stringify(nextSettings))
         : undefined;
 
-      const updated = await prisma.tenant.update({
+      const updated = await ctx.db.tenant.update({
         where: { id: ctx.tenantId },
         data: {
           ...(input.name ? { name: input.name } : {}),
@@ -53,7 +52,7 @@ export const tenantRouter = router({
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
