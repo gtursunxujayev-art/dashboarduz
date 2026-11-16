@@ -1,4 +1,5 @@
-import { prisma } from '../dashboard/helpers';
+import { systemPrisma as prisma } from '@dashboarduz/db';
+
 import {
   loadSelectedReportCourses,
   parseTelegramDailyReportCourseIds,
@@ -49,7 +50,7 @@ describe('selected report courses', () => {
         { id: 'technical-sale', type: 'new_sale', coursePriceAmount: 1, debtAmount: 0, paymentAmount: 1 },
       ] as never);
 
-    const result = await loadSelectedReportCourses('tenant-1');
+    const result = await loadSelectedReportCourses('tenant-1', prisma);
 
     expect(prisma.course.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ tenantId: 'tenant-1' }),
@@ -85,7 +86,7 @@ describe('selected report courses', () => {
     } as never);
     const courseSpy = jest.spyOn(prisma.course, 'findMany');
 
-    await expect(loadSelectedReportCourses('tenant-1')).resolves.toEqual([]);
+    await expect(loadSelectedReportCourses('tenant-1', prisma)).resolves.toEqual([]);
     expect(courseSpy).not.toHaveBeenCalled();
   });
 });

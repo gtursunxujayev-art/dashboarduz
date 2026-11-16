@@ -1,3 +1,4 @@
+import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import {
@@ -5,7 +6,6 @@ import {
   asStringArray,
   type LeadFieldOption,
 } from '../../../services/integrations/amocrm-live';
-import { prisma } from '@dashboarduz/db';
 import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { normalizeIdentifier, getSystemLeadFieldOptions } from '../../../services/integrations/amocrm-live';
@@ -290,7 +290,7 @@ export function resolveCallDuration(duration: number | null, metadata: unknown):
   return 0;
 }
 
-export async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[]) {
+export async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
   const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
   if (!isAgentOnly) {
     return { isScoped: false, responsibleUserId: null as string | null };
@@ -298,7 +298,7 @@ export async function getAgentResponsibleScope(tenantId: string, userId: string,
 
   let currentUser: { amocrmResponsibleUserId: string | null } | null = null;
   try {
-    currentUser = await prisma.user.findFirst({
+    currentUser = await db.user.findFirst({
       where: {
         id: userId,
         tenantId,
@@ -483,8 +483,8 @@ export function buildFieldLabelMap(options: LeadFieldOption[]): Map<string, stri
   return labels;
 }
 
-export async function collectCatalogFieldOptions(tenantId: string): Promise<LeadFieldOption[]> {
-  const context = await (await import('../../../services/integrations/amocrm-live')).getTenantAmoCRMContext(tenantId);
+export async function collectCatalogFieldOptions(tenantId: string, db: DbClient): Promise<LeadFieldOption[]> {
+  const context = await (await import('../../../services/integrations/amocrm-live')).getTenantAmoCRMContext(tenantId, db);
   if (!context) {
     return [];
   }
@@ -910,7 +910,6 @@ export function getBonusAmount(amount: number, percentage: number): number {
 }
 
 // Re-export commonly used items from dependencies so procedure files can import from helpers
-export { prisma } from '@dashboarduz/db';
 export { TRPCError } from '@trpc/server';
 export { z } from 'zod';
 export {

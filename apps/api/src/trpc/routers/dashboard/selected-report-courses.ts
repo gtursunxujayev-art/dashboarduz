@@ -1,9 +1,10 @@
+import type { DbClient } from '@dashboarduz/db';
+
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 import { resolveSaleAgreementAmount } from '../../../services/income-facts';
 import {
   classifyCourseCategoryFromField,
   INCOME_LIFECYCLE_ACTIVE,
-  prisma,
 } from './helpers';
 
 export type SelectedCourseCategory = 'online' | 'offline' | 'intensive';
@@ -43,8 +44,8 @@ function resolveSelectedCourseCategory(
     : null;
 }
 
-export async function loadSelectedReportCourses(tenantId: string): Promise<SelectedReportCourse[]> {
-  const telegramIntegration = await prisma.integration.findUnique({
+export async function loadSelectedReportCourses(tenantId: string, db: DbClient): Promise<SelectedReportCourse[]> {
+  const telegramIntegration = await db.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,
@@ -65,7 +66,7 @@ export async function loadSelectedReportCourses(tenantId: string): Promise<Selec
   }
 
   const [selectedCourses, selectedCourseSalesRaw, technicalSales] = await Promise.all([
-    prisma.course.findMany({
+    db.course.findMany({
       where: {
         tenantId,
         id: { in: selectedCourseIds },
@@ -80,7 +81,7 @@ export async function loadSelectedReportCourses(tenantId: string): Promise<Selec
         },
       },
     }),
-    prisma.income.findMany({
+    db.income.findMany({
       where: {
         tenantId,
         type: 'new_sale',
@@ -98,7 +99,7 @@ export async function loadSelectedReportCourses(tenantId: string): Promise<Selec
         paymentAmount: true,
       },
     }),
-    prisma.income.findMany({
+    db.income.findMany({
       where: {
         tenantId,
         type: 'new_sale',

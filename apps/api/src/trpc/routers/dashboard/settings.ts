@@ -1,5 +1,4 @@
 import {
-  prisma,
   TRPCError,
   z,
   asObject,
@@ -16,7 +15,7 @@ import {
 
 export const settingsProcedures = {
   fieldOptions: adminProcedure.query(async ({ ctx }) => {
-    const catalogOptions = await collectCatalogFieldOptions(ctx.tenantId);
+    const catalogOptions = await collectCatalogFieldOptions(ctx.tenantId, ctx.db);
     const merged = new Map<string, LeadFieldOption>();
 
     for (const option of getSystemLeadFieldOptions()) {
@@ -33,7 +32,7 @@ export const settingsProcedures = {
   }),
 
   getSettings: protectedProcedure.query(async ({ ctx }) => {
-    const tenant = await prisma.tenant.findUnique({
+    const tenant = await ctx.db.tenant.findUnique({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
@@ -61,7 +60,7 @@ export const settingsProcedures = {
         return { values: [] as string[] };
       }
 
-      const amoContext = await getTenantAmoCRMContext(ctx.tenantId);
+      const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       if (!amoContext) {
         return { values: [] as string[] };
       }

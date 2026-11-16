@@ -7,7 +7,6 @@ import {
   getRangeStart,
   getTenantAmoCRMContext,
   isMappedValue,
-  prisma,
   protectedProcedure,
 } from './helpers';
 
@@ -79,7 +78,7 @@ export function calculateLeadPeriods(params: {
 export const leadOverviewProcedures = {
   leadOverview: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();
-    const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles);
+    const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
     if (scope.isScoped && !scope.responsibleUserId) {
       return {
         available: false,
@@ -91,8 +90,8 @@ export const leadOverviewProcedures = {
     }
 
     const [tenant, amoContext] = await Promise.all([
-      prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } }),
-      getTenantAmoCRMContext(ctx.tenantId),
+      ctx.db.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } }),
+      getTenantAmoCRMContext(ctx.tenantId, ctx.db),
     ]);
     if (!amoContext) {
       return {

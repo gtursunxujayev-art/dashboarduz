@@ -1,5 +1,4 @@
 import {
-  prisma,
   TRPCError,
   asObject,
   protectedProcedure,
@@ -10,7 +9,7 @@ import {
 
 export const layoutProcedures = {
   getUserLayout: protectedProcedure.query(async ({ ctx }) => {
-    const tenant = await prisma.tenant.findUnique({
+    const tenant = await ctx.db.tenant.findUnique({
       where: { id: ctx.tenantId },
       select: { settings: true },
     });
@@ -29,7 +28,7 @@ export const layoutProcedures = {
   saveUserLayout: protectedProcedure
     .input(dashboardLayoutInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const tenant = await prisma.tenant.findUnique({
+      const tenant = await ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
         select: { settings: true },
       });
@@ -64,7 +63,7 @@ export const layoutProcedures = {
         updatedAt: new Date().toISOString(),
       };
 
-      await prisma.tenant.update({
+      await ctx.db.tenant.update({
         where: { id: ctx.tenantId },
         data: {
           settings: JSON.parse(
@@ -76,7 +75,7 @@ export const layoutProcedures = {
         },
       });
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,

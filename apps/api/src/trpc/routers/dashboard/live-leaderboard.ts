@@ -1,10 +1,11 @@
+import type { DbClient } from '@dashboarduz/db';
+
 import {
   classifyCourseCategoryFromField,
   getRangeStart,
   INCOME_LIFECYCLE_ACTIVE,
   isAllowedUtelManagerExtension,
   normalizeDigits,
-  prisma,
   protectedProcedure,
   resolveBonusPercent,
   resolveCallDuration,
@@ -306,7 +307,10 @@ async function loadAgreementBonusAndDebt(params: {
   agentIds: string[];
   saleWhere: Record<string, unknown>;
   now: Date;
+  db: DbClient;
 }) {
+  const { db } = params;
+
   if (!params.agentIds.length) {
     return {
       bonus: new Map<string, number>(),
@@ -317,7 +321,7 @@ async function loadAgreementBonusAndDebt(params: {
     };
   }
   const [salesRaw, { policy }] = await Promise.all([
-    prisma.income.findMany({
+    db.income.findMany({
       where: {
         tenantId: params.tenantId,
         type: 'new_sale',
@@ -332,13 +336,13 @@ async function loadAgreementBonusAndDebt(params: {
         course: { select: { name: true, category: true } },
       },
     }),
-    resolveEffectiveBonusPolicy(params.tenantId, params.now),
+    resolveEffectiveBonusPolicy(params.tenantId, params.now, db),
   ]);
   const technicalSaleIds = buildTechnicalSaleIdSet(salesRaw);
   const sales = salesRaw.filter((sale) => !technicalSaleIds.has(sale.id));
   // Repayments count whoever recorded them: the debt belongs to the seller's customer.
   const repayments = sales.length
-    ? await prisma.income.findMany({
+    ? await db.income.findMany({
         where: {
           tenantId: params.tenantId,
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -378,8 +382,8 @@ export function pickPreviousCourseIds(
   return [];
 }
 
-async function loadPreviousOnlineCourses(tenantId: string, currentCourseIds: string[]) {
-  const logs = await prisma.auditLog.findMany({
+async function loadPreviousOnlineCourses(tenantId: string, currentCourseIds: string[], db: DbClient) {
+  const logs = await db.auditLog.findMany({
     where: { tenantId, action: 'integration_update', resource: 'integration' },
     orderBy: { createdAt: 'desc' },
     take: 300,
@@ -391,7 +395,7 @@ async function loadPreviousOnlineCourses(tenantId: string, currentCourseIds: str
     .map((log) => parseTelegramDailyReportCourseIds(log.metadata));
   const historyIds = Array.from(new Set(history.flat()));
   if (!historyIds.length) return [];
-  const courses = await prisma.course.findMany({
+  const courses = await db.course.findMany({
     where: { tenantId, id: { in: historyIds } },
     select: { id: true, name: true, category: true },
   });
@@ -429,7 +433,7 @@ export const liveLeaderboardProcedures = {
       const previousMonthStart = getRangeStart('month', previousMonthEnd);
       // Include agents deactivated since then: they still earned last month. Roles are not stored per month,
       // so group membership uses the current role.
-      const agents = await prisma.user.findMany({
+      const agents = await ctx.db.user.findMany({
         where: { tenantId: ctx.tenantId, roles: { hasSome: groupAgentRoles(requestedGroup) } },
         select: { id: true, name: true, username: true, roles: true },
       });
@@ -441,7 +445,7 @@ export const liveLeaderboardProcedures = {
         return { generatedAt: now.toISOString(), period, winner: null };
       }
 
-      const rowsRaw = await prisma.income.findMany({
+      const rowsRaw = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           managerUserId: { in: agentIds },
@@ -450,7 +454,7 @@ export const liveLeaderboardProcedures = {
         },
         select: incomeRowSelect,
       });
-      const rows = excludeTechnicalRows(rowsRaw, await loadTechnicalSaleIdsForRows(ctx.tenantId, rowsRaw));
+      const rows = excludeTechnicalRows(rowsRaw, await loadTechnicalSaleIdsForRows(ctx.tenantId, rowsRaw, ctx.db));
       const stats = summarizeLeaderboardAgents({ agentIds, rows, todayStart: previousMonthEnd });
       // Leaderboard bonus: percent of the whole agreement of last month's sales.
       const bonusByAgent = (await loadAgreementBonusAndDebt({
@@ -458,6 +462,7 @@ export const liveLeaderboardProcedures = {
         agentIds,
         saleWhere: { entryDate: { gte: previousMonthStart, lte: previousMonthEnd } },
         now,
+        db: ctx.db,
       })).bonus;
 
       return { generatedAt: now.toISOString(), period, winner: pickLeaderboardWinner(groupedAgents, stats, bonusByAgent) };
@@ -474,11 +479,11 @@ export const liveLeaderboardProcedures = {
     }
 
     const now = new Date();
-    const courseIds = (await loadSelectedReportCourses(ctx.tenantId))
+    const courseIds = (await loadSelectedReportCourses(ctx.tenantId, ctx.db))
       .filter((course) => course.group === 'online')
       .map((course) => course.courseId);
     // Include deactivated agents: they still count for a course they sold.
-    const agents = await prisma.user.findMany({
+    const agents = await ctx.db.user.findMany({
       where: { tenantId: ctx.tenantId, roles: { hasSome: groupAgentRoles('online') } },
       select: { id: true, name: true, username: true, roles: true },
     });
@@ -487,16 +492,16 @@ export const liveLeaderboardProcedures = {
 
     const [current, previousCourses] = await Promise.all([
       courseIds.length
-        ? loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: courseIds } }, now })
+        ? loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: courseIds } }, now, db: ctx.db })
         : null,
-      loadPreviousOnlineCourses(ctx.tenantId, courseIds),
+      loadPreviousOnlineCourses(ctx.tenantId, courseIds, ctx.db),
     ]);
     const previousCourseIds = previousCourses.map((course) => course.id);
 
     let winner: ReturnType<typeof pickLeaderboardWinner> = null;
     if (previousCourseIds.length && agentIds.length) {
       const [rowsRaw, previous] = await Promise.all([
-        prisma.income.findMany({
+        ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
             managerUserId: { in: agentIds },
@@ -506,9 +511,9 @@ export const liveLeaderboardProcedures = {
           },
           select: incomeRowSelect,
         }),
-        loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: previousCourseIds } }, now }),
+        loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: previousCourseIds } }, now, db: ctx.db }),
       ]);
-      const rows = excludeTechnicalRows(rowsRaw, await loadTechnicalSaleIdsForRows(ctx.tenantId, rowsRaw));
+      const rows = excludeTechnicalRows(rowsRaw, await loadTechnicalSaleIdsForRows(ctx.tenantId, rowsRaw, ctx.db));
       const stats = summarizeLeaderboardAgents({ agentIds, rows, todayStart: now });
       winner = pickLeaderboardWinner(groupedAgents, stats, previous.bonus);
     }
@@ -539,7 +544,7 @@ export const liveLeaderboardProcedures = {
 
       const now = new Date();
       const todayStart = getRangeStart('today', now);
-      const agents = await prisma.user.findMany({
+      const agents = await ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
@@ -568,10 +573,10 @@ export const liveLeaderboardProcedures = {
 
       const [calls, corporateDurationByAgentId] = await Promise.all([
         extensions.length > 0
-          ? prisma.call.findMany({
+          ? ctx.db.call.findMany({
               where: {
                 tenantId: ctx.tenantId,
-                provider: await getCallsProvider(ctx.tenantId),
+                provider: await getCallsProvider(ctx.tenantId, ctx.db),
                 startedAt: { gte: todayStart, lte: now },
                 OR: [
                   { from: { in: extensions } },
@@ -592,6 +597,7 @@ export const liveLeaderboardProcedures = {
           managerUserIds: agentIds,
           rangeStart: todayStart,
           rangeEnd: now,
+          db: ctx.db,
         }),
       ]);
 
@@ -640,7 +646,7 @@ export const liveLeaderboardProcedures = {
     // Earliest date any KPI needs (the week, or "yesterday", can start in the previous month).
     const loadStart = new Date(Math.min(monthStart.getTime(), weekStart.getTime(), yesterdayStart.getTime()));
 
-    const agents = await prisma.user.findMany({
+    const agents = await ctx.db.user.findMany({
       where: {
         tenantId: ctx.tenantId,
         isActive: true,
@@ -660,7 +666,7 @@ export const liveLeaderboardProcedures = {
       .filter((agent): agent is LeaderboardAgent & { group: AgentGroup } => agent.group === requestedGroup);
     const agentIds = groupedAgents.map((agent) => agent.id);
 
-    const selectedReportCourses = (await loadSelectedReportCourses(ctx.tenantId))
+    const selectedReportCourses = (await loadSelectedReportCourses(ctx.tenantId, ctx.db))
       .filter((course) => course.group === requestedGroup)
       .map(({ dashboardCategory: _dashboardCategory, ...course }) => course);
     // The online board shows the courses selected for the Telegram report instead of the month; all of them
@@ -684,7 +690,7 @@ export const liveLeaderboardProcedures = {
 
     const offlineCourseIds = courseIds ? [] : selectedReportCourses.map((course) => course.courseId);
     const [rowsRaw, latestRowsRaw, offlineMonthBonus] = await Promise.all([
-      prisma.income.findMany({
+      ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           managerUserId: { in: agentIds },
@@ -694,7 +700,7 @@ export const liveLeaderboardProcedures = {
         },
         select: incomeRowSelect,
       }),
-      prisma.income.findMany({
+      ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           managerUserId: { in: agentIds },
@@ -714,15 +720,15 @@ export const liveLeaderboardProcedures = {
       // off in earlier months were already paid out and are left out), Kutilma is this month's bonus if every
       // still-unpaid sale of the course were paid off this month (projectMonthlyKutilma).
       offlineCourseIds.length
-        ? calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: monthStart, rangeEnd: now })
+        ? calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: monthStart, rangeEnd: now, db: ctx.db })
         : null,
     ]);
     const offlineCourseStats = offlineCourseIds.length
-      ? await loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: offlineCourseIds } }, now })
+      ? await loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: offlineCourseIds } }, now, db: ctx.db })
       : null;
 
     // Technical sales (agreement == 1) and their repayments are not real income; only look up the sales we loaded.
-    const technicalSaleIds = await loadTechnicalSaleIdsForRows(ctx.tenantId, [...rowsRaw, ...latestRowsRaw]);
+    const technicalSaleIds = await loadTechnicalSaleIdsForRows(ctx.tenantId, [...rowsRaw, ...latestRowsRaw], ctx.db);
     const rows = excludeTechnicalRows(rowsRaw, technicalSaleIds);
     const periodRows = courseIds ? rows : rows.filter((row) => row.entryDate >= monthStart);
     const weekRows = rows.filter((row) => row.entryDate >= weekStart);
