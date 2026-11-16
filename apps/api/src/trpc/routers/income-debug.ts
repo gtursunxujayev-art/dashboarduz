@@ -1,4 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
+import { normalizeDigits } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -16,10 +17,6 @@ const incomeDebugInput = z.object({
   query: z.string().trim().optional(),
   limit: z.number().int().positive().max(500).default(200),
 }).optional();
-
-function normalizeDigits(value: unknown): string {
-  return String(value || '').replace(/\D/g, '');
-}
 
 function resolveUserLabel(user: { name: string | null; username: string | null; id: string } | null | undefined): string {
   if (!user) return "qo'lda";

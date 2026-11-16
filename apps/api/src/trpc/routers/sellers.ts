@@ -1,9 +1,11 @@
-import { router, protectedProcedure } from '../trpc';
-import { classifyIncomeCategory, isRowLinkedToTechnicalSale, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import type { DbClient } from '@dashboarduz/db';
+import { hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { hasAgentRole } from '@dashboarduz/shared';
+
+import { getCallsProvider } from '../../services/calls-source';
+import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
+import { classifyIncomeCategory, isRowLinkedToTechnicalSale, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import { amocrmService, type AmoCRMLead, type AmoCRMLeadPipeline, type AmoCRMUser } from '../../services/integrations/amocrm';
 import {
   getAmoCRMActivityMetrics,
@@ -11,11 +13,10 @@ import {
   summarizeAmoCRMActivityMetrics,
 } from '../../services/integrations/amocrm-activity';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
+import { telegramService } from '../../services/integrations/telegram';
 import { log, LogLevel } from '../../services/observability';
 import { decryptIntegrationTokens } from '../../services/security/encryption';
-import { telegramService } from '../../services/integrations/telegram';
-import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
-import { getCallsProvider } from '../../services/calls-source';
+import { router, protectedProcedure } from '../trpc';
 
 const WON_STATUS_ID = '142';
 const LOST_STATUS_ID = '143';
@@ -199,10 +200,6 @@ function getDealAmount(lead: AmoCRMLead): number {
 
 function getLeadResponsibleId(lead: AmoCRMLead): string | null {
   return asString(lead.responsible_user_id);
-}
-
-function normalizeDigits(value: unknown): string {
-  return String(value || '').replace(/[^\d]/g, '');
 }
 
 function normalizeTelegramSecret(rawValue: string | undefined): string | null {

@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
+import { AGENT_ROLES, hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -136,10 +136,6 @@ export type SalarySettingsSnapshot = {
 
 export function normalizeTextToken(value: unknown): string {
   return String(value || '').trim().toLowerCase();
-}
-
-export function normalizeDigits(value: unknown): string {
-  return String(value || '').replace(/[^\d]/g, '');
 }
 
 export type DashboardCustomSalesWidget = {
@@ -942,6 +938,7 @@ export function getBonusAmount(amount: number, percentage: number): number {
 export { TRPCError } from '@trpc/server';
 export { z } from 'zod';
 export { asObject, toFiniteNumber } from '../../../lib/object';
+export { normalizeDigits } from '@dashboarduz/shared';
 export {
   asStringArray,
   extractLeadValue,

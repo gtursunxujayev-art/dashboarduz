@@ -2,6 +2,7 @@
 // Each row carries the manager's Utel extension in from/to and metadata.normalized_extension, so every page that
 // attributes calls by extension counts these rows exactly like Utel webhook rows.
 import { systemPrisma } from '@dashboarduz/db';
+import { normalizeDigits } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 
 import { toNumberOrNull } from '../../lib/object';
@@ -33,10 +34,6 @@ export type CallsSyncState = {
 };
 
 export type CallManager = { userId: string; extension: string | null };
-
-function normalizeDigits(value: unknown): string {
-  return String(value ?? '').replace(/[^\d]/g, '');
-}
 
 export function readCallsSyncState(config: unknown): CallsSyncState {
   const raw = config && typeof config === 'object' ? (config as Record<string, unknown>)[CALLS_SYNC_CONFIG_KEY] : null;

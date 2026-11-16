@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
+import { AGENT_ROLES, hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -31,10 +31,6 @@ const UTEL_MAX_EXTENSION = 150;
 const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 const AGENT_MOTIVATION_ABOVE = "Bugungi harakatlaringizga baraka bersin, ko'proq suhbat ko'proq savdo degani";
 const AGENT_MOTIVATION_BELOW = "Bugun qolganlardan ortda qolyapsiz, qo'ng'iroqlarni ko'paytiring, ko'proq bonus ko'proq harakat qilganlarga nasib qiladi ";
-
-function normalizeDigits(value: unknown): string {
-  return String(value || '').replace(/[^\d]/g, '');
-}
 
 function isAllowedUtelManagerExtension(value: unknown): boolean {
   const digits = normalizeDigits(value);

@@ -1,5 +1,7 @@
 import { createHash } from 'crypto';
 
+import { normalizeDigits } from '@dashboarduz/shared';
+
 export type HistoricalCourseCategory = 'online' | 'offline' | 'intensive' | 'additional_service';
 export type HistoricalRawCell = string | number | boolean | null;
 export type HistoricalRawRow = Record<string, HistoricalRawCell>;
@@ -154,10 +156,6 @@ function normalizeKey(value: string): string {
     .toLowerCase()
     .replace(/['"`’]/g, '')
     .replace(/[^a-z0-9]+/g, '');
-}
-
-function sanitizeCustomerNumber(value: string): string {
-  return String(value || '').replace(/\s+/g, '').replace(/\D/g, '');
 }
 
 function sanitizeTelegramUsername(value: string): string {
@@ -498,7 +496,7 @@ function parseIncomeRows(params: {
     }
 
     const rawManagerValue = getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.manager);
-    const customerNumber = sanitizeCustomerNumber(getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.customerNumber));
+    const customerNumber = normalizeDigits(getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.customerNumber));
     const customerName = toDisplayLabel(getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.customerName)) || null;
     const telegramUsernameRaw = sanitizeTelegramUsername(getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.telegramUsername));
     const rawCourseLabel = toDisplayLabel(getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.courseLabel));
@@ -731,7 +729,7 @@ function parseCustomerRows(params: {
       continue;
     }
 
-    const customerNumber = sanitizeCustomerNumber(getStringValue(rawRow, HISTORICAL_CUSTOMER_HEADERS.customerNumber));
+    const customerNumber = normalizeDigits(getStringValue(rawRow, HISTORICAL_CUSTOMER_HEADERS.customerNumber));
     const customerName = toDisplayLabel(getStringValue(rawRow, HISTORICAL_CUSTOMER_HEADERS.customerName)) || null;
     const telegramUsernameRaw = sanitizeTelegramUsername(getStringValue(rawRow, HISTORICAL_CUSTOMER_HEADERS.telegramUsername));
     const rawCourseLabel = toDisplayLabel(getStringValue(rawRow, HISTORICAL_CUSTOMER_HEADERS.courseLabel)) || null;
@@ -924,7 +922,7 @@ export function prepareHistoricalImportPreview(params: {
   });
 
   const incomeCustomerNumbers = new Set(parsedIncome.rows.map((row) => row.customerNumber).filter(Boolean));
-  const existingCustomerNumbers = new Set((params.existingCatalog.existingCustomerNumbers || []).map((value) => sanitizeCustomerNumber(value)));
+  const existingCustomerNumbers = new Set((params.existingCatalog.existingCustomerNumbers || []).map((value) => normalizeDigits(value)));
 
   const parsedCustomers = parseCustomerRows({
     customerRows: params.customerRows,

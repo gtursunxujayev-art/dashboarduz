@@ -1,13 +1,15 @@
-import { adminProcedure, managerProcedure, router } from '../trpc';
-import type { DbClient } from '@dashboarduz/db';
-import { z } from 'zod';
-import { AGENT_ROLES, USER_ROLES, type UserRole } from '@dashboarduz/shared';
-import { TRPCError } from '@trpc/server';
 import crypto from 'crypto';
+
+import type { DbClient } from '@dashboarduz/db';
+import { AGENT_ROLES, USER_ROLES, normalizeDigits, type UserRole } from '@dashboarduz/shared';
+import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
 import { hashPassword } from '../../services/auth/password';
-import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { amocrmService } from '../../services/integrations/amocrm';
+import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
 import { listTelegramRecipients } from '../../services/integrations/telegram-recipient-store';
+import { adminProcedure, managerProcedure, router } from '../trpc';
 
 const roleSchema = z.enum(USER_ROLES);
 const MAPPING_ROLES: UserRole[] = [...AGENT_ROLES, 'TeamLeader'];
@@ -35,18 +37,8 @@ function toNormalizedText(value: unknown): string {
   return String(value || '').trim();
 }
 
-function normalizeDigits(value: unknown): string {
-  return String(value || '').replace(/[^\d]/g, '');
-}
-
-function normalizePhone(value: unknown): string | null {
-  const digits = normalizeDigits(value);
-
-  return digits.length > 0 ? digits : null;
-}
-
 function validateNormalizedPhoneOrThrow(rawPhone: string | undefined): string | null {
-  const normalized = normalizePhone(rawPhone);
+  const normalized = normalizeDigits(rawPhone) || null;
 
   if (!normalized) {
     return null;

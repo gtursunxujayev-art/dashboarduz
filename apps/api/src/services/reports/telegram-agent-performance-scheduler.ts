@@ -1,5 +1,5 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { AGENT_ROLES } from '@dashboarduz/shared';
+import { AGENT_ROLES, normalizeDigits } from '@dashboarduz/shared';
 
 import { asObject, getCaseInsensitiveValue } from '../../lib/object';
 import { getCallsProvider } from '../calls-source';
@@ -93,10 +93,6 @@ function formatDurationUz(totalSeconds: number): string {
   const seconds = safe % 60;
 
   return `${hours} soat ${minutes} daqiqa ${seconds} soniya`;
-}
-
-function normalizeDigits(value: unknown): string {
-  return String(value || '').replace(/[^\d]/g, '');
 }
 
 function isAllowedUtelManagerExtension(value: unknown): boolean {

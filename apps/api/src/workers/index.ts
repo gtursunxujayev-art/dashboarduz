@@ -1,6 +1,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 
 import { asObject, getCaseInsensitiveValue, textFromUnknownOrEmpty } from '../lib/object';
+import { isLikelyExternalPhone, normalizePhoneKeepPlus } from '../lib/phone';
 import { ingestFaceIdEvent } from '../services/attendance/faceid';
 import { getSelectedPipelineIds } from '../services/integrations/amocrm-live';
 import { telegramService } from '../services/integrations/telegram';
@@ -10,14 +11,6 @@ import { log, LogLevel } from '../services/observability';
 import { queueService } from '../services/queue';
 import { decryptIntegrationTokens } from '../services/security/encryption';
 import { rateLimiter } from '../services/security/rate-limiter';
-
-function normalizePhone(phone?: string | null): string {
-  if (!phone) {
-    return '';
-  }
-
-  return phone.replace(/[^\d+]/g, '');
-}
 
 function extractAmoEntities(payload: any, key: 'leads' | 'contacts'): any[] {
   const direct = payload?.[key];
@@ -200,12 +193,6 @@ function isAllowedUtelManagerExtension(value: string): boolean {
   return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
 }
 
-function isLikelyExternalPhone(value: string): boolean {
-  const digits = value.replace(/\D/g, '');
-
-  return digits.length >= 7;
-}
-
 type NormalizedVoipCall = {
   callIdExternal: string;
   from: string;
@@ -235,8 +222,8 @@ function normalizeDirection(value: unknown): 'inbound' | 'outbound' {
 }
 
 function choosePreferredNumber(existing: string | null | undefined, incoming: string | null | undefined): string {
-  const existingNormalized = normalizePhone(existing || '');
-  const incomingNormalized = normalizePhone(incoming || '');
+  const existingNormalized = normalizePhoneKeepPlus(existing || '');
+  const incomingNormalized = normalizePhoneKeepPlus(incoming || '');
 
   if (!existingNormalized && incomingNormalized) {
     return incomingNormalized;
@@ -328,7 +315,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'event_type',
   ]));
 
-  const phone = normalizePhone(textFromUnknownOrEmpty(pickVoipValue(entry, [
+  const phone = normalizePhoneKeepPlus(textFromUnknownOrEmpty(pickVoipValue(entry, [
     'phone',
     'phone_number',
     'client_phone',
@@ -347,7 +334,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'did',
     'cid_num',
   ])));
-  const extensionRaw = normalizePhone(textFromUnknownOrEmpty(pickVoipValue(entry, [
+  const extensionRaw = normalizePhoneKeepPlus(textFromUnknownOrEmpty(pickVoipValue(entry, [
     'extension',
     'extension_number',
     'ext',
@@ -383,7 +370,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'responsible',
   ])) || null;
 
-  let from = normalizePhone(textFromUnknownOrEmpty(pickVoipValue(entry, [
+  let from = normalizePhoneKeepPlus(textFromUnknownOrEmpty(pickVoipValue(entry, [
     'from',
     'caller',
     'caller_id',
@@ -391,7 +378,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'from_number',
     'src',
   ])));
-  let to = normalizePhone(textFromUnknownOrEmpty(pickVoipValue(entry, [
+  let to = normalizePhoneKeepPlus(textFromUnknownOrEmpty(pickVoipValue(entry, [
     'to',
     'callee',
     'callee_number',
@@ -458,7 +445,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
 
   const pickLikelyExternal = (values: unknown[]): string | null => {
     for (const value of values) {
-      const candidate = normalizePhone(textFromUnknownOrEmpty(value) || '');
+      const candidate = normalizePhoneKeepPlus(textFromUnknownOrEmpty(value) || '');
 
       if (isLikelyExternalPhone(candidate)) {
         return candidate;
@@ -865,7 +852,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
         .filter((user) => Boolean(user.utelManagerExternalId))
         .map((user) => ({
           ...user,
-          normalizedExtension: normalizePhone(String(user.utelManagerExternalId || '')),
+          normalizedExtension: normalizePhoneKeepPlus(String(user.utelManagerExternalId || '')),
         }))
         .filter((user) => isAllowedUtelManagerExtension(user.normalizedExtension))
         .map((user) => [
@@ -884,7 +871,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
       continue;
     }
     const normalizedCall = normalizeVoipCall(entry, `${provider}-${event.id}-${index}`);
-    const normalizedExtension = normalizePhone(normalizedCall.extension || '').toLowerCase();
+    const normalizedExtension = normalizePhoneKeepPlus(normalizedCall.extension || '').toLowerCase();
     const managerFromMap = normalizedExtension && isAllowedUtelManagerExtension(normalizedExtension)
       ? utelManagersByKey.get(normalizedExtension)
       : null;
@@ -976,7 +963,7 @@ async function processVoIPWebhook(event: any, tenantId: string) {
     }
 
     const matchedContact = (contacts as Array<{ id: string; phone: string | null }>).find((contact) => {
-      const normalized = normalizePhone(contact.phone);
+      const normalized = normalizePhoneKeepPlus(contact.phone);
 
       return normalized && (
         normalized === normalizedCall.externalPhone

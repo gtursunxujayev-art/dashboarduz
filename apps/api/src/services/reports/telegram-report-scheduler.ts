@@ -1,4 +1,8 @@
 import { systemPrisma } from '@dashboarduz/db';
+import { normalizeDigits } from '@dashboarduz/shared';
+
+import { getCallsProvider, getCallsProviderFilter } from '../calls-source';
+import { getCorporateCallDurationByManager, getCorporateCallDurationTotal } from '../corporate-call-durations';
 import {
   buildTechnicalSaleIdSet,
   classifyIncomeCategory,
@@ -6,15 +10,13 @@ import {
   loadTechnicalSaleIdsForRows,
   resolveSaleAgreementAmount,
 } from '../income-facts';
-import { log, LogLevel } from '../observability';
-import { telegramService } from '../integrations/telegram';
-import { listTelegramRecipients } from '../integrations/telegram-recipient-store';
-import { decryptIntegrationTokens } from '../security/encryption';
-import { getRedisClient } from '../queue/redis-client';
 import { amocrmService } from '../integrations/amocrm';
 import { extractLeadValue, getTenantAmoCRMContext, humanizeKey } from '../integrations/amocrm-live';
-import { getCorporateCallDurationByManager, getCorporateCallDurationTotal } from '../corporate-call-durations';
-import { getCallsProvider, getCallsProviderFilter } from '../calls-source';
+import { telegramService } from '../integrations/telegram';
+import { listTelegramRecipients } from '../integrations/telegram-recipient-store';
+import { log, LogLevel } from '../observability';
+import { getRedisClient } from '../queue/redis-client';
+import { decryptIntegrationTokens } from '../security/encryption';
 
 const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
@@ -208,10 +210,6 @@ function normalizePercentage(value: number): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function normalizeDigits(value: unknown): string {
-  return String(value || '').replace(/[^\d]/g, '');
 }
 
 function isAllowedUtelManagerExtension(value: unknown): boolean {

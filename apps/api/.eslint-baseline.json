@@ -165,8 +165,7 @@
     "@typescript-eslint/no-unsafe-call": 1,
     "@typescript-eslint/no-unsafe-member-access": 7,
     "@typescript-eslint/no-unsafe-return": 1,
-    "@typescript-eslint/no-unused-vars": 2,
-    "import/order": 8
+    "@typescript-eslint/no-unused-vars": 2
   },
   "src/services/security/encryption.ts": {
     "@typescript-eslint/no-explicit-any": 6,
@@ -247,8 +246,7 @@
     "@typescript-eslint/no-unsafe-member-access": 39,
     "@typescript-eslint/no-unsafe-return": 4,
     "@typescript-eslint/no-unused-vars": 21,
-    "@typescript-eslint/require-await": 6,
-    "import/order": 11
+    "@typescript-eslint/require-await": 6
   },
   "src/trpc/routers/dashboard/helpers.ts": {
     "@typescript-eslint/no-explicit-any": 1,
@@ -331,8 +329,7 @@
     "@typescript-eslint/no-explicit-any": 3,
     "@typescript-eslint/no-unnecessary-type-assertion": 2,
     "@typescript-eslint/no-unsafe-member-access": 2,
-    "@typescript-eslint/no-unsafe-return": 1,
-    "import/order": 13
+    "@typescript-eslint/no-unsafe-return": 1
   },
   "src/trpc/routers/telegram-bot.ts": {
     "@typescript-eslint/no-explicit-any": 2,
@@ -347,8 +344,7 @@
     "@typescript-eslint/no-explicit-any": 6,
     "@typescript-eslint/no-unnecessary-type-assertion": 3,
     "@typescript-eslint/no-unsafe-assignment": 4,
-    "@typescript-eslint/no-unsafe-member-access": 11,
-    "import/order": 9
+    "@typescript-eslint/no-unsafe-member-access": 11
   },
   "src/trpc/server.ts": {
     "import/order": 2

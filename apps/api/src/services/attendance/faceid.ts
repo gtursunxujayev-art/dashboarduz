@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 
 import { systemPrisma, type DbClient } from '@dashboarduz/db';
+import { normalizeDigits } from '@dashboarduz/shared';
 
 import { asObject } from '../../lib/object';
 
@@ -69,10 +70,6 @@ type FaceIdMatchResult = {
     phone: string | null;
   };
 };
-
-function normalizePhone(value: string | null | undefined): string {
-  return String(value || '').replace(/\D/g, '').trim();
-}
 
 function normalizeFullNameToken(value: string | null | undefined): string {
   return String(value || '')
@@ -173,7 +170,7 @@ function parseFaceIdEvent(input: unknown): FaceIdParsedEvent | null {
   const localTime = String(payload.local_time_only || '').trim()
     || String(payload.local_time || '').trim()
     || formatReportTime(eventAt);
-  const externalPhone = normalizePhone(payload.user?.phone_number || null) || null;
+  const externalPhone = normalizeDigits(payload.user?.phone_number || null) || null;
   const lateMinutesRaw = parseNumeric(payload.late_minutes);
   const lateMinutes = lateMinutesRaw && Number.isFinite(lateMinutesRaw)
     ? Math.max(0, Math.floor(lateMinutesRaw))
@@ -257,7 +254,7 @@ async function resolveMatchedUserId(params: {
   };
 
   // 1) Phone match first.
-  const normalizedExternalPhone = normalizePhone(params.parsed.externalPhone);
+  const normalizedExternalPhone = normalizeDigits(params.parsed.externalPhone);
 
   if (normalizedExternalPhone) {
     const phoneCandidates = await systemPrisma.user.findMany({
@@ -274,7 +271,7 @@ async function resolveMatchedUserId(params: {
     });
 
     const matchedByPhone = phoneCandidates.filter(
-      (candidate) => normalizePhone(candidate.phone) === normalizedExternalPhone,
+      (candidate) => normalizeDigits(candidate.phone) === normalizedExternalPhone,
     );
 
     if (matchedByPhone.length === 1) {

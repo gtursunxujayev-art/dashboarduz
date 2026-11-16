@@ -6,6 +6,7 @@ import type { Request, Response } from 'express';
 
 import { logger } from '../lib/logger';
 import { asObject, textFromUnknown } from '../lib/object';
+import { isLikelyExternalPhone, normalizePhoneKeepPlus } from '../lib/phone';
 import { amocrmService } from '../services/integrations/amocrm';
 import { upsertTelegramRecipientRecord } from '../services/integrations/telegram-recipient-store';
 import { extractTelegramRecipientFromPayload } from '../services/integrations/telegram-update';
@@ -158,30 +159,15 @@ function pickMetadataValue(metadata: unknown, keys: string[]): string | null {
   return null;
 }
 
-function normalizePhone(value: string | null): string {
-  if (!value) {
-    return '';
-  }
-
-  return String(value).replace(/[^\d+]/g, '');
-}
-
-function isLikelyExternalPhone(value: string | null): boolean {
-  const normalized = normalizePhone(value);
-  const digits = normalized.replace(/\D/g, '');
-
-  return digits.length >= 7;
-}
-
 function isLikelyInternalPhone(value: string | null): boolean {
-  const normalized = normalizePhone(value);
+  const normalized = normalizePhoneKeepPlus(value);
   const digits = normalized.replace(/\D/g, '');
 
   return digits.length > 0 && digits.length <= 6;
 }
 
 function isAllowedUtelManagerExtension(value: string | null): boolean {
-  const normalized = normalizePhone(value);
+  const normalized = normalizePhoneKeepPlus(value);
   const digits = normalized.replace(/\D/g, '');
 
   if (!digits) {
@@ -383,7 +369,7 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
   if (callHistory) {
     const pickExternal = (values: unknown[]): string => {
       for (const value of values) {
-        const normalized = normalizePhone(String(value || ''));
+        const normalized = normalizePhoneKeepPlus(String(value || ''));
 
         if (isLikelyExternalPhone(normalized)) {
           return normalized;
@@ -392,8 +378,8 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
 
       return '';
     };
-    const src = normalizePhone(String(callHistory.src || callHistory.from || callHistory.source || ''));
-    const dst = normalizePhone(String(callHistory.dst || callHistory.to || callHistory.destination || ''));
+    const src = normalizePhoneKeepPlus(String(callHistory.src || callHistory.from || callHistory.source || ''));
+    const dst = normalizePhoneKeepPlus(String(callHistory.dst || callHistory.to || callHistory.destination || ''));
     const direction = inferUtelDirection(
       src,
       dst,
@@ -440,7 +426,7 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
     const externalPhone = direction === 'inbound'
       ? (inboundPhoneCandidate || destinationExternalCandidate || outboundPhoneCandidate)
       : (outboundPhoneCandidate || destinationExternalCandidate || inboundPhoneCandidate);
-    const extensionCandidate = normalizePhone(String(
+    const extensionCandidate = normalizePhoneKeepPlus(String(
       callHistory.extension
       || callHistory.ext
       || (direction === 'outbound' ? src : dst)
@@ -942,15 +928,15 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
         'to',
         'callee',
       ]);
-      const callFrom = normalizePhone(call.from || '');
-      const callTo = normalizePhone(call.to || '');
+      const callFrom = normalizePhoneKeepPlus(call.from || '');
+      const callTo = normalizePhoneKeepPlus(call.to || '');
       const fallbackExternalPhone = [callFrom, callTo].find((candidate) => isLikelyExternalPhone(candidate)) || '';
-      const metadataExternalPhone = isLikelyExternalPhone(phoneFromMetadata) ? normalizePhone(phoneFromMetadata) : '';
+      const metadataExternalPhone = isLikelyExternalPhone(phoneFromMetadata) ? normalizePhoneKeepPlus(phoneFromMetadata) : '';
       const displayPhone = metadataExternalPhone || fallbackExternalPhone || '';
-      const extensionFromMetadataNormalized = normalizePhone(extensionFromMetadata || '');
+      const extensionFromMetadataNormalized = normalizePhoneKeepPlus(extensionFromMetadata || '');
       const displayExtension = (isLikelyInternalPhone(extensionFromMetadataNormalized) ? extensionFromMetadataNormalized : null)
         || (isLikelyInternalPhone(call.direction === 'outbound' ? call.from : call.to)
-          ? normalizePhone(call.direction === 'outbound' ? call.from : call.to)
+          ? normalizePhoneKeepPlus(call.direction === 'outbound' ? call.from : call.to)
           : null);
       const durationFromMetadataRaw = pickMetadataValue(call.metadata, ['normalized_duration', 'duration', 'billsec']);
       const durationFromMetadata = durationFromMetadataRaw && !Number.isNaN(Number(durationFromMetadataRaw))
@@ -984,7 +970,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
     const extensionKeys = Array.from(
       new Set(
         mappedRows
-          .map((row) => normalizePhone(row.extension || ''))
+          .map((row) => normalizePhoneKeepPlus(row.extension || ''))
           .filter((value) => isAllowedUtelManagerExtension(value)),
       ),
     );
@@ -1012,7 +998,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
           mappedUsers
             .filter((user) => Boolean(user.utelManagerExternalId))
             .map((user) => [
-              normalizePhone(String(user.utelManagerExternalId || '')),
+              normalizePhoneKeepPlus(String(user.utelManagerExternalId || '')),
               String(user.name || user.username || user.utelManagerExternalId || '').trim(),
             ]),
         );
@@ -1140,7 +1126,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       ...(diagnostics ? { diagnostics } : {}),
       recentCalls: mappedRows.map((row) => ({
         ...row,
-        manager: row.manager || managerByExtension.get(normalizePhone(row.extension || '')) || null,
+        manager: row.manager || managerByExtension.get(normalizePhoneKeepPlus(row.extension || '')) || null,
       })),
     });
   } catch (err) {

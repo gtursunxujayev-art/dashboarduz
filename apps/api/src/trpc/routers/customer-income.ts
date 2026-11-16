@@ -1,7 +1,4 @@
 import type { DbClient, TenantPrismaClient } from '@dashboarduz/db';
-import { NON_TECHNICAL_SALE_WHERE } from '../../services/income-facts';
-import { TRPCError } from '@trpc/server';
-import { Prisma } from '@prisma/client';
 import {
   bulkIncomeImportFromGoogleSheetSchema,
   bulkIncomeImportSchema,
@@ -10,11 +7,13 @@ import {
   createTariffSchema,
   customerSearchSchema,
   hasAgentRole,
+  normalizeDigits,
 } from '@dashboarduz/shared';
+import { Prisma } from '@prisma/client';
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
-import { decryptIntegrationTokens } from '../../services/security/encryption';
-import { telegramService } from '../../services/integrations/telegram';
+
+import { reconcileFinalizedBonusMonths } from '../../services/bonus-engine';
 import {
   buildHistoricalInitialProgress,
   prepareHistoricalImportPreview,
@@ -30,7 +29,10 @@ import {
   getSaleAgreementAmount,
   type SaleChainSaleRow,
 } from '../../services/income-chain';
-import { reconcileFinalizedBonusMonths } from '../../services/bonus-engine';
+import { NON_TECHNICAL_SALE_WHERE } from '../../services/income-facts';
+import { telegramService } from '../../services/integrations/telegram';
+import { decryptIntegrationTokens } from '../../services/security/encryption';
+import { adminProcedure, managerProcedure, protectedProcedure, router } from '../trpc';
 
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent'] as const;
 const SALES_MANAGER_ROLE_TOKENS = new Set(
@@ -2323,10 +2325,6 @@ function normalizeStringValue(value: BulkIncomeCell | undefined): string {
   return '';
 }
 
-function sanitizeCustomerNumber(value: string): string {
-  return value.replace(/\s+/g, '').replace(/\D/g, '');
-}
-
 function sanitizeTelegramUsername(value: string): string {
   return value.replace(/\s+/g, '').replace(/[^A-Za-z0-9_@]/g, '');
 }
@@ -2639,7 +2637,7 @@ function parseBulkRowToCreateIncomeInput(
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Row ${rowNumber}: date is required.` });
   }
 
-  const customerNumber = sanitizeCustomerNumber(normalizeStringValue(getRowValue(row, CUSTOMER_NUMBER_HEADERS)));
+  const customerNumber = normalizeDigits(normalizeStringValue(getRowValue(row, CUSTOMER_NUMBER_HEADERS)));
 
   if (!customerNumber) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Row ${rowNumber}: customer number is required.` });
@@ -2894,7 +2892,7 @@ async function createIncomeEntry(params: {
     throw new TRPCError({ code: 'BAD_REQUEST', message: "Kelajakdagi sana kiritish mumkin emas. Bugungi yoki o'tgan sanani tanlang." });
   }
   const deadline = input.deadline ? parseDateInput(input.deadline) : null;
-  const customerNumber = sanitizeCustomerNumber(input.customerNumber.trim());
+  const customerNumber = normalizeDigits(input.customerNumber.trim());
 
   if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
     throw new TRPCError({
@@ -6409,7 +6407,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const customerNumber = sanitizeCustomerNumber(input.customerNumber.trim());
+      const customerNumber = normalizeDigits(input.customerNumber.trim());
 
       if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
         throw new TRPCError({
@@ -6546,7 +6544,7 @@ export const customerIncomeRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const customerNumber = sanitizeCustomerNumber(input.customerNumber.trim());
+      const customerNumber = normalizeDigits(input.customerNumber.trim());
 
       if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
         throw new TRPCError({

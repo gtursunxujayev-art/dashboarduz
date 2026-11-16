@@ -1,4 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
+import { normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -115,10 +116,6 @@ function normalizeHeader(value: unknown): string {
     .replace(/[�']/g, "'");
 }
 
-function normalizePhone(value: unknown): string {
-  return String(value ?? '').replace(/\D+/g, '');
-}
-
 function normalizeName(value: unknown): string {
   return String(value ?? '')
     .trim()
@@ -224,7 +221,7 @@ function normalizeFinanceRows(rows: Array<Array<string | number | boolean | null
     const paymentDate = parseDateText(getCell(row, mapping.paymentDate));
     const customerPhone = String(getCell(row, mapping.customerPhone) ?? '').trim();
     const customerName = String(getCell(row, mapping.customerName) ?? '').trim();
-    const normalizedPhone = normalizePhone(customerPhone);
+    const normalizedPhone = normalizeDigits(customerPhone);
     const normalizedName = normalizeName(customerName);
     const paymentAmount = parseMoney(getCell(row, mapping.paymentAmount));
 
@@ -335,7 +332,7 @@ async function loadProjectRows(tenantId: string, from: Date, to: Date, db: DbCli
       paymentAmount: Number(income.paymentAmount ?? 0),
       remainingDebtAmount: Number(income.remainingDebtAmount ?? 0),
       deadline: income.deadline ? income.deadline.toISOString().slice(0, 10) : null,
-      normalizedPhone: normalizePhone(income.customer?.customerNumber || ''),
+      normalizedPhone: normalizeDigits(income.customer?.customerNumber || ''),
       normalizedName: normalizeName(income.customer?.name || ''),
       lifecycleStatus: String(income.lifecycleStatus || ''),
     };
