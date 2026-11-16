@@ -1,6 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { Context } from './context';
-import { prisma } from '@dashboarduz/db';
+import { forTenant } from '@dashboarduz/db';
 import { Prisma } from '@prisma/client';
 import superjson from 'superjson';
 import { log, LogLevel } from '../services/observability';
@@ -121,7 +121,12 @@ export const protectedProcedure = baseProcedure.use(async (opts) => {
     });
   }
 
-  const activeUser = await prisma.user.findFirst({
+  // Every query of a protected procedure runs with the caller's tenant/user RLS
+  // context set transaction-locally (see forTenant in @dashboarduz/db), including
+  // this activity check.
+  const db = forTenant(ctx.tenantId, ctx.user.userId);
+
+  const activeUser = await db.user.findFirst({
     where: {
       id: ctx.user.userId,
       tenantId: ctx.tenantId,
@@ -136,21 +141,12 @@ export const protectedProcedure = baseProcedure.use(async (opts) => {
     });
   }
 
-  try {
-    await prisma.$executeRaw`SELECT app.set_tenant_context(${ctx.tenantId}::uuid, ${ctx.user.userId}::uuid)`;
-  } catch (error: any) {
-    console.error('[Auth] Failed to set tenant context for RLS:', error?.message);
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Tenant database context is not configured',
-    });
-  }
-
   return opts.next({
     ctx: {
       ...ctx,
       user: ctx.user,
       tenantId: ctx.tenantId,
+      db,
     },
   });
 });
