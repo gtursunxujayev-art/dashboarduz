@@ -10,8 +10,8 @@
  *   npx tsx scripts/audit-tenant-filter.ts --update-baseline    # record current findings as the baseline
  *
  * The baseline (scripts/audit-tenant-filter.baseline.json) counts findings per file and `model.method`, so it does
- * not break when lines move or when the query receiver changes (prisma.x / ctx.db.x / tx.x). It lists queries that
- * were already unfiltered when it was written; each still needs a review, and fixing one lets the baseline shrink.
+ * not break when lines move or when the query receiver changes (prisma.x / systemPrisma.x / ctx.db.x / tx.x). It
+ * lists queries that were already unfiltered when it was written; each still needs a review, and fixing one lets the baseline shrink.
  */
 
 import * as fs from 'fs';
@@ -23,8 +23,9 @@ const BASELINE_PATH = path.resolve(__dirname, 'audit-tenant-filter.baseline.json
 const SKIP_FILES = new Set(['calls.ts', 'index.ts']);
 const SKIP_DIRS = new Set(['__tests__']);
 
-// Matches `prisma.model.method(`, `ctx.db.model.method(`, `db.model.method(` and `tx.model.method(`.
-const QUERY_PATTERN = /\b(?:prisma|db|tx)\.(\w+)\.(findMany|findFirst|findUnique|aggregate|count|groupBy)\(/g;
+// Matches `prisma.model.method(`, `systemPrisma.model.method(`, `ctx.db.model.method(`, `db.model.method(` and
+// `tx.model.method(`. Routers use the unscoped `systemPrisma` where no user is logged in yet (e.g. auth).
+const QUERY_PATTERN = /\b(?:prisma|systemPrisma|db|tx)\.(\w+)\.(findMany|findFirst|findUnique|aggregate|count|groupBy)\(/g;
 const TENANT_ID_PATTERN = /tenantId/;
 
 type Finding = {

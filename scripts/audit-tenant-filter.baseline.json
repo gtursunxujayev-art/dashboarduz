@@ -16,10 +16,10 @@
     "income.findMany": 2
   },
   "apps/api/src/trpc/routers/customer-income.ts": {
-    "course.findMany": 2,
+    "course.findMany": 1,
     "customer.findFirst": 2,
     "incomeAdjustmentRequest.count": 3,
-    "incomeAdjustmentRequest.findMany": 2
+    "incomeAdjustmentRequest.findMany": 1
   },
   "apps/api/src/trpc/routers/dashboard/salary.ts": {
     "income.count": 1,
@@ -30,7 +30,7 @@
     "income.findMany": 2
   },
   "apps/api/src/trpc/routers/funnel.ts": {
-    "user.findMany": 2
+    "user.findMany": 1
   },
   "apps/api/src/trpc/routers/income-debug.ts": {
     "income.count": 2,
