@@ -60,7 +60,9 @@ function asObject(value: unknown): Record<string, unknown> {
 
 function selectedCourseIds(config: unknown): Set<string> {
   const raw = asObject(config).telegramDailyReportCourseIds;
+
   if (!Array.isArray(raw)) return new Set();
+
   return new Set(raw.map((value) => String(value || '').trim()).filter(Boolean).slice(0, 3));
 }
 
@@ -81,6 +83,7 @@ export function getTashkentDayWindow(now: Date): { dateKey: string; start: Date;
   const year = local.getUTCFullYear();
   const month = local.getUTCMonth();
   const day = local.getUTCDate();
+
   return {
     dateKey: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
     start: fromLocalParts(year, month, day),
@@ -92,8 +95,10 @@ export function resolveDueTelegramGroupSummaryCutoffs(now: Date): Array<'18:00' 
   const local = toLocal(now);
   const minutes = local.getUTCHours() * 60 + local.getUTCMinutes();
   const due: Array<'18:00' | '23:59'> = [];
+
   if (minutes >= 18 * 60) due.push('18:00');
   if (minutes >= 23 * 60 + 59) due.push('23:59');
+
   return due;
 }
 
@@ -110,6 +115,7 @@ export function formatTelegramGroupSummary(group: TelegramGroupSummaryGroup, met
     `💳 Yangi tushum: ${formatAmount(metrics.newIncome)} so'm`,
     `📥 Qarzdorlik tushumi: ${formatAmount(metrics.debtIncome)} so'm`,
   ];
+
   if (group === 'offline' && metrics.coaching) {
     lines.push(`🎓 Couching sotuvi: ${metrics.coaching.salesCount}`);
     lines.push(`💰 Couching tushumi: ${formatAmount(metrics.coaching.income)} so'm`);
@@ -118,6 +124,7 @@ export function formatTelegramGroupSummary(group: TelegramGroupSummaryGroup, met
     lines.push(`🔥 Intensiv sotuvi: ${metrics.intensive.salesCount}`);
     lines.push(`💰 Intensiv tushumi: ${formatAmount(metrics.intensive.income)} so'm`);
   }
+
   return lines.join('\n');
 }
 
@@ -131,12 +138,15 @@ export function aggregateTelegramGroupSummaries(params: {
   const rootFor = (row: SummaryIncomeRow): SummaryIncomeRow => {
     let current = row;
     const visited = new Set<string>();
+
     while (current.relatedDebtIncomeId && !visited.has(current.id)) {
       visited.add(current.id);
       const parent = byId.get(current.relatedDebtIncomeId);
+
       if (!parent) break;
       current = parent;
     }
+
     return current;
   };
   const empty = (): TelegramGroupSummaryMetrics => ({
@@ -153,6 +163,7 @@ export function aggregateTelegramGroupSummaries(params: {
 
   for (const row of params.rows) {
     const root = rootFor(row);
+
     if (isTechnicalNewSale(root)) continue;
     const category = classifyCourse(root.course?.category || root.course?.name);
     // Same split as the live leaderboard: online courses on one side, everything else (offline, intensive,
@@ -160,6 +171,7 @@ export function aggregateTelegramGroupSummaries(params: {
     const group = category === 'online' ? 'online' : 'offline';
     const metrics = result[group];
     const amount = Number(row.paymentAmount || 0);
+
     metrics.totalIncome += amount;
     if (row.type === 'new_sale') {
       metrics.newSalesCount += 1;
@@ -185,6 +197,7 @@ export function aggregateTelegramGroupSummaries(params: {
   else delete result.offline.coaching;
   if (hasSelectedIntensive) result.offline.intensive ||= { salesCount: 0, income: 0 };
   else delete result.offline.intensive;
+
   return result;
 }
 
@@ -205,14 +218,18 @@ async function loadSummaryRows(tenantId: string, start: Date, end: Date) {
   });
   const known = new Map<string, SummaryIncomeRow>(rows.map((row) => [row.id, row]));
   let pending = Array.from(new Set(rows.map((row) => row.relatedDebtIncomeId).filter((id): id is string => Boolean(id))));
+
   while (pending.length > 0) {
     const missing = pending.filter((id) => !known.has(id));
+
     if (!missing.length) break;
     const ancestors = await prisma.income.findMany({ where: { tenantId, id: { in: missing } }, select });
+
     if (!ancestors.length) break;
     for (const row of ancestors) known.set(row.id, row);
     pending = Array.from(new Set(ancestors.map((row) => row.relatedDebtIncomeId).filter((id): id is string => Boolean(id))));
   }
+
   return { rows: rows as SummaryIncomeRow[], ancestors: Array.from(known.values()) };
 }
 
@@ -221,6 +238,7 @@ function resolveBotToken(integration: TelegramIntegration): string {
     try {
       const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
       const token = String(tokens.botToken || tokens.token || '').trim();
+
       if (token) return token;
     } catch (error: any) {
       log(LogLevel.WARN, 'Telegram integration token could not be decrypted; using environment fallback', {
@@ -229,6 +247,7 @@ function resolveBotToken(integration: TelegramIntegration): string {
       });
     }
   }
+
   return String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
 }
 
@@ -277,18 +296,22 @@ async function sendOneGroup(params: {
 }): Promise<TelegramGroupDeliveryResult> {
   const destinations = params.group === 'online' ? getOnlineTelegramGroupIds() : getOfflineTelegramGroupIds();
   const token = resolveBotToken(params.integration);
+
   if (!destinations.length || !token) {
     const missing = !token ? 'Telegram bot tokeni sozlanmagan.' : `${params.group} Telegram guruh ID si sozlanmagan.`;
     const result: TelegramGroupDeliveryResult = {
       group: params.group, status: 'skipped', destinationCount: destinations.length, sentCount: 0, error: missing,
     };
+
     await recordDeliveryAudit(params.integration, params.schedule, params.dateKey, result);
+
     return result;
   }
 
   let sentCount = 0;
   const errors: string[] = [];
   const message = formatTelegramGroupSummary(params.group, params.metrics);
+
   for (const destination of destinations) {
     try {
       await telegramService.sendMessage(token, destination, message, { disable_web_page_preview: true });
@@ -304,7 +327,9 @@ async function sendOneGroup(params: {
     sentCount,
     error: errors.length ? errors.join('; ') : null,
   };
+
   await recordDeliveryAudit(params.integration, params.schedule, params.dateKey, result);
+
   return result;
 }
 
@@ -318,6 +343,7 @@ async function calculateForIntegration(integration: TelegramIntegration, now: Da
     })
     : [];
   const data = await loadSummaryRows(integration.tenantId, window.start, window.end);
+
   return {
     window,
     metrics: aggregateTelegramGroupSummaries({
@@ -336,9 +362,11 @@ export async function sendTelegramGroupSummariesForTenant(
     where: { tenantId, type: 'telegram', status: 'active' },
     select: { id: true, tenantId: true, tokensEncrypted: true, config: true },
   });
+
   if (!integration) throw new Error('Telegram integration is not connected.');
   const calculated = await calculateForIntegration(integration, now);
   const results: TelegramGroupDeliveryResult[] = [];
+
   for (const group of ['online', 'offline'] as const) {
     results.push(await sendOneGroup({
       integration,
@@ -348,15 +376,18 @@ export async function sendTelegramGroupSummariesForTenant(
       dateKey: calculated.window.dateKey,
     }));
   }
+
   return { date: calculated.window.dateKey, schedule: 'manual', results };
 }
 
 async function dispatchScheduled(integration: TelegramIntegration, cutoff: '18:00' | '23:59', now: Date): Promise<void> {
   const calculated = await calculateForIntegration(integration, now);
   const redis = getRedisClient();
+
   for (const group of ['online', 'offline'] as const) {
     const lockKey = `telegram-group-summary:${integration.tenantId}:${calculated.window.dateKey}:${cutoff}:${group}`;
     const acquired = await redis.set(lockKey, '1', 'EX', LOCK_TTL_SECONDS, 'NX');
+
     if (!acquired) continue;
     try {
       const result = await sendOneGroup({
@@ -366,6 +397,7 @@ async function dispatchScheduled(integration: TelegramIntegration, cutoff: '18:0
         schedule: cutoff,
         dateKey: calculated.window.dateKey,
       });
+
       if (result.status !== 'sent') await redis.del(lockKey);
       log(result.status === 'sent' ? LogLevel.INFO : LogLevel.WARN, 'Telegram group summary dispatch completed', {
         tenantId: integration.tenantId,
@@ -390,11 +422,13 @@ async function tickScheduler(): Promise<void> {
   try {
     const now = new Date();
     const cutoffs = resolveDueTelegramGroupSummaryCutoffs(now);
+
     if (!cutoffs.length) return;
     const integrations = await prisma.integration.findMany({
       where: { type: 'telegram', status: 'active' },
       select: { id: true, tenantId: true, tokensEncrypted: true, config: true },
     });
+
     for (const integration of integrations) {
       for (const cutoff of cutoffs) await dispatchScheduled(integration, cutoff, now);
     }

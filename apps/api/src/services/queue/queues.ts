@@ -120,6 +120,7 @@ export function getDLQueue(name: QueueName): Queue {
     // Ensure main queue exists first
     getQueue(name);
   }
+
   return dlqQueues.get(name)!;
 }
 
@@ -134,12 +135,14 @@ export function initializeWorkers() {
       // Check idempotency - skip if already processed
       if (idempotencyKey) {
         const processed = await checkIdempotency(idempotencyKey);
+
         if (processed) {
           log(LogLevel.WARN, 'Skipping duplicate job due to idempotency key', { 
             jobId: job.id, 
             eventId, 
             idempotencyKey 
           });
+
           return;
         }
       }
@@ -196,12 +199,14 @@ export function initializeWorkers() {
       // Check idempotency
       if (idempotencyKey) {
         const processed = await checkIdempotency(idempotencyKey);
+
         if (processed) {
           log(LogLevel.WARN, 'Skipping duplicate notification job', { 
             jobId: job.id, 
             notificationId, 
             idempotencyKey 
           });
+
           return;
         }
       }
@@ -257,12 +262,14 @@ export function initializeWorkers() {
       // Check idempotency
       if (idempotencyKey) {
         const processed = await checkIdempotency(idempotencyKey);
+
         if (processed) {
           log(LogLevel.WARN, 'Skipping duplicate export job', { 
             jobId: job.id, 
             exportType, 
             idempotencyKey 
           });
+
           return;
         }
       }
@@ -318,6 +325,7 @@ export function initializeWorkers() {
       // Check idempotency
       if (idempotencyKey) {
         const processed = await checkIdempotency(idempotencyKey);
+
         if (processed) {
           log(LogLevel.WARN, 'Skipping duplicate sync job', { 
             jobId: job.id, 
@@ -325,6 +333,7 @@ export function initializeWorkers() {
             tenantId,
             idempotencyKey 
           });
+
           return;
         }
       }
@@ -485,6 +494,7 @@ export async function retryFailedJobs(queueName: QueueName, count: number = 100)
   const failedJobs = await queue.getFailed(0, count - 1);
   
   let retried = 0;
+
   for (const job of failedJobs) {
     await job.retry();
     retried++;
@@ -498,12 +508,14 @@ async function checkIdempotency(idempotencyKey: string): Promise<boolean> {
   const redis = getRedisClient();
   const key = `idempotency:${idempotencyKey}`;
   const exists = await redis.exists(key);
+
   return exists === 1;
 }
 
 async function markIdempotent(idempotencyKey: string, ttlSeconds: number = 86400): Promise<void> {
   const redis = getRedisClient();
   const key = `idempotency:${idempotencyKey}`;
+
   await redis.setex(key, ttlSeconds, 'processed');
 }
 
@@ -511,6 +523,7 @@ async function markIdempotent(idempotencyKey: string, ttlSeconds: number = 86400
 async function moveToDLQ(job: Job, queueName: QueueName, error: any): Promise<void> {
   try {
     const dlq = getDLQueue(queueName);
+
     await dlq.add(`${queueName}:failed`, {
       originalJobId: job.id,
       originalData: job.data,
@@ -581,6 +594,7 @@ export async function retryDLQJobs(queueName: QueueName, count: number = 100): P
   const failedJobs = await dlq.getFailed(0, count - 1);
   
   let retried = 0;
+
   for (const job of failedJobs) {
     const originalData = job.data.originalData;
     const mainQueue = getQueue(queueName);

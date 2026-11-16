@@ -24,11 +24,13 @@ export function isTechnicalNewSale(sale: TechnicalSaleLike): boolean {
 
 export function buildTechnicalSaleIdSet<T extends TechnicalSaleLike>(sales: T[]): Set<string> {
   const saleIds = new Set<string>();
+
   for (const sale of sales) {
     if (isTechnicalNewSale(sale)) {
       saleIds.add(sale.id);
     }
   }
+
   return saleIds;
 }
 
@@ -39,5 +41,6 @@ export function isRowLinkedToTechnicalSale(params: {
   technicalSaleIds: Set<string>;
 }): boolean {
   const saleId = params.rowType === 'new_sale' ? params.rowId : params.relatedDebtIncomeId;
+
   return Boolean(saleId && params.technicalSaleIds.has(saleId));
 }

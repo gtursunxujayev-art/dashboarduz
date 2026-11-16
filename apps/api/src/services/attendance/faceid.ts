@@ -71,6 +71,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
+
   return value as Record<string, unknown>;
 }
 
@@ -99,6 +100,7 @@ function formatReportDate(date: Date): string {
   const y = local.getUTCFullYear();
   const m = String(local.getUTCMonth() + 1).padStart(2, '0');
   const d = String(local.getUTCDate()).padStart(2, '0');
+
   return `${y}-${m}-${d}`;
 }
 
@@ -107,14 +109,17 @@ function formatReportTime(date: Date): string {
   const hh = String(local.getUTCHours()).padStart(2, '0');
   const mm = String(local.getUTCMinutes()).padStart(2, '0');
   const ss = String(local.getUTCSeconds()).padStart(2, '0');
+
   return `${hh}:${mm}:${ss}`;
 }
 
 function parseTimestampOrNow(inputTimestamp: string | null | undefined): Date {
   const parsed = new Date(String(inputTimestamp || '').trim());
+
   if (!Number.isNaN(parsed.getTime())) {
     return parsed;
   }
+
   return new Date();
 }
 
@@ -124,17 +129,21 @@ function parseNumeric(value: unknown): number | null {
   }
   if (typeof value === 'string') {
     const n = Number.parseFloat(value.trim());
+
     return Number.isFinite(n) ? n : null;
   }
+
   return null;
 }
 
 function getRawFaceIdPayload(input: unknown): Record<string, unknown> {
   const body = asObject(input) || {};
   const nestedRequest = asObject(body.request);
+
   if (nestedRequest) {
     return nestedRequest;
   }
+
   return body;
 }
 
@@ -145,6 +154,7 @@ function buildIdempotencyKey(payload: FaceIdPayload): string {
   const timestamp = String(payload.timestamp || payload.local_time || '').trim();
   const branchName = String(payload.branch_name || '').trim();
   const rawKey = `${source}:${action}:${externalUserId}:${timestamp}:${branchName}`;
+
   return crypto.createHash('sha256').update(rawKey).digest('hex');
 }
 
@@ -152,11 +162,13 @@ function parseFaceIdEvent(input: unknown): FaceIdParsedEvent | null {
   const rawPayload = getRawFaceIdPayload(input);
   const payload = rawPayload as FaceIdPayload;
   const eventType = String(payload.event_type || '').trim().toLowerCase();
+
   if (eventType !== 'check_in_out') {
     return null;
   }
 
   const action = String(payload.action || '').trim().toUpperCase();
+
   if (action !== 'IN' && action !== 'OUT') {
     return null;
   }
@@ -197,23 +209,28 @@ function parseFaceIdEvent(input: unknown): FaceIdParsedEvent | null {
 
 function parseExternalUserMap(config: unknown): Record<string, string> {
   const mapHolder = asObject(config)?.userExternalMap;
+
   if (!mapHolder || typeof mapHolder !== 'object' || Array.isArray(mapHolder)) {
     return {};
   }
   const result: Record<string, string> = {};
+
   for (const [key, value] of Object.entries(mapHolder)) {
     const normalizedKey = String(key || '').trim();
     const normalizedValue = String(value || '').trim();
+
     if (!normalizedKey || !normalizedValue) {
       continue;
     }
     result[normalizedKey] = normalizedValue;
   }
+
   return result;
 }
 
 function parseBranchWhitelist(config: unknown): Set<string> {
   const raw = asObject(config)?.branchWhitelist;
+
   if (!Array.isArray(raw)) {
     return new Set();
   }
@@ -221,12 +238,14 @@ function parseBranchWhitelist(config: unknown): Set<string> {
   const normalized = raw
     .map((value) => String(value || '').trim().toLowerCase())
     .filter(Boolean);
+
   return new Set(normalized);
 }
 
 function parseUnmatchedUserPolicy(config: unknown): 'store' | 'ignore' {
   const raw = asObject(config)?.unmatchedUserPolicy;
   const normalized = String(raw || '').trim().toLowerCase();
+
   return normalized === 'ignore' ? 'ignore' : 'store';
 }
 
@@ -244,6 +263,7 @@ async function resolveMatchedUserId(params: {
 
   // 1) Phone match first.
   const normalizedExternalPhone = normalizePhone(params.parsed.externalPhone);
+
   if (normalizedExternalPhone) {
     const phoneCandidates = await prisma.user.findMany({
       where: {
@@ -261,6 +281,7 @@ async function resolveMatchedUserId(params: {
     const matchedByPhone = phoneCandidates.filter(
       (candidate) => normalizePhone(candidate.phone) === normalizedExternalPhone,
     );
+
     if (matchedByPhone.length === 1) {
       return {
         userId: matchedByPhone[0]?.id || null,
@@ -273,8 +294,10 @@ async function resolveMatchedUserId(params: {
 
   // 2) External Face user id fallback.
   const userExternalMap = parseExternalUserMap(params.integrationConfig);
+
   if (params.parsed.externalUserId) {
     const mappedUserId = userExternalMap[params.parsed.externalUserId];
+
     if (mappedUserId) {
       const mappedUser = await prisma.user.findFirst({
         where: {
@@ -284,6 +307,7 @@ async function resolveMatchedUserId(params: {
         },
         select: { id: true },
       });
+
       if (mappedUser?.id) {
         return {
           userId: mappedUser.id,
@@ -297,6 +321,7 @@ async function resolveMatchedUserId(params: {
 
   // 3) Strict unique full-name fallback.
   const incomingNormalizedName = buildNormalizedFullName(params.parsed.firstName, params.parsed.lastName);
+
   if (incomingNormalizedName) {
     const nameCandidates = await prisma.user.findMany({
       where: {
@@ -354,14 +379,17 @@ function requiredSecondsForDate(localDate: string): number {
     return REQUIRED_WORK_SECONDS_MON_TO_SAT;
   }
   const [year, month, day] = localDate.split('-').map((part) => Number.parseInt(part, 10));
+
   if (!year || !month || !day) {
     return REQUIRED_WORK_SECONDS_MON_TO_SAT;
   }
   const utc = new Date(Date.UTC(year, month - 1, day));
   const dayOfWeek = utc.getUTCDay(); // 0: Sunday
+
   if (dayOfWeek === 0) {
     return 0;
   }
+
   return REQUIRED_WORK_SECONDS_MON_TO_SAT;
 }
 
@@ -397,6 +425,7 @@ export async function recomputeAttendanceDaySummary(params: {
 
   for (const event of events) {
     const action = String(event.action || '').toUpperCase();
+
     if (action === 'IN') {
       if (openInAt) {
         unmatchedInCount += 1;
@@ -484,6 +513,7 @@ export async function ingestFaceIdEvent(params: {
   localDate?: string;
 }> {
   const parsed = parseFaceIdEvent(params.payload);
+
   if (!parsed) {
     return {
       ignored: true,
@@ -492,8 +522,10 @@ export async function ingestFaceIdEvent(params: {
   }
 
   const branchWhitelist = parseBranchWhitelist(params.integrationConfig);
+
   if (branchWhitelist.size > 0) {
     const incomingBranch = String(parsed.branchName || '').trim().toLowerCase();
+
     if (!incomingBranch || !branchWhitelist.has(incomingBranch)) {
       return {
         ignored: true,
@@ -509,6 +541,7 @@ export async function ingestFaceIdEvent(params: {
   });
 
   const unmatchedUserPolicy = parseUnmatchedUserPolicy(params.integrationConfig);
+
   if (!match.userId && unmatchedUserPolicy === 'ignore') {
     return {
       ignored: true,
@@ -619,6 +652,7 @@ export async function recomputeAttendanceSummariesForRange(params: {
   });
 
   let recomputed = 0;
+
   for (const event of events) {
     if (!event.userId) {
       continue;

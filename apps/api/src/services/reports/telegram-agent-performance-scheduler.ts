@@ -76,6 +76,7 @@ function formatLocalDate(date: Date): string {
   const year = local.getUTCFullYear();
   const month = String(local.getUTCMonth() + 1).padStart(2, '0');
   const day = String(local.getUTCDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
@@ -88,6 +89,7 @@ function formatDurationUz(totalSeconds: number): string {
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   const seconds = safe % 60;
+
   return `${hours} soat ${minutes} daqiqa ${seconds} soniya`;
 }
 
@@ -97,10 +99,12 @@ function normalizeDigits(value: unknown): string {
 
 function isAllowedUtelManagerExtension(value: unknown): boolean {
   const digits = normalizeDigits(value);
+
   if (!digits) {
     return false;
   }
   const parsed = Number.parseInt(digits, 10);
+
   return Number.isFinite(parsed) && parsed >= UTEL_MIN_EXTENSION && parsed <= UTEL_MAX_EXTENSION;
 }
 
@@ -108,6 +112,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
+
   return value as Record<string, unknown>;
 }
 
@@ -116,11 +121,13 @@ function getCaseInsensitiveValue(source: Record<string, unknown>, key: string): 
     return source[key];
   }
   const normalizedKey = key.toLowerCase();
+
   for (const [entryKey, entryValue] of Object.entries(source)) {
     if (entryKey.toLowerCase() === normalizedKey) {
       return entryValue;
     }
   }
+
   return undefined;
 }
 
@@ -130,14 +137,17 @@ function parseDuration(value: unknown): number | null {
   }
   if (typeof value === 'string') {
     const normalized = value.trim();
+
     if (!normalized) {
       return null;
     }
     const parsed = Number.parseInt(normalized, 10);
+
     if (!Number.isNaN(parsed)) {
       return Math.max(0, parsed);
     }
   }
+
   return null;
 }
 
@@ -147,20 +157,24 @@ function resolveCallDuration(duration: number | null, metadata: unknown): number
   }
 
   const metadataObject = asObject(metadata);
+
   if (!metadataObject) {
     return 0;
   }
 
   const candidates: Record<string, unknown>[] = [metadataObject];
   const rawHistory = asObject(metadataObject.raw_call_history);
+
   if (rawHistory) {
     candidates.push(rawHistory);
   }
 
   const keys = ['normalized_duration', 'duration', 'billsec', 'conversation', 'talk_duration'];
+
   for (const candidate of candidates) {
     for (const key of keys) {
       const parsed = parseDuration(getCaseInsensitiveValue(candidate, key));
+
       if (parsed !== null) {
         return parsed;
       }
@@ -184,6 +198,7 @@ function resolveCallExtension(call: {
     || metadata?.internal
     || metadata?.line,
   );
+
   if (isAllowedUtelManagerExtension(metadataExtension)) {
     return metadataExtension;
   }
@@ -204,29 +219,35 @@ function resolveCallExtension(call: {
 
   if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
   if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
+
   return null;
 }
 
 function normalizeTelegramSecret(value: string | undefined | null): string | null {
   const normalized = String(value || '').trim();
+
   return normalized.length > 0 ? normalized : null;
 }
 
 function buildTelegramChatIdCandidates(chatId: string): string[] {
   const normalized = String(chatId || '').trim();
+
   if (!normalized) {
     return [];
   }
 
   const candidates = new Set<string>();
+
   candidates.add(normalized);
 
   const digitsOnly = normalized.replace(/[^\d-]/g, '');
+
   if (digitsOnly && digitsOnly !== normalized) {
     candidates.add(digitsOnly);
   }
 
   const unsignedDigits = digitsOnly.replace(/-/g, '');
+
   if (unsignedDigits) {
     if (!normalized.startsWith('-100')) {
       candidates.add(`-100${unsignedDigits}`);
@@ -246,6 +267,7 @@ function resolveNoonWindow(nowUtc: Date): NoonWindow | null {
   const day = nowLocal.getUTCDate();
 
   const dispatchAt = fromLocalParts(year, month, day, 12, 0, 0, 0);
+
   if (nowUtc < dispatchAt) {
     return null;
   }
@@ -260,12 +282,14 @@ function resolveNoonWindow(nowUtc: Date): NoonWindow | null {
 function taskResponsibleUserId(task: AmoCRMTask): string {
   const source = task as Record<string, unknown>;
   const direct = String(task.responsible_user_id || '').trim();
+
   if (direct) {
     return direct;
   }
 
   const nestedResponsible = source.responsible_user as Record<string, unknown> | undefined;
   const nestedEmbedded = (source._embedded as Record<string, unknown> | undefined)?.responsible_user as Record<string, unknown> | undefined;
+
   return (
     String(nestedResponsible?.id || '').trim()
     || String(nestedResponsible?.user_id || '').trim()
@@ -276,6 +300,7 @@ function taskResponsibleUserId(task: AmoCRMTask): string {
 
 function isCompletedTask(task: AmoCRMTask): boolean {
   const value = task.is_completed ?? (task as Record<string, unknown>).completed ?? (task as Record<string, unknown>).isCompleted;
+
   if (typeof value === 'boolean') {
     return value;
   }
@@ -283,19 +308,23 @@ function isCompletedTask(task: AmoCRMTask): boolean {
     return value === 1;
   }
   const normalized = String(value || '').trim().toLowerCase();
+
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'done';
 }
 
 function isLeadTask(task: AmoCRMTask): boolean {
   const entityType = String(task.entity_type || '').trim().toLowerCase();
+
   if (!entityType) {
     return true;
   }
+
   return entityType === 'lead' || entityType === 'leads';
 }
 
 function buildAgentMessage(row: AgentMetricRow): string {
   const motivation = row.aboveAverageDuration ? AGENT_MOTIVATION_ABOVE : AGENT_MOTIVATION_BELOW;
+
   return [
     `Bugungi tushum - ${formatCurrency(row.incomeToday)}`,
     `Qo'ng'iroqlar soni - ${row.callsCount}`,
@@ -353,6 +382,7 @@ async function collectAgentMetricsForTenant(params: {
     rangeEnd: params.periodEnd,
   });
   const extensionToAgentId = new Map<string, string>();
+
   for (const agent of normalizedAgents) {
     if (agent.utelExtension) {
       extensionToAgentId.set(agent.utelExtension, agent.id);
@@ -407,12 +437,14 @@ async function collectAgentMetricsForTenant(params: {
   // Technical sales (agreement == 1) and their repayments are not real income.
   const incomeRows = excludeTechnicalRows(incomeRowsRaw, await loadTechnicalSaleIdsForRows(params.tenantId, incomeRowsRaw));
   const incomeByAgentId = new Map<string, number>();
+
   for (const row of incomeRows) {
     incomeByAgentId.set(row.managerUserId, (incomeByAgentId.get(row.managerUserId) || 0) + Number(row.paymentAmount || 0));
   }
 
   const callsCountByAgentId = new Map<string, number>();
   const callDurationByAgentId = new Map<string, number>();
+
   for (const call of calls) {
     const extension = resolveCallExtension({
       from: call.from,
@@ -420,10 +452,12 @@ async function collectAgentMetricsForTenant(params: {
       direction: call.direction,
       metadata: call.metadata,
     });
+
     if (!extension) {
       continue;
     }
     const agentId = extensionToAgentId.get(extension);
+
     if (!agentId) {
       continue;
     }
@@ -433,6 +467,7 @@ async function collectAgentMetricsForTenant(params: {
 
   const followUpsByAgentId = new Map<string, number>();
   let amocrmContext: Awaited<ReturnType<typeof getTenantAmoCRMContext>> = null;
+
   try {
     amocrmContext = await getTenantAmoCRMContext(params.tenantId);
   } catch (error: any) {
@@ -463,11 +498,13 @@ async function collectAgentMetricsForTenant(params: {
       );
 
       const completedByResponsible = new Map<string, number>();
+
       for (const task of tasks) {
         if (!isLeadTask(task) || !isCompletedTask(task)) {
           continue;
         }
         const responsibleUserId = taskResponsibleUserId(task);
+
         if (!responsibleUserId) {
           continue;
         }
@@ -519,16 +556,19 @@ async function collectAgentMetricsForTenant(params: {
 
 async function sendMessageToTelegramChat(botToken: string, chatId: string, text: string): Promise<void> {
   const candidates = buildTelegramChatIdCandidates(chatId);
+
   if (candidates.length === 0) {
     throw new Error('Telegram chat id is empty');
   }
 
   let lastError = '';
+
   for (const candidate of candidates) {
     try {
       await telegramService.sendMessage(botToken, candidate, text, {
         disable_web_page_preview: true,
       });
+
       return;
     } catch (error) {
       lastError = String((error as any)?.message || error);
@@ -561,6 +601,7 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
   for (const integration of integrations as TelegramIntegrationWithTenant[]) {
     const lockKey = `telegram-agent-performance:${integration.tenantId}:${window.periodKey}`;
     const lockResult = await redis.set(lockKey, nowUtc.toISOString(), 'EX', LOCK_TTL_SECONDS, 'NX');
+
     if (lockResult !== 'OK') {
       continue;
     }
@@ -568,6 +609,7 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
     try {
       const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted || '');
       const botToken = normalizeTelegramSecret(tokens.botToken || tokens.token || process.env.TELEGRAM_BOT_TOKEN || undefined);
+
       if (!botToken) {
         throw new Error('Telegram bot token is missing');
       }
@@ -583,11 +625,13 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
       }
 
       let sentCount = 0;
+
       for (const row of rows) {
         if (!row.telegramId) {
           continue;
         }
         const message = buildAgentMessage(row);
+
         try {
           await sendMessageToTelegramChat(botToken, row.telegramId, message);
           sentCount += 1;
@@ -658,6 +702,7 @@ async function tickScheduler(): Promise<void> {
   try {
     const nowUtc = new Date();
     const window = resolveNoonWindow(nowUtc);
+
     if (window) {
       await dispatchNoonWindow(window, nowUtc);
     }

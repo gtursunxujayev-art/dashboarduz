@@ -19,8 +19,10 @@ function closureMatchesPlan(closure: SaleClosure, plan: SalaryPlanBonus, subTari
   if (plan.subTariffId && plan.subTariffId !== closure.profileSubTariffId) return false;
   if (!plan.tariffId && plan.subTariffName) {
     const saleSubTariffName = closure.profileSubTariffId ? subTariffNameById.get(closure.profileSubTariffId) || '' : '';
+
     if (!saleSubTariffName || saleSubTariffName !== normalizeSubTariffName(plan.subTariffName)) return false;
   }
+
   return true;
 }
 
@@ -50,20 +52,26 @@ export function computePlanProgressByAgent(params: {
       const target = Math.max(plan.targetClosedSales, 1);
       let fact: number;
       let completedUnits: number;
+
       if (plan.periodMode === 'all_time') {
         fact = matching.length;
         const before = matching.filter((closure) => closure.closedAt.getTime() < startMs).length;
+
         completedUnits = Math.floor(fact / target) - Math.floor(before / target);
       } else {
         const inRange = matching.filter((closure) => closure.closedAt.getTime() >= startMs);
+
         fact = inRange.length;
         const countByMonth = new Map<string, number>();
+
         for (const closure of inRange) {
           const key = getTashkentMonthKey(closure.closedAt);
+
           countByMonth.set(key, (countByMonth.get(key) || 0) + 1);
         }
         completedUnits = [...countByMonth.values()].reduce((sum, count) => sum + Math.floor(count / target), 0);
       }
+
       return {
         planId: plan.id,
         name: plan.name,
@@ -75,7 +83,9 @@ export function computePlanProgressByAgent(params: {
         earnedAmount: completedUnits * plan.bonusAmount,
       };
     });
+
     result.set(agentId, progress);
   }
+
   return result;
 }

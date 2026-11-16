@@ -91,6 +91,7 @@ class VaultSecretsManager implements SecretsManager {
       
       // For now, return from environment
       const envKey = secretName.toUpperCase().replace(/\//g, '_').replace(/-/g, '_');
+
       return process.env[envKey] || {};
     } catch (error: any) {
       console.error(`[Vault] Failed to get secret ${secretName}:`, error.message);
@@ -152,6 +153,7 @@ export async function loadSecretsFromManager(secretNames: string[]): Promise<voi
       } else {
         // Load string secret
         const envKey = secretName.toUpperCase().replace(/\//g, '_').replace(/-/g, '_');
+
         process.env[envKey] = secret;
       }
     } catch (error: any) {

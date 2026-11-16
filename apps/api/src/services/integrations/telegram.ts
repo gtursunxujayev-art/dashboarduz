@@ -26,6 +26,7 @@ function describeNetworkError(error: unknown): string {
     cause?.port,
   ].filter((value) => value !== undefined && value !== null && value !== '');
   const baseMessage = cause?.message || requestError?.message || String(error);
+
   return details.length > 0 ? `${baseMessage} (${details.join(' ')})` : baseMessage;
 }
 
@@ -45,6 +46,7 @@ export class TelegramService {
           signal: controller.signal,
         });
         const retryableStatus = response.status === 429 || response.status >= 500;
+
         if (!retryableStatus || attempt === TELEGRAM_REQUEST_ATTEMPTS) {
           return response;
         }
@@ -77,11 +79,13 @@ export class TelegramService {
 
   async getBotInfo(botToken: string): Promise<{ id: number; username?: string; first_name?: string }> {
     const response = await fetch(`${this.apiUrl}${botToken}/getMe`);
+
     if (!response.ok) {
       throw new Error('Invalid Telegram bot token');
     }
 
     const data = await response.json();
+
     if (!data.ok || !data.result) {
       throw new Error('Failed to fetch Telegram bot info');
     }
@@ -103,6 +107,7 @@ export class TelegramService {
 
     if (!response.ok) {
       const error = await response.json();
+
       throw new Error(`Telegram API error: ${error.description || 'Unknown error'}`);
     }
 
@@ -113,6 +118,7 @@ export class TelegramService {
   async verifyBotToken(botToken: string): Promise<{ isValid: boolean; bot?: { id: number; username?: string; first_name?: string } }> {
     try {
       const bot = await this.getBotInfo(botToken);
+
       return { isValid: true, bot };
     } catch {
       return { isValid: false };
@@ -129,9 +135,11 @@ export class TelegramService {
   }> {
     const response = await this.fetchWithRetry(`${this.apiUrl}${botToken}/getWebhookInfo`, { method: 'GET' });
     const data = await response.json() as { ok?: boolean; result?: any; description?: string };
+
     if (!response.ok || !data.ok || !data.result) {
       throw new Error(`Telegram API error: ${data.description || `HTTP ${response.status}`}`);
     }
+
     return data.result;
   }
 
@@ -157,11 +165,13 @@ export class TelegramService {
     caption?: string,
   ) {
     const formData = new FormData();
+
     formData.append('chat_id', chatId);
     if (caption) {
       formData.append('caption', caption);
     }
     const binary = new Uint8Array(documentBuffer);
+
     formData.append('document', new Blob([binary], { type: 'application/pdf' }), fileName);
 
     const response = await fetch(`${this.apiUrl}${botToken}/sendDocument`, {
@@ -171,8 +181,10 @@ export class TelegramService {
 
     if (!response.ok) {
       let errorDescription = `HTTP ${response.status}`;
+
       try {
         const errorBody = await response.json() as { description?: string };
+
         errorDescription = errorBody.description || errorDescription;
       } catch {
         // Ignore JSON parsing failures and keep the HTTP status fallback.

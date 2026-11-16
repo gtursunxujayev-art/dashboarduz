@@ -213,16 +213,19 @@ export class AmoCRMService {
     try {
       if (process.env.NODE_ENV !== 'production' && !signature && !this.webhookSecret) {
         logger.warn('Skipping AmoCRM webhook signature verification in development mode');
+
         return true;
       }
 
       if (!signature) {
         logger.warn('Missing AmoCRM webhook signature header');
+
         return false;
       }
 
       if (!this.webhookSecret) {
         logger.error('AMOCRM_WEBHOOK_SECRET not configured');
+
         return false;
       }
 
@@ -232,6 +235,7 @@ export class AmoCRMService {
       const expectedBufferHex = Buffer.from(expectedHex, 'hex');
 
       let providedBuffer: Buffer | null = null;
+
       if (/^[a-fA-F0-9]+$/.test(normalizedSignature)) {
         providedBuffer = Buffer.from(normalizedSignature, 'hex');
       } else {
@@ -244,10 +248,12 @@ export class AmoCRMService {
 
       if (!providedBuffer || providedBuffer.length !== expectedBufferHex.length) {
         logger.warn('Invalid AmoCRM webhook signature format/length');
+
         return false;
       }
 
       const isValid = crypto.timingSafeEqual(providedBuffer, expectedBufferHex);
+
       if (!isValid) {
         logger.warn('Invalid AmoCRM webhook signature');
       }
@@ -255,6 +261,7 @@ export class AmoCRMService {
       return isValid;
     } catch (error: any) {
       logger.error({ error: error.message }, 'AmoCRM webhook signature verification error');
+
       return false;
     }
   }
@@ -270,6 +277,7 @@ export class AmoCRMService {
 
     if (!response.ok) {
       const errorText = await response.text();
+
       logger.error({ error: errorText, status: response.status }, 'AmoCRM account fetch error');
       throw new Error(`Failed to fetch AmoCRM account: ${response.status} ${response.statusText}`);
     }
@@ -293,6 +301,7 @@ export class AmoCRMService {
   }, baseUrl?: string) {
     try {
       const queryParams = new URLSearchParams();
+
       if (params?.page) queryParams.set('page', params.page.toString());
       if (params?.limit) queryParams.set('limit', params.limit.toString());
       if (params?.with) queryParams.set('with', params.with);
@@ -332,6 +341,7 @@ export class AmoCRMService {
 
       if (!response.ok) {
         const errorText = await response.text();
+
         logger.error({ error: errorText, status: response.status }, 'AmoCRM fetch leads error');
         throw new Error(`Failed to fetch leads from AmoCRM: ${response.status} ${response.statusText}`);
       }
@@ -342,6 +352,7 @@ export class AmoCRMService {
       }
 
       const data = await response.json() as AmoCRMLeadListResponse;
+
       if (!data._embedded || !data._embedded.leads) {
         throw new Error('Invalid response structure from AmoCRM');
       }
@@ -360,6 +371,7 @@ export class AmoCRMService {
   }, baseUrl?: string) {
     try {
       const queryParams = new URLSearchParams();
+
       if (params?.page) queryParams.set('page', params.page.toString());
       if (params?.limit) queryParams.set('limit', params.limit.toString());
       if (params?.query) queryParams.set('query', params.query);
@@ -376,11 +388,13 @@ export class AmoCRMService {
 
       if (!response.ok) {
         const errorText = await response.text();
+
         logger.error({ error: errorText, status: response.status }, 'AmoCRM fetch contacts error');
         throw new Error(`Failed to fetch contacts from AmoCRM: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
+
       if (!data._embedded || !data._embedded.contacts) {
         throw new Error('Invalid response structure from AmoCRM');
       }
@@ -403,6 +417,7 @@ export class AmoCRMService {
 
     if (!response.ok) {
       const errorText = await response.text();
+
       logger.error({ error: errorText, status: response.status }, 'AmoCRM lead custom fields fetch error');
       throw new Error(`Failed to fetch AmoCRM lead custom fields: ${response.status} ${response.statusText}`);
     }
@@ -422,6 +437,7 @@ export class AmoCRMService {
 
       if (!response.ok) {
         const errorText = await response.text();
+
         logger.error({ error: errorText, status: response.status }, 'AmoCRM pipelines fetch error');
         throw new Error(`Failed to fetch AmoCRM pipelines: ${response.status} ${response.statusText}`);
       }
@@ -438,6 +454,7 @@ export class AmoCRMService {
   }, baseUrl?: string): Promise<AmoCRMLead> {
     const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
     const queryParams = new URLSearchParams();
+
     if (params?.with) {
       queryParams.set('with', params.with);
     }
@@ -452,6 +469,7 @@ export class AmoCRMService {
 
     if (!response.ok) {
       const errorText = await response.text();
+
       logger.error({ error: errorText, status: response.status, leadId }, 'AmoCRM lead fetch by id error');
       throw new Error(`Failed to fetch AmoCRM lead: ${response.status} ${response.statusText}`);
     }
@@ -498,9 +516,11 @@ export class AmoCRMService {
       );
 
       const leads = Array.isArray(response._embedded?.leads) ? response._embedded?.leads : [];
+
       allLeads.push(...leads);
 
       const hasNext = Boolean(response._links?.next?.href);
+
       if (!hasNext || leads.length < pageSize) {
         break;
       }
@@ -516,6 +536,7 @@ export class AmoCRMService {
     limit?: number;
   }, baseUrl?: string): Promise<AmoCRMUsersResponse> {
     const queryParams = new URLSearchParams();
+
     if (params?.page) queryParams.set('page', params.page.toString());
     if (params?.limit) queryParams.set('limit', params.limit.toString());
 
@@ -530,6 +551,7 @@ export class AmoCRMService {
 
     if (!response.ok) {
       const errorText = await response.text();
+
       logger.error({ error: errorText, status: response.status }, 'AmoCRM users fetch error');
       throw new Error(`Failed to fetch AmoCRM users: ${response.status} ${response.statusText}`);
     }
@@ -546,12 +568,15 @@ export class AmoCRMService {
     const allUsers: AmoCRMUser[] = [];
 
     let page = 1;
+
     while (page <= maxPages) {
       const response = await this.fetchUsers(accessToken, { page, limit: pageSize }, baseUrl);
       const users = Array.isArray(response._embedded?.users) ? response._embedded.users : [];
+
       allUsers.push(...users);
 
       const hasNext = Boolean(response._links?.next?.href);
+
       if (!hasNext || users.length < pageSize) {
         break;
       }
@@ -572,6 +597,7 @@ export class AmoCRMService {
     entityType?: string;
   }, baseUrl?: string): Promise<AmoCRMTaskListResponse> {
     const queryParams = new URLSearchParams();
+
     if (params?.page) queryParams.set('page', params.page.toString());
     if (params?.limit) queryParams.set('limit', params.limit.toString());
     if (params?.responsibleUserIds?.length) {
@@ -582,6 +608,7 @@ export class AmoCRMService {
     const completedFilter = typeof params?.completed === 'boolean'
       ? params.completed
       : (typeof params?.completedOnly === 'boolean' ? params.completedOnly : null);
+
     if (completedFilter !== null) {
       queryParams.set('filter[is_completed]', completedFilter ? '1' : '0');
     }
@@ -606,6 +633,7 @@ export class AmoCRMService {
 
     if (!response.ok) {
       const errorText = await response.text();
+
       logger.error({ error: errorText, status: response.status }, 'AmoCRM tasks fetch error');
       throw new Error(`Failed to fetch AmoCRM tasks: ${response.status} ${response.statusText}`);
     }
@@ -633,6 +661,7 @@ export class AmoCRMService {
     const allTasks: AmoCRMTask[] = [];
 
     let page = 1;
+
     while (page <= maxPages) {
       const response = await this.fetchTasks(
         accessToken,
@@ -649,9 +678,11 @@ export class AmoCRMService {
         baseUrl,
       );
       const tasks = Array.isArray(response._embedded?.tasks) ? response._embedded.tasks : [];
+
       allTasks.push(...tasks);
 
       const hasNext = Boolean(response._links?.next?.href);
+
       if (!hasNext || tasks.length < pageSize) {
         break;
       }
@@ -673,6 +704,7 @@ export class AmoCRMService {
     orderByUpdatedAsc?: boolean;
   }, baseUrl?: string): Promise<AmoCRMNote[]> {
     const queryParams = new URLSearchParams();
+
     if (params?.orderByUpdatedAsc) queryParams.set('order[updated_at]', 'asc');
     if (params?.page) queryParams.set('page', params.page.toString());
     if (params?.limit) queryParams.set('limit', Math.min(params.limit, 250).toString());
@@ -696,6 +728,7 @@ export class AmoCRMService {
 
     if (!response.ok) {
       const errorText = await response.text();
+
       logger.error({ error: errorText, status: response.status, entityType }, 'AmoCRM notes fetch error');
       throw new Error(`Failed to fetch AmoCRM notes: ${response.status} ${response.statusText}`);
     }
@@ -704,6 +737,7 @@ export class AmoCRMService {
     }
 
     const data = (await response.json()) as AmoCRMNoteListResponse;
+
     return Array.isArray(data._embedded?.notes) ? data._embedded.notes : [];
   }
 
@@ -716,6 +750,7 @@ export class AmoCRMService {
     entityType?: string;
   }, baseUrl?: string): Promise<AmoCRMEventListResponse> {
     const queryParams = new URLSearchParams();
+
     if (params?.page) queryParams.set('page', params.page.toString());
     if (params?.limit) queryParams.set('limit', params.limit.toString());
     if (params?.dateFrom) {
@@ -744,6 +779,7 @@ export class AmoCRMService {
 
     if (!response.ok) {
       const errorText = await response.text();
+
       logger.error({ error: errorText, status: response.status }, 'AmoCRM events fetch error');
       throw new Error(`Failed to fetch AmoCRM events: ${response.status} ${response.statusText}`);
     }
@@ -779,6 +815,7 @@ export class AmoCRMService {
 
     for (const chunk of userChunks) {
       let page = 1;
+
       while (page <= maxPages) {
         const response = await this.fetchEvents(
           accessToken,
@@ -793,10 +830,13 @@ export class AmoCRMService {
           baseUrl,
         );
         const events = Array.isArray(response._embedded?.events) ? response._embedded.events : [];
+
         for (const event of events) {
           const eventId = (event as { id?: unknown }).id;
+
           if (eventId !== undefined && eventId !== null) {
             const key = String(eventId);
+
             if (seenEventIds.has(key)) continue;
             seenEventIds.add(key);
           }
@@ -804,6 +844,7 @@ export class AmoCRMService {
         }
 
         const hasNext = Boolean(response._links?.next?.href);
+
         if (!hasNext || events.length < pageSize) {
           break;
         }
@@ -828,6 +869,7 @@ export class AmoCRMService {
 
       if (!response.ok) {
         const errorText = await response.text();
+
         logger.error({ error: errorText, status: response.status }, 'AmoCRM create lead error');
         throw new Error(`Failed to create lead in AmoCRM: ${response.status} ${response.statusText}`);
       }
@@ -853,6 +895,7 @@ export class AmoCRMService {
 
       if (!response.ok) {
         const errorText = await response.text();
+
         logger.error({ error: errorText, status: response.status }, 'AmoCRM update lead error');
         throw new Error(`Failed to update lead in AmoCRM: ${response.status} ${response.statusText}`);
       }
@@ -867,12 +910,15 @@ export class AmoCRMService {
   encryptTokens(tokens: AmoCRMTokens): string | null {
     try {
       const encrypted = encryptionService.encryptJSON(tokens);
+
       if (!encrypted) {
         throw new Error('Failed to encrypt tokens');
       }
+
       return encrypted;
     } catch (error: any) {
       logger.error({ error: error.message }, 'Failed to encrypt AmoCRM tokens');
+
       return null;
     }
   }
@@ -880,12 +926,15 @@ export class AmoCRMService {
   decryptTokens(encryptedTokens: string): AmoCRMTokens | null {
     try {
       const tokens = encryptionService.decryptJSON<AmoCRMTokens>(encryptedTokens);
+
       if (!tokens) {
         throw new Error('Failed to decrypt tokens');
       }
+
       return tokens;
     } catch (error: any) {
       logger.error({ error: error.message }, 'Failed to decrypt AmoCRM tokens');
+
       return null;
     }
   }

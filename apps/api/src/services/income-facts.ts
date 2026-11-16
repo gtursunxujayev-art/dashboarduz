@@ -38,6 +38,7 @@ export function resolveRowSaleId(row: IncomeRowRef): string | null {
  */
 export async function loadTechnicalSaleIdsForRows(tenantId: string, rows: IncomeRowRef[]): Promise<Set<string>> {
   const saleIds = Array.from(new Set(rows.map(resolveRowSaleId).filter((id): id is string => Boolean(id))));
+
   if (!saleIds.length) {
     return new Set();
   }
@@ -45,6 +46,7 @@ export async function loadTechnicalSaleIdsForRows(tenantId: string, rows: Income
     where: { tenantId, id: { in: saleIds }, type: 'new_sale' },
     select: { id: true, type: true, coursePriceAmount: true, debtAmount: true, paymentAmount: true },
   });
+
   return buildTechnicalSaleIdSet(sales);
 }
 
@@ -53,6 +55,7 @@ export function excludeTechnicalRows<T extends IncomeRowRef>(rows: T[], technica
   if (!technicalSaleIds.size) {
     return rows;
   }
+
   return rows.filter((row) => !isRowLinkedToTechnicalSale({
     rowType: row.type,
     rowId: row.id,
@@ -80,8 +83,10 @@ const SALE_SUB_TARIFF_META_KEY = 'saleSubTariffId';
 function extractSaleSubTariffId(meta: unknown): string | null {
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
   const candidate = (meta as Record<string, unknown>)[SALE_SUB_TARIFF_META_KEY];
+
   if (typeof candidate !== 'string') return null;
   const normalized = candidate.trim();
+
   return normalized.length > 0 ? normalized : null;
 }
 
@@ -98,10 +103,13 @@ export type SubTariffResolvableSale = {
  */
 export function resolveSaleSubTariffId(sale: SubTariffResolvableSale): string | null {
   const saleSubTariffId = extractSaleSubTariffId(sale.legacyImportMeta);
+
   if (saleSubTariffId) return saleSubTariffId;
   const customer = sale.customer;
+
   if (customer && customer.profileCourseId === sale.courseId && customer.profileTariffId && customer.profileTariffId === sale.tariffId) {
     return customer.profileSubTariffId || null;
   }
+
   return null;
 }

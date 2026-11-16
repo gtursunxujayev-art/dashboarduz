@@ -14,10 +14,12 @@ export async function resolveTenant(req: Request, res: Response, next: NextFunct
         path: req.path,
         ip: req.ip 
       });
+
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const token = authHeader.split(' ')[1];
+
     if (!token) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -30,6 +32,7 @@ export async function resolveTenant(req: Request, res: Response, next: NextFunct
         payload,
         path: req.path 
       });
+
       return res.status(401).json({ error: 'Invalid session' });
     }
 
@@ -46,6 +49,7 @@ export async function resolveTenant(req: Request, res: Response, next: NextFunct
       path: req.path,
       ip: req.ip 
     });
+
     return res.status(401).json({ error: 'Unauthorized' });
   }
 }
@@ -57,6 +61,7 @@ export function optionalTenant(req: Request, _res: Response, next: NextFunction)
     
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
+
       if (!token) {
         return next();
       }
@@ -89,6 +94,7 @@ export function validateTenantAccess(resourceTenantId: string) {
     
     if (!requestTenantId) {
       res.status(401).json({ error: 'Unauthorized' });
+
       return;
     }
     
@@ -102,6 +108,7 @@ export function validateTenantAccess(resourceTenantId: string) {
         method: req.method
       });
       res.status(403).json({ error: 'Forbidden' });
+
       return;
     }
     

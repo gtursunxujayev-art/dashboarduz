@@ -49,6 +49,7 @@ export type NormalizedMetaInsight = {
 
 function toNumber(value: unknown): number {
   const parsed = Number.parseFloat(String(value ?? '0'));
+
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -60,19 +61,23 @@ function formatDateKey(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const day = String(date.getUTCDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
 function parseMetaDate(dateKey: string | undefined): Date {
   const safeKey = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || '')) ? String(dateKey) : formatDateKey(new Date());
+
   return new Date(`${safeKey}T00:00:00.000Z`);
 }
 
 export function normalizeMetaAdAccountId(input: string): string {
   const trimmed = String(input || '').trim();
+
   if (!trimmed) {
     return '';
   }
+
   return trimmed.startsWith('act_') ? trimmed : `act_${trimmed.replace(/^act_/, '')}`;
 }
 
@@ -80,11 +85,14 @@ function getLeadCount(actions: MetaInsightRow['actions']): number {
   if (!Array.isArray(actions)) {
     return 0;
   }
+
   return actions.reduce((total, action) => {
     const type = String(action.action_type || '').toLowerCase();
+
     if (type === 'lead' || type.includes('lead')) {
       return total + toInteger(action.value);
     }
+
     return total;
   }, 0);
 }
@@ -96,17 +104,21 @@ async function metaGet<T>(path: string, params: Record<string, string>, accessTo
   });
   const response = await fetch(`${META_API_BASE}/${path}?${search.toString()}`);
   const body = await response.json().catch(() => ({}));
+
   if (!response.ok) {
     const message = typeof body?.error?.message === 'string'
       ? body.error.message
       : `Meta API request failed with status ${response.status}`;
+
     throw new Error(message);
   }
+
   return body as T;
 }
 
 export async function validateMetaAdAccount(accessToken: string, adAccountId: string) {
   const accountPath = normalizeMetaAdAccountId(adAccountId);
+
   return metaGet<{
     id?: string;
     name?: string;
@@ -146,12 +158,15 @@ export async function fetchMetaInsights(
 
   do {
     let payload: { data?: MetaInsightRow[]; paging?: { next?: string } };
+
     if (nextUrl) {
       payload = await fetch(nextUrl).then(async (response) => {
         const body = await response.json().catch(() => ({}));
+
         if (!response.ok) {
           throw new Error(String(body?.error?.message || `Meta API request failed with status ${response.status}`));
         }
+
         return body as { data?: MetaInsightRow[]; paging?: { next?: string } };
       });
     } else {
@@ -215,6 +230,7 @@ export async function syncMetaAdInsightsForTenant(tenantId: string, dateFrom: Da
   const tokens = decryptIntegrationTokens<MetaTokens>(integration.tokensEncrypted);
   const accessToken = String(tokens.accessToken || tokens.access_token || '').trim();
   const adAccountId = String(config.adAccountId || config.accountId || '').trim();
+
   if (!accessToken || !adAccountId) {
     throw new Error('Meta Ads integration is missing token or ad account id.');
   }

@@ -41,6 +41,7 @@ describe('report rows', () => {
 
   it('computes response time in minutes and null while pending', () => {
     const createdAt = new Date('2026-09-26T10:00:00.000Z');
+
     expect(computeResponseMinutes(createdAt, new Date('2026-09-26T12:15:29.000Z'))).toBe(135);
     expect(computeResponseMinutes(createdAt, null)).toBeNull();
   });

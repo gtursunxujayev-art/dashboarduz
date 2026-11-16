@@ -19,6 +19,7 @@ dotenv.config();
 if (process.env.SKIP_ENV_VALIDATION !== 'true') {
   try {
     const { validateAllFeatures } = require('./config/env-validator');
+
     validateAllFeatures();
     console.log('[Config] Environment variables validated successfully');
   } catch (error: any) {
@@ -35,12 +36,14 @@ const parseBooleanEnv = (value: string | undefined, fallback: boolean): boolean 
     return fallback;
   }
   const normalized = value.trim().toLowerCase();
+
   if (['1', 'true', 'yes', 'on'].includes(normalized)) {
     return true;
   }
   if (['0', 'false', 'no', 'off'].includes(normalized)) {
     return false;
   }
+
   return fallback;
 };
 
@@ -79,9 +82,11 @@ app.use(cors({
       return callback(null, true);
     }
     const normalizedOrigin = origin.replace(/\/+$/, '');
+
     if (allowedOrigins.includes(normalizedOrigin)) {
       return callback(null, true);
     }
+
     return callback(new Error('CORS blocked'));
   },
   credentials: true,
@@ -138,6 +143,7 @@ app.get('/health', async (_req, res) => {
     };
 
     const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
+
     res.status(statusCode).json(healthStatus);
   } catch (error: any) {
     res.status(503).json({
@@ -154,9 +160,11 @@ app.get('/health/ready', async (_req, res) => {
       checkRedisHealth(),
       (async () => {
         const { queueService } = await import('./services/queue');
+
         return queueService.healthCheck();
       })(),
     ]);
+
     await prisma.$queryRaw`SELECT 1`;
 
     if (redisHealth.status !== 'healthy' || queueHealth.status === 'unhealthy') {
@@ -186,6 +194,7 @@ app.get('/health/queues', async (_req, res) => {
   try {
     const { queueService } = await import('./services/queue');
     const health = await queueService.healthCheck();
+
     res.json(health);
   } catch (error: any) {
     res.status(500).json({
@@ -222,6 +231,7 @@ function parseTelegramGroupIds(rawValue: string | undefined): string[] {
 
 function isTelegramDebugAuthorized(req: express.Request): boolean {
   const configuredKey = (process.env.TELEGRAM_DEBUG_KEY || '').trim();
+
   if (!configuredKey) {
     return process.env.NODE_ENV !== 'production';
   }
@@ -230,6 +240,7 @@ function isTelegramDebugAuthorized(req: express.Request): boolean {
   const headerKey = typeof req.headers['x-debug-key'] === 'string' ? req.headers['x-debug-key'] : '';
   const bodyKey = typeof req.body?.key === 'string' ? req.body.key : '';
   const providedKey = String(queryKey || headerKey || bodyKey || '').trim();
+
   return providedKey.length > 0 && providedKey === configuredKey;
 }
 
@@ -287,9 +298,11 @@ async function resolveTelegramDebugContext(req: express.Request): Promise<{
   });
 
   let integrationToken: string | null = null;
+
   if (integration?.tokensEncrypted) {
     try {
       const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
+
       integrationToken = String(tokens.botToken || tokens.token || '').trim() || null;
     } catch (_error) {
       integrationToken = null;
@@ -338,9 +351,11 @@ app.get('/debug/telegram', async (req, res) => {
     tenantId: context.tenantId,
     groupIds: context.groupIds,
   };
+
   if (context.botToken) {
     responseBody.hasBotToken = true;
   }
+
   return res.json(responseBody);
 });
 
@@ -354,6 +369,7 @@ app.post('/debug/telegram', async (req, res) => {
 
   try {
     const context = await resolveTelegramDebugContext(req);
+
     if (!context.botToken) {
       return res.status(400).json({
         ok: false,

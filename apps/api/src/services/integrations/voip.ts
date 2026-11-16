@@ -49,6 +49,7 @@ export class VoIPService {
 
       if (!response.ok) {
         const errorText = await response.text();
+
         console.error(`[VoIP] API error (${response.status}):`, errorText);
         throw new Error(`VoIP API error: ${response.status} ${response.statusText}`);
       }
@@ -75,6 +76,7 @@ export class VoIPService {
     limit: number;
   }> {
     const queryParams = new URLSearchParams();
+
     if (params?.start_date) queryParams.set('start_date', params.start_date);
     if (params?.end_date) queryParams.set('end_date', params.end_date);
     if (params?.direction) queryParams.set('direction', params.direction);
@@ -83,6 +85,7 @@ export class VoIPService {
     if (params?.limit) queryParams.set('limit', params.limit.toString());
 
     const endpoint = `/v1/calls${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
     return this.makeRequest(endpoint);
   }
 
@@ -127,11 +130,13 @@ export class VoIPService {
     group_by?: 'day' | 'week' | 'month';
   }): Promise<any> {
     const queryParams = new URLSearchParams();
+
     if (params?.start_date) queryParams.set('start_date', params.start_date);
     if (params?.end_date) queryParams.set('end_date', params.end_date);
     if (params?.group_by) queryParams.set('group_by', params.group_by);
 
     const endpoint = `/v1/account/stats${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
     return this.makeRequest(endpoint);
   }
 
@@ -139,6 +144,7 @@ export class VoIPService {
   async validateToken(): Promise<boolean> {
     try {
       await this.getAccountBalance();
+
       return true;
     } catch (error) {
       return false;
@@ -151,6 +157,7 @@ export class VoIPService {
       // Validate event structure
       if (!event.call_id || !event.direction || !event.from || !event.to || !event.status) {
         console.error('[VoIP] Invalid webhook event structure:', event);
+
         return null;
       }
 
@@ -171,6 +178,7 @@ export class VoIPService {
       return callEvent;
     } catch (error) {
       console.error('[VoIP] Webhook processing error:', error);
+
       return null;
     }
   }
@@ -182,6 +190,7 @@ export class VoIPService {
     limit?: number;
   }): Promise<VoIPCallEvent[]> {
     const queryParams = new URLSearchParams();
+
     queryParams.set('phone', phoneNumber);
     if (params?.start_date) queryParams.set('start_date', params.start_date);
     if (params?.end_date) queryParams.set('end_date', params.end_date);
@@ -189,6 +198,7 @@ export class VoIPService {
 
     const endpoint = `/v1/calls/search${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     const result = await this.makeRequest(endpoint);
+
     return result.calls || [];
   }
 

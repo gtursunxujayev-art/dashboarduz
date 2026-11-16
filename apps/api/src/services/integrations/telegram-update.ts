@@ -18,9 +18,11 @@ export function extractTelegramRecipientFromPayload(payload: any): TelegramRecip
     || payload?.callback_query?.message
     || null;
   const chat = message?.chat || null;
+
   if (!chat || chat.id === null || chat.id === undefined) return null;
 
   const chatType = normalizeText(chat.type || 'private').toLowerCase();
+
   if (chatType && chatType !== 'private') return null;
 
   const from = payload?.message?.from

@@ -14,9 +14,11 @@ const router = express.Router();
 
 function getRawBody(req: Request): string {
   const rawBody = (req as any).rawBody;
+
   if (typeof rawBody === 'string') {
     return rawBody;
   }
+
   return JSON.stringify(req.body ?? {});
 }
 
@@ -30,19 +32,23 @@ function hashFaceIdWebhookToken(token: string): string {
 
 function extractBearerToken(req: Request): string | null {
   const raw = req.headers.authorization;
+
   if (!raw || typeof raw !== 'string') {
     return null;
   }
   const match = raw.match(/^Bearer\s+(.+)$/i);
+
   if (!match) {
     return null;
   }
   const token = String(match[1] || '').trim();
+
   return token || null;
 }
 
 function extractFaceIdToken(req: Request): string | null {
   const bearer = extractBearerToken(req);
+
   if (bearer) {
     return bearer;
   }
@@ -54,11 +60,13 @@ function extractFaceIdToken(req: Request): string | null {
       : typeof req.query?.access_token === 'string'
         ? req.query.access_token.trim()
         : '';
+
   if (queryToken) {
     return queryToken;
   }
 
   const body = req.body as Record<string, unknown> | null | undefined;
+
   if (body && typeof body === 'object') {
     const bodyToken = typeof body.token === 'string'
       ? body.token.trim()
@@ -67,6 +75,7 @@ function extractFaceIdToken(req: Request): string | null {
         : typeof body.access_token === 'string'
           ? body.access_token.trim()
           : '';
+
     if (bodyToken) {
       return bodyToken;
     }
@@ -101,6 +110,7 @@ function getMetadataCandidates(value: unknown): Record<string, unknown>[] {
 
   for (const nestedKey of nestedKeys) {
     const nested = metadata[nestedKey];
+
     if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
       candidates.push(nested as Record<string, unknown>);
     }
@@ -115,6 +125,7 @@ function getCaseInsensitiveMetadataValue(source: Record<string, unknown>, key: s
   }
 
   const normalizedKey = key.toLowerCase();
+
   for (const [currentKey, currentValue] of Object.entries(source)) {
     if (currentKey.toLowerCase() === normalizedKey) {
       return currentValue;
@@ -126,11 +137,14 @@ function getCaseInsensitiveMetadataValue(source: Record<string, unknown>, key: s
 
 function pickMetadataValue(metadata: unknown, keys: string[]): string | null {
   const candidates = getMetadataCandidates(metadata);
+
   for (const candidate of candidates) {
     for (const key of keys) {
       const value = getCaseInsensitiveMetadataValue(candidate, key);
+
       if (value !== null && value !== undefined) {
         const normalized = textFromUnknown(value);
+
         if (normalized) {
           return normalized;
         }
@@ -145,36 +159,43 @@ function normalizePhone(value: string | null): string {
   if (!value) {
     return '';
   }
+
   return String(value).replace(/[^\d+]/g, '');
 }
 
 function isLikelyExternalPhone(value: string | null): boolean {
   const normalized = normalizePhone(value);
   const digits = normalized.replace(/\D/g, '');
+
   return digits.length >= 7;
 }
 
 function isLikelyInternalPhone(value: string | null): boolean {
   const normalized = normalizePhone(value);
   const digits = normalized.replace(/\D/g, '');
+
   return digits.length > 0 && digits.length <= 6;
 }
 
 function isAllowedUtelManagerExtension(value: string | null): boolean {
   const normalized = normalizePhone(value);
   const digits = normalized.replace(/\D/g, '');
+
   if (!digits) {
     return false;
   }
   const parsed = Number.parseInt(digits, 10);
+
   return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
 }
 
 function normalizeDirection(value: string | null | undefined): 'inbound' | 'outbound' {
   const normalized = String(value || '').trim().toLowerCase();
+
   if (['out', 'outbound', 'dial_out', 'outgoing'].includes(normalized)) {
     return 'outbound';
   }
+
   return 'inbound';
 }
 
@@ -182,6 +203,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
+
   return value as Record<string, unknown>;
 }
 
@@ -192,6 +214,7 @@ function textFromUnknown(value: unknown): string | null {
 
   if (typeof value === 'string') {
     const normalized = value.trim();
+
     return normalized || null;
   }
 
@@ -202,8 +225,10 @@ function textFromUnknown(value: unknown): string | null {
   if (typeof value === 'object' && !Array.isArray(value)) {
     const objectValue = value as Record<string, unknown>;
     const preferredKeys = ['name', 'title', 'label', 'value', 'status', 'state', 'code', 'text'];
+
     for (const key of preferredKeys) {
       const nested = textFromUnknown(objectValue[key]);
+
       if (nested) {
         return nested;
       }
@@ -216,10 +241,12 @@ function textFromUnknown(value: unknown): string | null {
 function firstTextValue(values: unknown[]): string | null {
   for (const value of values) {
     const parsed = textFromUnknown(value);
+
     if (parsed) {
       return parsed;
     }
   }
+
   return null;
 }
 
@@ -229,18 +256,22 @@ function parseUtelDateTimeToUtcIso(value: unknown): string | null {
   }
 
   const raw = value.trim();
+
   if (!raw) {
     return null;
   }
 
   const withTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(raw);
+
   if (withTimezone) {
     const parsed = new Date(raw);
+
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
   const normalized = raw.replace(' ', 'T');
   const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/);
+
   if (match) {
     const [, y, m, d, hh, mm, ss] = match;
     // UTeL sends local time in GMT+5, convert to UTC for storage.
@@ -253,10 +284,12 @@ function parseUtelDateTimeToUtcIso(value: unknown): string | null {
       Number(ss),
     );
     const parsed = new Date(utcMillis);
+
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
   const fallback = new Date(normalized);
+
   return Number.isNaN(fallback.getTime()) ? null : fallback.toISOString();
 }
 
@@ -266,8 +299,10 @@ function toInt(value: unknown): number | null {
   }
   if (typeof value === 'string') {
     const parsed = Number.parseInt(value.trim(), 10);
+
     return Number.isNaN(parsed) ? null : parsed;
   }
+
   return null;
 }
 
@@ -279,21 +314,25 @@ function buildCallHistoryFromFlatPayload(bodyPayload: Record<string, unknown>): 
     let fieldKey: string | null = null;
 
     const bracketDataMatch = key.match(/^data\[call_history\]\[([^\]]+)\]$/);
+
     if (bracketDataMatch) {
       fieldKey = bracketDataMatch[1] || null;
     }
 
     const bracketDirectMatch = key.match(/^call_history\[([^\]]+)\]$/);
+
     if (!fieldKey && bracketDirectMatch) {
       fieldKey = bracketDirectMatch[1] || null;
     }
 
     const dottedDataMatch = key.match(/^data\.call_history\.([^.]+)$/);
+
     if (!fieldKey && dottedDataMatch) {
       fieldKey = dottedDataMatch[1] || null;
     }
 
     const dottedDirectMatch = key.match(/^call_history\.([^.]+)$/);
+
     if (!fieldKey && dottedDirectMatch) {
       fieldKey = dottedDirectMatch[1] || null;
     }
@@ -314,17 +353,20 @@ function resolveFlatEventName(bodyPayload: Record<string, unknown>): string {
     || bodyPayload.event_type
     || '',
   ).trim().toLowerCase();
+
   if (direct) {
     return direct;
   }
 
   const fromFlatData = String(bodyPayload['data[name]'] || bodyPayload['data.name'] || '').trim().toLowerCase();
+
   return fromFlatData;
 }
 
 function inferUtelDirection(src: string, dst: string, rawDirection: unknown): 'inbound' | 'outbound' {
   const explicitRaw = textFromUnknown(rawDirection);
   const explicit = normalizeDirection(explicitRaw || undefined);
+
   if (explicitRaw) {
     return explicit;
   }
@@ -340,6 +382,7 @@ function inferUtelDirection(src: string, dst: string, rawDirection: unknown): 'i
   if (srcExternal && dstInternal) {
     return 'inbound';
   }
+
   return 'inbound';
 }
 
@@ -377,10 +420,12 @@ function prepareVoipPayload(provider: string, bodyPayload: Record<string, unknow
     const pickExternal = (values: unknown[]): string => {
       for (const value of values) {
         const normalized = normalizePhone(String(value || ''));
+
         if (isLikelyExternalPhone(normalized)) {
           return normalized;
         }
       }
+
       return '';
     };
     const src = normalizePhone(String(callHistory.src || callHistory.from || callHistory.source || ''));
@@ -515,6 +560,7 @@ function isUniqueViolation(error: any): boolean {
 
 function isMissingWebhookIdempotencyColumnError(error: unknown): boolean {
   const message = String((error as any)?.message || '').toLowerCase();
+
   return message.includes('idempotencykey') && message.includes('does not exist');
 }
 
@@ -525,6 +571,7 @@ async function enqueueWebhookJob(params: {
   idempotencyKey: string;
 }) {
   const webhookQueue = getQueue(QueueName.WEBHOOK_PROCESSING);
+
   await webhookQueue.add(
     params.jobName,
     {
@@ -569,12 +616,15 @@ router.post('/amocrm', async (req: Request, res: Response) => {
     const rawBody = getRawBody(req);
 
     const isValid = amocrmService.verifyWebhookSignature(rawBody, signature);
+
     if (!isValid) {
       logger.warn({ msg: 'Invalid AmoCRM webhook signature' });
+
       return res.status(403).json({ error: 'Invalid signature' });
     }
 
     const accountIdRaw = req.body?.account?.id ?? req.body?.account_id;
+
     if (!accountIdRaw) {
       return res.status(400).json({ error: 'Missing AmoCRM account id' });
     }
@@ -593,6 +643,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
 
     if (!integration) {
       logger.warn({ msg: 'AmoCRM integration not found', accountId });
+
       return res.status(404).json({ error: 'Integration not found' });
     }
 
@@ -601,6 +652,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
       windowMs: 60 * 1000,
       keyPrefix: 'webhook',
     });
+
     if (!webhookLimit.allowed) {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
@@ -610,6 +662,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
       || (req.body?.leads ? 'leads' : req.body?.contacts ? 'contacts' : 'unknown');
 
     let event;
+
     try {
       event = await prisma.webhookEvent.create({
         data: {
@@ -625,6 +678,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
     } catch (error: any) {
       if (isUniqueViolation(error)) {
         logger.info({ msg: 'Duplicate AmoCRM webhook ignored', idempotencyKey });
+
         return res.status(200).json({ received: true, duplicate: true });
       }
       if (isMissingWebhookIdempotencyColumnError(error)) {
@@ -664,6 +718,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
     return res.status(200).json({ received: true });
   } catch (err) {
     logger.error({ err }, 'AmoCRM webhook handler failed');
+
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -712,13 +767,16 @@ async function handleVoipWebhook(req: Request, res: Response) {
 
     if (!integration) {
       logger.warn({ msg: 'UTeL integration not found for key' });
+
       return res.status(404).json({ error: 'Integration not found' });
     }
     tenantIdForAudit = integration.tenantId;
 
     const webhookSecret = process.env.UTEL_WEBHOOK_SECRET;
+
     if (webhookSecret && signature) {
       const isValidSignature = EncryptionService.verifyHMAC(rawBody, signature, webhookSecret);
+
       if (!isValidSignature) {
         await writeWebhookRejectionAudit({
           tenantId: integration.tenantId,
@@ -728,6 +786,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
             hasSignature: true,
           },
         });
+
         return res.status(403).json({ error: 'Invalid signature' });
       }
     } else if (webhookSecret && !signature) {
@@ -741,6 +800,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
       windowMs: 60 * 1000,
       keyPrefix: 'webhook',
     });
+
     if (!webhookLimit.allowed) {
       await writeWebhookRejectionAudit({
         tenantId: integration.tenantId,
@@ -749,6 +809,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
           source: 'voip',
         },
       });
+
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
 
@@ -756,8 +817,10 @@ async function handleVoipWebhook(req: Request, res: Response) {
       ? req.body as Record<string, unknown>
       : { raw: req.body as unknown };
     const provider = resolveVoipProvider(req);
+
     providerForAudit = provider;
     const preparedPayload = prepareVoipPayload(provider, bodyPayload);
+
     if (preparedPayload.ignored) {
       await writeWebhookRejectionAudit({
         tenantId: integration.tenantId,
@@ -768,6 +831,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
           eventType: preparedPayload.eventType,
         },
       });
+
       return res.status(200).json({ received: true, ignored: true, reason: preparedPayload.reason || 'ignored_event' });
     }
 
@@ -775,6 +839,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
     const eventType = preparedPayload.eventType;
 
     let event;
+
     try {
       event = await prisma.webhookEvent.create({
         data: {
@@ -790,6 +855,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
     } catch (error: any) {
       if (isUniqueViolation(error)) {
         logger.info({ msg: 'Duplicate VoIP webhook ignored', idempotencyKey, provider });
+
         return res.status(200).json({ received: true, duplicate: true });
       }
       if (isMissingWebhookIdempotencyColumnError(error)) {
@@ -840,6 +906,7 @@ async function handleVoipWebhook(req: Request, res: Response) {
       });
     }
     logger.error({ err }, 'VoIP webhook handler failed');
+
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
@@ -993,6 +1060,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
     );
 
     let managerByExtension = new Map<string, string>();
+
     if (extensionKeys.length > 0) {
       try {
         const mappedUsers = await prisma.user.findMany({
@@ -1009,6 +1077,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
             username: true,
           },
         });
+
         managerByExtension = new Map(
           mappedUsers
             .filter((user) => Boolean(user.utelManagerExternalId))
@@ -1023,6 +1092,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
     }
 
     let diagnostics: Record<string, unknown> | null = null;
+
     if (debugEnabled) {
       const [
         processedWebhookEvents,
@@ -1086,11 +1156,13 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
       ]);
 
       let queueMetrics: Record<string, unknown>;
+
       try {
         const [webhookQueue, webhookDLQ] = await Promise.all([
           getQueueMetrics(QueueName.WEBHOOK_PROCESSING),
           getDLQMetrics(QueueName.WEBHOOK_PROCESSING),
         ]);
+
         queueMetrics = {
           webhookQueue,
           webhookDLQ,
@@ -1112,6 +1184,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
             ? event.rawPayload as Record<string, unknown>
             : {};
           const provider = typeof payload.provider === 'string' ? payload.provider : null;
+
           return {
             id: event.id,
             eventType: event.eventType,
@@ -1142,6 +1215,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
     });
   } catch (err) {
     logger.error({ err }, 'VoIP webhook status handler failed');
+
     return res.status(500).json({ ok: false, error: 'Internal server error' });
   }
 }
@@ -1165,6 +1239,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
   try {
     const rawBody = getRawBody(req);
     const secretToken = req.headers['x-telegram-bot-api-secret-token'] as string | undefined;
+
     if (!secretToken) {
       return res.status(403).json({ error: 'Missing Telegram secret token' });
     }
@@ -1189,6 +1264,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
       windowMs: 60 * 1000,
       keyPrefix: 'webhook',
     });
+
     if (!webhookLimit.allowed) {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
@@ -1196,10 +1272,12 @@ router.post('/telegram', async (req: Request, res: Response) => {
     const idempotencyKey = buildIdempotencyKey('telegram', integration.tenantId, rawBody);
     const eventType = req.body?.message ? 'message' : req.body?.callback_query ? 'callback_query' : 'update';
     const recipient = extractTelegramRecipientFromPayload(req.body);
+
     if (recipient) {
       try {
         const updateId = req.body?.update_id ? String(req.body.update_id) : null;
         const seenAt = new Date();
+
         await upsertTelegramRecipientRecord({
           tenantId: integration.tenantId,
           integrationId: integration.id,
@@ -1228,6 +1306,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
     }
 
     let event;
+
     try {
       event = await prisma.webhookEvent.create({
         data: {
@@ -1242,6 +1321,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
     } catch (error: any) {
       if (isUniqueViolation(error)) {
         logger.info({ msg: 'Duplicate Telegram webhook ignored', idempotencyKey });
+
         return res.status(200).json({ received: true, duplicate: true });
       }
       if (isMissingWebhookIdempotencyColumnError(error)) {
@@ -1280,6 +1360,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
     return res.status(200).json({ received: true });
   } catch (err) {
     logger.error({ err }, 'Telegram webhook handler failed');
+
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1299,6 +1380,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
   try {
     const rawBody = getRawBody(req);
     const webhookToken = extractFaceIdToken(req);
+
     if (!webhookToken) {
       return res.status(401).json({
         error: 'Missing Face ID token',
@@ -1327,6 +1409,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
       windowMs: 60 * 1000,
       keyPrefix: 'webhook',
     });
+
     if (!webhookLimit.allowed) {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
@@ -1335,6 +1418,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
     const eventType = String(req.body?.event_type || req.body?.request?.event_type || 'check_in_out');
 
     let event;
+
     try {
       event = await prisma.webhookEvent.create({
         data: {
@@ -1349,6 +1433,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
     } catch (error: any) {
       if (isUniqueViolation(error)) {
         logger.info({ msg: 'Duplicate Face ID webhook ignored', idempotencyKey });
+
         return res.status(200).json({ received: true, duplicate: true });
       }
       if (isMissingWebhookIdempotencyColumnError(error)) {
@@ -1387,6 +1472,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
     return res.status(200).json({ received: true });
   } catch (err) {
     logger.error({ err }, 'Face ID webhook handler failed');
+
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -53,6 +53,7 @@ describe('plan bonus', () => {
     const before = Array.from({ length: 22 }, (_, index) => closure(`2026-0${(index % 5) + 3}-1${index % 9}T05:00:00Z`));
     const inSeptember = Array.from({ length: 3 }, (_, index) => closure(`2026-09-1${index}T05:00:00Z`));
     const progress = run({ ...basePlan, periodMode: 'all_time' }, [...before, ...inSeptember]);
+
     expect(progress.fact).toBe(25);
     expect(progress.completedUnits).toBe(0);
     expect(progress.earnedAmount).toBe(0);
@@ -62,6 +63,7 @@ describe('plan bonus', () => {
     const before = Array.from({ length: 8 }, (_, index) => closure(`2026-08-1${index}T05:00:00Z`));
     const inSeptember = Array.from({ length: 3 }, (_, index) => closure(`2026-09-1${index}T05:00:00Z`));
     const progress = run({ ...basePlan, periodMode: 'all_time' }, [...before, ...inSeptember]);
+
     expect(progress.completedUnits).toBe(1);
     expect(progress.earnedAmount).toBe(1_000_000);
   });
@@ -71,6 +73,7 @@ describe('plan bonus', () => {
     const sept = Array.from({ length: 6 }, (_, index) => closure(`2026-09-1${index}T05:00:00Z`));
     const twoMonths = { rangeStart: new Date('2026-07-31T19:00:00.000Z'), rangeEnd: september.rangeEnd };
     const progress = run({ ...basePlan, periodMode: 'monthly' }, [...august, ...sept], twoMonths);
+
     expect(progress.fact).toBe(12);
     expect(progress.completedUnits).toBe(0);
   });
@@ -81,6 +84,7 @@ describe('plan bonus', () => {
       closure('2026-09-11T05:00:00Z', { category: 'offline' }),
       closure('2026-09-12T05:00:00Z'),
     ]);
+
     expect(progress.fact).toBe(1);
     expect(progress.earnedAmount).toBe(1_000_000);
   });

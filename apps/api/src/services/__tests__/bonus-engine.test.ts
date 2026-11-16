@@ -64,6 +64,7 @@ describe('monthly course-income bonus policy', () => {
 
   it('uses Asia/Tashkent month boundaries', () => {
     const instant = new Date('2026-08-01T00:30:00+05:00');
+
     expect(getTashkentMonthKey(instant)).toBe('2026-08');
     expect(getTashkentMonthStart(instant).toISOString()).toBe('2026-07-31T19:00:00.000Z');
     expect(getTashkentMonthEnd(instant).toISOString()).toBe('2026-08-31T18:59:59.999Z');
@@ -73,6 +74,7 @@ describe('monthly course-income bonus policy', () => {
     const junePayment = { id: 'sale', managerUserId: 'agent-a', paymentAmount: 4_000_000, entryDate: new Date('2026-06-10T05:00:00Z') } as any;
     const julyPayment = { id: 'repayment', managerUserId: 'agent-b', paymentAmount: 6_000_000, entryDate: new Date('2026-07-05T05:00:00Z') } as any;
     const closure = resolveFullyPaidClosure({ coursePriceAmount: 10_000_000, debtAmount: 10_000_000 }, [junePayment, julyPayment]);
+
     expect(closure?.closing.id).toBe('repayment');
     expect(closure?.closing.managerUserId).toBe('agent-b');
     expect(getTashkentMonthKey(closure!.closing.entryDate)).toBe('2026-07');
@@ -84,6 +86,7 @@ describe('monthly course-income bonus policy', () => {
       { id: 'sale', managerUserId: 'agent-a', paymentAmount: 4_000_000, entryDate: new Date('2026-06-10T05:00:00Z') },
       { id: 'repayment', managerUserId: 'agent-b', paymentAmount: 6_000_000, entryDate: new Date('2026-07-05T05:00:00Z') },
     ] as any;
+
     // Falling back to the running total closed this sale in June (4M) AND July (10M), paying bonus twice.
     expect(resolveFullyPaidClosure({ coursePriceAmount: null, debtAmount: null }, chain)).toBeNull();
   });
@@ -124,6 +127,7 @@ describe('bonus attribution and reconcile', () => {
   it('on_debt_closed pays the agent who records the closing payment', async () => {
     const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
     const result = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ agentUserId: 'agent-b', sourceIncomeId: 'closing', baseAmount: 10_000_000, bonusAmount: 500_000 });
   });
@@ -136,6 +140,7 @@ describe('bonus attribution and reconcile', () => {
       },
     });
     const result = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ agentUserId: 'agent-b', closedCount: 1, appliedPercent: 3, bonusAmount: 180_000 });
   });
@@ -143,16 +148,19 @@ describe('bonus attribution and reconcile', () => {
   it('deletes pending adjustments once the data matches the finalized snapshot again', async () => {
     const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
     const current = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+
     jest.spyOn(prisma.bonusMonthSnapshot, 'findUnique').mockResolvedValue({
       id: 'snap', policy, policyVersionId: null, sourceDigest: current.sourceDigest, lines: [], adjustments: [],
     } as never);
     const deleteMany = jest.spyOn(prisma.bonusAdjustment, 'deleteMany').mockResolvedValue({ count: 1 } as never);
+
     await expect(reconcileBonusMonth({ tenantId: 't', month: july })).resolves.toBe(0);
     expect(deleteMany).toHaveBeenCalledWith({ where: { snapshotId: 'snap', status: 'pending' } });
   });
 
   it('does not claw back a finalized bonus just because the agent was deactivated', async () => {
     const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
+
     jest.spyOn(prisma.user, 'findMany').mockResolvedValue([{ id: 'agent-a', roles: ['OnlineAgent'] }] as never);
     jest.spyOn(prisma.bonusMonthSnapshot, 'findUnique').mockResolvedValue({
       id: 'snap',
@@ -163,6 +171,7 @@ describe('bonus attribution and reconcile', () => {
       adjustments: [],
     } as never);
     const create = jest.spyOn(prisma.bonusAdjustment, 'create').mockResolvedValue({ id: 'adj' } as never);
+
     await expect(reconcileBonusMonth({ tenantId: 't', month: july })).resolves.toBe(0);
     expect(create).not.toHaveBeenCalled();
   });

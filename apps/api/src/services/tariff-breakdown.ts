@@ -23,11 +23,13 @@ export function buildTariffBreakdown(params: {
   const ensure = (tariffId: string | null, name: string) => {
     const key = tariffId ?? '__none__';
     let row = rows.get(key);
+
     if (!row) {
       row = { tariffId, name, salesCount: 0, subTariffs: [], subTariffMap: new Map() };
       rows.set(key, row);
       order.push(key);
     }
+
     return row;
   };
 
@@ -36,6 +38,7 @@ export function buildTariffBreakdown(params: {
   }
   for (const sale of params.sales) {
     const row = ensure(sale.tariff?.id ?? null, sale.tariff?.name?.trim() || NO_TARIFF_LABEL);
+
     row.salesCount += 1;
     const subKey = sale.resolvedSubTariffId ?? '__none__';
     const sub = row.subTariffMap.get(subKey) || {
@@ -45,6 +48,7 @@ export function buildTariffBreakdown(params: {
         : NO_SUB_TARIFF_LABEL,
       salesCount: 0,
     };
+
     sub.salesCount += 1;
     row.subTariffMap.set(subKey, sub);
   }
@@ -52,6 +56,7 @@ export function buildTariffBreakdown(params: {
   return order.map((key) => {
     const { subTariffMap, ...row } = rows.get(key)!;
     const subTariffs = [...subTariffMap.values()].sort((left, right) => right.salesCount - left.salesCount);
+
     // Only show the sub-tariff split when at least one sale actually has a sub-tariff.
     return { ...row, subTariffs: subTariffs.some((sub) => sub.subTariffId) ? subTariffs : [] };
   });

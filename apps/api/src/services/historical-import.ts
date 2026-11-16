@@ -171,6 +171,7 @@ function collapseWhitespace(value: string): string {
 function excelSerialToIso(serial: number): string {
   const epoch = Date.UTC(1899, 11, 30);
   const milliseconds = epoch + Math.round(serial * 86400000);
+
   return new Date(milliseconds).toISOString().slice(0, 10);
 }
 
@@ -181,6 +182,7 @@ function formatIsoParts(year: number, month: number, day: number): string | null
   if (month < 1 || month > 12 || day < 1 || day > 31) {
     return null;
   }
+
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
@@ -189,10 +191,12 @@ function parseDateToIso(value: HistoricalRawCell | undefined): string | null {
     if (value > 1000 && value < 100000) {
       return excelSerialToIso(value);
     }
+
     return new Date(value).toISOString().slice(0, 10);
   }
 
   const raw = collapseWhitespace(String(value ?? ''));
+
   if (!raw) {
     return null;
   }
@@ -202,11 +206,14 @@ function parseDateToIso(value: HistoricalRawCell | undefined): string | null {
   }
 
   let match = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+
   if (match) {
     let year = Number(match[3]);
+
     if (year < 100) {
       year += 2000;
     }
+
     return formatIsoParts(year, Number(match[2]), Number(match[1]));
   }
 
@@ -240,13 +247,16 @@ function parseDateToIso(value: HistoricalRawCell | undefined): string | null {
     };
     const monthToken = match[2] || '';
     const month = monthMap[monthToken.toLowerCase()];
+
     if (!month) {
       return null;
     }
+
     return formatIsoParts(Number(match[3]), month, Number(match[1]));
   }
 
   const parsed = new Date(raw);
+
   if (!Number.isNaN(parsed.getTime())) {
     return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}-${String(parsed.getUTCDate()).padStart(2, '0')}`;
   }
@@ -256,14 +266,17 @@ function parseDateToIso(value: HistoricalRawCell | undefined): string | null {
 
 function parseAmountOrNull(value: HistoricalRawCell | undefined): number | null {
   const raw = collapseWhitespace(String(value ?? ''));
+
   if (!raw) {
     return null;
   }
   const digits = raw.replace(/[^\d-]/g, '');
+
   if (!digits || digits === '-') {
     return null;
   }
   const parsed = Number.parseInt(digits, 10);
+
   return Number.isNaN(parsed) ? null : parsed;
 }
 
@@ -275,6 +288,7 @@ function getRawValue(row: HistoricalRawRow, candidates: string[]): HistoricalRaw
   }
 
   const normalizedCandidates = new Set(candidates.map((candidate) => normalizeKey(candidate)));
+
   for (const [key, value] of Object.entries(row)) {
     if (normalizedCandidates.has(normalizeKey(key))) {
       return value;
@@ -286,6 +300,7 @@ function getRawValue(row: HistoricalRawRow, candidates: string[]): HistoricalRaw
 
 function getStringValue(row: HistoricalRawRow, candidates: string[]): string {
   const rawValue = getRawValue(row, candidates);
+
   if (rawValue === null || rawValue === undefined) {
     return '';
   }
@@ -295,6 +310,7 @@ function getStringValue(row: HistoricalRawRow, candidates: string[]): string {
   if (typeof rawValue === 'number' || typeof rawValue === 'boolean') {
     return collapseWhitespace(String(rawValue));
   }
+
   return '';
 }
 
@@ -307,6 +323,7 @@ function isIncomeHeaderLikeRow(row: HistoricalRawRow): boolean {
   const customerNumber = normalizeKey(getStringValue(row, HISTORICAL_INCOME_HEADERS.customerNumber));
   const type = normalizeKey(getStringValue(row, HISTORICAL_INCOME_HEADERS.type));
   const course = normalizeKey(getStringValue(row, HISTORICAL_INCOME_HEADERS.courseLabel));
+
   return customerNumber === 'telefonraqami' || type === 'tolovturi' || course === 'kursturi' || (manager === 'operator' && customerNumber === 'telefonraqami');
 }
 
@@ -314,6 +331,7 @@ function isCustomerHeaderLikeRow(row: HistoricalRawRow): boolean {
   const manager = normalizeKey(getStringValue(row, HISTORICAL_CUSTOMER_HEADERS.manager));
   const customerNumber = normalizeKey(getStringValue(row, HISTORICAL_CUSTOMER_HEADERS.customerNumber));
   const course = normalizeKey(getStringValue(row, HISTORICAL_CUSTOMER_HEADERS.courseLabel));
+
   return customerNumber === 'telefonraqami' || course === 'qaysicouching' || (manager === 'operator' && customerNumber === 'telefonraqami');
 }
 
@@ -327,6 +345,7 @@ function toDisplayLabel(value: string): string {
 
 function normalizePaymentType(rawValue: string): 'new_sale' | 'repayment' | null {
   const key = normalizeKey(rawValue);
+
   if (!key) {
     return null;
   }
@@ -336,6 +355,7 @@ function normalizePaymentType(rawValue: string): 'new_sale' | 'repayment' | null
   if (key === 'birinchitolov' || key === 'birinchtolov' || key === 'oxirgitolov') {
     return 'new_sale';
   }
+
   return null;
 }
 
@@ -343,11 +363,13 @@ function normalizeIncomeCourseSpec(rawLabel: string): { courseName: string; tari
   const cleaned = toDisplayLabel(rawLabel);
   const key = normalizeKey(cleaned);
   const exact = LEGACY_INCOME_EXACT_MAP[key];
+
   if (exact) {
     return exact;
   }
 
   const onlinePrefix = cleaned.match(/^(onlayn|online)\s*[-/]\s*(.+)$/i);
+
   if (onlinePrefix) {
     return {
       courseName: 'Onlayn',
@@ -357,6 +379,7 @@ function normalizeIncomeCourseSpec(rawLabel: string): { courseName: string; tari
   }
 
   const offlinePrefix = cleaned.match(/^(oflayn|offline)\s*[-/]\s*(.+)$/i);
+
   if (offlinePrefix) {
     return {
       courseName: 'Oflayn',
@@ -382,6 +405,7 @@ function normalizeIncomeCourseSpec(rawLabel: string): { courseName: string; tari
 
 function inferProfileCourseCategory(rawCourseLabel: string): HistoricalCourseCategory {
   const key = normalizeKey(rawCourseLabel);
+
   if (key.includes('online') || key.includes('onlayn')) {
     return 'online';
   }
@@ -391,6 +415,7 @@ function inferProfileCourseCategory(rawCourseLabel: string): HistoricalCourseCat
   if (key === 'sayohat' || key === 'obuna' || key === 'korporativ' || key === 'talaba' || key === 'oquvquroli' || key === 'shaxsiykonsultatsiya' || key === 'togdarsi') {
     return 'additional_service';
   }
+
   return 'offline';
 }
 
@@ -400,13 +425,16 @@ function shouldSkipHistoricalCourseCategory(category: HistoricalCourseCategory |
 
 function normalizeAliasMap(aliasMapInput: Record<string, string> | undefined): Record<string, string> {
   const aliasMap: Record<string, string> = {};
+
   for (const [label, userId] of Object.entries(aliasMapInput || {})) {
     const key = normalizeKey(label);
+
     if (!key || !userId) {
       continue;
     }
     aliasMap[key] = userId;
   }
+
   return aliasMap;
 }
 
@@ -417,6 +445,7 @@ function resolveManagerUserId(params: {
   fallbackManagerUserId?: string;
 }): { managerUserId: string | null; needsMapping: boolean } {
   const normalizedRawValue = normalizeKey(params.rawManagerValue);
+
   if (!normalizedRawValue) {
     return {
       managerUserId: params.fallbackManagerUserId || null,
@@ -425,16 +454,19 @@ function resolveManagerUserId(params: {
   }
 
   const exactMatch = params.managerLookup.managersByKey[normalizedRawValue];
+
   if (exactMatch) {
     return { managerUserId: exactMatch, needsMapping: false };
   }
 
   const aliasMatch = params.aliasMap[normalizedRawValue];
+
   if (aliasMatch) {
     return { managerUserId: aliasMatch, needsMapping: false };
   }
 
   const containsMatches = params.managerLookup.managersByNormalizedName.filter((manager) => manager.name.includes(normalizedRawValue) || normalizedRawValue.includes(manager.name));
+
   if (containsMatches.length === 1) {
     return { managerUserId: containsMatches[0]?.id || null, needsMapping: false };
   }
@@ -471,6 +503,7 @@ function parseIncomeRows(params: {
     const telegramUsernameRaw = sanitizeTelegramUsername(getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.telegramUsername));
     const rawCourseLabel = toDisplayLabel(getStringValue(rawRow, HISTORICAL_INCOME_HEADERS.courseLabel));
     const courseSpec = rawCourseLabel ? normalizeIncomeCourseSpec(rawCourseLabel) : null;
+
     if (courseSpec && shouldSkipHistoricalCourseCategory(courseSpec.category)) {
       skippedCount += 1;
       continue;
@@ -579,6 +612,7 @@ function parseIncomeRows(params: {
     if (left.entryDate !== right.entryDate) {
       return left.entryDate.localeCompare(right.entryDate);
     }
+
     return left.rowNumber - right.rowNumber;
   });
 
@@ -600,6 +634,7 @@ function parseIncomeRows(params: {
 
     if (row.type === 'new_sale') {
       const remainingAmount = Math.max((row.coursePriceAmount ?? 0) - row.paymentAmount, 0);
+
       if (remainingAmount > 0) {
         customerOpenSales.push({
           legacyImportKey: row.legacyImportKey,
@@ -612,6 +647,7 @@ function parseIncomeRows(params: {
     }
 
     let matchedIndex = -1;
+
     for (let index = customerOpenSales.length - 1; index >= 0; index -= 1) {
       if (customerOpenSales[index]?.courseKey === rowCourseKey && (customerOpenSales[index]?.remainingAmount || 0) > 0) {
         matchedIndex = index;
@@ -630,6 +666,7 @@ function parseIncomeRows(params: {
 
     if (matchedIndex >= 0) {
       const matched = customerOpenSales[matchedIndex] as OpenSaleState;
+
       row.matchedSaleLegacyKey = matched.legacyImportKey;
       matched.remainingAmount = Math.max(matched.remainingAmount - row.paymentAmount, 0);
       if (matched.remainingAmount <= 0) {
@@ -642,12 +679,14 @@ function parseIncomeRows(params: {
     if (row.remainingDebtHint !== null && row.remainingDebtHint >= 0) {
       const openingBalanceAmount = row.remainingDebtHint + row.paymentAmount;
       const openingBalanceLegacyKey = `opening_${row.legacyImportKey}`;
+
       row.requiresOpeningBalance = true;
       row.openingBalanceAmount = openingBalanceAmount;
       row.openingBalanceLegacyKey = openingBalanceLegacyKey;
       row.matchedSaleLegacyKey = openingBalanceLegacyKey;
 
       const remainingAfterRepayment = Math.max(openingBalanceAmount - row.paymentAmount, 0);
+
       if (remainingAfterRepayment > 0) {
         customerOpenSales.push({
           legacyImportKey: openingBalanceLegacyKey,
@@ -714,6 +753,7 @@ function parseCustomerRows(params: {
     const courseName = rawCourseLabel ? toDisplayLabel(rawCourseLabel) : null;
     const tariffName = rawTariffLabel ? toDisplayLabel(rawTariffLabel) : null;
     const category = courseName ? inferProfileCourseCategory(courseName) : null;
+
     if (shouldSkipHistoricalCourseCategory(category)) {
       skippedCount += 1;
       continue;
@@ -779,6 +819,7 @@ function buildMissingCatalogItems(params: {
       continue;
     }
     const key = normalizeKey(row.courseName);
+
     if (!key) {
       continue;
     }
@@ -788,6 +829,7 @@ function buildMissingCatalogItems(params: {
       tariffs: new Set<string>(),
       sources: new Set<'income' | 'customer'>(),
     };
+
     current.tariffs.add(row.tariffName);
     current.sources.add('income');
     requirements.set(key, current);
@@ -798,6 +840,7 @@ function buildMissingCatalogItems(params: {
       continue;
     }
     const key = normalizeKey(row.courseName);
+
     if (!key) {
       continue;
     }
@@ -807,6 +850,7 @@ function buildMissingCatalogItems(params: {
       tariffs: new Set<string>(),
       sources: new Set<'income' | 'customer'>(),
     };
+
     if (row.tariffName) {
       current.tariffs.add(row.tariffName);
     }
@@ -815,6 +859,7 @@ function buildMissingCatalogItems(params: {
   }
 
   const existingCourses = new Map<string, { category: HistoricalCourseCategory; tariffs: Set<string> }>();
+
   for (const course of params.existingCatalog.courses) {
     existingCourses.set(normalizeKey(course.name), {
       category: course.category,
@@ -823,8 +868,10 @@ function buildMissingCatalogItems(params: {
   }
 
   const missingItems: HistoricalCatalogItemPreview[] = [];
+
   for (const requirement of requirements.values()) {
     const existing = existingCourses.get(normalizeKey(requirement.courseName));
+
     if (!existing) {
       missingItems.push({
         courseName: requirement.courseName,
@@ -850,6 +897,7 @@ function buildMissingCatalogItems(params: {
   }
 
   missingItems.sort((left, right) => left.courseName.localeCompare(right.courseName));
+
   return missingItems;
 }
 
@@ -885,12 +933,14 @@ export function prepareHistoricalImportPreview(params: {
   });
 
   const unresolvedManagersMap = new Map<string, { label: string; rowNumbers: number[] }>();
+
   for (const row of parsedIncome.rows) {
     if (!row.managerNeedsMapping) {
       continue;
     }
     const label = row.rawManagerValue || '(bosh)';
     const current = unresolvedManagersMap.get(label) || { label, rowNumbers: [] };
+
     current.rowNumbers.push(row.rowNumber);
     unresolvedManagersMap.set(label, current);
   }
@@ -913,6 +963,7 @@ export function prepareHistoricalImportPreview(params: {
     if (left.scope !== right.scope) {
       return left.scope.localeCompare(right.scope);
     }
+
     return left.rowNumber - right.rowNumber;
   });
   const incomeValidRows = parsedIncome.rows.filter((row) => row.blockingIssues.length === 0).length;

@@ -70,6 +70,7 @@ describe('Telegram recipient discovery', () => {
 
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(request.body));
+
     expect(body).toEqual({
       url: 'https://api.example.com/webhooks/telegram',
       secret_token: 'secret',
@@ -92,6 +93,7 @@ describe('Telegram recipient discovery', () => {
     } as Response);
 
     const info = await new TelegramService().getWebhookInfo('token');
+
     expect(info.url).toBe('https://api.example.com/webhooks/telegram');
     expect(info.pending_update_count).toBe(2);
     expect(info.last_error_message).toBe('temporary error');

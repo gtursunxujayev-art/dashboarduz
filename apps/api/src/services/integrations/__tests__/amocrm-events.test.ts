@@ -13,6 +13,7 @@ function jsonResponse(body: unknown, status = 200) {
 
 describe('AmoCRM events fetching', () => {
   const originalFetch = global.fetch;
+
   afterEach(() => {
     global.fetch = originalFetch;
     jest.restoreAllMocks();
@@ -20,8 +21,10 @@ describe('AmoCRM events fetching', () => {
 
   it('splits created_by filter into chunks of at most 10 users (amoCRM limit)', async () => {
     const urls: string[] = [];
+
     global.fetch = jest.fn(async (url: string) => {
       urls.push(url);
+
       return jsonResponse({ _embedded: { events: [{ id: `e${urls.length}` }] } });
     }) as unknown as typeof fetch;
 
@@ -31,6 +34,7 @@ describe('AmoCRM events fetching', () => {
     expect(urls).toHaveLength(2);
     for (const url of urls) {
       const count = new URL(url).searchParams.getAll('filter[created_by][]').length;
+
       expect(count).toBeLessThanOrEqual(10);
     }
     expect(events).toHaveLength(2);

@@ -26,6 +26,7 @@ export class TelegramAuthService {
       
       // Create data check string
       const dataCheckArr: string[] = [];
+
       Object.keys(dataToCheck)
         .sort()
         .forEach((key) => {
@@ -50,6 +51,7 @@ export class TelegramAuthService {
       return hmac === hash;
     } catch (error) {
       console.error('[Telegram Auth] Verification error:', error);
+
       return false;
     }
   }
@@ -62,14 +64,17 @@ export class TelegramAuthService {
   } | null> {
     try {
       const response = await fetch(`https://api.telegram.org/bot${this.botToken}/getMe`);
+
       if (!response.ok) {
         return null;
       }
 
       const data = await response.json();
+
       return data.result;
     } catch (error) {
       console.error('[Telegram Auth] Get bot info error:', error);
+
       return null;
     }
   }
@@ -145,6 +150,7 @@ export class TelegramAuthService {
       return await response.json();
     } catch (error) {
       console.error('[Telegram Auth] Get photos error:', error);
+
       return null;
     }
   }

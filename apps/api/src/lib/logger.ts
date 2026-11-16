@@ -60,5 +60,6 @@ export const logger = pino(loggerOptions);
 export function maskPhone(phone: string | null | undefined): string | undefined {
   if (!phone) return undefined;
   const str = String(phone);
+
   return str.replace(/\d(?=\d{4})/g, '*');
 }

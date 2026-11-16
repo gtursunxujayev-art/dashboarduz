@@ -24,11 +24,13 @@ export function formatReportDate(date: Date): string {
   const year = local.getUTCFullYear();
   const month = String(local.getUTCMonth() + 1).padStart(2, '0');
   const day = String(local.getUTCDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
 export function getReportDayStart(date: Date): Date {
   const local = toReportLocal(date);
+
   return fromReportLocalParts(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), 0, 0, 0, 0);
 }
 
@@ -37,14 +39,17 @@ export function parseReportDateInput(input: string): Date {
     throw new TRPCError({ code: 'BAD_REQUEST', message: "Sana formati noto'g'ri. YYYY-MM-DD bo'lishi kerak." });
   }
   const parsed = new Date(`${input}T00:00:00.000+05:00`);
+
   if (Number.isNaN(parsed.getTime())) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Sana noto‘g‘ri.' });
   }
+
   return getReportDayStart(parsed);
 }
 
 export function parseDurationToSeconds(input: string): number {
   const normalized = String(input || '').trim();
+
   if (!normalized) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: "Qo'ng'iroq davomiyligi kiritilishi kerak." });
   }
@@ -57,6 +62,7 @@ export function parseDurationToSeconds(input: string): number {
   const hours = Number.parseInt(parts[0] || '0', 10);
   const minutes = Number.parseInt(parts[1] || '0', 10);
   const seconds = Number.parseInt(parts[2] || '0', 10);
+
   if (!Number.isFinite(hours) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: "Qo'ng'iroq davomiyligi noto'g'ri." });
   }
@@ -72,6 +78,7 @@ export function formatDurationToHms(totalSeconds: number): string {
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   const seconds = safe % 60;
+
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
@@ -80,6 +87,7 @@ export function isTodayOrYesterdayInReportTz(targetDate: Date, now = new Date())
   const todayStart = getReportDayStart(now);
   const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
   const allowed = new Set([formatReportDate(todayStart), formatReportDate(yesterdayStart)]);
+
   return allowed.has(target);
 }
 
@@ -90,6 +98,7 @@ export async function getCorporateCallDurationByManager(params: {
   rangeEnd: Date;
 }): Promise<Map<string, number>> {
   const result = new Map<string, number>();
+
   if (!params.managerUserIds.length) {
     return result;
   }

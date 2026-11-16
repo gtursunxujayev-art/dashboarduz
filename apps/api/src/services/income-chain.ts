@@ -62,6 +62,7 @@ export function buildSaleChainMetricsBySaleId(params: {
   for (const income of params.chainRows) {
     const saleId = income.relatedDebtIncomeId || income.id;
     const current = metricsBySaleId.get(saleId);
+
     if (!current) {
       continue;
     }
@@ -88,11 +89,13 @@ export function evaluateSaleChainConsistency(params: {
   const issues: string[] = [];
   const chain = [...params.chainRows].sort((left, right) => {
     const byDate = left.entryDate.getTime() - right.entryDate.getTime();
+
     if (byDate !== 0) {
       return byDate;
     }
     const leftCreated = left.createdAt ? left.createdAt.getTime() : left.entryDate.getTime();
     const rightCreated = right.createdAt ? right.createdAt.getTime() : right.entryDate.getTime();
+
     return leftCreated - rightCreated;
   });
 
@@ -107,6 +110,7 @@ export function evaluateSaleChainConsistency(params: {
   }
 
   const first = chain[0]!;
+
   if (first.id !== params.saleId) {
     issues.push('chronology_mismatch');
   }
@@ -118,8 +122,10 @@ export function evaluateSaleChainConsistency(params: {
   }
 
   let rollingDebt = Math.max(params.agreementAmount - toAmount(first.paymentAmount), 0);
+
   if (first.debtAmount !== null && first.debtAmount !== undefined) {
     const firstDebtAmount = toAmount(first.debtAmount);
+
     if (Math.abs(firstDebtAmount - Math.max(params.agreementAmount, 0)) > tolerance) {
       issues.push('sale_debt_amount_mismatch');
     }
@@ -135,6 +141,7 @@ export function evaluateSaleChainConsistency(params: {
 
     const expectedDebtBeforePayment = rollingDebt;
     const storedDebtBeforePayment = toAmount(repayment.debtAmount);
+
     if (
       repayment.debtAmount !== null
       && repayment.debtAmount !== undefined
@@ -145,6 +152,7 @@ export function evaluateSaleChainConsistency(params: {
 
     rollingDebt = Math.max(expectedDebtBeforePayment - toAmount(repayment.paymentAmount), 0);
     const storedRemaining = toAmount(repayment.remainingDebtAmount);
+
     if (Math.abs(storedRemaining - rollingDebt) > tolerance) {
       issues.push('repayment_remaining_mismatch');
     }
@@ -153,6 +161,7 @@ export function evaluateSaleChainConsistency(params: {
   // In this project, new_sale.remainingDebtAmount is persisted as current chain debt
   // (after all active repayments), not only after first payment.
   const currentSaleRemaining = toAmount(first.remainingDebtAmount);
+
   if (Math.abs(currentSaleRemaining - rollingDebt) > tolerance) {
     issues.push('sale_remaining_mismatch');
   }

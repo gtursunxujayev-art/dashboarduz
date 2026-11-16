@@ -33,6 +33,7 @@ export function planChainRepair(params: {
   const plan: ChainRepairPlan = { saleId: sale.id, lifecycleUpdates: [], debtUpdates: [] };
 
   let targetStatus: string | null = null;
+
   if (sale.lifecycleStatus === 'refunded') {
     targetStatus = 'refunded';
   } else if (sale.lifecycleStatus === 'pending_refund') {
@@ -42,6 +43,7 @@ export function planChainRepair(params: {
   }
 
   const repayments = params.repayments.map((row) => ({ ...row }));
+
   if (targetStatus) {
     for (const repayment of repayments) {
       if (repayment.lifecycleStatus !== targetStatus) {
@@ -66,6 +68,7 @@ export function planChainRepair(params: {
 
   for (const repayment of activeRepayments) {
     const debtAmount = rollingDebt;
+
     rollingDebt = Math.max(debtAmount - Math.max(Number(repayment.paymentAmount || 0), 0), 0);
     if (repayment.debtAmount !== debtAmount || repayment.remainingDebtAmount !== rollingDebt) {
       plan.debtUpdates.push({ id: repayment.id, debtAmount, remainingDebtAmount: rollingDebt });

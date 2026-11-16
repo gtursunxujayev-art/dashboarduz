@@ -16,6 +16,7 @@ let timer: NodeJS.Timeout | null = null;
 export function getPreviousTashkentMonthStart(now: Date): Date {
   const currentMonthStart = getTashkentMonthStart(now);
   const shifted = new Date(currentMonthStart.getTime() + TASHKENT_OFFSET_MS);
+
   return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() - 1, 1) - TASHKENT_OFFSET_MS);
 }
 
@@ -31,6 +32,7 @@ export async function autoFinalizePreviousBonusMonth(now = new Date()): Promise<
   ]);
   const alreadyFinalized = new Set(finalized.map((snapshot) => snapshot.tenantId));
   let count = 0;
+
   for (const tenant of tenants) {
     if (alreadyFinalized.has(tenant.id)) continue;
     try {
@@ -46,6 +48,7 @@ export async function autoFinalizePreviousBonusMonth(now = new Date()): Promise<
       });
     }
   }
+
   return count;
 }
 
@@ -56,6 +59,7 @@ export function startBonusAutoFinalizeScheduler(): void {
       log(LogLevel.WARN, 'Bonus auto-finalize run failed', { error: error?.message || String(error) });
     });
   };
+
   run();
   timer = setInterval(run, CHECK_INTERVAL_MS);
 }
