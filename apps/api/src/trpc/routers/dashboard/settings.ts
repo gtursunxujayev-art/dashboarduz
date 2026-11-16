@@ -1,7 +1,8 @@
+import { asObject } from '../../../lib/object';
+
 import {
   TRPCError,
   z,
-  asObject,
   asStringArray,
   extractLeadValue,
   getSystemLeadFieldOptions,

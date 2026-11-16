@@ -1,6 +1,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { normalizeDigits } from '@dashboarduz/shared';
 
+import { isAllowedUtelManagerExtension } from '../../lib/utel';
 import { getCallsProvider, getCallsProviderFilter } from '../calls-source';
 import { getCorporateCallDurationByManager, getCorporateCallDurationTotal } from '../corporate-call-durations';
 import {
@@ -210,17 +211,6 @@ function normalizePercentage(value: number): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isAllowedUtelManagerExtension(value: unknown): boolean {
-  const digits = normalizeDigits(value);
-
-  if (!digits) {
-    return false;
-  }
-  const parsed = Number.parseInt(digits, 10);
-
-  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
 }
 
 function getReportTenantName(value: string | null | undefined): string {

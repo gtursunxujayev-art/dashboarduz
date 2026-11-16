@@ -1,6 +1,7 @@
+import { asObject } from '../../../lib/object';
+
 import {
   TRPCError,
-  asObject,
   protectedProcedure,
   dashboardLayoutInputSchema,
   normalizeDashboardUserLayout,

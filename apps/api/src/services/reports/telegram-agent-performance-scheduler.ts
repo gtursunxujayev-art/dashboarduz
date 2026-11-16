@@ -1,7 +1,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { AGENT_ROLES, normalizeDigits } from '@dashboarduz/shared';
 
-import { asObject, getCaseInsensitiveValue } from '../../lib/object';
+import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';
 import { getCallsProvider } from '../calls-source';
 import { getCorporateCallDurationByManager } from '../corporate-call-durations';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
@@ -16,8 +16,6 @@ const REPORT_TIMEZONE_OFFSET_MS = 5 * 60 * 60 * 1000; // GMT+5 (Asia/Tashkent)
 const REPORT_TIMEZONE_LABEL = 'GMT+5';
 const POLL_INTERVAL_MS = 30_000;
 const LOCK_TTL_SECONDS = 60 * 60 * 24 * 2; // 2 days
-const UTEL_MIN_EXTENSION = 100;
-const UTEL_MAX_EXTENSION = 150;
 
 const AGENT_MOTIVATION_ABOVE = "Harakatlaringiz juda yaxshi, qo'ng'iroqlarni kamaytirmang va albatta natija siz kutganingizdek bo'ladi!";
 const AGENT_MOTIVATION_BELOW = "Bugun boshqalardan ortda qolyapsiz, ko'proq qo'ng'iroqlar qiling, natija harakatlarga bog'liq!";
@@ -93,109 +91,6 @@ function formatDurationUz(totalSeconds: number): string {
   const seconds = safe % 60;
 
   return `${hours} soat ${minutes} daqiqa ${seconds} soniya`;
-}
-
-function isAllowedUtelManagerExtension(value: unknown): boolean {
-  const digits = normalizeDigits(value);
-
-  if (!digits) {
-    return false;
-  }
-  const parsed = Number.parseInt(digits, 10);
-
-  return Number.isFinite(parsed) && parsed >= UTEL_MIN_EXTENSION && parsed <= UTEL_MAX_EXTENSION;
-}
-
-function parseDuration(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(0, Math.floor(value));
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim();
-
-    if (!normalized) {
-      return null;
-    }
-    const parsed = Number.parseInt(normalized, 10);
-
-    if (!Number.isNaN(parsed)) {
-      return Math.max(0, parsed);
-    }
-  }
-
-  return null;
-}
-
-function resolveCallDuration(duration: number | null, metadata: unknown): number {
-  if (duration !== null && duration !== undefined) {
-    return Math.max(0, duration);
-  }
-
-  const metadataObject = asObject(metadata);
-
-  if (!metadataObject) {
-    return 0;
-  }
-
-  const candidates: Record<string, unknown>[] = [metadataObject];
-  const rawHistory = asObject(metadataObject.raw_call_history);
-
-  if (rawHistory) {
-    candidates.push(rawHistory);
-  }
-
-  const keys = ['normalized_duration', 'duration', 'billsec', 'conversation', 'talk_duration'];
-
-  for (const candidate of candidates) {
-    for (const key of keys) {
-      const parsed = parseDuration(getCaseInsensitiveValue(candidate, key));
-
-      if (parsed !== null) {
-        return parsed;
-      }
-    }
-  }
-
-  return 0;
-}
-
-function resolveCallExtension(call: {
-  from: string;
-  to: string;
-  direction: string;
-  metadata: unknown;
-}): string | null {
-  const metadata = asObject(call.metadata);
-  const metadataExtension = normalizeDigits(
-    metadata?.normalized_extension
-    || metadata?.extension
-    || metadata?.ext
-    || metadata?.internal
-    || metadata?.line,
-  );
-
-  if (isAllowedUtelManagerExtension(metadataExtension)) {
-    return metadataExtension;
-  }
-
-  const fromDigits = normalizeDigits(call.from);
-  const toDigits = normalizeDigits(call.to);
-  const direction = String(call.direction || '').toLowerCase();
-
-  if (direction === 'outbound') {
-    if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
-    if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
-  }
-
-  if (direction === 'inbound') {
-    if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
-    if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
-  }
-
-  if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
-  if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
-
-  return null;
 }
 
 function normalizeTelegramSecret(value: string | undefined | null): string | null {

@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import { logger } from '../lib/logger';
 import { asObject, textFromUnknown } from '../lib/object';
 import { isLikelyExternalPhone, normalizePhoneKeepPlus } from '../lib/phone';
+import { isAllowedUtelManagerExtension, normalizeCallDirection } from '../lib/utel';
 import { amocrmService } from '../services/integrations/amocrm';
 import { upsertTelegramRecipientRecord } from '../services/integrations/telegram-recipient-store';
 import { extractTelegramRecipientFromPayload } from '../services/integrations/telegram-update';
@@ -166,28 +167,6 @@ function isLikelyInternalPhone(value: string | null): boolean {
   return digits.length > 0 && digits.length <= 6;
 }
 
-function isAllowedUtelManagerExtension(value: string | null): boolean {
-  const normalized = normalizePhoneKeepPlus(value);
-  const digits = normalized.replace(/\D/g, '');
-
-  if (!digits) {
-    return false;
-  }
-  const parsed = Number.parseInt(digits, 10);
-
-  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
-}
-
-function normalizeDirection(value: string | null | undefined): 'inbound' | 'outbound' {
-  const normalized = String(value || '').trim().toLowerCase();
-
-  if (['out', 'outbound', 'dial_out', 'outgoing'].includes(normalized)) {
-    return 'outbound';
-  }
-
-  return 'inbound';
-}
-
 function firstTextValue(values: unknown[]): string | null {
   for (const value of values) {
     const parsed = textFromUnknown(value);
@@ -315,7 +294,7 @@ function resolveFlatEventName(bodyPayload: Record<string, unknown>): string {
 
 function inferUtelDirection(src: string, dst: string, rawDirection: unknown): 'inbound' | 'outbound' {
   const explicitRaw = textFromUnknown(rawDirection);
-  const explicit = normalizeDirection(explicitRaw || undefined);
+  const explicit = normalizeCallDirection(explicitRaw || undefined);
 
   if (explicitRaw) {
     return explicit;
@@ -958,7 +937,7 @@ async function handleVoipWebhookStatus(req: Request, res: Response) {
         status: statusFromRow && statusFromRow !== '[object Object]'
           ? statusFromRow
           : (statusFromMetadata || 'completed'),
-        direction: normalizeDirection(directionFromMetadata || call.direction),
+        direction: normalizeCallDirection(directionFromMetadata || call.direction),
         date: call.startedAt,
         duration: call.duration ?? durationFromMetadata,
         phone: displayPhone,

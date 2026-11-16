@@ -1,15 +1,15 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
+import { AGENT_ROLES, hasAgentRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { asObject, getCaseInsensitiveValue, toFiniteNumber } from '../../../lib/object';
+import { asObject, toFiniteNumber } from '../../../lib/object';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import {
   asStringArray,
   type LeadFieldOption,
 } from '../../../services/integrations/amocrm-live';
-import { normalizeIdentifier, getSystemLeadFieldOptions } from '../../../services/integrations/amocrm-live';
+import { normalizeIdentifier } from '../../../services/integrations/amocrm-live';
 
 export const dashboardRangeSchema = z.enum(['today', 'week', 'month', 'custom']);
 export const dashboardWidgetIdSchema = z.string().min(1).max(120);
@@ -43,8 +43,6 @@ export type DashboardRange = z.infer<typeof dashboardRangeSchema>;
 export const REPORT_TZ_OFFSET_MINUTES = 5 * 60; // GMT+5
 export const REPORT_TZ_OFFSET_MS = REPORT_TZ_OFFSET_MINUTES * 60 * 1000;
 export const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
-export const UTEL_MIN_EXTENSION = 100;
-export const UTEL_MAX_EXTENSION = 150;
 export const SALARY_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 export const SALARY_RULE_MODES = ['simple', 'tiered'] as const;
 export const PLAN_BONUS_CATEGORIES = ['online', 'offline', 'intensive', 'additional_service'] as const;
@@ -180,17 +178,6 @@ export function normalizeDashboardUserLayout(value: unknown): DashboardUserLayou
   };
 }
 
-export function isAllowedUtelManagerExtension(value: unknown): boolean {
-  const digits = normalizeDigits(value);
-
-  if (!digits) {
-    return false;
-  }
-  const parsed = Number.parseInt(digits, 10);
-
-  return Number.isFinite(parsed) && parsed >= UTEL_MIN_EXTENSION && parsed <= UTEL_MAX_EXTENSION;
-}
-
 export function extractUtelManagerKey(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== 'object') {
     return null;
@@ -203,86 +190,6 @@ export function extractUtelManagerKey(metadata: unknown): string | null {
   );
 
   return extension || managerName || null;
-}
-
-export function resolveCallExtension(call: { from: string; to: string; direction: string; metadata: unknown }): string | null {
-  const metadataData = call.metadata && typeof call.metadata === 'object'
-    ? (call.metadata as Record<string, unknown>)
-    : null;
-  const metadataExtension = normalizeDigits(
-    metadataData?.normalized_extension
-    || metadataData?.extension
-    || metadataData?.ext
-    || metadataData?.internal
-    || metadataData?.line,
-  );
-
-  if (isAllowedUtelManagerExtension(metadataExtension)) {
-    return metadataExtension;
-  }
-
-  const fromDigits = normalizeDigits(call.from);
-  const toDigits = normalizeDigits(call.to);
-  const direction = String(call.direction || '').toLowerCase();
-
-  if (direction === 'outbound') {
-    if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
-    if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
-  }
-
-  if (direction === 'inbound') {
-    if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
-    if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
-  }
-
-  if (isAllowedUtelManagerExtension(fromDigits)) return fromDigits;
-  if (isAllowedUtelManagerExtension(toDigits)) return toDigits;
-
-  return null;
-}
-
-function parseCallDuration(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(0, Math.floor(value));
-  }
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number.parseInt(value.trim(), 10);
-
-    return Number.isNaN(parsed) ? null : Math.max(0, parsed);
-  }
-
-  return null;
-}
-
-export function resolveCallDuration(duration: number | null, metadata: unknown): number {
-  if (duration !== null && duration !== undefined) {
-    return Math.max(0, duration);
-  }
-
-  const metadataObject = asObject(metadata);
-
-  if (!metadataObject) {
-    return 0;
-  }
-
-  const candidates = [metadataObject];
-  const rawHistory = asObject(metadataObject.raw_call_history);
-
-  if (rawHistory) {
-    candidates.push(rawHistory);
-  }
-
-  for (const candidate of candidates) {
-    for (const key of ['normalized_duration', 'duration', 'billsec', 'conversation', 'talk_duration']) {
-      const parsed = parseCallDuration(getCaseInsensitiveValue(candidate, key));
-
-      if (parsed !== null) {
-        return parsed;
-      }
-    }
-  }
-
-  return 0;
 }
 
 export async function getAgentResponsibleScope(tenantId: string, userId: string, roles: string[], db: DbClient) {
@@ -937,8 +844,6 @@ export function getBonusAmount(amount: number, percentage: number): number {
 // Re-export commonly used items from dependencies so procedure files can import from helpers
 export { TRPCError } from '@trpc/server';
 export { z } from 'zod';
-export { asObject, toFiniteNumber } from '../../../lib/object';
-export { normalizeDigits } from '@dashboarduz/shared';
 export {
   asStringArray,
   extractLeadValue,

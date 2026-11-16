@@ -1,9 +1,12 @@
 import type { DbClient } from '@dashboarduz/db';
 // Tahlil → Voronka: per-manager funnel (leads, calls, sales, plan) and lost-revenue analysis.
-import { AGENT_ROLES } from '@dashboarduz/shared';
+import { AGENT_ROLES, normalizeDigits } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 
+import { asObject, toFiniteNumber } from '../../lib/object';
+import { isAllowedUtelManagerExtension, resolveCallExtension } from '../../lib/utel';
 import { buildCacheKey, getOrSet } from '../../services/cache';
+import { getCallsProvider } from '../../services/calls-source';
 import {
   AMO_LOST_STATUS_ID,
   AMO_WON_STATUS_ID,
@@ -35,26 +38,20 @@ import {
 
 import {
   amocrmService,
-  asObject,
   dashboardRangeSchema,
   getAgentResponsibleScope,
   getTenantAmoCRMContext,
   INCOME_LIFECYCLE_ACTIVE,
-  isAllowedUtelManagerExtension,
   isTashkiliyOnly,
   log,
   LogLevel,
-  normalizeDigits,
   protectedProcedure,
-  resolveCallExtension,
   resolveDateRange,
   router,
-  toFiniteNumber,
   TRPCError,
   z,
 } from './dashboard/helpers';
 import { resolveAgentGroup } from './dashboard/live-leaderboard';
-import { getCallsProvider } from '../../services/calls-source';
 
 const funnelGroupSchema = z.enum(['all', 'online', 'offline']);
 const stageRefSchema = z.object({ pipelineId: z.string().min(1), statusId: z.string().min(1) });

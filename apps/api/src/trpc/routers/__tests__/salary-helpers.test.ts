@@ -1,3 +1,4 @@
+import { toFiniteNumber } from '../../../lib/object';
 import {
   normalizePercentage,
   createZeroBreakdown,
@@ -9,7 +10,6 @@ import {
   classifyCourseCategory,
   classifyCourseCategoryFromField,
   extractSalarySettings,
-  toFiniteNumber,
   toPositiveInteger,
   isAgentOnly,
   isFinanceOnly,

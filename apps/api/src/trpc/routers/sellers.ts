@@ -3,6 +3,7 @@ import { hasAgentRole, normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { isAllowedUtelManagerExtension, resolveExtensionFromCallParties } from '../../lib/utel';
 import { getCallsProvider } from '../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
 import { classifyIncomeCategory, isRowLinkedToTechnicalSale, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
@@ -423,17 +424,6 @@ async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient):
   return botToken;
 }
 
-function isAllowedUtelManagerExtension(value: unknown): boolean {
-  const digits = normalizeDigits(value);
-
-  if (!digits) {
-    return false;
-  }
-  const parsed = Number.parseInt(digits, 10);
-
-  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
-}
-
 function isSchemaCompatibilityError(error: unknown, hints: string[] = []): boolean {
   const message = String((error as any)?.message || '').toLowerCase();
   const isMissingSchema =
@@ -850,21 +840,6 @@ async function getManagerExtensionsMap(tenantId: string, managerIds: string[], d
   return new Map(
     Array.from(byManager.entries()).map(([managerId, extensions]) => [managerId, Array.from(extensions)]),
   );
-}
-
-function resolveCallExtension(call: { from: string; to: string }): string | null {
-  const fromExtension = normalizeDigits(call.from);
-
-  if (isAllowedUtelManagerExtension(fromExtension)) {
-    return fromExtension;
-  }
-  const toExtension = normalizeDigits(call.to);
-
-  if (isAllowedUtelManagerExtension(toExtension)) {
-    return toExtension;
-  }
-
-  return null;
 }
 
 function buildSellersListCacheKey(
@@ -1393,7 +1368,7 @@ export const sellersRouter = router({
     const callsByManager = new Map<string, Array<{ duration: number | null; direction: string; status: string; startedAt: Date | null }>>();
 
     for (const call of calls) {
-      const extension = resolveCallExtension({
+      const extension = resolveExtensionFromCallParties({
         from: call.from,
         to: call.to,
       });

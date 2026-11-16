@@ -5,6 +5,7 @@ import { AGENT_ROLES, USER_ROLES, normalizeDigits, type UserRole } from '@dashbo
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { isAllowedUtelManagerExtension } from '../../lib/utel';
 import { hashPassword } from '../../services/auth/password';
 import { amocrmService } from '../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../services/integrations/amocrm-live';
@@ -51,17 +52,6 @@ function validateNormalizedPhoneOrThrow(rawPhone: string | undefined): string | 
   }
 
   return normalized;
-}
-
-function isAllowedUtelManagerExtension(value: unknown): boolean {
-  const digits = normalizeDigits(value);
-
-  if (!digits) {
-    return false;
-  }
-  const parsed = Number.parseInt(digits, 10);
-
-  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
 }
 
 function extractUtelManagerFromMetadata(metadata: unknown): { key: string; label: string } | null {

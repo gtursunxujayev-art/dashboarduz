@@ -2,6 +2,7 @@ import { systemPrisma } from '@dashboarduz/db';
 
 import { asObject, getCaseInsensitiveValue, textFromUnknownOrEmpty } from '../lib/object';
 import { isLikelyExternalPhone, normalizePhoneKeepPlus } from '../lib/phone';
+import { isAllowedUtelManagerExtension, normalizeCallDirection } from '../lib/utel';
 import { ingestFaceIdEvent } from '../services/attendance/faceid';
 import { getSelectedPipelineIds } from '../services/integrations/amocrm-live';
 import { telegramService } from '../services/integrations/telegram';
@@ -182,17 +183,6 @@ function isInternalNumber(value: string): boolean {
   return digits.length > 0 && digits.length <= 6;
 }
 
-function isAllowedUtelManagerExtension(value: string): boolean {
-  const digits = value.replace(/\D/g, '');
-
-  if (!digits) {
-    return false;
-  }
-  const parsed = Number.parseInt(digits, 10);
-
-  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 150;
-}
-
 type NormalizedVoipCall = {
   callIdExternal: string;
   from: string;
@@ -210,16 +200,6 @@ type NormalizedVoipCall = {
   recordingId: string | null;
   metadata: Record<string, unknown>;
 };
-
-function normalizeDirection(value: unknown): 'inbound' | 'outbound' {
-  const normalized = String(value || '').trim().toLowerCase();
-
-  if (['out', 'outbound', 'dial_out', 'outgoing'].includes(normalized)) {
-    return 'outbound';
-  }
-
-  return 'inbound';
-}
 
 function choosePreferredNumber(existing: string | null | undefined, incoming: string | null | undefined): string {
   const existingNormalized = normalizePhoneKeepPlus(existing || '');
@@ -388,7 +368,7 @@ function normalizeVoipCall(entry: Record<string, unknown>, fallbackCallId: strin
     'dst',
   ])));
 
-  let direction = normalizeDirection(rawDirection);
+  let direction = normalizeCallDirection(rawDirection);
   const hasExplicitDirection = rawDirection.length > 0;
 
   if (!from && !to) {

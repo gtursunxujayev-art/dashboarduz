@@ -1,20 +1,7 @@
 import type { DbClient } from '@dashboarduz/db';
+import { normalizeDigits } from '@dashboarduz/shared';
 
-import {
-  classifyCourseCategoryFromField,
-  getRangeStart,
-  INCOME_LIFECYCLE_ACTIVE,
-  isAllowedUtelManagerExtension,
-  normalizeDigits,
-  protectedProcedure,
-  resolveBonusPercent,
-  resolveCallDuration,
-  resolveCallExtension,
-  type SalaryCategory,
-  TRPCError,
-  z,
-} from './helpers';
-import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
+import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
 import {
   calculateBonusRange,
   resolveCourseIncomePercent,
@@ -22,10 +9,22 @@ import {
   type BonusCalculationItem,
   type BonusPolicy,
 } from '../../../services/bonus-engine';
+import { getCallsProvider } from '../../../services/calls-source';
+import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { buildTechnicalSaleIdSet } from '../../../services/technical-income';
+
+import {
+  classifyCourseCategoryFromField,
+  getRangeStart,
+  INCOME_LIFECYCLE_ACTIVE,
+  protectedProcedure,
+  resolveBonusPercent,
+  type SalaryCategory,
+  TRPCError,
+  z,
+} from './helpers';
 import { loadSelectedReportCourses, parseTelegramDailyReportCourseIds } from './selected-report-courses';
-import { getCallsProvider } from '../../../services/calls-source';
 
 const LIVE_LEADERBOARD_MANAGER_ROLES = new Set(['Admin', 'Manager']);
 

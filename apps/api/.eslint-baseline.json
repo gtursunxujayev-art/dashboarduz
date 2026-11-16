@@ -251,7 +251,6 @@
   "src/trpc/routers/dashboard/helpers.ts": {
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-member-access": 1,
-    "@typescript-eslint/no-unused-vars": 1,
     "no-duplicate-imports": 1
   },
   "src/trpc/routers/dashboard/income-overview.ts": {
@@ -268,8 +267,7 @@
     "@typescript-eslint/no-unsafe-member-access": 5
   },
   "src/trpc/routers/dashboard/live-leaderboard.ts": {
-    "@typescript-eslint/no-unsafe-argument": 1,
-    "import/order": 8
+    "@typescript-eslint/no-unsafe-argument": 1
   },
   "src/trpc/routers/dashboard/salary.ts": {
     "@typescript-eslint/no-unused-vars": 5,
@@ -285,14 +283,10 @@
     "@typescript-eslint/no-unsafe-assignment": 6,
     "@typescript-eslint/no-unsafe-member-access": 14,
     "@typescript-eslint/no-unsafe-return": 1,
-    "@typescript-eslint/no-unused-vars": 1,
-    "import/order": 8
+    "@typescript-eslint/no-unused-vars": 1
   },
   "src/trpc/routers/dashboard/widgets.ts": {
     "import/order": 1
-  },
-  "src/trpc/routers/funnel.ts": {
-    "import/order": 2
   },
   "src/trpc/routers/income-problems.ts": {
     "@typescript-eslint/no-unsafe-assignment": 1,

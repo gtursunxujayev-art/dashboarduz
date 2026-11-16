@@ -1,6 +1,7 @@
+import { asObject } from '../../../lib/object';
+
 import {
   amocrmService,
-  asObject,
   asStringArray,
   extractLeadValue,
   getAgentResponsibleScope,
