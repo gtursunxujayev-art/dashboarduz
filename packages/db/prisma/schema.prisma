@@ -69,7 +69,6 @@ model User {
   authProvider String   // phone, telegram, email
   providerId   String?  // external provider ID
   telegramId   String?  @unique
-  googleId     String?  @unique
   amocrmResponsibleUserId String?
   utelManagerExternalId String?
   isActive     Boolean  @default(true)
@@ -100,7 +99,6 @@ model User {
   @@index([tenantId, utelManagerExternalId])
   @@index([email])
   @@index([phone])
-  @@index([googleId])
   @@index([amocrmResponsibleUserId])
   @@index([utelManagerExternalId])
   @@map("users")
