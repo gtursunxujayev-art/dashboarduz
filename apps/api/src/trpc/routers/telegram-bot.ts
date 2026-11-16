@@ -1,4 +1,4 @@
-import { prisma } from '@dashboarduz/db';
+import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { listTelegramRecipients } from '../../services/integrations/telegram-recipient-store';
@@ -14,8 +14,8 @@ function normalizeTelegramSecret(value: string | null | undefined): string | nul
   return normalized.replace(/\r?\n/g, '').trim();
 }
 
-async function resolveTelegramBotTokenForTenant(tenantId: string): Promise<string | null> {
-  const integration = await prisma.integration.findUnique({
+async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient): Promise<string | null> {
+  const integration = await db.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,
@@ -48,7 +48,7 @@ async function resolveTelegramBotTokenForTenant(tenantId: string): Promise<strin
 export const telegramBotRouter = router({
   recipients: managerProcedure.query(async ({ ctx }) => {
     const [integration, users] = await Promise.all([
-      prisma.integration.findUnique({
+      ctx.db.integration.findUnique({
         where: {
           tenantId_type: {
             tenantId: ctx.tenantId,
@@ -61,7 +61,7 @@ export const telegramBotRouter = router({
           config: true,
         },
       }),
-      prisma.user.findMany({
+      ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
         },
@@ -86,6 +86,7 @@ export const telegramBotRouter = router({
           tenantId: ctx.tenantId,
           integrationId: integration.id,
           startedOnly: true,
+          db: ctx.db,
         })
       : [];
     const recipientsByChatId = new Map(recipients.map((recipient) => [recipient.chatId, recipient]));
@@ -128,7 +129,7 @@ export const telegramBotRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId);
+      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db);
       if (!botToken) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -144,7 +145,7 @@ export const telegramBotRouter = router({
         });
       }
 
-      const users = await prisma.user.findMany({
+      const users = await ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           id: {
@@ -191,7 +192,7 @@ export const telegramBotRouter = router({
         }
       }
 
-      await prisma.auditLog.create({
+      await ctx.db.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: ctx.user.userId,
