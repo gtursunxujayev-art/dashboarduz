@@ -8,8 +8,9 @@ import { logger } from '../../../lib/logger';
 import { resolveExtensionFromCallParties } from '../../../lib/utel';
 import { getCallsProvider } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
-import { type AmoCRMLead, amocrmService } from '../../../services/integrations/amocrm';
+import { type AmoCRMLead } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics, summarizeAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+import { getAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
 import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { computeLeadResponseTimes, getSelectedPipelines } from '../../../services/sellers/leads';
@@ -50,7 +51,7 @@ export const sellerListProcedures = {
 
     const amocrmUsersPromise = (async () => {
       const stepStartedMs = Date.now();
-      const result = await amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl);
+      const result = await getAmoReference(ctx.tenantId, 'users', amoContext, ctx.db);
 
       timings.amocrmUsersMs = Date.now() - stepStartedMs;
 
@@ -59,7 +60,7 @@ export const sellerListProcedures = {
 
     const pipelinesPromise = (async () => {
       const stepStartedMs = Date.now();
-      const result = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+      const result = await getAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db);
 
       timings.amocrmPipelinesMs = Date.now() - stepStartedMs;
 
@@ -206,8 +207,8 @@ export const sellerListProcedures = {
 
     // Start lead response time computation in parallel (doesn't block other work)
     const leadResponseTimePromise = computeLeadResponseTimes({
-      accessToken: amoContext.accessToken,
-      baseUrl: amoContext.baseUrl,
+      tenantId: ctx.tenantId,
+      db: ctx.db,
       managerIds: managerIdList,
       newLeads: newLeadsInRange,
       rangeStart,

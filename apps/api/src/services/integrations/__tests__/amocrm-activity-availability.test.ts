@@ -1,4 +1,3 @@
-import { amocrmService } from '../amocrm';
 import {
   buildActivityCacheKey,
   createAmoCRMActivityDiagnostics,
@@ -6,8 +5,7 @@ import {
   getAmoCRMActivityMetricsWithin,
   resetAmoCRMActivityCache,
 } from '../amocrm-activity';
-
-type TaskParams = { completedOnly?: boolean };
+import * as snapshotRead from '../amocrm-activity-snapshot-read';
 
 const baseParams = {
   tenantId: 'availability-test',
@@ -17,21 +15,36 @@ const baseParams = {
   rangeEnd: new Date('2026-09-15T23:59:59.999Z'),
 };
 
-describe('AmoCRM activity availability', () => {
+describe('AmoCRM activity (from the snapshot)', () => {
   beforeEach(() => resetAmoCRMActivityCache());
   afterEach(() => {
     jest.restoreAllMocks();
     jest.useRealTimers();
   });
 
-  it('preserves successful sources and marks only a failed source unavailable', async () => {
-    // The three sources run in parallel, so fail by filter rather than by call order.
-    jest.spyOn(amocrmService, 'fetchAllTasks').mockImplementation((_token, params) => (
-      (params as TaskParams).completedOnly
-        ? Promise.reject(new Error('completed task fetch failed'))
-        : Promise.resolve([] as never)
+  it('counts tasks and events read from the snapshot', async () => {
+    const tasks = jest.spyOn(snapshotRead, 'fetchSnapshotTasks').mockImplementation((_tenantId, query) => Promise.resolve(
+      query.completed
+        ? [{ id: 1, responsible_user_id: '10', entity_type: 'leads', is_completed: true, complete_till: Date.parse('2026-09-15T08:00:00Z') / 1000 }]
+        : [],
     ));
-    jest.spyOn(amocrmService, 'fetchAllEvents').mockResolvedValue([] as never);
+    const events = jest.spyOn(snapshotRead, 'fetchSnapshotEvents').mockResolvedValue([
+      { id: 'e1', type: 'common_note_added', created_by: 10, created_at: Date.parse('2026-09-15T09:00:00Z') / 1000 },
+      { id: 'e2', type: 'lead_status_changed', created_by: 10, created_at: Date.parse('2026-09-15T10:00:00Z') / 1000 },
+    ]);
+
+    const result = await getAmoCRMActivityMetrics(baseParams);
+
+    expect(result.get('10')).toMatchObject({ followUpCount: 1, noteCount: 1, stageChangeCount: 1 });
+    expect(tasks).toHaveBeenCalledWith('availability-test', expect.objectContaining({ responsibleUserIds: ['10'], entityType: 'leads' }));
+    expect(events).toHaveBeenCalledWith('availability-test', expect.objectContaining({ userIds: ['10'], entityType: 'lead' }));
+  });
+
+  it('preserves successful sources and marks only a failed source unavailable', async () => {
+    jest.spyOn(snapshotRead, 'fetchSnapshotTasks').mockImplementation((_tenantId, query) => (
+      query.completed ? Promise.reject(new Error('completed task read failed')) : Promise.resolve([])
+    ));
+    jest.spyOn(snapshotRead, 'fetchSnapshotEvents').mockResolvedValue([]);
     const diagnostics = createAmoCRMActivityDiagnostics();
 
     const result = await getAmoCRMActivityMetrics({ ...baseParams, diagnostics });
@@ -58,30 +71,30 @@ describe('AmoCRM activity availability', () => {
       .not.toBe(buildActivityCacheKey('t', ['1'], start, new Date(now), now));
   });
 
-  it('shares one set of amoCRM requests between concurrent callers and caches the result', async () => {
-    const tasks = jest.spyOn(amocrmService, 'fetchAllTasks').mockResolvedValue([] as never);
-    const events = jest.spyOn(amocrmService, 'fetchAllEvents').mockResolvedValue([] as never);
+  it('shares one read between concurrent callers and caches the result', async () => {
+    const tasks = jest.spyOn(snapshotRead, 'fetchSnapshotTasks').mockResolvedValue([]);
+    const events = jest.spyOn(snapshotRead, 'fetchSnapshotEvents').mockResolvedValue([]);
 
     await Promise.all([getAmoCRMActivityMetrics(baseParams), getAmoCRMActivityMetrics(baseParams)]);
     await getAmoCRMActivityMetrics(baseParams);
 
-    expect(tasks).toHaveBeenCalledTimes(2); // completed + pending, once
+    expect(tasks).toHaveBeenCalledTimes(2); // completed + open, once
     expect(events).toHaveBeenCalledTimes(1);
   });
 
-  it('answers without waiting for slow amoCRM and serves the result once it lands', async () => {
-    let releaseEvents: (value: never) => void = () => undefined;
+  it('answers without waiting for a slow read and serves the result once it lands', async () => {
+    let releaseEvents: (value: never[]) => void = () => undefined;
 
-    jest.spyOn(amocrmService, 'fetchAllTasks').mockResolvedValue([] as never);
-    jest.spyOn(amocrmService, 'fetchAllEvents').mockImplementation(() => new Promise((resolve) => {
-      releaseEvents = resolve as (value: never) => void;
+    jest.spyOn(snapshotRead, 'fetchSnapshotTasks').mockResolvedValue([]);
+    jest.spyOn(snapshotRead, 'fetchSnapshotEvents').mockImplementation(() => new Promise((resolve) => {
+      releaseEvents = resolve as (value: never[]) => void;
     }));
 
     const first = await getAmoCRMActivityMetricsWithin(baseParams, 20);
 
     expect(first).toEqual({ metrics: null, pending: true, stale: false });
 
-    releaseEvents([] as never);
+    releaseEvents([]);
     await new Promise((resolve) => setImmediate(resolve));
 
     const second = await getAmoCRMActivityMetricsWithin(baseParams, 20);
@@ -92,9 +105,9 @@ describe('AmoCRM activity availability', () => {
 
   it('returns the expired result while refreshing it in the background', async () => {
     jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
-    const events = jest.spyOn(amocrmService, 'fetchAllEvents').mockResolvedValue([] as never);
+    const events = jest.spyOn(snapshotRead, 'fetchSnapshotEvents').mockResolvedValue([]);
 
-    jest.spyOn(amocrmService, 'fetchAllTasks').mockResolvedValue([] as never);
+    jest.spyOn(snapshotRead, 'fetchSnapshotTasks').mockResolvedValue([]);
     await getAmoCRMActivityMetrics(baseParams);
     jest.advanceTimersByTime(2 * 60 * 1000);
 

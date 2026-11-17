@@ -603,8 +603,18 @@ export class AmoCRMService {
     dateFrom?: Date;
     dateTo?: Date;
     entityType?: string;
+    /** Tasks changed in this window (used by the snapshot job). */
+    updatedAtFrom?: Date;
+    updatedAtTo?: Date;
   }, baseUrl?: string): Promise<AmoCRMTaskListResponse> {
     const queryParams = new URLSearchParams();
+
+    if (params?.updatedAtFrom) {
+      queryParams.set('filter[updated_at][from]', Math.floor(params.updatedAtFrom.getTime() / 1000).toString());
+    }
+    if (params?.updatedAtTo) {
+      queryParams.set('filter[updated_at][to]', Math.floor(params.updatedAtTo.getTime() / 1000).toString());
+    }
 
     if (params?.page) queryParams.set('page', params.page.toString());
     if (params?.limit) queryParams.set('limit', params.limit.toString());

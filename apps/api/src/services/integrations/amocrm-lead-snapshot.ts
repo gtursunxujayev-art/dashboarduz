@@ -21,10 +21,12 @@ import { asObject, toNumberOrNull } from '../../lib/object';
 import { getRedisClient } from '../queue/redis-client';
 
 import { amocrmService, type AmoCRMLead } from './amocrm';
+import { writeLeadsByAmoId } from './amocrm-lead-store';
 import { getTenantAmoCRMContext } from './amocrm-live';
 
 export const LEAD_SNAPSHOT_CONFIG_KEY = 'lead_snapshot';
-export const LEAD_SNAPSHOT_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+// Incremental pulls are cheap (only leads changed since the last one), so keep "today" figures fresh.
+export const LEAD_SNAPSHOT_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const FULL_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** After a failed refresh, wait this long before the scheduler tries the tenant again. */
 const FAILURE_RETRY_MS = 15 * 60 * 1000;
@@ -129,15 +131,11 @@ async function storeLeadPage(tenantId: string, leads: AmoCRMLead[]): Promise<voi
     if (!amocrmId) return [];
     const row = leadToSnapshotRow(lead);
 
-    return [systemPrisma.lead.upsert({
-      where: { tenantId_amocrmId: { tenantId, amocrmId } },
-      // Setting updatedAt marks the row as seen by this pull (the full-pull sweep relies on it).
-      update: { ...row, updatedAt: new Date() },
-      create: { ...row, tenantId, amocrmId },
-    })];
+    // Setting updatedAt marks the row as seen by this pull (the full-pull sweep relies on it).
+    return [{ amocrmId, update: { ...row, updatedAt: new Date() }, create: row }];
   });
 
-  if (writes.length) await systemPrisma.$transaction(writes);
+  await writeLeadsByAmoId(tenantId, writes);
 }
 
 async function saveLeadSnapshotState(integrationId: string, patch: Partial<LeadSnapshotState>): Promise<LeadSnapshotState> {

@@ -9,7 +9,7 @@ import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
 import { toNumberOrNull } from '../../lib/object';
 import { getPreviousTashkentMonthStart } from '../bonus-auto-finalize';
-import { AMOCRM_CALL_PROVIDER, readCallsSource } from '../calls-source';
+import { AMOCRM_CALL_PROVIDER } from '../calls-source';
 import { CALL_NOTE_TYPES } from '../funnel-metrics';
 
 import { amocrmService, type AmoCRMNote } from './amocrm';
@@ -272,7 +272,8 @@ async function syncAllAmoCalls(): Promise<void> {
   });
 
   for (const integration of integrations) {
-    if (readCallsSource(integration.config) !== 'amocrm') continue;
+    // Imported for every connected tenant: Voronka reads answered calls from these rows whichever
+    // source the call counts use (getCallsProvider decides that, not the import).
     await triggerTenantAmoCallsSync(integration.tenantId).catch(() => undefined);
   }
 }

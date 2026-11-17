@@ -1,6 +1,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 
 import { parseAmoTimestamp } from '../../lib/amocrm';
+import { writeLeadsByAmoId } from '../../services/integrations/amocrm-lead-store';
 import { getSelectedPipelineIds } from '../../services/integrations/amocrm-live';
 import { queueService } from '../../services/queue';
 
@@ -38,7 +39,7 @@ function extractContactField(contactData: any, code: string): string | null {
 }
 
 export async function processAmoCRMWebhook(event: any, tenantId: string) {
-  const payload = event.rawPayload as any;
+  const payload = event.rawPayload;
   const leads = extractAmoEntities(payload, 'leads');
   const contacts = extractAmoEntities(payload, 'contacts');
   const integration = await systemPrisma.integration.findUnique({
@@ -70,38 +71,24 @@ export async function processAmoCRMWebhook(event: any, tenantId: string) {
     const externalCreatedAt = parseAmoTimestamp(leadData.created_at);
     const externalUpdatedAt = parseAmoTimestamp(leadData.updated_at);
 
-    await systemPrisma.lead.upsert({
-      where: {
-        tenantId_amocrmId: {
-          tenantId,
-          amocrmId: leadId,
-        },
-      },
-      update: {
-        title: leadData.name || 'Untitled Lead',
-        status: leadData.status_id ? String(leadData.status_id) : null,
-        pipelineId,
-        responsibleUserId: leadData.responsible_user_id ? String(leadData.responsible_user_id) : null,
-        // The stored payload comes from the lead snapshot (API format). A webhook payload has a
-        // different shape, so a webhook only updates the columns above.
-        source: 'amocrm',
-        externalCreatedAt,
-        externalUpdatedAt,
-        updatedAt: new Date(),
-      },
-      create: {
-        tenantId,
-        amocrmId: leadId,
-        title: leadData.name || 'Untitled Lead',
-        status: leadData.status_id ? String(leadData.status_id) : null,
-        pipelineId,
-        responsibleUserId: leadData.responsible_user_id ? String(leadData.responsible_user_id) : null,
-        metadata: leadData,
-        source: 'amocrm',
-        externalCreatedAt,
-        externalUpdatedAt,
-      },
-    });
+    const columns = {
+      title: leadData.name || 'Untitled Lead',
+      status: leadData.status_id ? String(leadData.status_id) : null,
+      pipelineId,
+      responsibleUserId: leadData.responsible_user_id ? String(leadData.responsible_user_id) : null,
+      source: 'amocrm',
+      externalCreatedAt,
+      externalUpdatedAt,
+    };
+
+    // Looks the lead up first instead of upsert: production has no (tenantId, amocrmId) unique index.
+    await writeLeadsByAmoId(tenantId, [{
+      amocrmId: leadId,
+      // The stored payload comes from the lead snapshot (API format). A webhook payload has a
+      // different shape, so a webhook only updates the columns above.
+      update: { ...columns, updatedAt: new Date() },
+      create: { ...columns, metadata: leadData },
+    }]);
   }
 
   for (const contactData of contacts) {

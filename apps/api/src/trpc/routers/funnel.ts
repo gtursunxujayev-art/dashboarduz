@@ -11,6 +11,7 @@ import { asObject, toFiniteNumber } from '../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallExtension } from '../../lib/utel';
 import { buildCacheKey, getOrSet } from '../../services/cache';
 import { getCallsProvider } from '../../services/calls-source';
+import { AMOCRM_CALL_PROVIDER } from '../../services/calls-source';
 import {
   AMO_LOST_STATUS_ID,
   AMO_WON_STATUS_ID,
@@ -19,12 +20,9 @@ import {
   computeLostRevenueRow,
   computeTeamRatios,
   fetchPagesConcurrently,
-  CALL_NOTE_TYPES,
-  chunk,
   findAnsweredLeadIds,
-  leadContactIds,
   MIN_ANSWERED_CALL_SECONDS,
-  runWithConcurrency,
+  type CallNoteLike,
   type FunnelLeadLike,
   safeDiv,
   sumFunnelRows,
@@ -40,9 +38,9 @@ import {
   loadTechnicalSaleIdsForRows,
   resolveSaleAgreementAmount,
 } from '../../services/income-facts';
+import { getAmoReference } from '../../services/integrations/amocrm-activity-snapshot-read';
 
 import {
-  amocrmService,
   fetchSnapshotLeadPage,
   getTenantAmoCRMContext,
   protectedProcedure,
@@ -58,9 +56,6 @@ const LEADS_PAGE_SIZE = 250;
 const LEADS_MAX_PAGES = 40;
 const LEADS_CONCURRENCY = 4; // amoCRM allows ~7 requests/second per account
 const LEADS_PAGE_TIMEOUT_MS = 20_000;
-const NOTES_PAGE_SIZE = 250;
-const NOTES_ENTITY_CHUNK = 100; // entity ids per notes request (keeps the URL short)
-const NOTES_MAX_PAGES_PER_CHUNK = 20;
 
 type FunnelSourceState = 'ok' | 'partial' | 'unavailable' | 'timeout';
 type FunnelSourceEntry = { ok: boolean; reason: string | null; state: FunnelSourceState };
@@ -85,13 +80,7 @@ async function loadFunnelPipelines(tenantId: string, db: DbClient): Promise<{ co
     if (!amoContext) {
       return { connected: false, pipelines: [] };
     }
-    let response;
-
-    try {
-      response = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
-    } catch {
-      response = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
-    }
+    const response = await getAmoReference(tenantId, 'pipelines', amoContext);
     const selected = new Set((amoContext.selectedPipelineIds || []).map(String));
     const rawPipelines = Array.isArray(response._embedded?.pipelines) ? response._embedded.pipelines : [];
     const pipelines: FunnelPipeline[] = rawPipelines
@@ -209,78 +198,53 @@ async function buildFunnelBase(params: {
     .filter(Boolean)));
 
   /** Lead ids with an answered call (>= 50 s) in amoCRM call notes on the lead or its contacts. */
-  const loadAnsweredLeadIds = async (
-    amoContext: NonNullable<Awaited<ReturnType<typeof getTenantAmoCRMContext>>>,
-    leads: FunnelLeadLike[],
-  ): Promise<Set<string> | null> => {
-    const leadIds = Array.from(new Set(leads.map((lead) => String(lead.id ?? '')).filter(Boolean)));
-    const contactIds = Array.from(new Set(leads.flatMap(leadContactIds)));
-
-    if (!leadIds.length) return new Set();
-
-    const fetchNotesFor = (entityType: 'leads' | 'contacts', entityIds: string[]) => async () => {
-      const fetchPageOnce = (page: number) => withTimeout(
-        amocrmService.fetchNotes(
-          amoContext.accessToken,
-          entityType,
-          {
-            page,
-            limit: NOTES_PAGE_SIZE,
-            noteTypes: CALL_NOTE_TYPES,
-            entityIds,
-            // A call note is created during the call; it can only be updated afterwards.
-            updatedAtFrom: rangeStart,
-          },
-          amoContext.baseUrl,
-        ),
-        LEADS_PAGE_TIMEOUT_MS,
-        'amo_notes_timeout',
-      );
-      const { items } = await fetchPagesConcurrently(
-        async (page) => {
-          try {
-            return await fetchPageOnce(page);
-          } catch {
-            return fetchPageOnce(page);
-          }
-        },
-        { pageSize: NOTES_PAGE_SIZE, maxPages: NOTES_MAX_PAGES_PER_CHUNK, concurrency: 1 },
-      );
-
-      return { entityType, items };
-    };
-    const tasks = [
-      ...chunk(leadIds, NOTES_ENTITY_CHUNK).map((ids) => fetchNotesFor('leads', ids)),
-      ...chunk(contactIds, NOTES_ENTITY_CHUNK).map((ids) => fetchNotesFor('contacts', ids)),
-    ];
+  // Answered calls come from the amoCRM call notes the call import job copies into `calls`
+  // (provider "amocrm", metadata.entity_type / entity_id), not from amoCRM on each request.
+  const loadAnsweredLeadIds = async (leads: FunnelLeadLike[]): Promise<Set<string> | null> => {
+    if (!leads.length) return new Set();
 
     try {
       const startedAt = Date.now();
-      const results = await runWithConcurrency(tasks, LEADS_CONCURRENCY);
-      const leadNotes = results.filter((result) => result.entityType === 'leads').flatMap((result) => result.items);
-      const contactNotes = results.filter((result) => result.entityType === 'contacts').flatMap((result) => result.items);
+      const calls = await db.call.findMany({
+        where: {
+          tenantId,
+          provider: AMOCRM_CALL_PROVIDER,
+          startedAt: { gte: rangeStart, lte: rangeEnd },
+          duration: { gte: MIN_ANSWERED_CALL_SECONDS },
+        },
+        select: { direction: true, duration: true, startedAt: true, metadata: true },
+      });
+      const leadNotes: CallNoteLike[] = [];
+      const contactNotes: CallNoteLike[] = [];
+
+      for (const call of calls) {
+        const metadata = asObject(call.metadata);
+        const note: CallNoteLike = {
+          entity_id: typeof metadata?.entity_id === 'string' ? metadata.entity_id : undefined,
+          note_type: call.direction === 'inbound' ? 'call_in' : 'call_out',
+          created_at: Math.floor(call.startedAt.getTime() / 1000),
+          params: { duration: call.duration ?? 0 },
+        };
+
+        if (metadata?.entity_type === 'leads') leadNotes.push(note);
+        else if (metadata?.entity_type === 'contacts') contactNotes.push(note);
+      }
       const answered = findAnsweredLeadIds(leads, leadNotes, contactNotes, { rangeEnd });
 
       logger.info({
         tenantId,
-        leads: leadIds.length,
-        contacts: contactIds.length,
-        notes: leadNotes.length + contactNotes.length,
+        leads: leads.length,
+        calls: calls.length,
         answeredLeads: answered.size,
-        requests: tasks.length,
         ms: Date.now() - startedAt,
-      }, 'Funnel: amoCRM call notes loaded');
+      }, 'Funnel: answered calls loaded');
 
       return answered;
     } catch (error) {
       const reason = detectLeadsFailureReason(error);
 
       sourceStatus.calls = { ok: false, reason: `calls_${reason}`, state: reason === 'timeout' ? 'timeout' : 'unavailable' };
-      logger.warn({
-        tenantId,
-        reason,
-        error: String((error as Error | undefined)?.message || error),
-      }, 'Funnel: amoCRM call notes unavailable');
+      logger.warn({ tenantId, reason, error: String((error as Error | undefined)?.message || error) }, 'Funnel: answered calls unavailable');
 
       return null;
     }
@@ -353,7 +317,7 @@ async function buildFunnelBase(params: {
         ms: Date.now() - startedAt,
       }, 'Funnel: amoCRM leads loaded');
 
-      return { leads: items, answered: await loadAnsweredLeadIds(amoContext, items) };
+      return { leads: items, answered: await loadAnsweredLeadIds(items) };
     } catch (error) {
       const reason = detectLeadsFailureReason(error);
 

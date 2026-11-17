@@ -7,6 +7,7 @@ import { getAgentResponsibleScope } from '../../lib/access';
 import { parseAmoTimestampOrNow } from '../../lib/amocrm';
 import { asObject } from '../../lib/object';
 import { amocrmService, type AmoCRMLead } from '../../services/integrations/amocrm';
+import { getAmoReference } from '../../services/integrations/amocrm-activity-snapshot-read';
 import { fetchSnapshotLeadById, fetchSnapshotLeadPage } from '../../services/integrations/amocrm-lead-snapshot-read';
 import {
   extractLeadValue,
@@ -120,7 +121,7 @@ export const leadsRouter = router({
       const sourceFieldKey = typeof dashboardSettings?.sourceFieldKey === 'string' ? dashboardSettings.sourceFieldKey : null;
 
       const [pipelines, response] = await Promise.all([
-        amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl),
+        getAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db),
         fetchSnapshotLeadPage(
           ctx.tenantId,
           {
@@ -171,7 +172,7 @@ export const leadsRouter = router({
       }
 
       const [pipelines, snapshotLead] = await Promise.all([
-        amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl),
+        getAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db),
         fetchSnapshotLeadById(ctx.tenantId, input.id, ctx.db),
       ]);
       // A lead created since the last snapshot refresh is not stored yet; read that one live.

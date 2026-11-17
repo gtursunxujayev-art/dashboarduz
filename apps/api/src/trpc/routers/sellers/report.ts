@@ -7,8 +7,8 @@ import { resolveDateRange } from '../../../lib/dates';
 import { resolveTelegramBotTokenForTenant } from '../../../lib/telegram';
 import { getCallsProvider } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
-import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+import { getAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { telegramService } from '../../../services/integrations/telegram';
 import { buildStatusFilters, fetchLeadsByStatusFilters, getSelectedPipelines } from '../../../services/sellers/leads';
@@ -74,8 +74,8 @@ export const sellerReportProcedures = {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
 
       const [amocrmUsers, pipelinesResponse] = await Promise.all([
-        amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl),
-        amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl),
+        getAmoReference(ctx.tenantId, 'users', amoContext, ctx.db),
+        getAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db),
       ]);
       const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
       const selectedPipelineIds = getSelectedPipelines(amoContext.selectedPipelineIds, pipelines);

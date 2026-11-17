@@ -9,7 +9,7 @@ import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtensio
 import { getCallsProvider } from '../calls-source';
 import { getCorporateCallDurationByManager } from '../corporate-call-durations';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
-import { amocrmService } from '../integrations/amocrm';
+import { fetchSnapshotTasks } from '../integrations/amocrm-activity-snapshot-read';
 import { getTenantAmoCRMContext } from '../integrations/amocrm-live';
 import { reportError } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
@@ -243,19 +243,13 @@ async function collectAgentMetricsForTenant(params: {
   if (amocrmContext && managerIds.length > 0) {
     try {
       const responsibleIds = Array.from(new Set(managerIds.map((entry) => entry.amoId)));
-      const tasks = await amocrmService.fetchAllTasks(
-        amocrmContext.accessToken,
-        {
-          responsibleUserIds: responsibleIds,
-          completedOnly: true,
-          dateFrom: params.periodStart,
-          dateTo: params.periodEnd,
-          entityType: 'leads',
-          limit: 250,
-          maxPages: 50,
-        },
-        amocrmContext.baseUrl,
-      );
+      const tasks = await fetchSnapshotTasks(params.tenantId, {
+        responsibleUserIds: responsibleIds,
+        completed: true,
+        dateFrom: params.periodStart,
+        dateTo: params.periodEnd,
+        entityType: 'leads',
+      });
 
       const completedByResponsible = new Map<string, number>();
 

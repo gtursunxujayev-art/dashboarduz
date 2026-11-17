@@ -17,14 +17,20 @@ function mockMatches(row: LeadRow, where: Where): boolean {
 
 const mockDb = {
   lead: {
-    upsert: jest.fn(async ({ where, update, create }: any) => {
-      const key = `${where.tenantId_amocrmId.tenantId}:${where.tenantId_amocrmId.amocrmId}`;
+    findMany: jest.fn(async ({ where }: any) => [...mockLeads.values()]
+      .filter((row) => row.tenantId === where.tenantId && (where.amocrmId?.in ?? []).includes(row.amocrmId))),
+    updateMany: jest.fn(async ({ where, data }: any) => {
+      const key = `${where.tenantId}:${where.amocrmId}`;
       const existing = mockLeads.get(key);
-      const row = existing ? { ...existing, ...update } : { ...create, updatedAt: new Date() };
 
-      mockLeads.set(key, row);
+      if (existing) mockLeads.set(key, { ...existing, ...data });
 
-      return row;
+      return { count: existing ? 1 : 0 };
+    }),
+    createMany: jest.fn(async ({ data }: any) => {
+      for (const row of data) mockLeads.set(`${row.tenantId}:${row.amocrmId}`, { ...row, updatedAt: new Date() });
+
+      return { count: data.length };
     }),
     count: jest.fn(async ({ where }: any) => [...mockLeads.values()].filter((row) => mockMatches(row, where)).length),
     deleteMany: jest.fn(async ({ where }: any) => {
@@ -51,7 +57,7 @@ const mockDb = {
       return integration;
     }),
   },
-  $transaction: jest.fn(async (ops: Array<Promise<unknown>>) => Promise.all(ops)),
+  $transaction: jest.fn(async (arg: any) => (typeof arg === 'function' ? arg(mockDb) : Promise.all(arg))),
 };
 
 const mockFetchLeads = jest.fn<(...args: any[]) => Promise<any>>();
@@ -137,12 +143,12 @@ describe('lead snapshot state', () => {
     expect(readLeadSnapshotState(null)).toMatchObject({ lastRefreshedAt: null, cursor: null });
   });
 
-  it('is due once an hour, and backs off for 15 minutes after a failure', () => {
+  it('is due every 10 minutes, and backs off for 15 minutes after a failure', () => {
     const base = readLeadSnapshotState(null);
 
     expect(isLeadSnapshotDue(base, NOW)).toBe(true);
-    expect(isLeadSnapshotDue({ ...base, lastRefreshedAt: new Date(NOW.getTime() - 59 * 60_000).toISOString() }, NOW)).toBe(false);
-    expect(isLeadSnapshotDue({ ...base, lastRefreshedAt: new Date(NOW.getTime() - HOUR).toISOString() }, NOW)).toBe(true);
+    expect(isLeadSnapshotDue({ ...base, lastRefreshedAt: new Date(NOW.getTime() - 9 * 60_000).toISOString() }, NOW)).toBe(false);
+    expect(isLeadSnapshotDue({ ...base, lastRefreshedAt: new Date(NOW.getTime() - 10 * 60_000).toISOString() }, NOW)).toBe(true);
     expect(isLeadSnapshotDue({ ...base, lastError: 'boom', lastAttemptAt: new Date(NOW.getTime() - 5 * 60_000).toISOString() }, NOW)).toBe(false);
     expect(isLeadSnapshotDue({ ...base, lastError: 'boom', lastAttemptAt: new Date(NOW.getTime() - 16 * 60_000).toISOString() }, NOW)).toBe(true);
   });
@@ -273,8 +279,8 @@ describe('refreshTenantLeadSnapshot', () => {
 });
 
 describe('refreshDueLeadSnapshots', () => {
-  it('refreshes only tenants whose snapshot is an hour old, and carries on after a failure', async () => {
-    seedIntegration('fresh', { lastRefreshedAt: new Date(NOW.getTime() - 10 * 60_000).toISOString(), cursor: 1 });
+  it('refreshes only tenants whose snapshot is 10 minutes old, and carries on after a failure', async () => {
+    seedIntegration('fresh', { lastRefreshedAt: new Date(NOW.getTime() - 5 * 60_000).toISOString(), cursor: 1 });
     seedIntegration('failing');
     seedIntegration('stale', { lastRefreshedAt: new Date(NOW.getTime() - 2 * HOUR).toISOString(), cursor: 1, lastFullSyncAt: NOW.toISOString() });
     mockFetchLeads.mockImplementation(async (_token: unknown, _account: unknown, params: any) => {

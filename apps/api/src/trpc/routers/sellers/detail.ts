@@ -6,8 +6,8 @@ import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { getCallsProvider } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
-import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+import { getAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
 import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { buildStatusFilters, computeLeadResponseTimes, fetchLeadsByStatusFilters, getSelectedPipelines } from '../../../services/sellers/leads';
@@ -44,8 +44,8 @@ export const sellerDetailProcedures = {
       }
 
       const [amocrmUsers, pipelinesResponse] = await Promise.all([
-        amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl),
-        amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl),
+        getAmoReference(ctx.tenantId, 'users', amoContext, ctx.db),
+        getAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db),
       ]);
       const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
       const selectedPipelineIds = getSelectedPipelines(amoContext.selectedPipelineIds, pipelines);
@@ -278,8 +278,8 @@ export const sellerDetailProcedures = {
       ]);
       // Start lead response time (runs while we build metrics below)
       const detailLeadResponsePromise = computeLeadResponseTimes({
-        accessToken: amoContext.accessToken,
-        baseUrl: amoContext.baseUrl,
+        tenantId: ctx.tenantId,
+        db: ctx.db,
         managerIds: [input.id],
         newLeads: newLeadsForManager,
         rangeStart,
@@ -315,7 +315,7 @@ export const sellerDetailProcedures = {
           const firstContact = Array.isArray(lead._embedded?.contacts) ? lead._embedded?.contacts[0] : null;
           const contact = firstContact && typeof firstContact === 'object'
             ? {
-                name: asString((firstContact as Record<string, unknown>).name),
+                name: asString((firstContact).name),
                 phone: null,
                 email: null,
               }

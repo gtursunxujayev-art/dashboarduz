@@ -9,6 +9,7 @@ import type { Prisma } from '@prisma/client';
 import { asObject } from '../../lib/object';
 
 import type { AmoCRMLead, AmoCRMLeadListResponse } from './amocrm';
+import { dedupeByAmoId } from './amocrm-lead-store';
 
 export type SnapshotLeadQuery = {
   pipelineIds?: string[] | null;
@@ -125,7 +126,8 @@ export async function fetchSnapshotLeads(
     orderBy: ROW_ORDER,
   });
   const needle = normalizeQuery(query.query);
-  const matched = needle ? rows.filter((row) => matchesQuery(row, needle)) : rows;
+  const unique = dedupeByAmoId(rows);
+  const matched = needle ? unique.filter((row) => matchesQuery(row, needle)) : unique;
 
   return matched.map(snapshotRowToLead);
 }
@@ -152,7 +154,7 @@ export async function fetchSnapshotLeadPage(
       select: ROW_SELECT,
       orderBy: ROW_ORDER,
     });
-    const matched = all.filter((row) => matchesQuery(row, needle));
+    const matched = dedupeByAmoId(all).filter((row) => matchesQuery(row, needle));
 
     rows = matched.slice(offset, offset + limit);
     hasNext = matched.length > offset + limit;
@@ -165,7 +167,7 @@ export async function fetchSnapshotLeadPage(
       take: limit + 1,
     });
 
-    rows = fetched.slice(0, limit);
+    rows = dedupeByAmoId(fetched.slice(0, limit));
     hasNext = fetched.length > limit;
   }
 
