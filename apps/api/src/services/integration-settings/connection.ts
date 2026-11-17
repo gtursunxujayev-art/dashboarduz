@@ -126,8 +126,10 @@ export async function upsertActiveIntegration(params: {
   type: string;
   data: Omit<Prisma.IntegrationUncheckedCreateInput, 'tenantId' | 'type' | 'status'>;
   clearError: boolean;
+  /** Writes the `integration_connect` audit row for this actor. */
+  connectAudit?: { actorUserId: string; metadata: Prisma.InputJsonObject };
 }) {
-  return params.db.integration.upsert({
+  const integration = await params.db.integration.upsert({
     where: {
       tenantId_type: {
         tenantId: params.tenantId,
@@ -146,4 +148,19 @@ export async function upsertActiveIntegration(params: {
       ...params.data,
     },
   });
+
+  if (params.connectAudit) {
+    await params.db.auditLog.create({
+      data: {
+        tenantId: params.tenantId,
+        userId: params.connectAudit.actorUserId,
+        action: 'integration_connect',
+        resource: 'integration',
+        resourceId: integration.id,
+        metadata: params.connectAudit.metadata,
+      },
+    });
+  }
+
+  return integration;
 }

@@ -68,18 +68,9 @@ export const amocrmIntegrationProcedures = {
           lastSyncAt: validatedAt,
         },
         clearError: true,
+        connectAudit: { actorUserId: ctx.user.userId, metadata: { type: 'amocrm', mode: 'long_lived_token' } },
       });
 
-      await ctx.db.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'integration_connect',
-          resource: 'integration',
-          resourceId: integration.id,
-          metadata: { type: 'amocrm', mode: 'long_lived_token' },
-        },
-      });
       // Build the lead snapshot now instead of waiting for the hourly refresh.
       void refreshTenantLeadSnapshot(ctx.tenantId, { forceFull: true }).catch(() => undefined);
 

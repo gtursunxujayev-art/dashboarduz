@@ -41,17 +41,7 @@ export const metaAdsIntegrationProcedures = {
           lastSyncAt: validatedAt,
         },
         clearError: true,
-      });
-
-      await ctx.db.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'integration_connect',
-          resource: 'integration',
-          resourceId: integration.id,
-          metadata: { type: 'meta_ads', adAccountId },
-        },
+        connectAudit: { actorUserId: ctx.user.userId, metadata: { type: 'meta_ads', adAccountId } },
       });
 
       return {

@@ -37,17 +37,7 @@ export const faceIdIntegrationProcedures = {
           lastSyncAt: validatedAt,
         },
         clearError: true,
-      });
-
-      await ctx.db.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'integration_connect',
-          resource: 'integration',
-          resourceId: integration.id,
-          metadata: { type: 'faceid_attendance' },
-        },
+        connectAudit: { actorUserId: ctx.user.userId, metadata: { type: 'faceid_attendance' } },
       });
 
       return {

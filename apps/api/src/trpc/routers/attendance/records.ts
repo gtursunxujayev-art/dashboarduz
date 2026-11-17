@@ -6,14 +6,19 @@ import { ATTENDANCE_REPORT_MAX_CALENDAR_DAYS, buildAttendancePeriodReport, count
 import { parseDateKeyFilter, readFaceMatchMeta, resolveAttendanceListScope } from '../../../services/attendance/router-helpers';
 import { managerProcedure, protectedProcedure } from '../../trpc';
 
+/** Paging, date range and user filter shared by the attendance event and summary lists. */
+const attendanceListInputShape = {
+  page: z.number().int().min(1).default(1).optional(),
+  limit: z.number().int().min(1).max(200).default(50).optional(),
+  ...dateRangeInput.shape,
+  userId: z.string().uuid().optional(),
+};
+
 export const attendanceRecordProcedures = {
   listEvents: protectedProcedure
     .input(
       z.object({
-        page: z.number().int().min(1).default(1).optional(),
-        limit: z.number().int().min(1).max(200).default(50).optional(),
-        ...dateRangeInput.shape,
-        userId: z.string().uuid().optional(),
+        ...attendanceListInputShape,
         action: z.enum(['IN', 'OUT']).optional(),
         query: z.string().trim().optional(),
         unmatchedOnly: z.boolean().optional(),
@@ -93,10 +98,7 @@ export const attendanceRecordProcedures = {
   listDailySummaries: protectedProcedure
     .input(
       z.object({
-        page: z.number().int().min(1).default(1).optional(),
-        limit: z.number().int().min(1).max(200).default(50).optional(),
-        ...dateRangeInput.shape,
-        userId: z.string().uuid().optional(),
+        ...attendanceListInputShape,
         query: z.string().trim().optional(),
         anomaliesOnly: z.boolean().optional(),
       }).optional(),
