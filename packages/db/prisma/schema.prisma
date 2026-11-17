@@ -99,6 +99,7 @@ model User {
   @@index([email])
   @@index([phone])
   @@index([amocrmResponsibleUserId])
+  @@unique([tenantId, id]) // target of composite tenant-safe foreign keys
   @@map("users")
 }
 
@@ -258,6 +259,7 @@ model Lead {
   @@index([status])
   @@index([createdAt])
   @@index([tenantId, externalCreatedAt])
+  @@index([tenantId, createdAt])
   @@index([externalCreatedAt])
   @@map("leads")
 }
@@ -450,6 +452,7 @@ model Customer {
   @@index([profileSubTariffId])
   @@index([historicalImportSessionId])
   @@unique([tenantId, legacyProfileImportKey])
+  @@unique([tenantId, id]) // target of composite tenant-safe foreign keys
   @@map("customers")
 }
 
@@ -540,8 +543,9 @@ model Income {
   updatedAt          DateTime @updatedAt
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  manager  User     @relation("IncomeManager", fields: [managerUserId], references: [id], onDelete: Restrict)
+  // Composite (tenantId, ...) keys: a row can only point at a parent of its own tenant.
+  customer Customer @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
+  manager  User     @relation("IncomeManager", fields: [tenantId, managerUserId], references: [tenantId, id], onDelete: Restrict)
   course   Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   tariff   Tariff?  @relation(fields: [tariffId], references: [id], onDelete: SetNull)
   historicalImportSession HistoricalImportSession? @relation(fields: [historicalImportSessionId], references: [id], onDelete: SetNull)
@@ -566,6 +570,7 @@ model Income {
   @@index([relatedDebtIncomeId])
   @@index([historicalImportSessionId])
   @@unique([tenantId, legacyImportKey])
+  @@unique([tenantId, id]) // target of composite tenant-safe foreign keys
   @@map("incomes")
 }
 
@@ -626,9 +631,10 @@ model IncomeAdjustmentRequest {
   reviewedAt       DateTime?
 
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  income      Income   @relation(fields: [incomeId], references: [id], onDelete: Cascade)
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  requestedBy User     @relation("IncomeAdjustmentRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  // Composite (tenantId, ...) keys: a request can only point at rows of its own tenant.
+  income      Income   @relation(fields: [tenantId, incomeId], references: [tenantId, id], onDelete: Cascade)
+  customer    Customer @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
+  requestedBy User     @relation("IncomeAdjustmentRequestedBy", fields: [tenantId, requestedByUserId], references: [tenantId, id], onDelete: Restrict)
   reviewedBy  User?    @relation("IncomeAdjustmentReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   newCourse   Course?  @relation("IncomeAdjustmentNewCourse", fields: [newCourseId], references: [id], onDelete: SetNull)
   newTariff   Tariff?  @relation("IncomeAdjustmentNewTariff", fields: [newTariffId], references: [id], onDelete: SetNull)
@@ -687,6 +693,7 @@ model BonusMonthSnapshot {
 
   @@unique([tenantId, month])
   @@index([tenantId, finalizedAt])
+  @@unique([tenantId, id]) // target of composite tenant-safe foreign keys
   @@map("bonus_month_snapshots")
 }
 
@@ -702,12 +709,12 @@ model BonusSnapshotLine {
   category         String
   calculationMode  String
   qualifyingAmount Int
-  appliedPercent   Float
+  appliedPercent   Decimal  @db.Decimal(7, 4) // percent, e.g. 7.5000
   bonusAmount      Int
   sourceCount      Int      @default(0)
   createdAt        DateTime @default(now())
 
-  snapshot BonusMonthSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  snapshot BonusMonthSnapshot @relation(fields: [tenantId, snapshotId], references: [tenantId, id], onDelete: Cascade)
 
   @@unique([snapshotId, groupKey])
   @@index([tenantId, agentUserId])
@@ -730,12 +737,12 @@ model BonusSnapshotItem {
   calculationMode String
   eventDate       DateTime
   baseAmount      Int
-  appliedPercent  Float
+  appliedPercent  Decimal @db.Decimal(7, 4) // percent, e.g. 7.5000
   bonusAmount     Int
   metadata        Json?
   createdAt       DateTime @default(now())
 
-  snapshot BonusMonthSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  snapshot BonusMonthSnapshot @relation(fields: [tenantId, snapshotId], references: [tenantId, id], onDelete: Cascade)
 
   @@unique([snapshotId, sourceKey])
   @@index([tenantId, eventDate])
@@ -765,13 +772,14 @@ model BonusAdjustment {
   updatedAt         DateTime @updatedAt
 
   tenant       Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  snapshot     BonusMonthSnapshot            @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  snapshot     BonusMonthSnapshot            @relation(fields: [tenantId, snapshotId], references: [tenantId, id], onDelete: Cascade)
   audits       BonusAdjustmentAudit[]
   applications BonusAdjustmentApplication[]
 
   @@index([tenantId, status, createdAt])
   @@index([tenantId, agentUserId, payoutMonth])
   @@index([snapshotId, groupKey])
+  @@unique([tenantId, id]) // target of composite tenant-safe foreign keys
   @@map("bonus_adjustments")
 }
 
@@ -786,7 +794,7 @@ model BonusAdjustmentAudit {
   createdAt   DateTime @default(now())
 
   tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  adjustment BonusAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  adjustment BonusAdjustment @relation(fields: [tenantId, adjustmentId], references: [tenantId, id], onDelete: Cascade)
 
   @@index([tenantId, createdAt])
   @@index([adjustmentId, createdAt])
@@ -802,7 +810,7 @@ model BonusAdjustmentApplication {
   createdAt    DateTime @default(now())
 
   tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  adjustment BonusAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  adjustment BonusAdjustment @relation(fields: [tenantId, adjustmentId], references: [tenantId, id], onDelete: Cascade)
 
   @@unique([adjustmentId, payrollMonth])
   @@index([tenantId, payrollMonth])

@@ -40,7 +40,8 @@ async function getBonusMonth(params: { tenantId: string; month: Date; preferSnap
           category: line.category as SalaryCategory,
           calculationMode: line.calculationMode as BonusCalculationItem['calculationMode'],
           qualifyingAmount: line.qualifyingAmount,
-          appliedPercent: line.appliedPercent,
+          // NUMERIC(7,4) comes back as a Prisma Decimal; the bonus types and all arithmetic use plain numbers.
+          appliedPercent: line.appliedPercent.toNumber(),
           bonusAmount: line.bonusAmount,
           sourceCount: line.sourceCount,
         })),
@@ -58,7 +59,7 @@ async function getBonusMonth(params: { tenantId: string; month: Date; preferSnap
             calculationMode: item.calculationMode as BonusCalculationItem['calculationMode'],
             eventDate: item.eventDate,
             baseAmount: item.baseAmount,
-            appliedPercent: item.appliedPercent,
+            appliedPercent: item.appliedPercent.toNumber(),
             bonusAmount: item.bonusAmount,
             agreementAmount: amount(metadata.agreementAmount),
             closingIncomeId: typeof metadata.closingIncomeId === 'string' ? metadata.closingIncomeId : item.sourceIncomeId,
