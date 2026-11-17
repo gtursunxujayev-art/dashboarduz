@@ -35,6 +35,12 @@ const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const CURSOR_OVERLAP_MS = 2 * 60 * 1000;
 /** amoCRM pages (all kinds together) per tenant per run; a long backfill continues next run. */
 const MAX_PAGES_PER_RUN = 400;
+
+/**
+ * Pages of each run reserved for tasks (250 per page) so they backfill alongside events instead of
+ * waiting for events to catch up; whatever tasks leave unused goes to events.
+ */
+export const TASK_PAGES_PER_RUN = 120;
 /** Pages within one window before it is treated as too big to finish this run. */
 const MAX_PAGES_PER_WINDOW = 300;
 const TASK_PAGE_SIZE = 250;
@@ -185,6 +191,13 @@ async function storeEvents(rows: Prisma.AmocrmEventCreateManyInput[]): Promise<v
 
 type PageBudget = { remaining: number };
 
+/** Splits a run's amoCRM pages between tasks and events. */
+export function splitRunBudget(total: number): { tasks: PageBudget; events: PageBudget } {
+  const tasks = Math.min(TASK_PAGES_PER_RUN, total);
+
+  return { tasks: { remaining: tasks }, events: { remaining: total - tasks } };
+}
+
 /** Stores every item of one window. Returns false when the page budget ran out before the end. */
 async function pullWindow(
   kind: StreamKind,
@@ -293,7 +306,6 @@ export async function pullTenantActivitySnapshot(tenantId: string, now = new Dat
 
   if (!context) return null;
   const state = readActivitySnapshotState(context.config);
-  const budget: PageBudget = { remaining: MAX_PAGES_PER_RUN };
   let next: ActivitySnapshotState = { ...state };
   let tasksStored = 0;
   let eventsStored = 0;
@@ -303,15 +315,17 @@ export async function pullTenantActivitySnapshot(tenantId: string, now = new Dat
       await refreshAmoReferences(tenantId, context);
       next = { ...next, referenceRefreshedAt: now.toISOString() };
     }
-    // Events first: they drive most metrics. Tasks get what is left of this run's budget.
-    const events = await pullStream('events', tenantId, context, state.events, now.getTime(), budget);
-
-    next = { ...next, events: events.state };
-    eventsStored = events.stored;
-    const tasks = await pullStream('tasks', tenantId, context, state.tasks, now.getTime(), budget);
+    const { tasks: taskBudget, events: eventBudget } = splitRunBudget(MAX_PAGES_PER_RUN);
+    const tasks = await pullStream('tasks', tenantId, context, state.tasks, now.getTime(), taskBudget);
 
     next = { ...next, tasks: tasks.state };
     tasksStored = tasks.stored;
+    // Events get their share plus whatever tasks did not need this run.
+    eventBudget.remaining += taskBudget.remaining;
+    const events = await pullStream('events', tenantId, context, state.events, now.getTime(), eventBudget);
+
+    next = { ...next, events: events.state };
+    eventsStored = events.stored;
     next = { ...next, lastRunAt: now.toISOString(), lastError: null };
     await saveState(context.integrationId, next);
     const caughtUp = next.tasks.cursor === now.getTime() && next.events.cursor === now.getTime();
