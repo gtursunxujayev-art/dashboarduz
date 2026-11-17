@@ -1,4 +1,4 @@
-import { systemPrisma } from '@dashboarduz/db';
+import { type DbClient } from '@dashboarduz/db';
 import { TASHKENT_TIMEZONE_LABEL } from '@dashboarduz/shared';
 
 import { createIntervalJob } from '../../lib/interval-job';
@@ -45,14 +45,14 @@ export function stopTelegramReportScheduler(): void {
   schedulerJob.stop();
 }
 
-export async function sendImmediateTodayReportForTenant(tenantId: string): Promise<{
+export async function sendImmediateTodayReportForTenant(tenantId: string, db: DbClient): Promise<{
   sent: boolean;
   recipientCount: number;
   periodStart: string;
   periodEnd: string;
   schedule: 'manual_today';
 }> {
-  const result = await sendManualTelegramReportForTenant(tenantId, 'today');
+  const result = await sendManualTelegramReportForTenant(tenantId, 'today', db);
 
   return {
     ...result,
@@ -63,6 +63,8 @@ export async function sendImmediateTodayReportForTenant(tenantId: string): Promi
 export async function sendManualTelegramReportForTenant(
   tenantId: string,
   kind: ManualReportKind,
+  /** The caller's tenant-scoped ctx.db (manual sends come from an admin request). */
+  db: DbClient,
 ): Promise<{
   sent: boolean;
   recipientCount: number;
@@ -70,7 +72,7 @@ export async function sendManualTelegramReportForTenant(
   periodEnd: string;
   schedule: 'manual_today' | 'manual_weekly' | 'manual_monthly';
 }> {
-  const integration = await systemPrisma.integration.findFirst({
+  const integration = await db.integration.findFirst({
     where: {
       tenantId,
       type: 'telegram',
@@ -96,6 +98,7 @@ export async function sendManualTelegramReportForTenant(
   }
 
   const recipients = (await listTelegramRecipients({
+    db,
     tenantId: integration.tenantId,
     integrationId: integration.id,
     startedOnly: true,
@@ -126,9 +129,9 @@ export async function sendManualTelegramReportForTenant(
   }
 
   try {
-    const sent = await sendWindowToIntegration(integration as TelegramIntegrationWithTenant, window, nowUtc);
+    const sent = await sendWindowToIntegration(integration as TelegramIntegrationWithTenant, window, nowUtc, db);
 
-    await systemPrisma.auditLog.create({
+    await db.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: 'telegram_report_sent',

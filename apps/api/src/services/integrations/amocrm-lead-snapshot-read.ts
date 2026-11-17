@@ -3,7 +3,7 @@
  * amoCRM on every request. The snapshot is filled by `amocrm-lead-snapshot.ts` (hourly and on
  * demand); the filters here mirror the ones `amocrmService.fetchLeads` sent to amoCRM.
  */
-import { systemPrisma, type DbClient } from '@dashboarduz/db';
+import { type DbClient } from '@dashboarduz/db';
 import type { Prisma } from '@prisma/client';
 
 import { asObject } from '../../lib/object';
@@ -117,7 +117,7 @@ function normalizeQuery(query: string | undefined): string | null {
 export async function fetchSnapshotLeads(
   tenantId: string,
   query: SnapshotLeadQuery = {},
-  db: DbClient = systemPrisma,
+  db: DbClient,
 ): Promise<AmoCRMLead[]> {
   const rows = await db.lead.findMany({
     where: buildSnapshotLeadWhere(tenantId, query),
@@ -137,7 +137,7 @@ export async function fetchSnapshotLeads(
 export async function fetchSnapshotLeadPage(
   tenantId: string,
   params: SnapshotLeadQuery & { page?: number; limit?: number },
-  db: DbClient = systemPrisma,
+  db: DbClient,
 ): Promise<AmoCRMLeadListResponse> {
   const page = Math.max(Math.floor(params.page || 1), 1);
   const limit = Math.min(Math.max(Math.floor(params.limit || 250), 1), 250);
@@ -179,7 +179,7 @@ export async function fetchSnapshotLeadPage(
 export async function fetchSnapshotLeadById(
   tenantId: string,
   amocrmId: string,
-  db: DbClient = systemPrisma,
+  db: DbClient,
 ): Promise<AmoCRMLead | null> {
   const row = await db.lead.findUnique({
     where: { tenantId_amocrmId: { tenantId, amocrmId } },

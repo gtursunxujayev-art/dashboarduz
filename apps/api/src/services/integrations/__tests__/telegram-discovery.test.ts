@@ -46,10 +46,10 @@ describe('Telegram recipient discovery', () => {
     await Promise.all([
       upsertTelegramRecipientRecord({
         tenantId: 'tenant-1', integrationId: 'integration-1', chatId: '201', firstName: 'First', started: true,
-      }),
+      }, prisma),
       upsertTelegramRecipientRecord({
         tenantId: 'tenant-1', integrationId: 'integration-1', chatId: '202', firstName: 'Second', started: true,
-      }),
+      }, prisma),
     ]);
 
     expect(upsert).toHaveBeenCalledTimes(2);

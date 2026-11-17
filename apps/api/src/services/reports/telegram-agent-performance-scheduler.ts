@@ -130,6 +130,7 @@ async function collectAgentMetricsForTenant(params: {
 
   const agentIds = normalizedAgents.map((agent) => agent.id);
   const corporateDurationByAgentId = await getCorporateCallDurationByManager({
+    db: systemPrisma,
     tenantId: params.tenantId,
     managerUserIds: agentIds,
     rangeStart: params.periodStart,
@@ -171,7 +172,7 @@ async function collectAgentMetricsForTenant(params: {
   ]);
 
   // Technical sales (agreement == 1) and their repayments are not real income.
-  const incomeRows = excludeTechnicalRows(incomeRowsRaw, await loadTechnicalSaleIdsForRows(params.tenantId, incomeRowsRaw));
+  const incomeRows = excludeTechnicalRows(incomeRowsRaw, await loadTechnicalSaleIdsForRows(params.tenantId, incomeRowsRaw, systemPrisma));
   const incomeByAgentId = new Map<string, number>();
 
   for (const row of incomeRows) {
@@ -195,7 +196,7 @@ async function collectAgentMetricsForTenant(params: {
   let amocrmContext: Awaited<ReturnType<typeof getTenantAmoCRMContext>> = null;
 
   try {
-    amocrmContext = await getTenantAmoCRMContext(params.tenantId);
+    amocrmContext = await getTenantAmoCRMContext(params.tenantId, systemPrisma);
   } catch (error: any) {
     logger.warn({
       tenantId: params.tenantId,

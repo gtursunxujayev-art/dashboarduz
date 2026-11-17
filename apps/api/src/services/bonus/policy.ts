@@ -1,4 +1,4 @@
-import { type DbClient, systemPrisma } from '@dashboarduz/db';
+import { type DbClient } from '@dashboarduz/db';
 import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
 import { normalizePercentage } from '../../lib/number';
@@ -124,7 +124,7 @@ export function resolveCourseIncomePercent(rule: CourseBonusOverride, teamAmount
     : { percent: normalizePercentage(rule.fallbackPercent), usedFallback: true };
 }
 
-export async function resolveEffectiveBonusPolicy(tenantId: string, month: Date, db: DbClient = systemPrisma): Promise<{
+export async function resolveEffectiveBonusPolicy(tenantId: string, month: Date, db: DbClient): Promise<{
   policy: BonusPolicy;
   policyVersionId: string | null;
 }> {

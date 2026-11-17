@@ -126,7 +126,7 @@ describe('bonus attribution and reconcile', () => {
 
   it('on_debt_closed pays the agent who records the closing payment', async () => {
     const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
-    const result = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+    const result = await calculateBonusMonth({ tenantId: 't', month: july, policy, db: prisma });
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ agentUserId: 'agent-b', sourceIncomeId: 'closing', baseAmount: 10_000_000, bonusAmount: 500_000 });
@@ -139,7 +139,7 @@ describe('bonus attribution and reconcile', () => {
         bonusRules: { online: { mode: 'tiered', simplePercent: 0, tiers: [{ minSales: 1, maxSales: null, percent: 3 }] } },
       },
     });
-    const result = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+    const result = await calculateBonusMonth({ tenantId: 't', month: july, policy, db: prisma });
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ agentUserId: 'agent-b', closedCount: 1, appliedPercent: 3, bonusAmount: 180_000 });
@@ -156,8 +156,8 @@ describe('bonus attribution and reconcile', () => {
     const byCount = buildLegacyBonusPolicy({
       salary: { bonusMode: 'on_debt_closed', bonusRules: { online: { mode: 'tiered', tierBasis: 'sales_count', simplePercent: 1, tiers } } },
     });
-    const amountResult = await calculateBonusMonth({ tenantId: 't', month: july, policy: byAmount });
-    const countResult = await calculateBonusMonth({ tenantId: 't', month: july, policy: byCount });
+    const amountResult = await calculateBonusMonth({ tenantId: 't', month: july, policy: byAmount, db: prisma });
+    const countResult = await calculateBonusMonth({ tenantId: 't', month: july, policy: byCount, db: prisma });
 
     // One closure of a 10M agreement: 10M reaches the 4% tier; a count of 1 falls in the 2% tier.
     expect(amountResult.items[0]).toMatchObject({ agentUserId: 'agent-b', closedCount: 1, closedAgreementAmount: 10_000_000, appliedPercent: 4, bonusAmount: 400_000, usedFallback: false });
@@ -171,7 +171,7 @@ describe('bonus attribution and reconcile', () => {
         bonusRules: { online: { mode: 'tiered', tierBasis: 'agreement_amount', simplePercent: 1, tiers: [{ minSales: 20_000_000, maxSales: null, percent: 5 }] } },
       },
     });
-    const result = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+    const result = await calculateBonusMonth({ tenantId: 't', month: july, policy, db: prisma });
 
     expect(result.items[0]).toMatchObject({ appliedPercent: 1, bonusAmount: 60_000, usedFallback: true });
   });
@@ -182,8 +182,8 @@ describe('bonus attribution and reconcile', () => {
     const legacy = JSON.parse(JSON.stringify(current)) as { bonusRules: Record<string, Record<string, unknown>> };
 
     for (const rule of Object.values(legacy.bonusRules)) delete rule.tierBasis;
-    const withBasis = await calculateBonusMonth({ tenantId: 't', month: july, policy: current });
-    const withoutBasis = await calculateBonusMonth({ tenantId: 't', month: july, policy: legacy as unknown as typeof current });
+    const withBasis = await calculateBonusMonth({ tenantId: 't', month: july, policy: current, db: prisma });
+    const withoutBasis = await calculateBonusMonth({ tenantId: 't', month: july, policy: legacy as unknown as typeof current, db: prisma });
 
     expect(current.bonusRules.online.tierBasis).toBe('sales_count');
     expect(withBasis.sourceDigest).toBe(withoutBasis.sourceDigest);
@@ -191,14 +191,14 @@ describe('bonus attribution and reconcile', () => {
 
   it('deletes pending adjustments once the data matches the finalized snapshot again', async () => {
     const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
-    const current = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+    const current = await calculateBonusMonth({ tenantId: 't', month: july, policy, db: prisma });
 
     jest.spyOn(prisma.bonusMonthSnapshot, 'findUnique').mockResolvedValue({
       id: 'snap', policy, policyVersionId: null, sourceDigest: current.sourceDigest, lines: [], adjustments: [],
     } as never);
     const deleteMany = jest.spyOn(prisma.bonusAdjustment, 'deleteMany').mockResolvedValue({ count: 1 } as never);
 
-    await expect(reconcileBonusMonth({ tenantId: 't', month: july })).resolves.toBe(0);
+    await expect(reconcileBonusMonth({ tenantId: 't', month: july, db: prisma })).resolves.toBe(0);
     expect(deleteMany).toHaveBeenCalledWith({ where: { snapshotId: 'snap', status: 'pending' } });
   });
 
@@ -216,7 +216,7 @@ describe('bonus attribution and reconcile', () => {
     } as never);
     const create = jest.spyOn(prisma.bonusAdjustment, 'create').mockResolvedValue({ id: 'adj' } as never);
 
-    await expect(reconcileBonusMonth({ tenantId: 't', month: july })).resolves.toBe(0);
+    await expect(reconcileBonusMonth({ tenantId: 't', month: july, db: prisma })).resolves.toBe(0);
     expect(create).not.toHaveBeenCalled();
   });
 });

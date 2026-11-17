@@ -127,6 +127,7 @@ export async function ingestFaceIdEvent(params: {
 
   if (created.userId) {
     await recomputeAttendanceDaySummary({
+      db: systemPrisma,
       tenantId: params.tenantId,
       userId: created.userId,
       localDate: created.localDate,

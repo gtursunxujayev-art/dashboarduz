@@ -37,7 +37,7 @@ describe('live leaderboard numbers', () => {
       },
     ] as never);
     const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
-    const month = await calculateBonusMonth({ tenantId: 't', month: new Date('2026-07-15T05:00:00Z'), policy });
+    const month = await calculateBonusMonth({ tenantId: 't', month: new Date('2026-07-15T05:00:00Z'), policy, db: prisma });
 
     // The salary page adds item.bonusAmount per item.agentUserId; the leaderboard must give identical totals.
     const salaryPageTotals = new Map<string, number>();

@@ -1,4 +1,4 @@
-import { systemPrisma, type DbClient } from '@dashboarduz/db';
+import { type DbClient } from '@dashboarduz/db';
 
 import { parseFloatOrZero } from '../../lib/object';
 import { decryptIntegrationTokens } from '../security/encryption';
@@ -212,7 +212,7 @@ export async function syncMetaAdInsightsForTenant(
   tenantId: string,
   dateFrom: Date,
   dateTo: Date,
-  db: DbClient = systemPrisma,
+  db: DbClient,
 ) {
   const integration = await db.integration.findUnique({
     where: {

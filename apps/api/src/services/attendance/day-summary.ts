@@ -1,4 +1,4 @@
-import { type DbClient, systemPrisma } from '@dashboarduz/db';
+import { type DbClient } from '@dashboarduz/db';
 
 const REQUIRED_WORK_SECONDS_MON_TO_SAT = 9 * 60 * 60;
 
@@ -26,9 +26,9 @@ export async function recomputeAttendanceDaySummary(params: {
   userId: string;
   localDate: string;
   /** Tenant-scoped client for user requests; defaults to the system client (workers). */
-  db?: DbClient;
+  db: DbClient;
 }): Promise<void> {
-  const db = params.db ?? systemPrisma;
+  const { db } = params;
   const events = await db.attendanceEvent.findMany({
     where: {
       tenantId: params.tenantId,
@@ -137,9 +137,9 @@ export async function recomputeAttendanceSummariesForRange(params: {
   dateFrom: string;
   dateTo: string;
   userId?: string;
-  db?: DbClient;
+  db: DbClient;
 }): Promise<{ recomputed: number }> {
-  const db = params.db ?? systemPrisma;
+  const { db } = params;
   const events = await db.attendanceEvent.findMany({
     where: {
       tenantId: params.tenantId,

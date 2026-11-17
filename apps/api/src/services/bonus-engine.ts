@@ -1,4 +1,4 @@
-import { type DbClient, type Prisma, systemPrisma, type TenantPrismaClient } from '@dashboarduz/db';
+import { type DbClient, type Prisma, type TenantPrismaClient } from '@dashboarduz/db';
 import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
 import { asObjectOrEmpty } from '../lib/object';
@@ -15,8 +15,8 @@ export { calculateBonusMonth } from './bonus/calculation';
 
 export const SYSTEM_FINALIZER_USER_ID = 'system:auto-finalize';
 
-async function getBonusMonth(params: { tenantId: string; month: Date; preferSnapshot?: boolean; db?: DbClient }): Promise<BonusMonthCalculation> {
-  const db = params.db ?? systemPrisma;
+async function getBonusMonth(params: { tenantId: string; month: Date; preferSnapshot?: boolean; db: DbClient }): Promise<BonusMonthCalculation> {
+  const { db } = params;
   const month = getTashkentMonthStart(params.month);
 
   if (params.preferSnapshot !== false) {
@@ -79,9 +79,9 @@ export async function calculateBonusRange(params: {
   tenantId: string;
   rangeStart: Date;
   rangeEnd: Date;
-  db?: DbClient;
+  db: DbClient;
 }): Promise<{ items: BonusCalculationItem[]; months: BonusMonthCalculation[]; totalBonusAmount: number }> {
-  const db = params.db ?? systemPrisma;
+  const { db } = params;
   const months: BonusMonthCalculation[] = [];
   let cursor = getTashkentMonthStart(params.rangeStart);
   const finalMonth = getTashkentMonthStart(params.rangeEnd);
@@ -104,8 +104,8 @@ export async function calculateBonusRange(params: {
 }
 
 /** `userId` is the admin who pressed finalize, or SYSTEM_FINALIZER_USER_ID for the automatic month-end freeze. */
-export async function finalizeBonusMonth(params: { tenantId: string; month: Date; userId: string; db?: TenantPrismaClient }): Promise<BonusMonthCalculation> {
-  const db = params.db ?? systemPrisma;
+export async function finalizeBonusMonth(params: { tenantId: string; month: Date; userId: string; db: TenantPrismaClient }): Promise<BonusMonthCalculation> {
+  const { db } = params;
   const month = getTashkentMonthStart(params.month);
 
   if (getTashkentMonthEnd(month) >= new Date()) throw new Error('Only completed months can be finalized.');
@@ -162,8 +162,8 @@ export async function finalizeBonusMonth(params: { tenantId: string; month: Date
   return getBonusMonth({ tenantId: params.tenantId, month, db });
 }
 
-export async function reconcileBonusMonth(params: { tenantId: string; month: Date; actorUserId?: string | null; db?: DbClient }): Promise<number> {
-  const db = params.db ?? systemPrisma;
+export async function reconcileBonusMonth(params: { tenantId: string; month: Date; actorUserId?: string | null; db: DbClient }): Promise<number> {
+  const { db } = params;
   const month = getTashkentMonthStart(params.month);
   const snapshot = await db.bonusMonthSnapshot.findUnique({
     where: { tenantId_month: { tenantId: params.tenantId, month } },
@@ -242,8 +242,8 @@ export async function reconcileBonusMonth(params: { tenantId: string; month: Dat
   return pendingCount;
 }
 
-export async function reconcileFinalizedBonusMonths(params: { tenantId: string; actorUserId?: string | null; db?: DbClient }): Promise<number> {
-  const db = params.db ?? systemPrisma;
+export async function reconcileFinalizedBonusMonths(params: { tenantId: string; actorUserId?: string | null; db: DbClient }): Promise<number> {
+  const { db } = params;
   const snapshots = await db.bonusMonthSnapshot.findMany({
     where: { tenantId: params.tenantId },
     select: { month: true },
@@ -264,9 +264,9 @@ export async function reviewBonusAdjustment(params: {
   userId: string;
   action: 'approve' | 'reject';
   note?: string;
-  db?: TenantPrismaClient;
+  db: TenantPrismaClient;
 }) {
-  const db = params.db ?? systemPrisma;
+  const { db } = params;
   const adjustment = await db.bonusAdjustment.findFirst({ where: { id: params.adjustmentId, tenantId: params.tenantId, status: 'pending' } });
 
   if (!adjustment) throw new Error('Pending bonus adjustment was not found.');
@@ -299,7 +299,7 @@ export async function reviewBonusAdjustment(params: {
   });
 }
 
-export async function getApprovedAdjustmentsForMonth(tenantId: string, month: Date, db: DbClient = systemPrisma) {
+export async function getApprovedAdjustmentsForMonth(tenantId: string, month: Date, db: DbClient) {
   const monthStart = getTashkentMonthStart(month);
   const monthEnd = getTashkentMonthEnd(month);
 

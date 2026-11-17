@@ -1,4 +1,4 @@
-import { systemPrisma, type DbClient } from '@dashboarduz/db';
+import { type DbClient } from '@dashboarduz/db';
 import { fromTashkentLocalParts, shiftToTashkent, toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
@@ -70,9 +70,9 @@ export async function getCorporateCallDurationByManager(params: {
   managerUserIds: string[];
   rangeStart: Date;
   rangeEnd: Date;
-  db?: DbClient;
+  db: DbClient;
 }): Promise<Map<string, number>> {
-  const db = params.db ?? systemPrisma;
+  const { db } = params;
   const result = new Map<string, number>();
 
   if (!params.managerUserIds.length) {
@@ -108,9 +108,9 @@ export async function getCorporateCallDurationTotal(params: {
   tenantId: string;
   rangeStart: Date;
   rangeEnd: Date;
-  db?: DbClient;
+  db: DbClient;
 }): Promise<number> {
-  const db = params.db ?? systemPrisma;
+  const { db } = params;
   const dayStart = getReportDayStart(params.rangeStart);
   const dayEnd = getReportDayStart(params.rangeEnd);
 

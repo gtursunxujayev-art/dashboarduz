@@ -163,7 +163,7 @@ export async function pullTenantLeadSnapshot(
   options: { now?: Date; forceFull?: boolean } = {},
 ): Promise<LeadSnapshotRefreshResult | null> {
   const now = options.now ?? new Date();
-  const amoContext = await getTenantAmoCRMContext(tenantId);
+  const amoContext = await getTenantAmoCRMContext(tenantId, systemPrisma);
 
   if (!amoContext) return null;
 

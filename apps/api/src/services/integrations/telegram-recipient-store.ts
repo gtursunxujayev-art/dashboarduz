@@ -1,4 +1,4 @@
-import { systemPrisma, type DbClient, type TenantPrismaClient } from '@dashboarduz/db';
+import { type DbClient, type TenantPrismaClient } from '@dashboarduz/db';
 
 import { trimmedStringOrNull } from '../../lib/object';
 
@@ -55,9 +55,9 @@ export async function importLegacyTelegramRecipients(params: {
   tenantId: string;
   integrationId: string;
   config: unknown;
-  db?: DbClient;
+  db: DbClient;
 }): Promise<void> {
-  const db = params.db ?? systemPrisma;
+  const { db } = params;
   const recipients = parseTelegramRecipients(params.config);
 
   if (!recipients.length) return;
@@ -84,9 +84,9 @@ export async function listTelegramRecipients(params: {
   tenantId: string;
   integrationId: string;
   startedOnly?: boolean;
-  db?: DbClient;
+  db: DbClient;
 }): Promise<TelegramRecipientRecord[]> {
-  const db = params.db ?? systemPrisma;
+  const { db } = params;
   const rows = await db.telegramRecipient.findMany({
     where: {
       tenantId: params.tenantId,
@@ -110,7 +110,7 @@ export async function listTelegramRecipients(params: {
   return rows.map(toRecord);
 }
 
-export async function upsertTelegramRecipientRecord(input: RecipientUpsertInput, db: DbClient = systemPrisma) {
+export async function upsertTelegramRecipientRecord(input: RecipientUpsertInput, db: DbClient) {
   const chatId = trimmedStringOrNull(input.chatId);
 
   if (!chatId) throw new Error('chatId is required to upsert Telegram recipient');
@@ -160,9 +160,9 @@ export async function updateTelegramRecipientSelection(params: {
   tenantId: string;
   integrationId: string;
   selectedChatIds: string[];
-  db?: TenantPrismaClient;
+  db: TenantPrismaClient;
 }): Promise<string[]> {
-  const db = params.db ?? systemPrisma;
+  const { db } = params;
   const selectedChatIds = Array.from(new Set(params.selectedChatIds.map((id) => id.trim()).filter(Boolean)));
   const available = await db.telegramRecipient.findMany({
     where: { tenantId: params.tenantId, integrationId: params.integrationId, started: true },

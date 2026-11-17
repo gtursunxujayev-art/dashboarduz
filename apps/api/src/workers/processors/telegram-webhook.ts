@@ -30,7 +30,7 @@ export async function processTelegramWebhook(event: any, tenantId: string) {
       started: recipient.started,
       lastSeenAt: seenAt,
       lastUpdateId: updateId,
-    });
+    }, systemPrisma);
     logger.info({
       tenantId,
       integrationId: integration.id,

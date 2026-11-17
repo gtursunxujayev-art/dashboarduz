@@ -177,7 +177,7 @@ export type CallsSyncResult = { imported: number; complete: boolean };
 
 /** Imports new call notes for one tenant. Safe to run concurrently: rows are unique per provider + call id. */
 async function syncTenantAmoCalls(tenantId: string, now = new Date()): Promise<CallsSyncResult | null> {
-  const amoContext = await getTenantAmoCRMContext(tenantId);
+  const amoContext = await getTenantAmoCRMContext(tenantId, systemPrisma);
 
   if (!amoContext) return null;
 

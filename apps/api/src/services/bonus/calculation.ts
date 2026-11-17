@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { type DbClient, systemPrisma } from '@dashboarduz/db';
+import { type DbClient } from '@dashboarduz/db';
 
 import { resolveBonusPercent, type SalaryCategory, usedTierFallback } from '../../trpc/routers/dashboard/helpers';
 import { buildTechnicalSaleIdSet } from '../technical-income';
@@ -100,9 +100,9 @@ export async function calculateBonusMonth(params: {
   month: Date;
   policy?: BonusPolicy;
   policyVersionId?: string | null;
-  db?: DbClient;
+  db: DbClient;
 }): Promise<BonusMonthCalculation> {
-  const db = params.db ?? systemPrisma;
+  const { db } = params;
   const month = getTashkentMonthStart(params.month);
   const monthEnd = getTashkentMonthEnd(month);
   const resolved = params.policy

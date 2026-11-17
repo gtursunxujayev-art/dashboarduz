@@ -1,4 +1,4 @@
-import { systemPrisma } from '@dashboarduz/db';
+import { type DbClient, systemPrisma } from '@dashboarduz/db';
 import { fromTashkentLocalParts, groupDigits, shiftToTashkent, type ManagerGroup } from '@dashboarduz/shared';
 
 import { createIntervalJob } from '../../lib/interval-job';
@@ -184,7 +184,7 @@ export function aggregateTelegramGroupSummaries(params: {
   return result;
 }
 
-async function loadSummaryRows(tenantId: string, start: Date, end: Date) {
+async function loadSummaryRows(db: DbClient, tenantId: string, start: Date, end: Date) {
   const select = {
     id: true,
     type: true,
@@ -195,7 +195,7 @@ async function loadSummaryRows(tenantId: string, start: Date, end: Date) {
     courseId: true,
     course: { select: { id: true, name: true, category: true } },
   } as const;
-  const rows = await systemPrisma.income.findMany({
+  const rows = await db.income.findMany({
     where: { tenantId, lifecycleStatus: 'active', entryDate: { gte: start, lte: end } },
     select,
   });
@@ -206,7 +206,7 @@ async function loadSummaryRows(tenantId: string, start: Date, end: Date) {
     const missing = pending.filter((id) => !known.has(id));
 
     if (!missing.length) break;
-    const ancestors = await systemPrisma.income.findMany({ where: { tenantId, id: { in: missing } }, select });
+    const ancestors = await db.income.findMany({ where: { tenantId, id: { in: missing } }, select });
 
     if (!ancestors.length) break;
     for (const row of ancestors) known.set(row.id, row);
@@ -235,13 +235,14 @@ function resolveBotToken(integration: TelegramIntegration): string {
 }
 
 async function recordDeliveryAudit(
+  db: DbClient,
   integration: TelegramIntegration,
   schedule: TelegramGroupSummarySchedule,
   dateKey: string,
   result: TelegramGroupDeliveryResult,
 ): Promise<void> {
   try {
-    await systemPrisma.auditLog.create({
+    await db.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: result.status === 'sent' ? 'telegram_group_summary_sent' : 'telegram_group_summary_failed',
@@ -271,6 +272,7 @@ async function recordDeliveryAudit(
 }
 
 async function sendOneGroup(params: {
+  db: DbClient;
   integration: TelegramIntegration;
   group: TelegramGroupSummaryGroup;
   metrics: TelegramGroupSummaryMetrics;
@@ -286,7 +288,7 @@ async function sendOneGroup(params: {
       group: params.group, status: 'skipped', destinationCount: destinations.length, sentCount: 0, error: missing,
     };
 
-    await recordDeliveryAudit(params.integration, params.schedule, params.dateKey, result);
+    await recordDeliveryAudit(params.db, params.integration, params.schedule, params.dateKey, result);
 
     return result;
   }
@@ -311,21 +313,21 @@ async function sendOneGroup(params: {
     error: errors.length ? errors.join('; ') : null,
   };
 
-  await recordDeliveryAudit(params.integration, params.schedule, params.dateKey, result);
+  await recordDeliveryAudit(params.db, params.integration, params.schedule, params.dateKey, result);
 
   return result;
 }
 
-async function calculateForIntegration(integration: TelegramIntegration, now: Date) {
+async function calculateForIntegration(db: DbClient, integration: TelegramIntegration, now: Date) {
   const window = getTashkentDayWindow(now);
   const selectedIds = selectedCourseIds(integration.config);
   const selectedCourses = selectedIds.size > 0
-    ? await systemPrisma.course.findMany({
+    ? await db.course.findMany({
       where: { tenantId: integration.tenantId, id: { in: Array.from(selectedIds) } },
       select: { id: true, category: true, name: true },
     })
     : [];
-  const data = await loadSummaryRows(integration.tenantId, window.start, window.end);
+  const data = await loadSummaryRows(db, integration.tenantId, window.start, window.end);
 
   return {
     window,
@@ -337,21 +339,24 @@ async function calculateForIntegration(integration: TelegramIntegration, now: Da
   };
 }
 
+/** Sends today's group summaries now. Request code passes its tenant-scoped ctx.db. */
 export async function sendTelegramGroupSummariesForTenant(
   tenantId: string,
+  db: DbClient,
   now = new Date(),
 ): Promise<{ date: string; schedule: 'manual'; results: TelegramGroupDeliveryResult[] }> {
-  const integration = await systemPrisma.integration.findFirst({
+  const integration = await db.integration.findFirst({
     where: { tenantId, type: 'telegram', status: 'active' },
     select: { id: true, tenantId: true, tokensEncrypted: true, config: true },
   });
 
   if (!integration) throw new Error('Telegram integration is not connected.');
-  const calculated = await calculateForIntegration(integration, now);
+  const calculated = await calculateForIntegration(db, integration, now);
   const results: TelegramGroupDeliveryResult[] = [];
 
   for (const group of ['online', 'offline'] as const) {
     results.push(await sendOneGroup({
+      db,
       integration,
       group,
       metrics: calculated.metrics[group],
@@ -364,7 +369,7 @@ export async function sendTelegramGroupSummariesForTenant(
 }
 
 async function dispatchScheduled(integration: TelegramIntegration, cutoff: '18:00' | '23:59', now: Date): Promise<void> {
-  const calculated = await calculateForIntegration(integration, now);
+  const calculated = await calculateForIntegration(systemPrisma, integration, now);
   const redis = getRedisClient();
 
   for (const group of ['online', 'offline'] as const) {
@@ -374,6 +379,7 @@ async function dispatchScheduled(integration: TelegramIntegration, cutoff: '18:0
     if (!acquired) continue;
     try {
       const result = await sendOneGroup({
+        db: systemPrisma,
         integration,
         group,
         metrics: calculated.metrics[group],

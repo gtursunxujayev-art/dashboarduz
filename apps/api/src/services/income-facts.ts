@@ -2,7 +2,7 @@
  * Single source of truth for the money "facts" every report, dashboard, leaderboard and bonus screen uses.
  * Do not re-implement these formulas inline; import them from here.
  */
-import { systemPrisma, type DbClient } from '@dashboarduz/db';
+import { type DbClient } from '@dashboarduz/db';
 
 import { classifyCourseCategoryFromField } from '../trpc/routers/dashboard/helpers';
 
@@ -41,7 +41,7 @@ export function resolveRowSaleId(row: IncomeRowRef): string | null {
 export async function loadTechnicalSaleIdsForRows(
   tenantId: string,
   rows: IncomeRowRef[],
-  db: DbClient = systemPrisma,
+  db: DbClient,
 ): Promise<Set<string>> {
   const saleIds = Array.from(new Set(rows.map(resolveRowSaleId).filter((id): id is string => Boolean(id))));
 

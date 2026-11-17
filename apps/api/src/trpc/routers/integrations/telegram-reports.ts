@@ -201,7 +201,7 @@ export const telegramReportProcedures = {
     }),
   sendTelegramTodayReportNow: adminProcedure.mutation(async ({ ctx }) => {
     try {
-      const result = await sendImmediateTodayReportForTenant(ctx.tenantId);
+      const result = await sendImmediateTodayReportForTenant(ctx.tenantId, ctx.db);
 
       return result;
     } catch (error: any) {
@@ -213,7 +213,7 @@ export const telegramReportProcedures = {
   }),
   sendTelegramGroupSummaryNow: adminProcedure.mutation(async ({ ctx }) => {
     try {
-      return await sendTelegramGroupSummariesForTenant(ctx.tenantId);
+      return await sendTelegramGroupSummariesForTenant(ctx.tenantId, ctx.db);
     } catch (error: any) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -223,7 +223,7 @@ export const telegramReportProcedures = {
   }),
   sendTelegramWeeklyReportNow: adminProcedure.mutation(async ({ ctx }) => {
     try {
-      return await sendManualTelegramReportForTenant(ctx.tenantId, 'weekly');
+      return await sendManualTelegramReportForTenant(ctx.tenantId, 'weekly', ctx.db);
     } catch (error: any) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -233,7 +233,7 @@ export const telegramReportProcedures = {
   }),
   sendTelegramMonthlyReportNow: adminProcedure.mutation(async ({ ctx }) => {
     try {
-      return await sendManualTelegramReportForTenant(ctx.tenantId, 'monthly');
+      return await sendManualTelegramReportForTenant(ctx.tenantId, 'monthly', ctx.db);
     } catch (error: any) {
       throw new TRPCError({
         code: 'BAD_REQUEST',

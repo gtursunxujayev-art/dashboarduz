@@ -73,7 +73,7 @@ router.post('/telegram', async (req: Request, res: Response) => {
           started: recipient.started,
           lastSeenAt: seenAt,
           lastUpdateId: updateId,
-        });
+        }, systemPrisma);
         await systemPrisma.integration.update({
           where: { id: integration.id },
           data: { lastSyncAt: seenAt },

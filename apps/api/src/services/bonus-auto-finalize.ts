@@ -37,7 +37,7 @@ export async function autoFinalizePreviousBonusMonth(now = new Date()): Promise<
   for (const tenant of tenants) {
     if (alreadyFinalized.has(tenant.id)) continue;
     try {
-      await finalizeBonusMonth({ tenantId: tenant.id, month, userId: SYSTEM_FINALIZER_USER_ID });
+      await finalizeBonusMonth({ tenantId: tenant.id, month, userId: SYSTEM_FINALIZER_USER_ID, db: systemPrisma });
       count += 1;
       logger.info({ tenantId: tenant.id, month: getTashkentMonthKey(month) }, 'Bonus month auto-finalized');
     } catch (error: unknown) {

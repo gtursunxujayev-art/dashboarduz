@@ -1,4 +1,4 @@
-import { systemPrisma } from '@dashboarduz/db';
+import { type DbClient, systemPrisma } from '@dashboarduz/db';
 import { toTashkentDateKey } from '@dashboarduz/shared';
 
 import { sleep } from '../../../lib/async';
@@ -31,6 +31,8 @@ export async function sendWindowToIntegration(
   integration: TelegramIntegrationWithTenant,
   window: ReportWindow,
   nowUtc: Date,
+  /** Request code passes ctx.db; the scheduler passes systemPrisma. */
+  db: DbClient,
   delivery: {
     /** Chats that already received this report (a retry skips them). */
     alreadyDelivered?: ReadonlySet<string>;
@@ -39,6 +41,7 @@ export async function sendWindowToIntegration(
 ): Promise<{ recipientCount: number; fileName: string }> {
   const reportStartedAt = Date.now();
   const recipients = (await listTelegramRecipients({
+    db,
     tenantId: integration.tenantId,
     integrationId: integration.id,
     startedOnly: true,
@@ -48,7 +51,7 @@ export async function sendWindowToIntegration(
     throw new Error('No Telegram recipients selected for reports');
   }
 
-  const selectedPipelineIds = await getSelectedPipelineIdsForTenant(integration.tenantId);
+  const selectedPipelineIds = await getSelectedPipelineIdsForTenant(integration.tenantId, db);
   const selectedReportCourseIds = window.kind === 'daily'
     ? parseTelegramDailyReportCourseIds(integration.config)
     : [];
@@ -59,6 +62,7 @@ export async function sendWindowToIntegration(
     periodEnd: window.periodEnd,
     selectedPipelineIds,
     selectedReportCourseIds,
+    db,
   });
   const elapsed = Date.now() - reportStartedAt;
   const minWaitMs = window.kind === 'weekly'
@@ -164,7 +168,7 @@ export async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promis
 
     try {
       const alreadyDelivered = new Set(await redis.smembers(deliveredKey));
-      const sent = await sendWindowToIntegration(integration, window, nowUtc, {
+      const sent = await sendWindowToIntegration(integration, window, nowUtc, systemPrisma, {
         alreadyDelivered,
         onDelivered: async (chatId) => {
           await redis.sadd(deliveredKey, chatId);

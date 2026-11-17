@@ -22,6 +22,7 @@ describe('bonus auto-finalize', () => {
     expect(finalize).toHaveBeenCalledTimes(1);
     expect(finalize).toHaveBeenCalledWith({
       tenantId: 't1',
+      db: prisma,
       month: new Date('2026-08-31T19:00:00.000Z'),
       userId: engine.SYSTEM_FINALIZER_USER_ID,
     });

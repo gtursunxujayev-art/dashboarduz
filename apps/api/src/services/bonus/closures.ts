@@ -1,4 +1,4 @@
-import { type DbClient, systemPrisma } from '@dashboarduz/db';
+import { type DbClient } from '@dashboarduz/db';
 
 import type { SalaryCategory } from '../../trpc/routers/dashboard/helpers';
 import { buildTechnicalSaleIdSet } from '../technical-income';
@@ -43,8 +43,8 @@ export type SaleClosure = {
  * Every non-technical active sale that became fully paid on or before `rangeEnd`, with the payment that closed it.
  * Uses the same closure rule as the bonus engine, so plan bonus and bonus counts can never disagree.
  */
-export async function loadSaleClosures(params: { tenantId: string; rangeEnd: Date; db?: DbClient }): Promise<SaleClosure[]> {
-  const db = params.db ?? systemPrisma;
+export async function loadSaleClosures(params: { tenantId: string; rangeEnd: Date; db: DbClient }): Promise<SaleClosure[]> {
+  const { db } = params;
   const rows = await db.income.findMany({
     where: { tenantId: params.tenantId, lifecycleStatus: 'active', entryDate: { lte: params.rangeEnd } },
     select: {

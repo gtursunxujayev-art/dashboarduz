@@ -1,4 +1,4 @@
-import { systemPrisma } from '@dashboarduz/db';
+import { type DbClient } from '@dashboarduz/db';
 import { type ManagerGroup } from '@dashboarduz/shared';
 
 import { logger } from '../../../lib/logger';
@@ -44,7 +44,10 @@ export async function collectMetrics(params: {
   periodEnd: Date;
   selectedPipelineIds: string[];
   selectedReportCourseIds: string[];
+  /** Request code passes ctx.db; the scheduler passes db. */
+  db: DbClient;
 }): Promise<ReportMetrics> {
+  const { db } = params;
   const dashboardSettings = (
     params.tenantSettings
     && typeof params.tenantSettings === 'object'
@@ -81,7 +84,7 @@ export async function collectMetrics(params: {
   const selectedCourseIds = Array.from(new Set(params.selectedReportCourseIds.map((id) => id.trim()).filter(Boolean))).slice(0, 3);
 
   const [callAggregate, incomesRaw, users, corporateDurationTotal, selectedReportCourses, selectedCourseIncomesRaw] = await Promise.all([
-    systemPrisma.call.aggregate({
+    db.call.aggregate({
       where: {
         tenantId: params.tenantId,
         provider: AMOCRM_CALL_PROVIDER,
@@ -93,7 +96,7 @@ export async function collectMetrics(params: {
       _count: { id: true },
       _sum: { duration: true },
     }),
-    systemPrisma.income.findMany({
+    db.income.findMany({
       where: {
         tenantId: params.tenantId,
         lifecycleStatus: 'active',
@@ -125,7 +128,7 @@ export async function collectMetrics(params: {
         },
       },
     }),
-    systemPrisma.user.findMany({
+    db.user.findMany({
       where: {
         tenantId: params.tenantId,
         isActive: true,
@@ -139,12 +142,13 @@ export async function collectMetrics(params: {
       },
     }),
     getCorporateCallDurationTotal({
+      db,
       tenantId: params.tenantId,
       rangeStart: params.periodStart,
       rangeEnd: params.periodEnd,
     }),
     selectedCourseIds.length > 0
-      ? systemPrisma.course.findMany({
+      ? db.course.findMany({
           where: {
             tenantId: params.tenantId,
             id: { in: selectedCourseIds },
@@ -156,7 +160,7 @@ export async function collectMetrics(params: {
         })
       : Promise.resolve([]),
     selectedCourseIds.length > 0
-      ? systemPrisma.income.findMany({
+      ? db.income.findMany({
           where: {
             tenantId: params.tenantId,
             lifecycleStatus: 'active',
@@ -185,7 +189,7 @@ export async function collectMetrics(params: {
   ]);
 
   // Technical sales (agreement == 1) and their repayments are bookkeeping rows, not real income.
-  const technicalSaleIds = await loadTechnicalSaleIdsForRows(params.tenantId, incomesRaw);
+  const technicalSaleIds = await loadTechnicalSaleIdsForRows(params.tenantId, incomesRaw, db);
   const incomes = excludeTechnicalRows(incomesRaw, technicalSaleIds);
   const selectedCourseIncomes = selectedCourseIncomesRaw.filter((sale) => !buildTechnicalSaleIdSet([sale]).has(sale.id));
 
@@ -228,7 +232,7 @@ export async function collectMetrics(params: {
   let amoContext: Awaited<ReturnType<typeof getTenantAmoCRMContext>> = null;
 
   try {
-    amoContext = await getTenantAmoCRMContext(params.tenantId);
+    amoContext = await getTenantAmoCRMContext(params.tenantId, db);
   } catch (error: any) {
     usedLiveAmoLeads = false;
     logger.warn({
@@ -300,16 +304,16 @@ export async function collectMetrics(params: {
 
   if (!usedLiveAmoLeads) {
     const [dbNewLeads, dbQualifiedLeads, leadsDetailed] = await Promise.all([
-      systemPrisma.lead.count({ where: leadWhere as any }),
+      db.lead.count({ where: leadWhere as any }),
       qualifiedStageIds.length > 0
-        ? systemPrisma.lead.count({
+        ? db.lead.count({
             where: {
               ...(leadWhere as any),
               status: { in: qualifiedStageIds },
             },
           })
         : Promise.resolve(0),
-      systemPrisma.lead.findMany({
+      db.lead.findMany({
         where: leadWhere as any,
         select: {
           status: true,
@@ -450,13 +454,14 @@ export async function collectMetrics(params: {
   const managerCallDurationByUserId = new Map<string, number>();
   const managerCallCountByUserId = new Map<string, { calls: number; longCalls: number }>();
   const corporateDurationByUserId = await getCorporateCallDurationByManager({
+    db,
     tenantId: params.tenantId,
     managerUserIds: users.map((user) => user.id),
     rangeStart: params.periodStart,
     rangeEnd: params.periodEnd,
   });
 
-  const managerCalls = await systemPrisma.call.findMany({
+  const managerCalls = await db.call.findMany({
     where: {
       ...countedCallsWhere(params.tenantId, users.map((user) => user.id)),
       startedAt: {
@@ -613,8 +618,8 @@ export async function collectMetrics(params: {
   };
 }
 
-export async function getSelectedPipelineIdsForTenant(tenantId: string): Promise<string[]> {
-  const amocrmIntegration = await systemPrisma.integration.findUnique({
+export async function getSelectedPipelineIdsForTenant(tenantId: string, db: DbClient): Promise<string[]> {
+  const amocrmIntegration = await db.integration.findUnique({
     where: {
       tenantId_type: {
         tenantId,
