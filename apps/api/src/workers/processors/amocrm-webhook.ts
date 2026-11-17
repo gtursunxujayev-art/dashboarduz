@@ -1,6 +1,7 @@
-import { systemPrisma } from '@dashboarduz/db';
+import { type Prisma, systemPrisma } from '@dashboarduz/db';
 
 import { parseAmoTimestamp } from '../../lib/amocrm';
+import { isUniqueViolation } from '../../lib/prisma-errors';
 import { getSelectedPipelineIds } from '../../services/integrations/amocrm-live';
 import { queueService } from '../../services/queue';
 
@@ -35,6 +36,78 @@ function extractContactField(contactData: any, code: string): string | null {
   const value = field?.values?.[0]?.value;
 
   return typeof value === 'string' ? value : null;
+}
+
+type AmoContactInput = {
+  tenantId: string;
+  amocrmId: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  payload: Prisma.InputJsonValue;
+};
+
+function contactExternalIds(existing: unknown, amocrmId: string): Prisma.InputJsonValue {
+  const base = existing && typeof existing === 'object' && !Array.isArray(existing) ? existing as Record<string, unknown> : {};
+
+  return { ...base, amocrm_id: amocrmId } as Prisma.InputJsonValue;
+}
+
+/**
+ * Stores an amoCRM contact, keyed by (tenantId, amocrmId) which is unique. A contact created before the key
+ * existed may only match by phone or email; it is adopted (given the amoCRM id) once. Creation is an upsert, so
+ * two deliveries of the same contact at once cannot create two rows.
+ */
+async function upsertAmoContact(input: AmoContactInput): Promise<void> {
+  const { tenantId, amocrmId, name, phone, email, payload } = input;
+  const existing = await systemPrisma.contact.findUnique({ where: { tenantId_amocrmId: { tenantId, amocrmId } } });
+  const legacy = existing || (!phone && !email)
+    ? null
+    : await systemPrisma.contact.findFirst({
+      where: { tenantId, amocrmId: null, OR: [...(phone ? [{ phone }] : []), ...(email ? [{ email }] : [])] },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+  if (legacy) {
+    try {
+      await systemPrisma.contact.update({
+        where: { id: legacy.id },
+        data: {
+          amocrmId,
+          name: name || legacy.name,
+          phone: phone || legacy.phone,
+          email: email || legacy.email,
+          externalIds: contactExternalIds(legacy.externalIds, amocrmId),
+          metadata: payload,
+        },
+      });
+
+      return;
+    } catch (error: unknown) {
+      // A concurrent delivery already stored this amoCRM id: fall through and update that row instead.
+      if (!isUniqueViolation(error)) throw error;
+    }
+  }
+
+  await systemPrisma.contact.upsert({
+    where: { tenantId_amocrmId: { tenantId, amocrmId } },
+    create: {
+      tenantId,
+      amocrmId,
+      name,
+      phone,
+      email,
+      externalIds: { amocrm_id: amocrmId },
+      metadata: payload,
+    },
+    update: {
+      ...(name ? { name } : {}),
+      ...(phone ? { phone } : {}),
+      ...(email ? { email } : {}),
+      ...(existing ? { externalIds: contactExternalIds(existing.externalIds, amocrmId) } : {}),
+      metadata: payload,
+    },
+  });
 }
 
 export async function processAmoCRMWebhook(event: any, tenantId: string) {
@@ -108,45 +181,10 @@ export async function processAmoCRMWebhook(event: any, tenantId: string) {
     const phone = extractContactField(contactData, 'PHONE') || contactData.phone?.[0]?.value || null;
     const email = extractContactField(contactData, 'EMAIL') || contactData.email?.[0]?.value || null;
     const name = contactData.name || null;
+    const amocrmId = String(contactData.id ?? '').trim();
 
-    const existingContact = await systemPrisma.contact.findFirst({
-      where: {
-        tenantId,
-        OR: [
-          ...(phone ? [{ phone }] : []),
-          ...(email ? [{ email }] : []),
-        ],
-      },
-    });
-
-    if (existingContact) {
-      const existingExternalIds = (existingContact.externalIds as Record<string, unknown> | null) || {};
-
-      await systemPrisma.contact.update({
-        where: { id: existingContact.id },
-        data: {
-          name: name || existingContact.name,
-          phone: phone || existingContact.phone,
-          email: email || existingContact.email,
-          externalIds: {
-            ...existingExternalIds,
-            amocrm_id: String(contactData.id),
-          },
-          metadata: contactData,
-        },
-      });
-    } else {
-      await systemPrisma.contact.create({
-        data: {
-          tenantId,
-          name,
-          phone,
-          email,
-          externalIds: { amocrm_id: String(contactData.id) },
-          metadata: contactData,
-        },
-      });
-    }
+    if (!amocrmId) continue;
+    await upsertAmoContact({ tenantId, amocrmId, name, phone, email, payload: contactData });
   }
 
   const [telegramIntegration, tenant] = await Promise.all([

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-import type { DbClient } from '@dashboarduz/db';
+import { systemPrisma } from '@dashboarduz/db';
 import { normalizeDigits, roleNeedsManagerMapping, type UserRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
@@ -59,13 +59,18 @@ export function generatePassword(length = 12) {
   return result;
 }
 
-export async function generateUniqueLogin(seed: string, db: DbClient) {
+/**
+ * A login no user in ANY tenant has (users.username is globally unique). The lookup deliberately uses the unscoped
+ * systemPrisma: with RLS enforced a tenant-scoped client would only see its own tenant and could hand out a login
+ * that another tenant already uses.
+ */
+export async function generateUniqueLogin(seed: string) {
   const base = normalizeLoginSeed(seed);
 
   for (let i = 0; i < 20; i += 1) {
     const suffix = crypto.randomBytes(2).toString('hex');
     const candidate = `${base}.${suffix}`;
-    const exists = await db.user.findFirst({
+    const exists = await systemPrisma.user.findFirst({
       where: { username: candidate },
       select: { id: true },
     });

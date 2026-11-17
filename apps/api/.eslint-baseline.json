@@ -418,9 +418,9 @@
   "src/workers/processors/amocrm-webhook.ts": {
     "@typescript-eslint/no-explicit-any": 7,
     "@typescript-eslint/no-unnecessary-type-assertion": 1,
-    "@typescript-eslint/no-unsafe-assignment": 23,
+    "@typescript-eslint/no-unsafe-assignment": 17,
     "@typescript-eslint/no-unsafe-call": 1,
-    "@typescript-eslint/no-unsafe-member-access": 32,
+    "@typescript-eslint/no-unsafe-member-access": 31,
     "import/no-cycle": 1
   },
   "src/workers/processors/faceid-webhook.ts": {

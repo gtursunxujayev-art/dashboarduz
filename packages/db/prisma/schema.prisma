@@ -269,6 +269,8 @@ model Contact {
   phone      String?
   email      String?
   externalIds Json?   // { amocrm_id: "...", telegram_id: "..." }
+  // amoCRM contact id (also kept in externalIds.amocrm_id). Unique per tenant: the amoCRM webhook upserts by it.
+  amocrmId   String?
   metadata   Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -277,6 +279,7 @@ model Contact {
   leads  Lead[]
   calls  Call[]
 
+  @@unique([tenantId, amocrmId])
   @@index([tenantId, phone])
   @@index([tenantId, email])
   @@index([phone])

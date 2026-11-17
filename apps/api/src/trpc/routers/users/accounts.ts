@@ -21,7 +21,7 @@ export const userAccountProcedures = {
     )
     .mutation(async ({ input, ctx }) => {
       const loginSeed = input.name?.trim() || input.role.toLowerCase();
-      const username = await generateUniqueLogin(loginSeed, ctx.db);
+      const username = await generateUniqueLogin(loginSeed);
       const plainPassword = generatePassword(12);
       const passwordHash = await hashPassword(plainPassword);
 

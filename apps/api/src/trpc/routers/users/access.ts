@@ -1,3 +1,4 @@
+import { systemPrisma } from '@dashboarduz/db';
 import type { UserRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -145,7 +146,9 @@ export const userAccessProcedures = {
       const normalizedUsername = input.username?.trim().toLowerCase();
 
       if (normalizedUsername && normalizedUsername !== user.username) {
-        const duplicate = await ctx.db.user.findFirst({
+        // users.username is unique across ALL tenants; this check deliberately uses the unscoped systemPrisma so it
+        // still sees other tenants' logins once RLS is enforced (ctx.db would only see this tenant).
+        const duplicate = await systemPrisma.user.findFirst({
           where: {
             username: normalizedUsername,
             NOT: { id: user.id },

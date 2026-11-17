@@ -16,6 +16,7 @@ import { rateLimiter } from '../../services/security/rate-limiter';
 import { hashPassword, verifyPassword } from '../../services/auth/password';
 import { signJWT } from '../../services/auth/jwt';
 import { logger, maskPhone } from '../../lib/logger';
+import { isUniqueViolation } from '../../lib/prisma-errors';
 
 export const authRouter = router({
   registerWithPassword: publicProcedure
@@ -36,6 +37,8 @@ export const authRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Passwords do not match' });
       }
 
+      // Logins are unique across all tenants (users.username), so this lookup deliberately uses the unscoped
+      // systemPrisma: there is no tenant yet, and once RLS is enforced a scoped client would miss other tenants.
       const existingUser = await systemPrisma.user.findFirst({
         where: { username: normalizedLogin },
         select: {
@@ -75,31 +78,40 @@ export const authRouter = router({
         tenantId = updatedUser.tenantId;
         roles = updatedUser.roles;
       } else {
-        const tenant = await systemPrisma.tenant.create({
-          data: {
-            name: normalizedLogin,
-            plan: 'free',
-          },
-        });
+        // Tenant and its first user are created together: a failure (e.g. the login taken by a concurrent
+        // registration, users.username is unique) leaves no tenant without a user behind.
+        const createdUser = await systemPrisma.$transaction(async (tx) => {
+          const tenant = await tx.tenant.create({
+            data: {
+              name: normalizedLogin,
+              plan: 'free',
+            },
+          });
 
-        const createdUser = await systemPrisma.user.create({
-          data: {
-            tenantId: tenant.id,
-            username: normalizedLogin,
-            passwordHash,
-            roles: ['Admin'],
-            authProvider: 'email',
-            lastLoginAt: new Date(),
-          },
-          select: {
-            id: true,
-            tenantId: true,
-            roles: true,
-          },
+          return tx.user.create({
+            data: {
+              tenantId: tenant.id,
+              username: normalizedLogin,
+              passwordHash,
+              roles: ['Admin'],
+              authProvider: 'email',
+              lastLoginAt: new Date(),
+            },
+            select: {
+              id: true,
+              tenantId: true,
+              roles: true,
+            },
+          });
+        }).catch((error: unknown) => {
+          if (isUniqueViolation(error)) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists. Please sign in.' });
+          }
+          throw error;
         });
 
         userId = createdUser.id;
-        tenantId = tenant.id;
+        tenantId = createdUser.tenantId;
         roles = createdUser.roles;
       }
 
@@ -294,30 +306,33 @@ export const authRouter = router({
         
         if (!user) {
           // Create tenant and user for first signup
-          const tenant = await systemPrisma.tenant.create({
-            data: {
-              name: `Tenant ${input.phone}`,
-              plan: 'free',
-            },
+          // Tenant and its first user are created together, so a failed signup leaves no empty tenant.
+          user = await systemPrisma.$transaction(async (tx) => {
+            const tenant = await tx.tenant.create({
+              data: {
+                name: `Tenant ${input.phone}`,
+                plan: 'free',
+              },
+            });
+
+            return tx.user.create({
+              data: {
+                tenantId: tenant.id,
+                phone: input.phone,
+                roles: ['Admin'],
+                authProvider: 'phone',
+              },
+              select: {
+                id: true,
+                tenantId: true,
+                roles: true,
+                phone: true,
+                isActive: true,
+              },
+            });
           });
 
-          user = await systemPrisma.user.create({
-            data: {
-              tenantId: tenant.id,
-              phone: input.phone,
-              roles: ['Admin'],
-              authProvider: 'phone',
-            },
-            select: {
-              id: true,
-              tenantId: true,
-              roles: true,
-              phone: true,
-              isActive: true,
-            },
-          });
-          
-          tenantId = tenant.id;
+          tenantId = user.tenantId;
         } else {
           tenantId = user.tenantId;
           if (!user.isActive) {
@@ -452,7 +467,9 @@ export const authRouter = router({
       const nextLogin = input.newLogin?.trim().toLowerCase();
 
       if (nextLogin && nextLogin !== user.username) {
-        const duplicate = await ctx.db.user.findFirst({
+        // users.username is unique across ALL tenants, so this check must see every tenant. It deliberately uses
+        // the unscoped systemPrisma: with RLS enforced, ctx.db would only see this tenant and miss a clash.
+        const duplicate = await systemPrisma.user.findFirst({
           where: {
             username: nextLogin,
             NOT: { id: user.id },
