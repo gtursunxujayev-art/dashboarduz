@@ -1,10 +1,8 @@
-import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
+import { hasPrivilegedRole, TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
-const privilegedReadRoles = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
-
 export function canReadAllUsers(roles: string[]): boolean {
-  return roles.some((role) => privilegedReadRoles.has(role));
+  return hasPrivilegedRole(roles);
 }
 
 export function parseDateKey(value: string, fieldName: string): string {

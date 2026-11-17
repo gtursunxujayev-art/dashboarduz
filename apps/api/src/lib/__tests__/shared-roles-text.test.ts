@@ -1,5 +1,7 @@
 import {
   groupDigits,
+  hasPrivilegedRole,
+  PRIVILEGED_ROLES,
   isAgentOnly,
   isFinanceOnly,
   isTashkiliyOnly,
@@ -9,6 +11,13 @@ import {
 } from '@dashboarduz/shared';
 
 describe('shared role checks (were copied in the API and the web access guard)', () => {
+  it('PRIVILEGED_ROLES / hasPrivilegedRole', () => {
+    expect(PRIVILEGED_ROLES).toEqual(['Admin', 'Manager', 'TeamLeader', 'Finance']);
+    expect(hasPrivilegedRole(['Agent', 'Finance'])).toBe(true);
+    expect(hasPrivilegedRole(['Agent', 'Dashboard'])).toBe(false);
+    expect(hasPrivilegedRole(null)).toBe(false);
+  });
+
   it('isAgentOnly', () => {
     expect(isAgentOnly(['OfflineAgent'])).toBe(true);
     expect(isAgentOnly(['Agent', 'TeamLeader'])).toBe(false);

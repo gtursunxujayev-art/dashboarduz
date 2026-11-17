@@ -1,4 +1,4 @@
-import { AGENT_ROLES, dateRangeInput, hasAgentRole, PRIVILEGED_ROLES, reportRangeSchema } from '@dashboarduz/shared';
+import { AGENT_ROLES, dateRangeInput, isAgentOnly as isAgentOnlyRoles, reportRangeSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -169,7 +169,7 @@ export const callsRouter = router({
     const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
 
     const roles = ctx.user.roles || [];
-    const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+    const isAgentOnly = isAgentOnlyRoles(roles);
 
     const agentUsers = await ctx.db.user.findMany({
       where: {

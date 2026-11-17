@@ -1,4 +1,4 @@
-import { reviewActionSchema } from '@dashboarduz/shared';
+import { hasPrivilegedRole, reviewActionSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -9,7 +9,7 @@ import { bonusMonthInput } from './schemas';
 
 export const bonusOperationProcedures = {
   getBonusOperations: protectedProcedure.query(async ({ ctx }) => {
-    if (!ctx.user.roles.some((role) => ['Admin', 'Manager', 'TeamLeader', 'Finance'].includes(role))) {
+    if (!hasPrivilegedRole(ctx.user.roles)) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
     if (ctx.user.roles.includes('Admin')) {

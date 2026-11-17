@@ -8,6 +8,16 @@ export type UserRole = (typeof USER_ROLES)[number];
 
 export const AGENT_ROLES = ['Agent', 'OnlineAgent', 'OfflineAgent'] as const;
 
+/**
+ * Roles that see every user's data (attendance, bonus operations), and that make a user with an agent role
+ * more than an agent ({@link isAgentOnly}).
+ */
+export const PRIVILEGED_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Finance'] as const;
+
+export function hasPrivilegedRole(roles: readonly string[] | null | undefined): boolean {
+  return Array.isArray(roles) && roles.some((role) => (PRIVILEGED_ROLES as readonly string[]).includes(role));
+}
+
 export function hasAgentRole(roles: readonly string[] | null | undefined): boolean {
   return Array.isArray(roles) && roles.some((role) => (AGENT_ROLES as readonly string[]).includes(role));
 }
@@ -49,12 +59,9 @@ export interface PaginatedResponse<T> {
   };
 }
 
-/** Roles that see every manager's data even when they also hold an agent role. */
-export const PRIVILEGED_ROLES: ReadonlySet<string> = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
-
 /** An agent role and no privileged role. */
 export function isAgentOnly(roles: readonly string[]): boolean {
-  return hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
+  return hasAgentRole(roles) && !hasPrivilegedRole(roles);
 }
 
 /** Finance, and no Admin, Manager, TeamLeader or agent role. */

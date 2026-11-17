@@ -1,9 +1,10 @@
+import { hasPrivilegedRole } from '@dashboarduz/shared';
+
 export const ATTENDANCE_REPORT_REQUIRED_SECONDS = 9 * 60 * 60;
 export const ATTENDANCE_REPORT_MAX_CALENDAR_DAYS = 366;
 export const ATTENDANCE_REPORT_MAX_DETAIL_ROWS = 50_000;
 
 const ELIGIBLE_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent', 'TeamLeader']);
-const PRIVILEGED_READ_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 
 export type AttendanceReportUser = {
   id: string;
@@ -119,7 +120,7 @@ export function isAttendanceReportEligibleUser(user: AttendanceReportUser): bool
 }
 
 export function resolveAttendanceReportScopedUserId(roles: string[], currentUserId: string): string | undefined {
-  return roles.some((role) => PRIVILEGED_READ_ROLES.has(role)) ? undefined : currentUserId;
+  return hasPrivilegedRole(roles) ? undefined : currentUserId;
 }
 
 function compareEmployees(
