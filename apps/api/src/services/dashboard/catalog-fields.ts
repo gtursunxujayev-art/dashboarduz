@@ -1,6 +1,6 @@
 import type { DbClient } from '@dashboarduz/db';
 
-import { amocrmService } from '../integrations/amocrm';
+import { getAmoReference } from '../integrations/amocrm-activity-snapshot-read';
 import { type LeadFieldOption, normalizeIdentifier } from '../integrations/amocrm-live';
 
 export const PIE_COLORS = [
@@ -44,7 +44,7 @@ export async function collectCatalogFieldOptions(tenantId: string, db: DbClient)
   }
 
   try {
-    const catalog = await amocrmService.fetchLeadCustomFields(context.accessToken, context.baseUrl);
+    const catalog = await getAmoReference(tenantId, 'lead_custom_fields', context, db);
     const fields = Array.isArray(catalog?._embedded?.custom_fields) ? catalog._embedded.custom_fields : [];
 
     const options: LeadFieldOption[] = [];

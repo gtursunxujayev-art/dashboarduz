@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { logger } from '../../../lib/logger';
 import { amoFailureHelp, amoFailureMessage, detectAmoFailureReason, fetchAmoCRMAccountByToken, normalizeBaseUrl } from '../../../services/integration-settings/connection';
 import { amocrmService } from '../../../services/integrations/amocrm';
+import { getAmoReference, refreshAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
 import { refreshTenantLeadSnapshot } from '../../../services/integrations/amocrm-lead-snapshot';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { encryptIntegrationTokens } from '../../../services/security/encryption';
@@ -161,10 +162,10 @@ export const amocrmIntegrationProcedures = {
     let pipelinesResponse: Awaited<ReturnType<typeof amocrmService.fetchPipelines>>;
 
     try {
-      pipelinesResponse = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+      pipelinesResponse = await getAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db);
     } catch (firstError: any) {
       try {
-        pipelinesResponse = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+        pipelinesResponse = await refreshAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db);
       } catch (secondError: any) {
         const reason = detectAmoFailureReason(secondError || firstError);
 
@@ -172,7 +173,7 @@ export const amocrmIntegrationProcedures = {
           tenantId: ctx.tenantId,
           reason,
           retried: true,
-          error: String((secondError as any)?.message || (firstError as any)?.message || secondError || firstError),
+          error: String((secondError)?.message || (firstError)?.message || secondError || firstError),
         }, '[AmoCRM][Pipelines] Fetch failed');
         const help = amoFailureHelp(reason);
 
@@ -185,7 +186,7 @@ export const amocrmIntegrationProcedures = {
     const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
 
     return {
-      hasExplicitSelection: Array.isArray((amoContext.config as Record<string, unknown>).selectedPipelineIds),
+      hasExplicitSelection: Array.isArray((amoContext.config).selectedPipelineIds),
       selectedPipelineIds: amoContext.selectedPipelineIds || [],
       pipelines: pipelines.map((pipeline) => ({
         id: String(pipeline.id || ''),
@@ -211,7 +212,8 @@ export const amocrmIntegrationProcedures = {
         });
       }
 
-      const pipelinesResponse = await amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl);
+      // Saving checks against amoCRM itself and refreshes the stored copy every page reads.
+      const pipelinesResponse = await refreshAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db);
       const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
       const availablePipelineIds = new Set(
         pipelines

@@ -73,8 +73,12 @@ export async function getOrSet<T>(
   key: string,
   ttlSeconds: number,
   fetchFn: () => Promise<T>,
+  options?: {
+    /** Keep the last value this long so callers arriving during a refresh get it instead of recomputing. */
+    staleTtlSeconds?: number;
+  },
 ): Promise<T> {
-  const result = await getOrSetWithMeta(key, ttlSeconds, fetchFn);
+  const result = await getOrSetWithMeta(key, ttlSeconds, fetchFn, options);
 
   return result.value;
 }

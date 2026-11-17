@@ -16,6 +16,9 @@ import { computePlanProgressByAgent } from '../../../services/plan-bonus';
 import { bonusIncomeDetails, exportBonusIncomeDetails } from './bonus-income-details';
 import { createZeroBreakdown, extractSalarySettings, getCurrentMonthRange, KPI_METRIC_KEYS, type KpiMetricKey, type PlanBonusPeriodMode, protectedProcedure, type SalaryBreakdown, TRPCError } from './helpers';
 
+/** KPI metrics whose values come from amoCRM tasks and events. */
+const AMO_ACTIVITY_KPI_METRICS = ['followUpCount', 'followUpDonePercent', 'stageChangeCount'] as const;
+
 const salarySummary = protectedProcedure
     .input(
       z.object({
@@ -279,6 +282,10 @@ const salarySummary = protectedProcedure
       const amoManagerIds = Array.from(new Set(agentAmoIdMap.values()));
       const activeAgentIds = agentAmoMappings.map((mapping) => mapping.id);
 
+      // amoCRM activity is paged live from amoCRM (slow over long ranges); fetch it only when a
+      // selected KPI is scored from it.
+      const needsAmoActivity = kpi.selectedMetrics.some((metric) => (AMO_ACTIVITY_KPI_METRICS as readonly string[]).includes(metric));
+
       // Parallel fetch: new leads, calls, activity, all incomes for debt collection
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       const [newLeads, calls, activityByManager, allIncomes] = await Promise.all([
@@ -306,8 +313,9 @@ const salarySummary = protectedProcedure
               },
             })
           : Promise.resolve([]),
-        amoContext && amoManagerIds.length > 0
+        amoContext && amoManagerIds.length > 0 && needsAmoActivity
           ? getAmoCRMActivityMetrics({
+              db: ctx.db,
               tenantId: ctx.tenantId,
               accessToken: amoContext.accessToken,
               baseUrl: amoContext.baseUrl,

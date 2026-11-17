@@ -189,9 +189,9 @@ export class AmoCRMService {
     return (baseUrl || this.defaultBaseUrl).replace(/\/+$/, '');
   }
 
-  private async fetchWithTimeout(input: string, init: RequestInit = {}): Promise<Response> {
+  private async fetchWithTimeout(input: string, init: RequestInit = {}, timeoutMs = this.requestTimeoutMs): Promise<Response> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       return await fetch(input, {
@@ -200,7 +200,7 @@ export class AmoCRMService {
       });
     } catch (error: any) {
       if (error?.name === 'AbortError') {
-        throw new Error(`AmoCRM request timeout after ${this.requestTimeoutMs}ms`);
+        throw new Error(`AmoCRM request timeout after ${timeoutMs}ms`);
       }
       throw error;
     } finally {
@@ -603,8 +603,20 @@ export class AmoCRMService {
     dateFrom?: Date;
     dateTo?: Date;
     entityType?: string;
+    /** Tasks changed in this window (used by the snapshot job). */
+    updatedAtFrom?: Date;
+    updatedAtTo?: Date;
+    /** Per-request limit; background jobs can afford to wait longer than a page. */
+    timeoutMs?: number;
   }, baseUrl?: string): Promise<AmoCRMTaskListResponse> {
     const queryParams = new URLSearchParams();
+
+    if (params?.updatedAtFrom) {
+      queryParams.set('filter[updated_at][from]', Math.floor(params.updatedAtFrom.getTime() / 1000).toString());
+    }
+    if (params?.updatedAtTo) {
+      queryParams.set('filter[updated_at][to]', Math.floor(params.updatedAtTo.getTime() / 1000).toString());
+    }
 
     if (params?.page) queryParams.set('page', params.page.toString());
     if (params?.limit) queryParams.set('limit', params.limit.toString());
@@ -632,12 +644,13 @@ export class AmoCRMService {
 
     const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
     const url = `${resolvedBaseUrl}/api/v4/tasks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    const response = await fetch(url, {
+    // A stalled page used to hang for minutes (no timeout) and hold up the whole paging loop.
+    const response = await this.fetchWithTimeout(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-    });
+    }, params?.timeoutMs);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -756,6 +769,8 @@ export class AmoCRMService {
     dateTo?: Date;
     userIds?: string[];
     entityType?: string;
+    /** Per-request limit; background jobs can afford to wait longer than a page. */
+    timeoutMs?: number;
   }, baseUrl?: string): Promise<AmoCRMEventListResponse> {
     const queryParams = new URLSearchParams();
 
@@ -778,12 +793,13 @@ export class AmoCRMService {
 
     const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
     const url = `${resolvedBaseUrl}/api/v4/events${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    const response = await fetch(url, {
+    // A stalled page used to hang for minutes (no timeout) and hold up the whole paging loop.
+    const response = await this.fetchWithTimeout(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-    });
+    }, params?.timeoutMs);
 
     if (!response.ok) {
       const errorText = await response.text();

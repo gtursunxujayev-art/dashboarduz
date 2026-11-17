@@ -313,8 +313,7 @@
     "import/order": 17
   },
   "src/trpc/routers/integrations/amocrm.ts": {
-    "@typescript-eslint/no-explicit-any": 7,
-    "@typescript-eslint/no-unnecessary-type-assertion": 3,
+    "@typescript-eslint/no-explicit-any": 5,
     "@typescript-eslint/no-unsafe-member-access": 3
   },
   "src/trpc/routers/integrations/faceid.ts": {
@@ -346,9 +345,6 @@
     "@typescript-eslint/no-unsafe-assignment": 2,
     "@typescript-eslint/no-unsafe-member-access": 2,
     "import/order": 4
-  },
-  "src/trpc/routers/sellers/detail.ts": {
-    "@typescript-eslint/no-unnecessary-type-assertion": 1
   },
   "src/trpc/routers/sellers/list.ts": {
     "@typescript-eslint/no-unsafe-return": 1
@@ -407,11 +403,10 @@
     "import/no-cycle": 1
   },
   "src/workers/processors/amocrm-webhook.ts": {
-    "@typescript-eslint/no-explicit-any": 7,
-    "@typescript-eslint/no-unnecessary-type-assertion": 1,
-    "@typescript-eslint/no-unsafe-assignment": 17,
+    "@typescript-eslint/no-explicit-any": 6,
+    "@typescript-eslint/no-unsafe-assignment": 16,
     "@typescript-eslint/no-unsafe-call": 1,
-    "@typescript-eslint/no-unsafe-member-access": 31,
+    "@typescript-eslint/no-unsafe-member-access": 26,
     "import/no-cycle": 1
   },
   "src/workers/processors/faceid-webhook.ts": {

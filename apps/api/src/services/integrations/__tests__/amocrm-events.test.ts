@@ -1,3 +1,5 @@
+import { systemPrisma } from '@dashboarduz/db';
+
 import { amocrmService } from '../amocrm';
 import { createAmoCRMActivityDiagnostics, getAmoCRMActivityMetrics } from '../amocrm-activity';
 
@@ -61,6 +63,7 @@ describe('AmoCRM events fetching', () => {
 
     await getAmoCRMActivityMetrics({
       tenantId: 'events-http-error-test',
+      db: systemPrisma,
       accessToken: 'token',
       managerIds: ['10'],
       rangeStart: new Date('2026-09-15T00:00:00.000Z'),

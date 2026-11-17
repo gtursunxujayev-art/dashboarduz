@@ -13,7 +13,7 @@ import { randomUUID } from 'crypto';
 import { systemPrisma } from '@dashboarduz/db';
 import type { Prisma } from '@prisma/client';
 
-import { parseAmoTimestamp } from '../../lib/amocrm';
+import { parseAmoTimestamp, toAmoId } from '../../lib/amocrm';
 import { withTimeout } from '../../lib/async';
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
@@ -21,10 +21,12 @@ import { asObject, toNumberOrNull } from '../../lib/object';
 import { getRedisClient } from '../queue/redis-client';
 
 import { amocrmService, type AmoCRMLead } from './amocrm';
+import { writeLeadsByAmoId } from './amocrm-lead-store';
 import { getTenantAmoCRMContext } from './amocrm-live';
 
 export const LEAD_SNAPSHOT_CONFIG_KEY = 'lead_snapshot';
-export const LEAD_SNAPSHOT_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+// Incremental pulls are cheap (only leads changed since the last one), so keep "today" figures fresh.
+export const LEAD_SNAPSHOT_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const FULL_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** After a failed refresh, wait this long before the scheduler tries the tenant again. */
 const FAILURE_RETRY_MS = 15 * 60 * 1000;
@@ -102,13 +104,6 @@ export function isLeadSnapshotDue(state: LeadSnapshotState, now: Date): boolean 
   return true;
 }
 
-function toAmoId(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  const normalized = String(value).trim();
-
-  return normalized && normalized !== '0' ? normalized : null;
-}
-
 export function leadToSnapshotRow(lead: AmoCRMLead) {
   return {
     title: typeof lead.name === 'string' && lead.name.trim() ? lead.name : 'Untitled Lead',
@@ -129,15 +124,11 @@ async function storeLeadPage(tenantId: string, leads: AmoCRMLead[]): Promise<voi
     if (!amocrmId) return [];
     const row = leadToSnapshotRow(lead);
 
-    return [systemPrisma.lead.upsert({
-      where: { tenantId_amocrmId: { tenantId, amocrmId } },
-      // Setting updatedAt marks the row as seen by this pull (the full-pull sweep relies on it).
-      update: { ...row, updatedAt: new Date() },
-      create: { ...row, tenantId, amocrmId },
-    })];
+    // Setting updatedAt marks the row as seen by this pull (the full-pull sweep relies on it).
+    return [{ amocrmId, update: { ...row, updatedAt: new Date() }, create: row }];
   });
 
-  if (writes.length) await systemPrisma.$transaction(writes);
+  await writeLeadsByAmoId(tenantId, writes, systemPrisma);
 }
 
 async function saveLeadSnapshotState(integrationId: string, patch: Partial<LeadSnapshotState>): Promise<LeadSnapshotState> {
@@ -249,7 +240,7 @@ export async function pullTenantLeadSnapshot(
   }
 }
 
-function lockKey(tenantId: string): string {
+function leadSnapshotLockKey(tenantId: string): string {
   return `amocrm-lead-snapshot:lock:${tenantId}`;
 }
 
@@ -260,7 +251,7 @@ function lockKey(tenantId: string): string {
 async function acquireLock(tenantId: string, token: string): Promise<boolean | null> {
   try {
     const result = await withTimeout(
-      getRedisClient().set(lockKey(tenantId), token, 'EX', LOCK_TTL_SECONDS, 'NX'),
+      getRedisClient().set(leadSnapshotLockKey(tenantId), token, 'EX', LOCK_TTL_SECONDS, 'NX'),
       LOCK_TIMEOUT_MS,
       'redis_timeout',
     );
@@ -276,7 +267,7 @@ async function acquireLock(tenantId: string, token: string): Promise<boolean | n
 async function releaseLock(tenantId: string, token: string): Promise<void> {
   try {
     const redis = getRedisClient();
-    const key = lockKey(tenantId);
+    const key = leadSnapshotLockKey(tenantId);
 
     // Only drop the lock if it is still ours (it may have expired and been taken by another run).
     if (await withTimeout(redis.get(key), LOCK_TIMEOUT_MS, 'redis_timeout') === token) {
@@ -291,7 +282,7 @@ async function releaseLock(tenantId: string, token: string): Promise<void> {
 export async function isLeadSnapshotRefreshRunning(tenantId: string): Promise<boolean> {
   if (runningTenants.has(tenantId)) return true;
   try {
-    return (await withTimeout(getRedisClient().exists(lockKey(tenantId)), LOCK_TIMEOUT_MS, 'redis_timeout')) === 1;
+    return (await withTimeout(getRedisClient().exists(leadSnapshotLockKey(tenantId)), LOCK_TIMEOUT_MS, 'redis_timeout')) === 1;
   } catch {
     return false;
   }

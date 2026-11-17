@@ -4,6 +4,21 @@
 import type { AmoCRMTask } from '../services/integrations/amocrm';
 
 /** Trimmed string form of an id; `null`/`undefined` give `''` (but `0` gives `'0'`). */
+/** An amoCRM id as a string, or null for empty / 0 (amoCRM's "none"). */
+export function toAmoId(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim();
+
+  return normalized && normalized !== '0' ? normalized : null;
+}
+
+/** Trimmed, non-empty ids; null when no list was given (no filter). */
+export function cleanIds(values: string[] | null | undefined): string[] | null {
+  if (!values) return null;
+
+  return values.map((value) => String(value).trim()).filter(Boolean);
+}
+
 export function toStringId(value: unknown): string {
   if (value === null || value === undefined) {
     return '';

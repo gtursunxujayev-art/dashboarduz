@@ -51,6 +51,11 @@ Enforcement is a manual step because it changes production behaviour. Order:
    - `DATABASE_SYSTEM_URL` = URL with `dashboarduz_system`
    - `DATABASE_URL` = URL with `dashboarduz_app`
 
+   Setting `DATABASE_SYSTEM_URL` also turns on the per-query RLS context in
+   `forTenant` (before that it is skipped, because each query would otherwise
+   pay for its own `BEGIN; set_config; COMMIT` with nothing enforcing it).
+   `DB_RLS_CONTEXT=on|off` overrides this.
+
    Set `DATABASE_SYSTEM_URL` first: until it is set, `systemPrisma` falls back
    to `DATABASE_URL`, and webhooks, workers, schedulers and login would run as
    the RLS-restricted role and see nothing.

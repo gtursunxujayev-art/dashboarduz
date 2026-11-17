@@ -303,14 +303,16 @@ function IncomeCelebrationPopup({ event, onClose }: { event: LatestIncomeEvent; 
 
 export default function DashboardRolePage({ group }: { group: AgentGroup }) {
   const { logout } = useAuth();
+  // The server shares one result per board for 5 s across every screen, so asking more often only
+  // adds load. Hidden tabs stop polling; a wall screen showing the board is a visible tab.
   const query = trpc.dashboard.liveLeaderboard.useQuery({ group }, {
-    refetchInterval: 2000,
-    refetchIntervalInBackground: true,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
     retry: 1,
   });
   const callStatsQuery = trpc.dashboard.liveLeaderboardCallStats.useQuery({ group }, {
     refetchInterval: 15_000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
     staleTime: 10_000,
     retry: 1,
@@ -320,7 +322,7 @@ export default function DashboardRolePage({ group }: { group: AgentGroup }) {
   const courseStatsQuery = trpc.dashboard.liveLeaderboardCourseStats.useQuery(undefined, {
     enabled: isCourseBoard,
     refetchInterval: 30_000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
     staleTime: 20_000,
     retry: 1,

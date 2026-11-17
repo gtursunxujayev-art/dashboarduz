@@ -1,13 +1,14 @@
 import type { DbClient } from '@dashboarduz/db';
 
-import { type AmoCRMLead, type AmoCRMLeadPipeline, amocrmService } from '../integrations/amocrm';
+import { type AmoCRMLead, type AmoCRMLeadPipeline } from '../integrations/amocrm';
+import { fetchSnapshotEvents } from '../integrations/amocrm-activity-snapshot-read';
 import { fetchSnapshotLeads } from '../integrations/amocrm-lead-snapshot-read';
 
 import { asString, parseAmoDate } from './metrics';
 
 export async function computeLeadResponseTimes(params: {
-  accessToken: string;
-  baseUrl: string | undefined;
+  tenantId: string;
+  db: DbClient;
   managerIds: string[];
   newLeads: AmoCRMLead[];
   rangeStart: Date;
@@ -23,17 +24,15 @@ export async function computeLeadResponseTimes(params: {
   let events: Array<Record<string, unknown>> = [];
 
   try {
-    events = await amocrmService.fetchAllEvents(
-      params.accessToken,
+    events = await fetchSnapshotEvents(
+      params.tenantId,
       {
         dateFrom: params.rangeStart,
         dateTo: params.rangeEnd,
         userIds: params.managerIds,
         entityType: 'lead',
-        limit: 250,
-        maxPages: 30,
       },
-      params.baseUrl,
+      params.db,
     );
   } catch {
     return result;

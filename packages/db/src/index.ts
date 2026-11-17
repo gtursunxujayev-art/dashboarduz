@@ -66,6 +66,22 @@ function setTenantContextLocal(client: RawCapable, tenantId: string, userId: str
 export interface ForTenantOptions {
   /** Underlying client to use (tests). Defaults to the DATABASE_URL client. */
   client?: PrismaClient;
+  /** Force the RLS context on or off; defaults to {@link isRlsContextEnabled}. */
+  setContext?: boolean;
+}
+
+/**
+ * Whether tenant clients set the RLS context. Setting it makes every single query a
+ * `BEGIN; set_config; query; COMMIT` transaction (4+ round trips and a held connection), which
+ * only buys anything once the app connects as the RLS-restricted role. Per the rollout in
+ * README.md that happens only after `DATABASE_SYSTEM_URL` is set, so it is on from then on.
+ * `DB_RLS_CONTEXT=on|off` overrides.
+ */
+export function isRlsContextEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const flag = env.DB_RLS_CONTEXT?.trim().toLowerCase();
+  if (flag === 'on' || flag === 'true' || flag === '1') return true;
+  if (flag === 'off' || flag === 'false' || flag === '0') return false;
+  return Boolean(env.DATABASE_SYSTEM_URL?.trim());
 }
 
 /**
@@ -89,6 +105,13 @@ export function forTenant(
 
   const base = options.client ?? tenantBasePrisma;
   const user = userId && userId.trim().length > 0 ? userId : null;
+  // An explicit test client exercises the RLS path unless told otherwise.
+  const setContext = options.setContext ?? (options.client ? true : isRlsContextEnabled());
+
+  if (!setContext) {
+    // RLS is not enforced on this connection: queries go straight through, no wrapper transaction.
+    return base;
+  }
 
   const extended = base.$extends({
     name: 'tenant-scope',

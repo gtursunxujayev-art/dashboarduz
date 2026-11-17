@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 
-import { amocrmService } from '../../../services/integrations/amocrm';
+import { getAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { listTelegramRecipients } from '../../../services/integrations/telegram-recipient-store';
 import { managerProcedure } from '../../trpc';
@@ -16,7 +16,7 @@ export const userDirectoryProcedures = {
       });
     }
 
-    const users = await amocrmService.fetchAllUsers(amoContext.accessToken, { limit: 250 }, amoContext.baseUrl);
+    const users = await getAmoReference(ctx.tenantId, 'users', amoContext, ctx.db);
 
     return users
       .map((user) => ({

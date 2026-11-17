@@ -304,6 +304,7 @@ export const summaryProcedures = {
             fallback: new Map<string, AmoCRMActivityMetrics>(),
             run: async () => {
               const lookup = await getAmoCRMActivityMetricsWithin({
+                db: ctx.db,
                 tenantId: ctx.tenantId,
                 accessToken: amoContext.accessToken,
                 baseUrl: amoContext.baseUrl,

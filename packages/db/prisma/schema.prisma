@@ -53,6 +53,9 @@ model Tenant {
   bonusAdjustments BonusAdjustment[]
   bonusAdjustmentAudits BonusAdjustmentAudit[]
   bonusAdjustmentApplications BonusAdjustmentApplication[]
+  amocrmTasks AmocrmTask[]
+  amocrmEvents AmocrmEvent[]
+  amocrmReferences AmocrmReference[]
 
   @@map("tenants")
 }
@@ -951,4 +954,64 @@ model AttendanceAdjustmentAudit {
   @@index([actorUserId])
   @@index([createdAt])
   @@map("attendance_adjustment_audits")
+}
+
+/// amoCRM tasks copied by the background snapshot job (services/integrations/amocrm-activity-snapshot.ts),
+/// so pages read them from the database instead of paging amoCRM. `payload` is the task as amoCRM sent it.
+model AmocrmTask {
+  id                String    @id @default(dbgenerated("(gen_random_uuid())::text")) // as created by 20261117120000
+  tenantId          String
+  amocrmId          String
+  /// amoCRM user id (not a users.id), so no foreign key.
+  responsibleUserId String?
+  entityType        String?
+  entityId          String?
+  isCompleted       Boolean   @default(false)
+  completeTill      DateTime?
+  externalCreatedAt DateTime?
+  externalUpdatedAt DateTime?
+  payload           Json
+  syncedAt          DateTime  @default(now()) @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, amocrmId])
+  // Name as created by 20261117120000 (Postgres truncates identifiers to 63 characters).
+  @@index([tenantId, responsibleUserId, isCompleted, completeTill], map: "amocrm_tasks_tenantId_responsibleUserId_isCompleted_completeTil")
+  @@map("amocrm_tasks")
+}
+
+/// amoCRM lead events (notes, stage changes, …) copied by the snapshot job. Events never change.
+model AmocrmEvent {
+  id                String   @id @default(dbgenerated("(gen_random_uuid())::text")) // as created by 20261117120000
+  tenantId          String
+  amocrmId          String
+  type              String?
+  entityType        String?
+  entityId          String?
+  /// amoCRM user id of the actor (not a users.id), so no foreign key.
+  createdBy         String?
+  externalCreatedAt DateTime
+  payload           Json
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, amocrmId])
+  @@index([tenantId, externalCreatedAt])
+  @@index([tenantId, createdBy, externalCreatedAt])
+  @@map("amocrm_events")
+}
+
+/// amoCRM reference data copied by the snapshot job: kind = users | pipelines | lead_custom_fields.
+model AmocrmReference {
+  id          String   @id @default(dbgenerated("(gen_random_uuid())::text")) // as created by 20261117120000
+  tenantId    String
+  kind        String
+  payload     Json
+  refreshedAt DateTime
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, kind])
+  @@map("amocrm_reference")
 }

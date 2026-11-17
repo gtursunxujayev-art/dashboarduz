@@ -1,9 +1,11 @@
+import type { DbClient } from '@dashboarduz/db';
 import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
 import { isCompletedTask, isLeadTask, taskResponsibleUserId, toStringId } from '../../lib/amocrm';
 import { logger } from '../../lib/logger';
 
-import { type AmoCRMEvent, type AmoCRMTask, amocrmService } from './amocrm';
+import { type AmoCRMEvent, type AmoCRMTask } from './amocrm';
+import { fetchSnapshotEvents, fetchSnapshotTasks } from './amocrm-activity-snapshot-read';
 
 export type AmoCRMActivityMetrics = {
   followUpCount: number;
@@ -295,6 +297,8 @@ const STALE_MAX_AGE_MS = 30 * 60 * 1000;
 
 type ActivityParams = {
   tenantId: string;
+  /** Request code passes ctx.db. */
+  db: DbClient;
   accessToken: string;
   baseUrl?: string;
   managerIds: string[];
@@ -345,23 +349,19 @@ async function fetchTasksWithFallback(
   label: string,
   onFailure: (reason: string) => void,
 ): Promise<AmoCRMTask[]> {
-  const base = { responsibleUserIds: managerIds, limit: 250, ...filters };
-
   try {
-    return await amocrmService.fetchAllTasks(params.accessToken, { ...base, entityType: 'leads' }, params.baseUrl);
+    return await fetchSnapshotTasks(params.tenantId, {
+      responsibleUserIds: managerIds,
+      completed: filters.completed ?? filters.completedOnly,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      entityType: 'leads',
+    }, params.db);
   } catch (error: unknown) {
-    try {
-      const tasks = await amocrmService.fetchAllTasks(params.accessToken, base, params.baseUrl);
+    logger.warn({ tenantId: params.tenantId, error: errorMessage(error) }, `AmoCRM activity: failed to read ${label} from the snapshot`);
+    onFailure(failureReason(error));
 
-      logger.warn({ tenantId: params.tenantId, warning: errorMessage(error) }, `AmoCRM activity: ${label} fetched with fallback filter`);
-
-      return tasks;
-    } catch (fallbackError: unknown) {
-      logger.warn({ tenantId: params.tenantId, error: errorMessage(fallbackError) }, `AmoCRM activity: failed to fetch ${label}`);
-      onFailure(failureReason(fallbackError));
-
-      return [];
-    }
+    return [];
   }
 }
 
@@ -370,27 +370,22 @@ async function fetchEventsWithFallback(
   managerIds: string[],
   onFailure: (reason: string) => void,
 ): Promise<AmoCRMEvent[]> {
-  const base = { dateFrom: params.rangeStart, dateTo: params.rangeEnd, userIds: managerIds, limit: 250, maxPages: 120 };
-
   try {
-    return await amocrmService.fetchAllEvents(params.accessToken, { ...base, entityType: 'lead' }, params.baseUrl);
+    return await fetchSnapshotEvents(params.tenantId, {
+      dateFrom: params.rangeStart,
+      dateTo: params.rangeEnd,
+      userIds: managerIds,
+      entityType: 'lead',
+    }, params.db);
   } catch (error: unknown) {
-    try {
-      const events = await amocrmService.fetchAllEvents(params.accessToken, base, params.baseUrl);
+    logger.warn({ tenantId: params.tenantId, error: errorMessage(error) }, 'AmoCRM activity: failed to read events from the snapshot');
+    onFailure(failureReason(error));
 
-      logger.warn({ tenantId: params.tenantId, warning: errorMessage(error) }, 'AmoCRM activity: events fetched with fallback filter');
-
-      return events;
-    } catch (fallbackError: unknown) {
-      logger.warn({ tenantId: params.tenantId, error: errorMessage(fallbackError) }, 'AmoCRM activity: failed to fetch events');
-      onFailure(failureReason(fallbackError));
-
-      return [];
-    }
+    return [];
   }
 }
 
-/** Asks amoCRM for completed tasks, open tasks and lead events (in parallel) and counts them per manager. */
+/** Reads completed tasks, open tasks and lead events from the snapshot (in parallel) and counts them per manager. */
 async function computeActivityMetrics(params: ActivityParams, managerIds: string[]): Promise<CacheEntry> {
   const startedMs = Date.now();
   const managerIdSet = new Set(managerIds);

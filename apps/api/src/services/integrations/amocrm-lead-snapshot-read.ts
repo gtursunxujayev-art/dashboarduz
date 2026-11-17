@@ -6,9 +6,11 @@
 import { type DbClient } from '@dashboarduz/db';
 import type { Prisma } from '@prisma/client';
 
+import { cleanIds } from '../../lib/amocrm';
 import { asObject } from '../../lib/object';
 
 import type { AmoCRMLead, AmoCRMLeadListResponse } from './amocrm';
+import { dedupeByAmoId } from './amocrm-lead-store';
 
 export type SnapshotLeadQuery = {
   pipelineIds?: string[] | null;
@@ -47,12 +49,6 @@ const ROW_ORDER: Prisma.LeadOrderByWithRelationInput[] = [
   { externalCreatedAt: { sort: 'desc', nulls: 'last' } },
   { amocrmId: 'desc' },
 ];
-
-function cleanIds(values: string[] | null | undefined): string[] | null {
-  if (!values) return null;
-
-  return values.map((value) => String(value).trim()).filter(Boolean);
-}
 
 export function buildSnapshotLeadWhere(tenantId: string, query: SnapshotLeadQuery = {}): Prisma.LeadWhereInput {
   const where: Prisma.LeadWhereInput = { tenantId, amocrmId: { not: null } };
@@ -125,7 +121,8 @@ export async function fetchSnapshotLeads(
     orderBy: ROW_ORDER,
   });
   const needle = normalizeQuery(query.query);
-  const matched = needle ? rows.filter((row) => matchesQuery(row, needle)) : rows;
+  const unique = dedupeByAmoId(rows);
+  const matched = needle ? unique.filter((row) => matchesQuery(row, needle)) : unique;
 
   return matched.map(snapshotRowToLead);
 }
@@ -152,7 +149,7 @@ export async function fetchSnapshotLeadPage(
       select: ROW_SELECT,
       orderBy: ROW_ORDER,
     });
-    const matched = all.filter((row) => matchesQuery(row, needle));
+    const matched = dedupeByAmoId(all).filter((row) => matchesQuery(row, needle));
 
     rows = matched.slice(offset, offset + limit);
     hasNext = matched.length > offset + limit;
@@ -165,7 +162,7 @@ export async function fetchSnapshotLeadPage(
       take: limit + 1,
     });
 
-    rows = fetched.slice(0, limit);
+    rows = dedupeByAmoId(fetched.slice(0, limit));
     hasNext = fetched.length > limit;
   }
 
