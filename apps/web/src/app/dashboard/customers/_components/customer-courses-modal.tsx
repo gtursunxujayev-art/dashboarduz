@@ -13,7 +13,7 @@ export function CustomerCoursesModal({ vm }: { vm: CustomersPageModel }) {
     <>
       {isAdmin && editMode && isCourseEditorModalOpen && courseEditorCustomer && (
         <div className="modal-backdrop">
-          <div className="modal-panel max-w-4xl">
+          <div className="modal-panel max-w-[760px]">
             <div className="modal-header">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex min-w-0 items-center gap-3">
@@ -28,7 +28,7 @@ export function CustomerCoursesModal({ vm }: { vm: CustomersPageModel }) {
                 <button
                   type="button"
                   onClick={closeCourseEditorModal}
-                  className="btn btn-secondary btn-sm"
+                  className="btn btn-ghost btn-sm"
                 >
                   <IconX className="h-4 w-4" stroke={1.8} />
                   Yopish
@@ -36,18 +36,18 @@ export function CustomerCoursesModal({ vm }: { vm: CustomersPageModel }) {
               </div>
             </div>
 
-            <div className="max-h-[75vh] space-y-3 overflow-auto px-6 py-5">
+            <div className="modal-body space-y-3">
               {Array.isArray(courseEditorCustomer.courseEntries) && courseEditorCustomer.courseEntries.length ? (
                 courseEditorCustomer.courseEntries.map((entry: any) => {
                   const isEditing = editingSaleIncomeId === entry.saleIncomeId;
                   return (
                     <div
                       key={entry.saleIncomeId}
-                      className={`rounded-[12px] border p-4 ${isEditing ? 'border-blue-200 bg-blue-50/40' : 'border-gray-200'}`}
+                      className={`rounded-[16px] p-4 transition-shadow ${isEditing ? 'bg-blue-50/50 ring-1 ring-blue-200' : 'bg-gray-50'}`}
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex min-w-0 items-start gap-3">
-                          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-gray-100 text-gray-600">
+                          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white text-blue-600 shadow-sm">
                             <IconBook2 className="h-[18px] w-[18px]" stroke={1.6} />
                           </span>
                           <div className="min-w-0">

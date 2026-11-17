@@ -2,20 +2,21 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import Sidebar from '@/components/dashboard/sidebar';
+import Sidebar, { SIDEBAR_OPEN_WIDTH, SIDEBAR_RAIL_WIDTH } from '@/components/dashboard/sidebar';
 import Header from '@/components/dashboard/header';
 import DashboardAiShell from '@/components/dashboard/dashboard-ai-shell';
 import { trpc } from '@/lib/trpc';
 
 const LIVE_LEADERBOARD_PATH = '/dashboard/live-leaderboard';
 const OFFLINE_LEADERBOARD_PATH = '/dashboard/offline-leaderboard';
-const DESKTOP_SIDEBAR_STORAGE_KEY = 'dashboarduz-desktop-sidebar-open';
+// New key on purpose: the sidebar now opens on hover by default, so the old "open" preference is not carried over.
+const SIDEBAR_PINNED_STORAGE_KEY = 'dashboarduz-sidebar-pinned';
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLeaderboardRoute = pathname === LIVE_LEADERBOARD_PATH || pathname === OFFLINE_LEADERBOARD_PATH;
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [sidebarPinned, setSidebarPinned] = useState(false);
   const tenantQuery = trpc.tenant.get.useQuery(undefined, {
     enabled: !isLeaderboardRoute,
     retry: 1,
@@ -31,22 +32,31 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   });
 
   useEffect(() => {
-    if (window.localStorage.getItem(DESKTOP_SIDEBAR_STORAGE_KEY) === 'false') {
-      setDesktopSidebarOpen(false);
+    try {
+      if (window.localStorage.getItem(SIDEBAR_PINNED_STORAGE_KEY) === 'true') setSidebarPinned(true);
+    } catch {
+      // Storage unavailable: keep the hover rail.
     }
   }, []);
 
   const closeMobileSidebar = useCallback(() => setMobileSidebarOpen(false), []);
+  const togglePinned = useCallback(() => {
+    setSidebarPinned((value) => {
+      try {
+        window.localStorage.setItem(SIDEBAR_PINNED_STORAGE_KEY, value ? 'false' : 'true');
+      } catch {
+        // Ignore: the choice just won't survive a reload.
+      }
+      return !value;
+    });
+  }, []);
   const toggleSidebar = useCallback(() => {
     if (window.matchMedia('(min-width: 1024px)').matches) {
-      setDesktopSidebarOpen((value) => {
-        window.localStorage.setItem(DESKTOP_SIDEBAR_STORAGE_KEY, value ? 'false' : 'true');
-        return !value;
-      });
+      togglePinned();
     } else {
       setMobileSidebarOpen((value) => !value);
     }
-  }, []);
+  }, [togglePinned]);
 
   if (isLeaderboardRoute) {
     return (
@@ -59,19 +69,23 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const pendingAdjustmentCount = adjustmentBadgeQuery.data?.pendingTotal ?? 0;
 
   return (
-    <div className="flex min-h-[100dvh] bg-background text-foreground">
+    <div
+      className="min-h-[100dvh] bg-background text-foreground lg:pl-[var(--sidebar-offset)] lg:transition-[padding] lg:duration-300 lg:ease-[cubic-bezier(0.16,1,0.3,1)]"
+      style={{ '--sidebar-offset': `${sidebarPinned ? SIDEBAR_OPEN_WIDTH : SIDEBAR_RAIL_WIDTH}px` } as React.CSSProperties}
+    >
       <Sidebar
         pendingAdjustmentCount={pendingAdjustmentCount}
         tenantName={tenantQuery.data?.name || undefined}
         tenantPlan={(tenantQuery.data?.plan || 'free').toString()}
         mobileOpen={mobileSidebarOpen}
-        desktopOpen={desktopSidebarOpen}
+        pinned={sidebarPinned}
+        onTogglePinned={togglePinned}
         onMobileClose={closeMobileSidebar}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-[100dvh] min-w-0 flex-col">
         <Header pendingAdjustmentCount={pendingAdjustmentCount} onToggleSidebar={toggleSidebar} />
         <main className="relative flex-1 focus:outline-none">
-          <div className="mx-auto w-full max-w-[1680px] px-4 pb-10 pt-2 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-[1600px] px-4 pb-12 pt-3 sm:px-6 lg:px-10">
             <DashboardAiShell>
               {children}
             </DashboardAiShell>

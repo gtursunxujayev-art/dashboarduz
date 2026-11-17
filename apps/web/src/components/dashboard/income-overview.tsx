@@ -19,7 +19,7 @@ function IncomeHero({ title, online, offline }: IncomeCardProps) {
   const total = online + offline;
 
   return (
-    <article className="relative isolate flex min-h-[236px] flex-col justify-between overflow-hidden rounded-[18px] bg-slate-950 p-6 text-white shadow-lg ring-1 ring-inset ring-white/10 sm:p-8">
+    <article className="relative isolate flex min-h-[236px] flex-col justify-between overflow-hidden rounded-[24px] bg-slate-950 p-6 text-white shadow-lg ring-1 ring-inset ring-white/10 sm:p-8">
       <Image
         src="/art/hero-wave.webp"
         alt=""
@@ -64,7 +64,7 @@ function IncomeStat({ title, online, offline, icon: StatIcon }: IncomeCardProps 
   return (
     <article className="panel flex flex-col justify-between p-5">
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
+        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
           <StatIcon className="h-5 w-5" stroke={1.6} />
         </span>
         <div className="min-w-0">

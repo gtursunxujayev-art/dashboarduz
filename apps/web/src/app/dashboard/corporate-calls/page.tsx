@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
-import { IconClock, IconDeviceFloppy, IconPhoneCall, IconRefresh, IconTrash } from '@tabler/icons-react';
+import { IconCalendar, IconClock, IconDeviceFloppy, IconPhoneCall, IconRefresh, IconTrash } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { FilterPill, pillControlClass } from '@/components/dashboard/filter-pill';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -189,18 +190,20 @@ export default function CorporateCallsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] xl:items-start">
-        <form onSubmit={handleSubmit} className="panel p-5 sm:p-6 xl:sticky xl:top-6">
-          <div className="mb-5 flex items-center gap-3">
-            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
-              <IconPhoneCall className="h-5 w-5" stroke={1.6} aria-hidden="true" />
-            </span>
-            <span className={`tabular text-2xl font-semibold tracking-tight ${formDuration ? 'text-gray-900' : 'text-gray-300'}`} aria-hidden="true">
-              {formDuration || 'HH:MM:SS'}
-            </span>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
+        <form onSubmit={handleSubmit} className="panel flex flex-col xl:sticky xl:top-20 xl:order-2">
+          <div className="p-5 pb-0 sm:p-6 sm:pb-0">
+            <div className="panel-inset flex flex-col items-center gap-3 py-6 text-center">
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                <IconPhoneCall className="h-5 w-5" stroke={1.6} aria-hidden="true" />
+              </span>
+              <span className={`tabular text-[36px] font-semibold leading-none tracking-[-0.02em] ${formDuration ? 'text-gray-900' : 'text-gray-300'}`} aria-hidden="true">
+                {formDuration || 'HH:MM:SS'}
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-1">
+          <div className="grid grid-cols-1 gap-4 p-5 sm:p-6 md:grid-cols-3 xl:grid-cols-1">
             <div>
               <label className="field-label">Menejer</label>
               <select
@@ -253,15 +256,15 @@ export default function CorporateCallsPage() {
                 />
               </div>
             </div>
+
+            {!canChooseCustomDate && (
+              <p className="field-help mt-0 md:col-span-3 xl:col-span-1">
+                Menejerlar faqat bugun yoki kecha sanasiga qo&apos;lda qo&apos;ng&apos;iroq davomiyligi kiritishi mumkin.
+              </p>
+            )}
           </div>
 
-          {!canChooseCustomDate && (
-            <p className="field-help mt-4">
-              Menejerlar faqat bugun yoki kecha sanasiga qo&apos;lda qo&apos;ng&apos;iroq davomiyligi kiritishi mumkin.
-            </p>
-          )}
-
-          <div className="mt-5 flex justify-end border-t border-gray-100 pt-4">
+          <div className="flex justify-end border-t border-gray-100 px-5 py-4 sm:px-6">
             <button
               type="submit"
               disabled={upsertMutation.isLoading || managers.length === 0}
@@ -273,59 +276,55 @@ export default function CorporateCallsPage() {
           </div>
         </form>
 
-        <div className="panel overflow-hidden">
-          <div className="border-b border-gray-100 p-4 sm:p-5">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.2fr_auto] lg:items-end">
-              <div>
-                <label className="field-label">Ro&apos;yxat: Boshlanish</label>
-                <input
-                  type="date"
-                  value={listFrom}
-                  onChange={(event) => setListFrom(event.target.value)}
-                  disabled={!canChooseCustomDate}
-                  className="field"
-                />
-              </div>
-              <div>
-                <label className="field-label">Ro&apos;yxat: Tugash</label>
-                <input
-                  type="date"
-                  value={listTo}
-                  onChange={(event) => setListTo(event.target.value)}
-                  disabled={!canChooseCustomDate}
-                  className="field"
-                />
-              </div>
-              <div>
-                <label className="field-label">Menejer filtri</label>
-                <select
-                  value={listManagerUserId}
-                  onChange={(event) => setListManagerUserId(event.target.value)}
-                  disabled={!canChooseCustomDate}
-                  className="field"
-                >
-                  {managers.map((manager: any) => (
-                    <option key={manager.id} value={manager.id}>{manager.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={() => listQuery.refetch()}
-                  className="btn btn-secondary w-full"
-                >
-                  <IconRefresh className="h-4 w-4" stroke={1.8} aria-hidden="true" />
-                  Yangilash
-                </button>
-              </div>
+        <section className="panel min-w-0 xl:order-1">
+          <div className="flex flex-wrap items-center gap-2 px-5 pt-5 sm:px-6 sm:pt-6">
+            <FilterPill icon={IconCalendar} label={<>Ro&apos;yxat: Boshlanish</>} className={canChooseCustomDate ? '' : 'opacity-70'}>
+              <input
+                type="date"
+                value={listFrom}
+                onChange={(event) => setListFrom(event.target.value)}
+                disabled={!canChooseCustomDate}
+                className={`${pillControlClass} w-[9.5rem] flex-none`}
+              />
+            </FilterPill>
+            <FilterPill label={<>Ro&apos;yxat: Tugash</>} className={canChooseCustomDate ? '' : 'opacity-70'}>
+              <input
+                type="date"
+                value={listTo}
+                onChange={(event) => setListTo(event.target.value)}
+                disabled={!canChooseCustomDate}
+                className={`${pillControlClass} w-[9.5rem] flex-none`}
+              />
+            </FilterPill>
+            <FilterPill label="Menejer filtri" className={canChooseCustomDate ? '' : 'opacity-70'}>
+              <select
+                value={listManagerUserId}
+                onChange={(event) => setListManagerUserId(event.target.value)}
+                disabled={!canChooseCustomDate}
+                className={`${pillControlClass} max-w-[12rem]`}
+              >
+                {managers.map((manager: any) => (
+                  <option key={manager.id} value={manager.id}>{manager.name}</option>
+                ))}
+              </select>
+            </FilterPill>
+            <div className="ml-auto flex items-center gap-2">
+              {rows.length > 0 && <span className="badge badge-neutral tabular">{rows.length}</span>}
+              <button
+                type="button"
+                onClick={() => listQuery.refetch()}
+                className="btn btn-secondary"
+              >
+                <IconRefresh className="h-4 w-4" stroke={1.8} aria-hidden="true" />
+                Yangilash
+              </button>
             </div>
           </div>
 
-          <div className="p-2 sm:p-3">
-            <div className="max-h-[420px] overflow-auto">
+          <div className="p-2 pt-3 sm:p-3 sm:pt-4">
+            <div className="max-h-[560px] overflow-auto">
               <table className="data-table">
-                <thead>
+                <thead className="sticky top-0 z-[1] [&_th]:bg-white">
                   <tr>
                     <th className="text-left">Sana</th>
                     <th className="text-left">Menejer</th>
@@ -339,14 +338,19 @@ export default function CorporateCallsPage() {
                 <tbody>
                   {rows.map((row: any) => (
                     <tr key={row.id}>
-                      <td className="tabular whitespace-nowrap">{row.date}</td>
+                      <td className="tabular whitespace-nowrap text-gray-600">{row.date}</td>
                       <td>
                         <div className="flex items-center gap-2.5">
                           <UserAvatar name={String(row.managerName || '?')} size="sm" />
                           <span className="whitespace-nowrap font-medium text-gray-900">{row.managerName}</span>
                         </div>
                       </td>
-                      <td className="tabular whitespace-nowrap text-right font-medium text-gray-900">{row.duration}</td>
+                      <td className="text-right">
+                        <span className="tabular inline-flex items-center gap-1.5 whitespace-nowrap font-semibold text-gray-900">
+                          <IconClock className="h-3.5 w-3.5 text-gray-400" stroke={1.8} aria-hidden="true" />
+                          {row.duration}
+                        </span>
+                      </td>
                       <td className="tabular whitespace-nowrap text-gray-500">{formatDateTime(row.updatedAt || row.createdAt, UZ_TASHKENT_DATE_TIME)}</td>
                       {canChooseCustomDate && (
                         <td className="text-right">
@@ -375,7 +379,7 @@ export default function CorporateCallsPage() {
               <EmptyState className="m-2" icon={IconPhoneCall} title={<>Hozircha ma&apos;lumot yo&apos;q.</>} />
             ) : null}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );

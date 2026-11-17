@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -19,6 +19,8 @@ import {
   IconCoins,
   IconLayoutDashboard,
   IconLogout,
+  IconPinned,
+  IconPinnedOff,
   IconPhone,
   IconPlugConnected,
   IconSettings,
@@ -30,7 +32,7 @@ import {
 import type { Icon as NavIcon } from '@tabler/icons-react';
 import { useAuth } from '@/contexts/auth-context';
 import { BrandMark } from '@/components/ui/brand-mark';
-import { UserAvatar } from '@/components/ui/user-avatar';
+import { getInitials } from '@/components/ui/user-avatar';
 
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
@@ -107,7 +109,9 @@ type SidebarProps = {
   tenantName?: string;
   tenantPlan?: string;
   mobileOpen: boolean;
-  desktopOpen: boolean;
+  /** Desktop: keep the sidebar open instead of a hover-to-open rail. */
+  pinned: boolean;
+  onTogglePinned: () => void;
   onMobileClose: () => void;
 };
 
@@ -217,14 +221,17 @@ export function getNavigationTrail(pathname: string): Array<{ name: string; href
   return best.trail;
 }
 
-function CountBadge({ count, onAccent }: { count: number; onAccent: boolean }) {
+/** Collapsed rail width and opened width on desktop. The shell pads the page by the rail width. */
+export const SIDEBAR_RAIL_WIDTH = 72;
+export const SIDEBAR_OPEN_WIDTH = 272;
+
+function CountBadge({ count, compact }: { count: number; compact: boolean }) {
   if (count <= 0) return null;
+  if (compact) {
+    return <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500 ring-2 ring-slate-950" aria-hidden="true" />;
+  }
   return (
-    <span
-      className={`tabular inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none ${
-        onAccent ? 'bg-white text-blue-700' : 'bg-red-500 text-white'
-      }`}
-    >
+    <span className="tabular inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white">
       {count > 99 ? '99+' : count}
     </span>
   );
@@ -235,11 +242,14 @@ export default function Sidebar({
   tenantName,
   tenantPlan,
   mobileOpen,
-  desktopOpen,
+  pinned,
+  onTogglePinned,
   onMobileClose,
 }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const [hoverOpen, setHoverOpen] = useState(false);
+  const hoverTimer = useRef<number | null>(null);
   const handleLogout = () => {
     onMobileClose();
     logout();
@@ -280,7 +290,8 @@ export default function Sidebar({
 
   useEffect(() => {
     onMobileClose();
-    // Close the drawer on navigation only.
+    setHoverOpen(false);
+    // Close the drawer and the hover panel on navigation only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
@@ -293,6 +304,16 @@ export default function Sidebar({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [mobileOpen, onMobileClose]);
 
+  useEffect(() => () => {
+    if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
+  }, []);
+
+  // A short delay on both edges keeps the rail from flickering open when the pointer only crosses it.
+  const scheduleHover = (open: boolean) => {
+    if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setHoverOpen(open), open ? 90 : 180);
+  };
+
   const displayName = user?.name?.trim()
     || user?.username?.trim()
     || user?.email?.split('@')[0]
@@ -300,132 +321,151 @@ export default function Sidebar({
     || 'Akkaunt';
   const roleLabel = user?.roles?.map((role: string) => ROLE_LABELS[role] || role).join(', ');
 
-  const panel = (
-    <div className="flex h-full flex-col bg-white">
-      <div className="flex h-[68px] flex-shrink-0 items-center justify-between gap-2 px-4">
-        <Link href="/dashboard" className="flex min-w-0 items-center gap-3 rounded-md">
-          <BrandMark />
-          <span className="min-w-0">
-            <span className="block truncate text-[15px] font-semibold leading-tight tracking-tight text-gray-900">
-              {tenantName || 'Dashboarduz'}
+  /** `expanded` false renders the icon rail: labels fade out and sub-items hide. */
+  const renderPanel = (expanded: boolean, variant: 'desktop' | 'mobile') => {
+    const label = `whitespace-nowrap transition-opacity duration-200 ${expanded ? 'opacity-100' : 'pointer-events-none opacity-0'}`;
+    return (
+      <div className="flex h-full flex-col bg-slate-950 text-slate-300">
+        <div className="flex h-[72px] flex-shrink-0 items-center gap-3 px-4">
+          <Link href="/dashboard" className="flex min-w-0 flex-1 items-center gap-3 rounded-lg" tabIndex={expanded || variant === 'mobile' ? 0 : -1}>
+            <BrandMark size="lg" />
+            <span className={`min-w-0 ${label}`}>
+              <span className="block truncate text-[15px] font-semibold leading-tight tracking-tight text-white">
+                {tenantName || 'Dashboarduz'}
+              </span>
+              <span className="block truncate text-xs leading-tight text-slate-400">
+                {tenantName ? `Dashboarduz, ${tenantPlan || 'free'} tarif` : 'Savdo boshqaruvi'}
+              </span>
             </span>
-            <span className="block truncate text-xs leading-tight text-gray-500">
-              {tenantName ? `Dashboarduz, ${tenantPlan || 'free'} tarif` : 'Savdo boshqaruvi'}
+          </Link>
+          {variant === 'desktop' ? (
+            <button
+              type="button"
+              onClick={onTogglePinned}
+              title={pinned ? 'Menyuni yig\'ish' : 'Menyuni ochiq qoldirish'}
+              aria-pressed={pinned}
+              className={`inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white/10 hover:text-white ${label}`}
+            >
+              <span className="sr-only">{pinned ? 'Menyuni yig\'ish' : 'Menyuni ochiq qoldirish'}</span>
+              {pinned ? <IconPinnedOff className="h-[18px] w-[18px]" stroke={1.6} /> : <IconPinned className="h-[18px] w-[18px]" stroke={1.6} />}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onMobileClose}
+              className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white/10 hover:text-white"
+            >
+              <span className="sr-only">Menyuni yopish</span>
+              <IconX className="h-5 w-5" stroke={1.5} />
+            </button>
+          )}
+        </div>
+
+        <nav className="flex-1 space-y-5 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-2 [scrollbar-color:theme(colors.slate.700)_transparent]" aria-label="Asosiy menyu">
+          {visibleGroups.map((group) => (
+            <div key={group.label ?? 'root'}>
+              {group.label ? (
+                <div className="relative mb-1.5 h-5 px-3">
+                  <p className={`text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 ${label}`}>{group.label}</p>
+                  <span aria-hidden="true" className={`absolute left-4 right-4 top-1/2 h-px bg-white/10 transition-opacity duration-200 ${expanded ? 'opacity-0' : 'opacity-100'}`} />
+                </div>
+              ) : null}
+              <ul className="space-y-1">
+                {group.items.map((item) => {
+                  const children = (item.children || []).filter(itemVisible);
+                  const selfActive = isItemActive(item.href);
+                  const childActive = children.some((child) => isItemActive(child.href));
+                  const current = selfActive && !childActive;
+                  const showChildren = expanded && children.length > 0 && (selfActive || childActive);
+                  const Icon = item.icon;
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        onClick={onMobileClose}
+                        aria-current={current ? 'page' : undefined}
+                        title={expanded ? undefined : item.name}
+                        className={`group relative flex h-11 items-center gap-3 rounded-xl px-[14px] text-sm active:scale-[0.98] ${
+                          current
+                            ? 'bg-blue-600 font-medium text-white shadow-[0_8px_20px_-8px_rgb(34_72_226/0.8)]'
+                            : childActive
+                              ? 'bg-white/[0.07] font-medium text-white'
+                              : 'text-slate-400 hover:bg-white/[0.06] hover:text-white'
+                        }`}
+                      >
+                        {Icon ? (
+                          <Icon
+                            stroke={1.6}
+                            className={`h-5 w-5 flex-shrink-0 ${current || childActive ? 'text-white' : 'text-slate-400 group-hover:text-white'}`}
+                          />
+                        ) : null}
+                        <span className={`min-w-0 flex-1 truncate ${label}`}>{item.name}</span>
+                        {item.href === '/dashboard/adjustments' ? (
+                          expanded ? <CountBadge count={pendingAdjustmentCount} compact={false} /> : <CountBadge count={pendingAdjustmentCount} compact />
+                        ) : null}
+                        {children.length > 0 ? (
+                          <IconChevronRight
+                            stroke={1.6}
+                            className={`h-4 w-4 flex-shrink-0 transition-transform duration-200 ${showChildren ? 'rotate-90' : ''} ${current ? 'text-white/80' : 'text-slate-500'} ${label}`}
+                          />
+                        ) : null}
+                      </Link>
+                      {showChildren ? (
+                        <ul className="ml-6 mt-1 space-y-0.5 border-l border-white/10 pl-3">
+                          {children.map((child) => {
+                            const isCurrent = isItemActive(child.href);
+                            return (
+                              <li key={child.href}>
+                                <Link
+                                  href={child.href}
+                                  onClick={onMobileClose}
+                                  aria-current={isCurrent ? 'page' : undefined}
+                                  className={`flex h-9 items-center whitespace-nowrap rounded-lg px-3 text-sm ${
+                                    isCurrent
+                                      ? 'bg-white/10 font-medium text-white'
+                                      : 'text-slate-400 hover:bg-white/[0.06] hover:text-white'
+                                  }`}
+                                >
+                                  {child.name}
+                                </Link>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </nav>
+
+        <div className="flex-shrink-0 border-t border-white/[0.06] p-3">
+          <div className="flex items-center gap-3 rounded-xl px-1 py-2">
+            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold text-white" aria-hidden="true">
+              {getInitials(displayName)}
             </span>
-          </span>
-        </Link>
-        <button
-          type="button"
-          onClick={onMobileClose}
-          className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 lg:hidden"
-        >
-          <span className="sr-only">Menyuni yopish</span>
-          <IconX className="h-5 w-5" stroke={1.5} />
-        </button>
-      </div>
-
-      <nav className="flex-1 space-y-6 overflow-y-auto px-3 pb-4 pt-3" aria-label="Asosiy menyu">
-        {visibleGroups.map((group) => (
-          <div key={group.label ?? 'root'}>
-            {group.label ? (
-              <p className="mb-1.5 px-3 text-xs font-medium text-gray-400">{group.label}</p>
-            ) : null}
-            <ul className="space-y-0.5">
-              {group.items.map((item) => {
-                const children = (item.children || []).filter(itemVisible);
-                const selfActive = isItemActive(item.href);
-                const childActive = children.some((child) => isItemActive(child.href));
-                const current = selfActive && !childActive;
-                const expanded = children.length > 0 && (selfActive || childActive);
-                const Icon = item.icon;
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      onClick={onMobileClose}
-                      aria-current={current ? 'page' : undefined}
-                      className={`group flex h-10 items-center gap-3 rounded-[10px] px-3 text-sm active:scale-[0.99] ${
-                        current
-                          ? 'bg-blue-600 font-medium text-white shadow-sm'
-                          : childActive
-                            ? 'font-medium text-gray-900 hover:bg-gray-100'
-                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                      }`}
-                    >
-                      {Icon ? (
-                        <Icon
-                          stroke={1.6}
-                          className={`h-[19px] w-[19px] flex-shrink-0 ${
-                            current
-                              ? 'text-white'
-                              : childActive
-                                ? 'text-blue-600 dark:text-blue-400'
-                                : 'text-gray-400 group-hover:text-gray-700'
-                          }`}
-                        />
-                      ) : null}
-                      <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                      {item.href === '/dashboard/adjustments' ? (
-                        <CountBadge count={pendingAdjustmentCount} onAccent={current} />
-                      ) : null}
-                      {children.length > 0 ? (
-                        <IconChevronRight
-                          stroke={1.6}
-                          className={`h-4 w-4 flex-shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''} ${current ? 'text-white/80' : 'text-gray-400'}`}
-                        />
-                      ) : null}
-                    </Link>
-                    {expanded ? (
-                      <ul className="ml-[21px] mt-1 space-y-0.5 border-l border-gray-200 pl-3">
-                        {children.map((child) => {
-                          const isCurrent = isItemActive(child.href);
-                          return (
-                            <li key={child.href}>
-                              <Link
-                                href={child.href}
-                                onClick={onMobileClose}
-                                aria-current={isCurrent ? 'page' : undefined}
-                                className={`flex h-9 items-center rounded-md px-3 text-sm ${
-                                  isCurrent
-                                    ? 'bg-blue-50 font-medium text-blue-700'
-                                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
-                                }`}
-                              >
-                                {child.name}
-                              </Link>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+            <div className={`min-w-0 flex-1 ${label}`}>
+              <p className="truncate text-sm font-medium leading-tight text-white">{displayName}</p>
+              <p className="truncate text-xs leading-tight text-slate-400">{roleLabel || user?.email || user?.phone}</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Chiqish"
+              className={`inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-red-500/15 hover:text-red-300 active:scale-[0.96] ${label}`}
+            >
+              <span className="sr-only">Chiqish</span>
+              <IconLogout className="h-[18px] w-[18px]" stroke={1.6} />
+            </button>
           </div>
-        ))}
-      </nav>
-
-      <div className="flex-shrink-0 p-3">
-        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-2.5">
-          <UserAvatar name={displayName} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium leading-tight text-gray-900">{displayName}</p>
-            <p className="truncate text-xs leading-tight text-gray-500">{roleLabel || user?.email || user?.phone}</p>
-          </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            title="Chiqish"
-            className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 active:scale-[0.96]"
-          >
-            <span className="sr-only">Chiqish</span>
-            <IconLogout className="h-[18px] w-[18px]" stroke={1.6} />
-          </button>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  const desktopExpanded = pinned || hoverOpen;
 
   return (
     <>
@@ -433,18 +473,29 @@ export default function Sidebar({
       {mobileOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Menyu">
           <div className="absolute inset-0 bg-slate-950/60" onClick={onMobileClose} />
-          <div className="relative h-full w-72 max-w-[85vw] shadow-xl">
-            {panel}
+          <div className="relative h-full w-[272px] max-w-[85vw] animate-slide-in-left shadow-xl">
+            {renderPanel(true, 'mobile')}
           </div>
         </div>
       ) : null}
 
-      {/* Desktop sidebar */}
-      {desktopOpen ? (
-        <aside className="sticky top-0 hidden h-[100dvh] w-[260px] flex-shrink-0 border-r border-gray-200 lg:block">
-          {panel}
-        </aside>
-      ) : null}
+      {/* Desktop: icon rail that slides open over the page on hover, or a pinned full sidebar. */}
+      <aside
+        onMouseEnter={() => { if (!pinned) scheduleHover(true); }}
+        onMouseLeave={() => { if (!pinned) scheduleHover(false); }}
+        onFocus={() => { if (!pinned) setHoverOpen(true); }}
+        onBlur={(event) => {
+          if (!pinned && !event.currentTarget.contains(event.relatedTarget as Node | null)) setHoverOpen(false);
+        }}
+        style={{ width: desktopExpanded ? SIDEBAR_OPEN_WIDTH : SIDEBAR_RAIL_WIDTH }}
+        className={`fixed inset-y-0 left-0 z-40 hidden overflow-hidden border-r border-white/[0.06] transition-[width,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:block ${
+          hoverOpen && !pinned ? 'shadow-[24px_0_60px_-20px_rgb(2_6_23/0.55)]' : ''
+        }`}
+      >
+        <div className="h-full" style={{ width: SIDEBAR_OPEN_WIDTH }}>
+          {renderPanel(desktopExpanded, 'desktop')}
+        </div>
+      </aside>
     </>
   );
 }

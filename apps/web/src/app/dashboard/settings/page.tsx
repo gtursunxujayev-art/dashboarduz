@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/auth-context';
 import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 import { PageHeader } from '@/components/ui/page-header';
 import { IconBuilding, IconCash, IconDeviceFloppy, IconLock, IconShieldLock } from '@tabler/icons-react';
+import type { Icon } from '@tabler/icons-react';
 
 type FieldOption = {
   key: string;
@@ -42,6 +43,8 @@ export default function SettingsPage() {
   const [credentialMessage, setCredentialMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // UI-only: which group the left section nav highlights.
+  const [activeSection, setActiveSection] = useState('settings-workspace');
 
   const tenantQuery = trpc.tenant.get.useQuery();
   const fieldOptionsQuery = trpc.dashboard.fieldOptions.useQuery(undefined, {
@@ -174,6 +177,17 @@ export default function SettingsPage() {
     }
   };
 
+  const sections = [
+    ...(!isTashkiliyOnly
+      ? [
+        { id: 'settings-workspace', label: 'Ish maydoni', icon: IconBuilding },
+        { id: 'settings-salary', label: 'Maosh va bonus sozlamalari', icon: IconCash },
+      ]
+      : []),
+    { id: 'settings-account', label: 'Mening login va parolim', icon: IconShieldLock },
+  ];
+  const currentSection = sections.some((section) => section.id === activeSection) ? activeSection : sections[0].id;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -213,200 +227,243 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div className={isTashkiliyOnly ? 'max-w-2xl' : 'grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]'}>
+      <div className={isTashkiliyOnly ? 'max-w-3xl' : 'grid grid-cols-1 items-start gap-6 lg:grid-cols-[232px_minmax(0,1fr)] xl:gap-10'}>
         {!isTashkiliyOnly && (
-          <form onSubmit={handleSave} className="panel">
-            <div className="panel-header">
-              <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-gray-100 text-gray-700">
-                  <IconBuilding className="h-[18px] w-[18px]" stroke={1.8} />
-                </span>
-                <h2 className="section-title">Ish maydoni</h2>
+          <nav aria-label="Sozlamalar" className="lg:sticky lg:top-20">
+            <ul className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
+              {sections.map((section) => {
+                const SectionIcon = section.icon;
+                const active = section.id === currentSection;
+                return (
+                  <li key={section.id} className="flex-shrink-0">
+                    <a
+                      href={`#${section.id}`}
+                      onClick={() => setActiveSection(section.id)}
+                      aria-current={active ? 'true' : undefined}
+                      className={`flex h-10 items-center gap-2.5 whitespace-nowrap rounded-full px-4 text-sm font-medium ${
+                        active
+                          ? 'bg-white text-gray-900 shadow'
+                          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
+                      }`}
+                    >
+                      <SectionIcon className={`h-4 w-4 flex-shrink-0 ${active ? 'text-blue-600' : 'text-gray-400'}`} stroke={1.8} />
+                      {section.label}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+        )}
+
+        <div className="min-w-0 space-y-6">
+          {!isTashkiliyOnly && (
+            <form id="settings-workspace" onSubmit={handleSave} className="panel scroll-mt-24">
+              <SectionHead icon={IconBuilding} title="Ish maydoni" />
+
+              <div className="mt-2 divide-y divide-gray-100 px-5 sm:px-6">
+                <SettingRow label="Ish maydoni nomi" htmlFor="settings-tenant-name">
+                  <input
+                    id="settings-tenant-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    disabled={!isAdmin}
+                    className="field"
+                    placeholder="Ish maydoni nomi"
+                  />
+                </SettingRow>
+
+                <SettingRow label="Telegram xabarnoma Chat ID" htmlFor="settings-chat-id">
+                  <input
+                    id="settings-chat-id"
+                    value={defaultChatId}
+                    onChange={(e) => setDefaultChatId(e.target.value)}
+                    disabled={!isAdmin}
+                    className="field tabular"
+                    placeholder="masalan: 123456789"
+                  />
+                </SettingRow>
+
+                {showLeadSettings && (
+                  <>
+                    <SettingRow label="Reason Field (Non-Qualified Pie)" htmlFor="settings-reason-field">
+                      <select
+                        id="settings-reason-field"
+                        value={reasonFieldKey}
+                        onChange={(e) => setReasonFieldKey(e.target.value)}
+                        disabled={!isAdmin || fieldOptionsQuery.isLoading}
+                        className="field"
+                      >
+                        <option value="">Maydon tanlang</option>
+                        {fieldOptions.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label} ({option.source})
+                          </option>
+                        ))}
+                      </select>
+                    </SettingRow>
+
+                    <SettingRow label="Source Field (New Leads Pie)" htmlFor="settings-source-field">
+                      <select
+                        id="settings-source-field"
+                        value={sourceFieldKey}
+                        onChange={(e) => setSourceFieldKey(e.target.value)}
+                        disabled={!isAdmin || fieldOptionsQuery.isLoading}
+                        className="field"
+                      >
+                        <option value="">Maydon tanlang</option>
+                        {fieldOptions.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label} ({option.source})
+                          </option>
+                        ))}
+                      </select>
+                    </SettingRow>
+
+                    <div className="py-5">
+                      <MultiSelectDropdown
+                        label="Qualified Stages"
+                        options={qualifiedStageOptions}
+                        selectedIds={qualifiedStageIds}
+                        onChange={setQualifiedStageIds}
+                        placeholder="Belgilangan pipelinelardan bosqichlarni tanlang"
+                        disabled={!isAdmin || amoPipelinesQuery.isLoading}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 py-5 md:grid-cols-2">
+                      <MultiSelectDropdown
+                        label="Qualified Values"
+                        options={reasonValueOptions}
+                        selectedIds={qualifiedValues}
+                        onChange={setQualifiedValues}
+                        placeholder={reasonFieldKey ? "Tanlangan sabab maydonidan qiymatlarni tanlang" : "Avval sabab maydonini tanlang"}
+                        disabled={!isAdmin || !reasonFieldKey}
+                        loading={reasonValueOptionsQuery.isLoading}
+                        loadingText="Tanlangan sabab maydoni qiymatlari yuklanmoqda..."
+                        emptyText="Bu sabab maydoni uchun hozircha qiymatlar topilmadi."
+                      />
+
+                      <MultiSelectDropdown
+                        label="Non-Qualified Values"
+                        options={reasonValueOptions}
+                        selectedIds={nonQualifiedValues}
+                        onChange={setNonQualifiedValues}
+                        placeholder={reasonFieldKey ? "Tanlangan sabab maydonidan qiymatlarni tanlang" : "Avval sabab maydonini tanlang"}
+                        disabled={!isAdmin || !reasonFieldKey}
+                        loading={reasonValueOptionsQuery.isLoading}
+                        loadingText="Tanlangan sabab maydoni qiymatlari yuklanmoqda..."
+                        emptyText="Bu sabab maydoni uchun hozircha qiymatlar topilmadi."
+                      />
+                    </div>
+                  </>
+                )}
               </div>
-            </div>
 
-            <div className="divide-y divide-gray-100 px-5 pt-2 sm:px-6">
-              <SettingRow label="Ish maydoni nomi" htmlFor="settings-tenant-name">
-                <input
-                  id="settings-tenant-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  disabled={!isAdmin}
-                  className="field"
-                  placeholder="Ish maydoni nomi"
-                />
-              </SettingRow>
+              <div className="flex justify-end border-t border-gray-100 px-5 py-4 sm:px-6">
+                <button
+                  type="submit"
+                  disabled={!isAdmin || updateTenant.isLoading || tenantQuery.isLoading}
+                  className="btn btn-primary"
+                >
+                  <IconDeviceFloppy className="h-4 w-4" stroke={1.8} />
+                  {updateTenant.isLoading ? 'Saqlanmoqda...' : 'Sozlamalarni saqlash'}
+                </button>
+              </div>
+            </form>
+          )}
 
-              <SettingRow label="Telegram xabarnoma Chat ID" htmlFor="settings-chat-id">
-                <input
-                  id="settings-chat-id"
-                  value={defaultChatId}
-                  onChange={(e) => setDefaultChatId(e.target.value)}
-                  disabled={!isAdmin}
-                  className="field"
-                  placeholder="masalan: 123456789"
-                />
-              </SettingRow>
-
-              {showLeadSettings && (
-                <>
-                  <SettingRow label="Reason Field (Non-Qualified Pie)" htmlFor="settings-reason-field">
-                    <select
-                      id="settings-reason-field"
-                      value={reasonFieldKey}
-                      onChange={(e) => setReasonFieldKey(e.target.value)}
-                      disabled={!isAdmin || fieldOptionsQuery.isLoading}
-                      className="field"
-                    >
-                      <option value="">Maydon tanlang</option>
-                      {fieldOptions.map((option) => (
-                        <option key={option.key} value={option.key}>
-                          {option.label} ({option.source})
-                        </option>
-                      ))}
-                    </select>
-                  </SettingRow>
-
-                  <SettingRow label="Source Field (New Leads Pie)" htmlFor="settings-source-field">
-                    <select
-                      id="settings-source-field"
-                      value={sourceFieldKey}
-                      onChange={(e) => setSourceFieldKey(e.target.value)}
-                      disabled={!isAdmin || fieldOptionsQuery.isLoading}
-                      className="field"
-                    >
-                      <option value="">Maydon tanlang</option>
-                      {fieldOptions.map((option) => (
-                        <option key={option.key} value={option.key}>
-                          {option.label} ({option.source})
-                        </option>
-                      ))}
-                    </select>
-                  </SettingRow>
-
-                  <div className="py-4">
-                    <MultiSelectDropdown
-                      label="Qualified Stages"
-                      options={qualifiedStageOptions}
-                      selectedIds={qualifiedStageIds}
-                      onChange={setQualifiedStageIds}
-                      placeholder="Belgilangan pipelinelardan bosqichlarni tanlang"
-                      disabled={!isAdmin || amoPipelinesQuery.isLoading}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 py-4 md:grid-cols-2">
-                    <MultiSelectDropdown
-                      label="Qualified Values"
-                      options={reasonValueOptions}
-                      selectedIds={qualifiedValues}
-                      onChange={setQualifiedValues}
-                      placeholder={reasonFieldKey ? "Tanlangan sabab maydonidan qiymatlarni tanlang" : "Avval sabab maydonini tanlang"}
-                      disabled={!isAdmin || !reasonFieldKey}
-                      loading={reasonValueOptionsQuery.isLoading}
-                      loadingText="Tanlangan sabab maydoni qiymatlari yuklanmoqda..."
-                      emptyText="Bu sabab maydoni uchun hozircha qiymatlar topilmadi."
-                    />
-
-                    <MultiSelectDropdown
-                      label="Non-Qualified Values"
-                      options={reasonValueOptions}
-                      selectedIds={nonQualifiedValues}
-                      onChange={setNonQualifiedValues}
-                      placeholder={reasonFieldKey ? "Tanlangan sabab maydonidan qiymatlarni tanlang" : "Avval sabab maydonini tanlang"}
-                      disabled={!isAdmin || !reasonFieldKey}
-                      loading={reasonValueOptionsQuery.isLoading}
-                      loadingText="Tanlangan sabab maydoni qiymatlari yuklanmoqda..."
-                      emptyText="Bu sabab maydoni uchun hozircha qiymatlar topilmadi."
-                    />
-                  </div>
-                </>
-              )}
-
-              <div className="py-4">
-                <div className="flex items-start gap-3 rounded-[12px] bg-blue-50 p-4">
-                  <IconCash className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" stroke={1.6} />
-                  <div>
-                    <h3 className="text-sm font-semibold text-blue-900">Maosh va bonus sozlamalari</h3>
-                    <p className="mt-1 text-sm text-blue-800">
-                      Bonus qoidalari va fiks maosh alohida boshqaruv uchun endi <span className="font-semibold">Bonus</span> sahifasiga ko&apos;chirildi.
-                      Iltimos, maosh sozlamalarini <span className="font-semibold">/dashboard/bonus</span> orqali o&apos;zgartiring.
-                    </p>
-                  </div>
+          {!isTashkiliyOnly && (
+            <section id="settings-salary" className="panel scroll-mt-24 overflow-hidden">
+              <div className="flex items-start gap-4 p-5 sm:p-6">
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <IconCash className="h-5 w-5" stroke={1.6} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="section-title">Maosh va bonus sozlamalari</h2>
+                  <p className="mt-1.5 max-w-[70ch] text-sm leading-relaxed text-gray-600">
+                    Bonus qoidalari va fiks maosh alohida boshqaruv uchun endi <span className="font-semibold text-gray-900">Bonus</span> sahifasiga ko&apos;chirildi.
+                    Iltimos, maosh sozlamalarini <span className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-[13px] text-gray-900">/dashboard/bonus</span> orqali o&apos;zgartiring.
+                  </p>
                 </div>
               </div>
+            </section>
+          )}
+
+          <form id="settings-account" onSubmit={handleCredentialSave} className="panel scroll-mt-24">
+            <SectionHead
+              icon={IconShieldLock}
+              title="Mening login va parolim"
+              description="Bu yerda o'zingizning login va parolingizni o'zgartirasiz."
+            />
+
+            {credentialMessage && (
+              <div className="px-5 pt-4 sm:px-6">
+                <p className="alert alert-success">{credentialMessage}</p>
+              </div>
+            )}
+
+            <div className="mt-2 divide-y divide-gray-100 px-5 sm:px-6">
+              <SettingRow label="Joriy parol" htmlFor="settings-current-password">
+                <input
+                  id="settings-current-password"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  placeholder="Joriy parol"
+                  aria-label="Joriy parol"
+                  className="field"
+                />
+              </SettingRow>
+              <SettingRow label="Yangi login (ixtiyoriy)" htmlFor="settings-new-login">
+                <input
+                  id="settings-new-login"
+                  value={newLogin}
+                  onChange={(event) => setNewLogin(event.target.value)}
+                  placeholder="Yangi login (ixtiyoriy)"
+                  aria-label="Yangi login (ixtiyoriy)"
+                  className="field"
+                />
+              </SettingRow>
+              <SettingRow label="Yangi parol (ixtiyoriy)" htmlFor="settings-new-password">
+                <input
+                  id="settings-new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  placeholder="Yangi parol (ixtiyoriy)"
+                  aria-label="Yangi parol (ixtiyoriy)"
+                  className="field"
+                />
+              </SettingRow>
             </div>
 
             <div className="flex justify-end border-t border-gray-100 px-5 py-4 sm:px-6">
               <button
                 type="submit"
-                disabled={!isAdmin || updateTenant.isLoading || tenantQuery.isLoading}
+                disabled={changeCredentials.isLoading}
                 className="btn btn-primary"
               >
-                <IconDeviceFloppy className="h-4 w-4" stroke={1.8} />
-                {updateTenant.isLoading ? 'Saqlanmoqda...' : 'Sozlamalarni saqlash'}
+                <IconLock className="h-4 w-4" stroke={1.8} />
+                {changeCredentials.isLoading ? 'Yangilanmoqda...' : 'Login/parolni yangilash'}
               </button>
             </div>
           </form>
-        )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-        <form onSubmit={handleCredentialSave} className="panel xl:sticky xl:top-6">
-          <div className="panel-header">
-            <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-gray-100 text-gray-700">
-                <IconShieldLock className="h-[18px] w-[18px]" stroke={1.8} />
-              </span>
-              <div>
-                <h2 className="section-title">Mening login va parolim</h2>
-                <p className="mt-0.5 text-sm text-gray-500">
-                  Bu yerda o'zingizning login va parolingizni o'zgartirasiz.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="panel-body space-y-4">
-            {credentialMessage && (
-              <p className="alert alert-success">{credentialMessage}</p>
-            )}
-
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-              placeholder="Joriy parol"
-              aria-label="Joriy parol"
-              className="field"
-            />
-            <div className="border-t border-gray-100" />
-            <input
-              value={newLogin}
-              onChange={(event) => setNewLogin(event.target.value)}
-              placeholder="Yangi login (ixtiyoriy)"
-              aria-label="Yangi login (ixtiyoriy)"
-              className="field"
-            />
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              placeholder="Yangi parol (ixtiyoriy)"
-              aria-label="Yangi parol (ixtiyoriy)"
-              className="field"
-            />
-          </div>
-
-          <div className="flex justify-end border-t border-gray-100 px-5 py-4 sm:px-6">
-            <button
-              type="submit"
-              disabled={changeCredentials.isLoading}
-              className="btn btn-primary"
-            >
-              <IconLock className="h-4 w-4" stroke={1.8} />
-              {changeCredentials.isLoading ? 'Yangilanmoqda...' : 'Login/parolni yangilash'}
-            </button>
-          </div>
-        </form>
+function SectionHead({ icon: HeadIcon, title, description }: { icon: Icon; title: string; description?: string }) {
+  return (
+    <div className="flex items-start gap-3 border-b border-gray-100 px-5 py-5 sm:px-6">
+      <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-700">
+        <HeadIcon className="h-5 w-5" stroke={1.6} />
+      </span>
+      <div className="min-w-0 pt-0.5">
+        <h2 className="section-title">{title}</h2>
+        {description ? <p className="mt-0.5 text-sm text-gray-500">{description}</p> : null}
       </div>
     </div>
   );
@@ -414,7 +471,7 @@ export default function SettingsPage() {
 
 function SettingRow({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-1 gap-2 py-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] md:items-center md:gap-6">
+    <div className="grid grid-cols-1 gap-2 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] md:items-center md:gap-8">
       <label htmlFor={htmlFor} className="text-sm font-medium text-gray-900">
         {label}
       </label>

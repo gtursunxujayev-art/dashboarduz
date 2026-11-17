@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { IconAlertTriangle, IconChevronDown, IconRefresh } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowDown, IconChevronDown, IconRefresh } from '@tabler/icons-react';
 import { HOLE_LABELS, formatCount, type FunnelHole } from '@/app/dashboard/analytics/funnel/funnel-view';
 import { formatSomRounded } from '@/lib/format';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -106,8 +106,9 @@ function stageShare(part: number, total: number): number {
 /**
  * The team funnel as horizontal stage bars: each stage's count, its width relative to the first
  * stage, and the conversion from the previous stage. Labels reuse the table's column names.
+ * `compact` fits a dashboard card; `hero` is the large centred funnel of the Voronka page.
  */
-export function FunnelStageBars({ totals }: { totals: FunnelTableTotals }) {
+export function FunnelStageBars({ totals, variant = 'compact' }: { totals: FunnelTableTotals; variant?: 'compact' | 'hero' }) {
   const stages = [
     { key: 'assigned', label: 'Biriktirilgan lid', value: totals.assignedLeads },
     { key: 'ishlangan', label: 'Ishlangan lid', value: totals.ishlanganLeads },
@@ -115,6 +116,44 @@ export function FunnelStageBars({ totals }: { totals: FunnelTableTotals }) {
     { key: 'sales', label: 'Sotuv', value: totals.sales },
   ];
   const base = stages[0].value;
+
+  if (variant === 'hero') {
+    return (
+      <ol>
+        {stages.map((stage, index) => {
+          const previous = index > 0 ? stages[index - 1].value : null;
+          const width = base > 0 ? stageShare(stage.value, base) : 0;
+          return (
+            <li key={stage.key}>
+              {previous !== null && (
+                <div className="grid grid-cols-1 py-2 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-8">
+                  <span className="hidden sm:block" aria-hidden="true" />
+                  <div className="flex justify-center">
+                    <span className="tabular inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-[13px] font-semibold text-gray-700">
+                      <IconArrowDown className="h-3.5 w-3.5 text-gray-400" stroke={1.8} aria-hidden="true" />
+                      {previous > 0 ? `${Math.round(stageShare(stage.value, previous))}%` : '-'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-8">
+                <div className="flex items-baseline justify-between gap-3 sm:block">
+                  <p className="text-sm font-medium text-gray-500">{stage.label}</p>
+                  <p className="tabular text-[28px] font-semibold leading-tight tracking-[-0.02em] text-gray-900">{stage.value}</p>
+                </div>
+                <div className="flex h-12 justify-center" aria-hidden="true">
+                  <div
+                    className="h-full origin-center animate-grow-x rounded-full bg-blue-600"
+                    style={{ width: `${Math.max(width, stage.value > 0 ? 3 : 0)}%`, opacity: 1 - index * 0.17 }}
+                  />
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    );
+  }
 
   return (
     <ol className="space-y-1">
@@ -133,9 +172,9 @@ export function FunnelStageBars({ totals }: { totals: FunnelTableTotals }) {
             )}
             <div className="grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_auto]">
               <span className="truncate text-sm font-medium text-gray-700">{stage.label}</span>
-              <div className="h-7 overflow-hidden rounded-md bg-gray-100" aria-hidden="true">
+              <div className="h-7 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
                 <div
-                  className="h-full origin-left animate-grow-x rounded-md bg-blue-600"
+                  className="h-full origin-left animate-grow-x rounded-full bg-blue-600"
                   style={{ width: `${Math.max(width, stage.value > 0 ? 2 : 0)}%`, opacity: 1 - index * 0.15 }}
                 />
               </div>

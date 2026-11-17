@@ -56,17 +56,22 @@ export default function DashboardSellerTable({
     }
     return null;
   })();
+  // Leader's sales, so each row can show a small bar against the best result.
+  const maxSales = sellerPerformance.reduce((max, seller: any) => Math.max(max, Number(seller?.sales ?? 0)), 0);
   return (
-    <section className="panel">
+    <section className="panel overflow-hidden">
       <div className="panel-header">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+            <IconUsersGroup className="h-4 w-4" stroke={1.8} />
+          </span>
           <h3 className="section-title">Sotuvchilar</h3>
           {!isLoading && sellerPerformance.length > 0 && (
             <span className="badge badge-neutral tabular">{sellerPerformance.length}</span>
           )}
         </div>
       </div>
-      <div className="space-y-4 p-2 pt-4 sm:p-3 sm:pt-4">
+      <div className="space-y-4 px-2 pb-2 pt-4 sm:px-3">
         {crmUnavailable && (
           <div className="alert alert-warning mx-2 sm:mx-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -123,13 +128,19 @@ export default function DashboardSellerTable({
             renderRowCells={(seller: any) => (
               <>
                 <td className="whitespace-nowrap">
-                  <div className="flex items-center gap-2.5">
-                    <UserAvatar name={String(seller.name || '?')} size="sm" />
+                  <div className="flex items-center gap-3">
+                    <UserAvatar name={String(seller.name || '?')} />
                     <span className="font-medium text-gray-900">{seller.name}</span>
                   </div>
                 </td>
-                <td className="tabular whitespace-nowrap text-right font-medium text-gray-900">
-                  {renderMetricValue(seller.sales)}
+                <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">
+                  <span className="block">{renderMetricValue(seller.sales)}</span>
+                  <span className="ml-auto mt-1.5 block h-1 w-16 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+                    <span
+                      className="block h-full rounded-full bg-blue-600"
+                      style={{ width: `${maxSales > 0 ? Math.min(100, (Number(seller.sales ?? 0) / maxSales) * 100) : 0}%` }}
+                    />
+                  </span>
                 </td>
                 <td className="tabular whitespace-nowrap text-right">
                   {renderMetricValue(seller.followUpCount)}

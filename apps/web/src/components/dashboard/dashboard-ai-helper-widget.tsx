@@ -110,10 +110,10 @@ export default function DashboardAiHelperWidget() {
   return (
     <>
       {open && (
-        <div className="fixed bottom-24 right-4 z-[60] flex h-[560px] max-h-[calc(100dvh-8rem)] w-[380px] max-w-[calc(100vw-2rem)] animate-rise-in flex-col overflow-hidden rounded-[18px] bg-white shadow-2xl ring-1 ring-gray-200 sm:right-6">
-          <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+        <div className="fixed bottom-[5.5rem] right-4 z-[45] flex h-[600px] max-h-[calc(100dvh-7.5rem)] w-[400px] max-w-[calc(100vw-2rem)] animate-rise-in flex-col overflow-hidden rounded-[20px] bg-white shadow-xl sm:right-6">
+          <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3.5">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-[0_6px_16px_-6px_rgb(34_72_226/0.6)]">
                 <IconSparkles className="h-5 w-5" stroke={1.6} />
               </span>
               <div className="min-w-0">
@@ -131,52 +131,65 @@ export default function DashboardAiHelperWidget() {
             </button>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto bg-gray-50/60 px-4 py-4">
+          <div className="flex-1 space-y-3 overflow-y-auto bg-gray-50 px-4 py-4">
             {messages.length === 0 ? (
-              <div className="flex items-start gap-2.5 rounded-[12px] bg-white p-3 text-sm text-gray-600 shadow-sm ring-1 ring-gray-100">
-                <IconMessageChatbot className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600" stroke={1.8} />
-                <span>Savol bering. Yordamchi joriy sahifa filteri va metrikasi asosida javob beradi.</span>
+              <div className="flex items-start gap-2.5">
+                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <IconMessageChatbot className="h-4 w-4" stroke={1.8} />
+                </span>
+                <p className="rounded-[18px] rounded-tl-[6px] bg-white px-3.5 py-2.5 text-sm leading-relaxed text-gray-600 shadow-sm">
+                  Savol bering. Yordamchi joriy sahifa filteri va metrikasi asosida javob beradi.
+                </p>
               </div>
             ) : (
-              messages.map((item) => (
-                <div
-                  key={item.id}
-                  className={`max-w-[92%] rounded-[14px] px-3 py-2 text-sm ${
-                    item.role === 'user'
-                      ? 'ml-auto rounded-br-[4px] bg-blue-600 text-white'
-                      : 'mr-auto rounded-bl-[4px] bg-white text-gray-800 shadow-sm ring-1 ring-gray-100'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap">{item.text}</p>
-                </div>
-              ))
+              messages.map((item) =>
+                item.role === 'user' ? (
+                  <div key={item.id} className="flex justify-end">
+                    <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] rounded-br-[6px] bg-blue-600 px-3.5 py-2.5 text-sm leading-relaxed text-white">
+                      {item.text}
+                    </p>
+                  </div>
+                ) : (
+                  <div key={item.id} className="flex items-start gap-2.5">
+                    <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                      <IconSparkles className="h-4 w-4" stroke={1.8} />
+                    </span>
+                    <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] rounded-tl-[6px] bg-white px-3.5 py-2.5 text-sm leading-relaxed text-gray-800 shadow-sm">
+                      {item.text}
+                    </p>
+                  </div>
+                ),
+              )
             )}
             {chatMutation.isLoading && (
-              <div className="mr-auto flex w-fit items-center gap-2 rounded-[14px] rounded-bl-[4px] bg-white px-3 py-2 text-sm text-gray-500 shadow-sm ring-1 ring-gray-100">
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" aria-hidden="true" />
-                Tahlil qilinmoqda...
+              <div className="flex items-start gap-2.5">
+                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <IconSparkles className="h-4 w-4" stroke={1.8} />
+                </span>
+                <div className="flex w-fit items-center gap-2 rounded-[18px] rounded-tl-[6px] bg-white px-3.5 py-2.5 text-sm text-gray-500 shadow-sm">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" aria-hidden="true" />
+                  Tahlil qilinmoqda...
+                </div>
               </div>
             )}
           </div>
 
-          <div className="border-t border-gray-100 bg-white p-3">
-            <textarea
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  void sendMessage();
-                }
-              }}
-              rows={2}
-              placeholder="Savolingizni yozing..."
-              className="field resize-none"
-            />
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <p className="min-w-0 truncate text-[11px] text-gray-400">
-                Kontekst: {effectiveContext.pageKey} {effectiveContext.dateFrom && effectiveContext.dateTo ? `(${effectiveContext.dateFrom} - ${effectiveContext.dateTo})` : ''}
-              </p>
+          <div className="border-t border-gray-100 bg-white px-3 pb-3 pt-3">
+            <div className="flex items-end gap-2 rounded-full bg-gray-50 p-1.5 pl-4 ring-1 ring-gray-200 transition-shadow focus-within:ring-2 focus-within:ring-blue-500/40">
+              <textarea
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    void sendMessage();
+                  }
+                }}
+                rows={1}
+                placeholder="Savolingizni yozing..."
+                aria-label="Savolingizni yozing..."
+                className="min-h-[32px] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-sm leading-5 text-gray-900 focus:outline-none focus-visible:outline-none"
+              />
               <button
                 type="button"
                 onClick={() => void sendMessage()}
@@ -187,6 +200,9 @@ export default function DashboardAiHelperWidget() {
                 Yuborish
               </button>
             </div>
+            <p className="mt-2 min-w-0 truncate px-2 text-[11px] text-gray-400">
+              Kontekst: {effectiveContext.pageKey} {effectiveContext.dateFrom && effectiveContext.dateTo ? `(${effectiveContext.dateFrom} - ${effectiveContext.dateTo})` : ''}
+            </p>
           </div>
         </div>
       )}
@@ -194,11 +210,20 @@ export default function DashboardAiHelperWidget() {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="fixed bottom-6 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-xl ring-4 ring-blue-600/15 transition-colors hover:bg-blue-700 active:scale-95 sm:right-6"
+        className={`fixed bottom-6 right-4 z-[45] flex h-12 items-center justify-center gap-2 rounded-full bg-blue-600 text-sm font-medium text-white shadow-[0_10px_28px_-8px_rgb(34_72_226/0.65)] ring-4 ring-blue-600/15 transition-colors hover:bg-blue-700 active:scale-95 sm:right-6 ${
+          open ? 'w-12' : 'w-12 sm:w-auto sm:px-5'
+        }`}
         aria-label="AI Yordamchini ochish"
         aria-expanded={open}
       >
-        {open ? <IconX className="h-6 w-6" stroke={1.8} /> : <IconSparkles className="h-7 w-7" stroke={1.6} />}
+        {open ? (
+          <IconX className="h-5 w-5" stroke={1.8} />
+        ) : (
+          <>
+            <IconSparkles className="h-5 w-5" stroke={1.6} />
+            <span className="hidden sm:inline">AI Yordamchi</span>
+          </>
+        )}
       </button>
     </>
   );

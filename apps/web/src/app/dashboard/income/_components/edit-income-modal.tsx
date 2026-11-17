@@ -1,10 +1,27 @@
 'use client';
 
-import { IconDeviceFloppy, IconX } from '@tabler/icons-react';
+import type { ReactNode } from 'react';
+import { IconCalendarEvent, IconCreditCard, IconDeviceFloppy, IconSchool, IconX } from '@tabler/icons-react';
+import type { Icon } from '@tabler/icons-react';
 import { formatAmountDigits } from '@/lib/format';
 import { groupDigits, normalizeDigits } from '@dashboarduz/shared';
 import { getSubTariffOptionValue, normalizeTextToken, resolveCanonicalSubTariffId } from './income-helpers';
 import type { IncomePageModel } from './use-income-page';
+
+/** A titled group of fields inside the edit sheet. */
+function SheetSection({ title, icon: SectionIcon, children }: { title: ReactNode; icon: Icon; children: ReactNode }) {
+  return (
+    <section className="space-y-4 border-t border-gray-100 pt-5 first:border-t-0 first:pt-0">
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+          <SectionIcon className="h-4 w-4" stroke={1.8} />
+        </span>
+        <p className="caption">{title}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export function EditIncomeModal({ vm }: { vm: IncomePageModel }) {
   const { closeEditIncome, editDebtAfterFirstPayment, editError, editForm, editSubTariffOptions, editTariffOptions, groupedCourseOptions, handleSaveIncomeEdit, isAdmin, managers, setEditForm, updateIncomeMutation } = vm;
@@ -13,8 +30,8 @@ export function EditIncomeModal({ vm }: { vm: IncomePageModel }) {
     <>
       {isAdmin && editForm && (
         <div className="modal-backdrop">
-          <div className="modal-panel max-w-2xl">
-            <div className="modal-header flex items-start justify-between gap-4">
+          <div className="modal-panel max-w-[600px]">
+            <div className="modal-header flex items-center justify-between gap-4">
               <h3 className="modal-title">Tushumni tahrirlash</h3>
               <button
                 type="button"
@@ -26,43 +43,45 @@ export function EditIncomeModal({ vm }: { vm: IncomePageModel }) {
               </button>
             </div>
 
-            <div className="modal-body">
+            <div className="modal-body space-y-5">
               {editError && (
                 <p className="alert alert-error">
                   {editError}
                 </p>
               )}
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="field-label">Sana</label>
-                  <input
-                    type="date"
-                    value={editForm.entryDate}
-                    onChange={(event) => setEditForm((prev) => (prev ? { ...prev, entryDate: event.target.value } : prev))}
-                    className="field"
-                  />
+              <SheetSection title="Sana va menedjer" icon={IconCalendarEvent}>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="field-label">Sana</label>
+                    <input
+                      type="date"
+                      value={editForm.entryDate}
+                      onChange={(event) => setEditForm((prev) => (prev ? { ...prev, entryDate: event.target.value } : prev))}
+                      className="field"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">Sotuv menedjeri</label>
+                    <select
+                      value={editForm.managerUserId}
+                      onChange={(event) => setEditForm((prev) => (prev ? { ...prev, managerUserId: event.target.value } : prev))}
+                      className="field"
+                    >
+                      <option value="">Menedjerni tanlang</option>
+                      {managers.map((manager) => (
+                        <option key={manager.id} value={manager.id}>
+                          {manager.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="field-label">Sotuv menedjeri</label>
-                  <select
-                    value={editForm.managerUserId}
-                    onChange={(event) => setEditForm((prev) => (prev ? { ...prev, managerUserId: event.target.value } : prev))}
-                    className="field"
-                  >
-                    <option value="">Menedjerni tanlang</option>
-                    {managers.map((manager) => (
-                      <option key={manager.id} value={manager.id}>
-                        {manager.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              </SheetSection>
 
               {editForm.type === 'new_sale' && (
-                <div className="panel-inset space-y-4">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <SheetSection title="Kurs" icon={IconSchool}>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="field-label">Kurs</label>
                       <select
@@ -117,10 +136,8 @@ export function EditIncomeModal({ vm }: { vm: IncomePageModel }) {
                         ))}
                       </select>
                     </div>
-                  </div>
 
-                  {editSubTariffOptions.length > 0 && (
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {editSubTariffOptions.length > 0 && (
                       <div>
                         <label className="field-label">Subtarif</label>
                         <select
@@ -148,10 +165,10 @@ export function EditIncomeModal({ vm }: { vm: IncomePageModel }) {
                           ))}
                         </select>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="panel-inset grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="field-label">Kurs narxi</label>
                       <input
@@ -180,52 +197,56 @@ export function EditIncomeModal({ vm }: { vm: IncomePageModel }) {
                       />
                     </div>
                   </div>
-                </div>
+                </SheetSection>
               )}
 
-              {editForm.type === 'repayment' && (
-                <div>
-                  <label className="field-label">Deadline</label>
-                  <input
-                    type="date"
-                    value={editForm.deadline}
-                    onChange={(event) => setEditForm((prev) => (prev ? { ...prev, deadline: event.target.value } : prev))}
-                    className="field"
-                  />
-                </div>
-              )}
+              <SheetSection title="To'lov" icon={IconCreditCard}>
+                {editForm.type === 'repayment' && (
+                  <div>
+                    <label className="field-label">Deadline</label>
+                    <input
+                      type="date"
+                      value={editForm.deadline}
+                      onChange={(event) => setEditForm((prev) => (prev ? { ...prev, deadline: event.target.value } : prev))}
+                      className="field"
+                    />
+                  </div>
+                )}
 
-              <div>
-                <label className="field-label">To'lov</label>
-                <input
-                  value={editForm.paymentInput}
-                  onChange={(event) =>
-                    setEditForm((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            paymentInput: groupDigits(normalizeDigits(event.target.value)),
-                          }
-                        : prev,
-                    )
-                  }
-                  inputMode="numeric"
-                  className="field tabular"
-                />
-              </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className={editForm.type === 'new_sale' ? '' : 'sm:col-span-2'}>
+                    <label className="field-label">To'lov</label>
+                    <input
+                      value={editForm.paymentInput}
+                      onChange={(event) =>
+                        setEditForm((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                paymentInput: groupDigits(normalizeDigits(event.target.value)),
+                              }
+                            : prev,
+                        )
+                      }
+                      inputMode="numeric"
+                      className="field tabular"
+                    />
+                  </div>
 
-              {editForm.type === 'new_sale' && (
-                <div>
-                  <label className="field-label">
-                    Birinchi to'lovdan keyingi qarz
-                  </label>
-                  <input
-                    value={formatAmountDigits(editDebtAfterFirstPayment)}
-                    readOnly
-                    className="field tabular font-medium"
-                  />
+                  {editForm.type === 'new_sale' && (
+                    <div>
+                      <label className="field-label">
+                        Birinchi to'lovdan keyingi qarz
+                      </label>
+                      <input
+                        value={formatAmountDigits(editDebtAfterFirstPayment)}
+                        readOnly
+                        className="field tabular font-medium"
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
+              </SheetSection>
             </div>
 
             <div className="modal-footer">
@@ -240,7 +261,7 @@ export function EditIncomeModal({ vm }: { vm: IncomePageModel }) {
                 type="button"
                 onClick={handleSaveIncomeEdit}
                 disabled={updateIncomeMutation.isLoading}
-                className="btn btn-primary"
+                className="btn btn-primary sm:min-w-[140px]"
               >
                 <IconDeviceFloppy className="h-4 w-4" stroke={1.8} />
                 {updateIncomeMutation.isLoading ? 'Saqlanmoqda...' : 'Saqlash'}

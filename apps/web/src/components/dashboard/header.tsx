@@ -74,12 +74,12 @@ export default function Header({ pendingAdjustmentCount = 0, onToggleSidebar }: 
     { mode: 'light', label: "Yorug' mavzu", Icon: IconSun },
     { mode: 'dark', label: 'Tungi mavzu', Icon: IconMoon },
   ];
-  const iconButton = 'relative inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] text-gray-500 hover:bg-gray-200/70 hover:text-gray-900 active:scale-[0.96]';
+  const iconButton = 'relative inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-200/70 hover:text-gray-900 active:scale-[0.96]';
 
   return (
     <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md">
-      <div className="flex h-16 items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:px-8">
-        <button type="button" onClick={onToggleSidebar} className={`${iconButton} -ml-2`}>
+      <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:px-10">
+        <button type="button" onClick={onToggleSidebar} className={`${iconButton} -ml-2 lg:hidden`}>
           <span className="sr-only">Menyuni ochish yoki yopish</span>
           <IconLayoutSidebar className="h-5 w-5" stroke={1.6} />
           {pendingAdjustmentCount > 0 ? (
@@ -109,7 +109,7 @@ export default function Header({ pendingAdjustmentCount = 0, onToggleSidebar }: 
         </nav>
 
         <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2">
-          <div className="inline-flex h-10 items-center gap-0.5 rounded-[10px] bg-white p-1 shadow" role="group" aria-label="Mavzu">
+          <div className="inline-flex h-10 items-center gap-0.5 rounded-full bg-white p-1 shadow" role="group" aria-label="Mavzu">
             {themeOptions.map(({ mode, label, Icon }) => (
               <button
                 key={mode}
@@ -118,7 +118,7 @@ export default function Header({ pendingAdjustmentCount = 0, onToggleSidebar }: 
                 aria-label={label}
                 aria-pressed={theme === mode}
                 title={label}
-                className={`inline-flex h-8 w-8 items-center justify-center rounded-md ${
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${
                   theme === mode ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-700'
                 }`}
               >

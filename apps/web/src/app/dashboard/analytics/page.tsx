@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import {
   IconAlertTriangle,
   IconBrandMeta,
+  IconCalendar,
   IconCash,
   IconClick,
   IconFileAnalytics,
@@ -17,7 +18,7 @@ import { trpc } from '@/lib/trpc';
 import AnalyticsCharts from '@/components/dashboard/analytics-charts';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { PageHeader } from '@/components/ui/page-header';
-import { StatTile } from '@/components/ui/stat-tile';
+import { FilterPill, pillControlClass } from '@/components/dashboard/filter-pill';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import { getRangeLabel, getTashkentToday } from '@/lib/date-range';
@@ -142,6 +143,20 @@ export default function AnalyticsPage() {
   ]);
   useDashboardAiPageContext(aiPageContext);
 
+
+  const metaStats = [
+    { label: 'Jami spend', value: Math.round(metaTotalSpend).toLocaleString('uz-UZ'), icon: IconCash, accent: 'text-blue-700' },
+    { label: 'Jami clicks', value: metaTotalClicks.toLocaleString('uz-UZ'), icon: IconClick, accent: 'text-gray-900' },
+    { label: 'Weighted CTR', value: `${metaWeightedCtr}%`, icon: IconPercentage, accent: 'text-gray-900' },
+    { label: 'Jami leads', value: metaTotalLeads.toLocaleString('uz-UZ'), icon: IconUserPlus, accent: 'text-emerald-700' },
+    {
+      label: 'Blended CPL',
+      value: metaBlendedCpl === null ? '-' : Math.round(metaBlendedCpl).toLocaleString('uz-UZ'),
+      icon: IconReceipt,
+      accent: 'text-gray-900',
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -157,7 +172,7 @@ export default function AnalyticsPage() {
           </Link>
         )}
       >
-        <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="max-w-full overflow-x-auto">
             <div className="segmented">
               {RANGE_OPTIONS.map((option) => (
@@ -175,19 +190,23 @@ export default function AnalyticsPage() {
           </div>
 
           {range === 'custom' && (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:flex md:items-center">
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(event) => setDateFrom(event.target.value)}
-                className="field md:w-44"
-              />
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(event) => setDateTo(event.target.value)}
-                className="field md:w-44"
-              />
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterPill icon={IconCalendar}>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(event) => setDateFrom(event.target.value)}
+                  className={`${pillControlClass} w-[9.5rem] flex-none`}
+                />
+              </FilterPill>
+              <FilterPill icon={IconCalendar}>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(event) => setDateTo(event.target.value)}
+                  className={`${pillControlClass} w-[9.5rem] flex-none`}
+                />
+              </FilterPill>
             </div>
           )}
         </div>
@@ -199,50 +218,57 @@ export default function AnalyticsPage() {
         isError={Boolean(summaryQuery.error)}
       />
 
-      <section className="space-y-4">
-        <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
-            <IconBrandMeta className="h-5 w-5" stroke={1.6} aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="section-title">Meta Ads</h2>
-            <p className="mt-0.5 text-sm text-gray-500">Campaign/adset/ad bo&apos;yicha spend, CTR, CPL va CPQL.</p>
+      <section className="panel overflow-hidden">
+        <div className="panel-header pb-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+              <IconBrandMeta className="h-5 w-5" stroke={1.6} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="section-title">Meta Ads</h2>
+              <p className="mt-0.5 text-sm text-gray-500">Campaign/adset/ad bo&apos;yicha spend, CTR, CPL va CPQL.</p>
+            </div>
           </div>
+          {metaCampaigns.length > 0 && (
+            <span className="badge badge-neutral tabular">{metaCampaigns.length}</span>
+          )}
         </div>
 
         {metaCampaigns.length > 0 && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <StatTile label="Jami spend" value={Math.round(metaTotalSpend).toLocaleString('uz-UZ')} icon={IconCash} tone="blue" />
-            <StatTile label="Jami clicks" value={metaTotalClicks.toLocaleString('uz-UZ')} icon={IconClick} />
-            <StatTile label="Weighted CTR" value={`${metaWeightedCtr}%`} icon={IconPercentage} />
-            <StatTile label="Jami leads" value={metaTotalLeads.toLocaleString('uz-UZ')} icon={IconUserPlus} tone="green" />
-            <StatTile
-              label="Blended CPL"
-              value={metaBlendedCpl === null ? '-' : Math.round(metaBlendedCpl).toLocaleString('uz-UZ')}
-              icon={IconReceipt}
-            />
-          </div>
-        )}
-        {metaWeakCampaigns.length > 0 && (
-          <div className="alert alert-warning flex items-start gap-3">
-            <IconAlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" stroke={1.8} aria-hidden="true" />
-            <p>
-              Yuqori spend, lekin leads 0 bo'lgan kampaniyalar: {metaWeakCampaigns.slice(0, 5).map((item) => item.campaignName || 'Nomaʼlum').join(', ')}
-              {metaWeakCampaigns.length > 5 ? ` va yana ${metaWeakCampaigns.length - 5} ta` : ''}.
-            </p>
-          </div>
+          <dl className="mx-5 grid grid-cols-2 gap-3 sm:mx-6 sm:grid-cols-3 xl:grid-cols-5">
+            {metaStats.map((stat) => (
+              <div key={stat.label} className="panel-inset min-w-0">
+                <dt className="flex items-center gap-1.5 text-[13px] text-gray-500">
+                  <stat.icon className="h-4 w-4 flex-shrink-0 text-gray-400" stroke={1.8} aria-hidden="true" />
+                  {stat.label}
+                </dt>
+                <dd className={`tabular mt-1.5 break-words text-xl font-semibold leading-tight tracking-tight ${stat.accent}`}>{stat.value}</dd>
+              </div>
+            ))}
+          </dl>
         )}
 
-        <div className="panel p-2 sm:p-3">
+        <div className="space-y-4 p-2 pt-4 sm:p-3 sm:pt-4">
+          {metaWeakCampaigns.length > 0 && (
+            <div className="alert alert-warning m-2 flex items-start gap-3">
+              <IconAlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" stroke={1.8} aria-hidden="true" />
+              <p>
+                Yuqori spend, lekin leads 0 bo'lgan kampaniyalar: {metaWeakCampaigns.slice(0, 5).map((item) => item.campaignName || 'Nomaʼlum').join(', ')}
+                {metaWeakCampaigns.length > 5 ? ` va yana ${metaWeakCampaigns.length - 5} ta` : ''}.
+              </p>
+            </div>
+          )}
+
           {metaInsightsQuery.isLoading ? (
             <LoadingBlock compact message="Meta ma'lumotlari yuklanmoqda..." />
           ) : metaInsightsQuery.error ? (
-            <div className="alert alert-error">
+            <div className="alert alert-error m-2">
               Meta Ads ma&apos;lumotlarini yuklashda xatolik: {metaInsightsQuery.error.message}
             </div>
           ) : (metaInsightsQuery.data?.campaigns || []).length === 0 ? (
             <EmptyState
               icon={IconBrandMeta}
+              className="m-2"
               title={
                 (metaInsightsQuery.data as any)?.tableMissing
                   ? 'Meta Ads DB migratsiyasi hali production database ga qo‘llanmagan. db:migrate:deploy qiling.'
@@ -286,10 +312,10 @@ export default function AnalyticsPage() {
         </div>
       </section>
 
-      <div className="panel overflow-hidden">
-        <div className="panel-header pb-5">
+      <section className="panel grid grid-cols-1 overflow-hidden lg:grid-cols-[340px_minmax(0,1fr)]">
+        <div className="flex flex-col gap-5 border-b border-gray-100 p-5 sm:p-6 lg:border-b-0 lg:border-r">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
+            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
               <IconSparkles className="h-5 w-5" stroke={1.6} aria-hidden="true" />
             </span>
             <div className="min-w-0">
@@ -299,11 +325,12 @@ export default function AnalyticsPage() {
               </p>
             </div>
           </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <div className="flex flex-col gap-2">
             <select
               value={aiFocus}
               onChange={(event) => setAiFocus(event.target.value as AiFocus)}
-              className="field sm:w-48"
+              aria-label="Focus"
+              className="field"
             >
               {AI_FOCUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -315,14 +342,14 @@ export default function AnalyticsPage() {
               type="button"
               onClick={runAi}
               disabled={generateAi.isLoading}
-              className="btn btn-primary"
+              className="btn btn-primary w-full"
             >
               <IconSparkles className="h-4 w-4" stroke={1.8} aria-hidden="true" />
               {generateAi.isLoading ? 'Tahlil qilinmoqda...' : 'Tahlil qilish'}
             </button>
           </div>
         </div>
-        <div className="space-y-4 border-t border-gray-100 p-5 sm:p-6">
+        <div className="min-w-0 space-y-4 p-5 sm:p-6">
           {generateAi.error && (
             <div className="alert alert-error">
               AI tahlilda xatolik: {generateAi.error.message}
@@ -338,7 +365,7 @@ export default function AnalyticsPage() {
                 <p className="mt-1.5 text-sm text-gray-800">{aiResult.result.summary}</p>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2">
                 {(aiResult.result.top_findings || []).slice(0, 6).map((finding: any, index: number) => (
                   <div key={`${finding.title}-${index}`} className="panel-inset flex flex-col">
                     <div className="flex items-start justify-between gap-2">
@@ -347,13 +374,13 @@ export default function AnalyticsPage() {
                         {finding.severity}
                       </span>
                     </div>
-                    <p className="mt-3 text-xs font-semibold text-gray-500">Evidence</p>
+                    <p className="caption mt-3">Evidence</p>
                     <ul className="mt-1 list-disc space-y-1 pl-4 text-sm text-gray-700">
                       {(finding.evidence || []).map((item: string) => (
                         <li key={item}>{item}</li>
                       ))}
                     </ul>
-                    <p className="mt-3 text-xs font-semibold text-gray-500">Action</p>
+                    <p className="caption mt-3">Action</p>
                     <p className="mt-1 text-sm text-gray-800">{finding.recommended_action}</p>
                     <p className="mt-auto pt-3 text-xs text-gray-500">Confidence: {finding.confidence}</p>
                   </div>
@@ -372,12 +399,14 @@ export default function AnalyticsPage() {
               )}
             </div>
           ) : (
-            <p className="text-sm text-gray-500">
-              Focus tanlang va “Tahlil qilish” tugmasini bosing. AI faqat agregatsiya qilingan metrikalarni ko&apos;radi.
-            </p>
+            <div className="flex h-full min-h-[160px] items-center justify-center rounded-[16px] border border-dashed border-gray-200 px-6 py-8 text-center">
+              <p className="max-w-md text-sm text-gray-500">
+                Focus tanlang va “Tahlil qilish” tugmasini bosing. AI faqat agregatsiya qilingan metrikalarni ko&apos;radi.
+              </p>
+            </div>
           )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

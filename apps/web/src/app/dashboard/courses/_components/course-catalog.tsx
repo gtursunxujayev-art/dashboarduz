@@ -1,29 +1,82 @@
 'use client';
 
-import { IconCalendar, IconChevronDown, IconDeviceFloppy, IconEye, IconEyeOff, IconPlayerPause, IconPlayerPlay, IconPlus, IconSchool, IconTag, IconX } from '@tabler/icons-react';
+import { IconCalendar, IconChevronRight, IconSchool } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { EmptyState } from '@/components/ui/empty-state';
-import { COURSE_CATEGORY_OPTIONS, getCourseCategoryLabel } from '@/lib/course-categories';
+import { getCourseCategoryLabel } from '@/lib/course-categories';
+import { CourseEditSheet } from './course-edit-sheet';
 import { type CourseItem, toDateInputValue } from './courses-helpers';
 import type { CoursesPageModel } from './use-courses-page';
 
-/** Toggle button tone: amber while the item is active (the action deactivates), green while it is inactive. */
-function activeToggleClass(isActive: boolean) {
-  return isActive
-    ? 'btn btn-warning-soft'
-    : 'btn bg-emerald-50 text-emerald-700 hover:bg-emerald-100';
+/** The course that is open for editing (the page shows it in a right sheet). */
+export function findOpenCourse(vm: Pick<CoursesPageModel, 'courses' | 'openCourseIds'>): CourseItem | null {
+  return vm.courses.find((course) => vm.openCourseIds[course.id]) || null;
 }
 
+function CourseCard({ course, isOpen, onToggle }: { course: CourseItem; isOpen: boolean; onToggle: () => void }) {
+  return (
+    <article className="panel group flex min-w-0 flex-col p-5 transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="flex items-start gap-3">
+        <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${course.isActive ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+          <IconSchool className="h-5 w-5" stroke={1.6} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h4 className="truncate text-[15px] font-semibold text-gray-900">{course.name}</h4>
+          <p className="tabular mt-1 inline-flex items-center gap-1 text-xs text-gray-500">
+            <IconCalendar className="h-3.5 w-3.5" stroke={1.8} />
+            {toDateInputValue(course.startDate) || '-'} / {toDateInputValue(course.endDate) || '-'}
+          </p>
+        </div>
+        <span className={`badge ${course.isActive ? 'badge-green' : 'badge-neutral'}`}>{course.isActive ? 'Faol' : 'Faolsiz'}</span>
+      </div>
+
+      {course.tariffs.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {course.tariffs.map((tariff) => (
+            <span
+              key={tariff.id}
+              className={`badge max-w-full ${tariff.isActive ? 'badge-neutral' : 'bg-gray-50 text-gray-400 line-through'}`}
+            >
+              <span className="truncate">{tariff.name}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div aria-hidden="true" className="min-h-5 flex-1" />
+
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-gray-100 pt-4">
+        <span className="badge badge-neutral tabular">{course.tariffs.length} ta tarif</span>
+        <span className="badge badge-blue">{getCourseCategoryLabel(course.category)}</span>
+        <span className={`badge ${course.isHiddenFromIncomeForm ? 'badge-amber' : 'badge-neutral'}`}>
+          {course.isHiddenFromIncomeForm ? "To'lovdan yashirilgan" : "To'lovda ko'rinadi"}
+        </span>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={isOpen}
+          className="btn btn-soft btn-sm ml-auto"
+        >
+          {isOpen ? 'Yopish' : 'Ochish'}
+          <IconChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" stroke={1.8} />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+/** Courses grouped by category: a section per category with a responsive card grid. */
 export function CourseCatalog({ vm }: { vm: CoursesPageModel }) {
-  const { catalogQuery, courseEditCategory, courseEditEndDate, courseEditName, courseEditStartDate, courses, groupedCourses, handleCreateSubTariff, handleToggleCourse, handleToggleCourseIncomeVisibility, handleToggleSubTariff, handleToggleTariff, handleUpdateCourse, handleUpdateSubTariff, handleUpdateTariff, newSubTariffName, openCourseIds, openTariffIds, setCourseEditCategory, setCourseEditEndDate, setCourseEditName, setCourseEditStartDate, setNewSubTariffName, setSubTariffEditName, setTariffEditName, showSubTariffForm, subTariffEditName, tariffEditName, toggleCourseOchish, toggleSubTariffForm, toggleTariffOchish } = vm;
+  const { catalogQuery, courses, groupedCourses, openCourseIds, toggleCourseOchish } = vm;
+  const openCourse = findOpenCourse(vm);
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-5">
       <h2 className="section-title">Kurslar katalogi</h2>
 
       {catalogQuery.isLoading ? (
         <div className="panel p-3 sm:p-4">
-          <LoadingBlock message="Kurslar yuklanmoqda..." />
+          <LoadingBlock message="Kurslar yuklanmoqda..." className="min-h-[200px]" />
         </div>
       ) : catalogQuery.error ? (
         <p className="alert alert-error">
@@ -34,261 +87,26 @@ export function CourseCatalog({ vm }: { vm: CoursesPageModel }) {
           <EmptyState icon={IconSchool} title="Hozircha kurslar yo'q." />
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-8">
           {groupedCourses.map((group) => (
-            <section key={`group-section-${group.value}`} className="panel">
-              <div className="panel-header pb-4">
+            <section key={`group-section-${group.value}`} className="space-y-3">
+              <div className="flex items-center gap-2.5 px-1">
                 <h3 className="section-title">{group.label} kurslari</h3>
                 <span className="badge badge-neutral tabular">{group.courses.length}</span>
               </div>
               {group.courses.length === 0 ? (
-                <div className="px-5 pb-5 sm:px-6">
-                  <p className="rounded-[10px] border border-dashed border-gray-200 px-3 py-3 text-sm text-gray-500">
-                    Hozircha {group.label.toLowerCase()} kurslari yo'q.
-                  </p>
-                </div>
+                <p className="rounded-[20px] border border-dashed border-gray-200 px-5 py-6 text-sm text-gray-500">
+                  Hozircha {group.label.toLowerCase()} kurslari yo'q.
+                </p>
               ) : (
-                <div className="divide-y divide-gray-100 border-t border-gray-100">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
                   {group.courses.map((course) => (
-                    <div key={course.id}>
-                      <button
-                        type="button"
-                        onClick={() => toggleCourseOchish(course.id)}
-                        aria-expanded={Boolean(openCourseIds[course.id])}
-                        className="flex w-full items-center gap-3.5 px-5 py-4 text-left transition hover:bg-gray-50 sm:px-6"
-                      >
-                        <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] ${course.isActive ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
-                          <IconSchool className="h-5 w-5" stroke={1.6} />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[15px] font-medium text-gray-900">{course.name}</p>
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            <span className="badge badge-neutral tabular">{course.tariffs.length} ta tarif</span>
-                            <span className={`badge ${course.isActive ? 'badge-green' : 'badge-neutral'}`}>{course.isActive ? 'Faol' : 'Faolsiz'}</span>
-                            <span className="badge badge-blue">{getCourseCategoryLabel(course.category)}</span>
-                            <span className={`badge ${course.isHiddenFromIncomeForm ? 'badge-amber' : 'badge-neutral'}`}>
-                              {course.isHiddenFromIncomeForm ? "To'lovdan yashirilgan" : "To'lovda ko'rinadi"}
-                            </span>
-                            <span className="tabular inline-flex items-center gap-1 text-xs text-gray-500">
-                              <IconCalendar className="h-3.5 w-3.5" stroke={1.8} />
-                              {toDateInputValue(course.startDate) || '-'} / {toDateInputValue(course.endDate) || '-'}
-                            </span>
-                          </div>
-                        </div>
-                        <span className="inline-flex flex-shrink-0 items-center gap-1 text-sm font-medium text-blue-600">
-                          {openCourseIds[course.id] ? 'Yopish' : 'Ochish'}
-                          <IconChevronDown className={`h-4 w-4 transition-transform ${openCourseIds[course.id] ? 'rotate-180' : ''}`} stroke={1.8} />
-                        </span>
-                      </button>
-
-                      {openCourseIds[course.id] && (
-                        <div className="animate-rise-in space-y-4 px-5 pb-5 sm:px-6">
-                          <div className="panel-inset space-y-3">
-                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_200px_160px_160px]">
-                              <input
-                                value={courseEditName[course.id] ?? course.name}
-                                onChange={(event) =>
-                                  setCourseEditName((prev) => ({ ...prev, [course.id]: event.target.value }))
-                                }
-                                className="field"
-                              />
-                              <select
-                                value={courseEditCategory[course.id] ?? course.category}
-                                onChange={(event) =>
-                                  setCourseEditCategory((prev) => ({
-                                    ...prev,
-                                    [course.id]: event.target.value as CourseItem['category'],
-                                  }))
-                                }
-                                className="field"
-                              >
-                                {COURSE_CATEGORY_OPTIONS.map((option) => (
-                                  <option key={`edit-${course.id}-${option.value}`} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                              <input
-                                type="date"
-                                value={courseEditStartDate[course.id] ?? toDateInputValue(course.startDate)}
-                                onChange={(event) =>
-                                  setCourseEditStartDate((prev) => ({ ...prev, [course.id]: event.target.value }))
-                                }
-                                className="field"
-                              />
-                              <input
-                                type="date"
-                                value={courseEditEndDate[course.id] ?? toDateInputValue(course.endDate)}
-                                onChange={(event) =>
-                                  setCourseEditEndDate((prev) => ({ ...prev, [course.id]: event.target.value }))
-                                }
-                                className="field"
-                              />
-                            </div>
-                            <div className="flex flex-wrap justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleToggleCourseIncomeVisibility(course)}
-                                className={course.isHiddenFromIncomeForm
-                                  ? 'btn btn-sm bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                                  : 'btn btn-secondary btn-sm'}
-                              >
-                                {course.isHiddenFromIncomeForm
-                                  ? <IconEye className="h-4 w-4" stroke={1.8} />
-                                  : <IconEyeOff className="h-4 w-4" stroke={1.8} />}
-                                {course.isHiddenFromIncomeForm ? "To'lovda ko'rsatish" : "To'lovdan yashirish"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleCourse(course)}
-                                className={`${activeToggleClass(course.isActive)} btn-sm`}
-                              >
-                                {course.isActive
-                                  ? <IconPlayerPause className="h-4 w-4" stroke={1.8} />
-                                  : <IconPlayerPlay className="h-4 w-4" stroke={1.8} />}
-                                {course.isActive ? 'Faolsizlantirish' : 'Faollashtirish'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateCourse(course)}
-                                className="btn btn-primary btn-sm"
-                              >
-                                <IconDeviceFloppy className="h-4 w-4" stroke={1.8} />
-                                Saqlash
-                              </button>
-                            </div>
-                          </div>
-
-                          {course.tariffs.length === 0 ? (
-                            <p className="text-sm text-gray-500">Tarif biriktirilmagan.</p>
-                          ) : (
-                            <div className="overflow-hidden rounded-[12px] ring-1 ring-gray-200">
-                              <div className="divide-y divide-gray-100">
-                                {course.tariffs.map((tariff) => (
-                                  <div key={tariff.id}>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleTariffOchish(tariff.id)}
-                                      aria-expanded={Boolean(openTariffIds[tariff.id])}
-                                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-gray-50"
-                                    >
-                                      <IconTag className="h-4 w-4 flex-shrink-0 text-gray-400" stroke={1.8} />
-                                      <div className="min-w-0 flex-1">
-                                        <p className="truncate text-sm font-medium text-gray-900">{tariff.name}</p>
-                                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                          <span className="badge badge-neutral tabular">{tariff.subTariffs?.length || 0} ta sub-tarif</span>
-                                          <span className={`badge ${tariff.isActive ? 'badge-green' : 'badge-neutral'}`}>{tariff.isActive ? 'Faol' : 'Faolsiz'}</span>
-                                        </div>
-                                      </div>
-                                      <span className="inline-flex flex-shrink-0 items-center gap-1 text-xs font-medium text-blue-600">
-                                        {openTariffIds[tariff.id] ? 'Yopish' : 'Ochish'}
-                                        <IconChevronDown className={`h-4 w-4 transition-transform ${openTariffIds[tariff.id] ? 'rotate-180' : ''}`} stroke={1.8} />
-                                      </span>
-                                    </button>
-
-                                    {openTariffIds[tariff.id] && (
-                                      <div className="animate-rise-in space-y-3 bg-gray-50 px-4 py-4">
-                                        <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center">
-                                          <input
-                                            value={tariffEditName[tariff.id] ?? tariff.name}
-                                            onChange={(event) =>
-                                              setTariffEditName((prev) => ({ ...prev, [tariff.id]: event.target.value }))
-                                            }
-                                            className="field"
-                                          />
-                                          <button
-                                            type="button"
-                                            onClick={() => handleUpdateTariff(tariff)}
-                                            className="btn btn-secondary"
-                                          >
-                                            Saqlash
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleToggleTariff(tariff)}
-                                            className={activeToggleClass(tariff.isActive)}
-                                          >
-                                            {tariff.isActive ? 'Faolsizlantirish' : 'Faollashtirish'}
-                                          </button>
-                                        </div>
-
-                                        <div className="panel p-3 sm:p-4">
-                                          <div className="mb-3 flex items-center justify-between gap-2">
-                                            <p className="text-[13px] font-semibold text-gray-500">Sub-tariflar (ixtiyoriy)</p>
-                                            <button
-                                              type="button"
-                                              onClick={() => toggleSubTariffForm(tariff.id)}
-                                              className={showSubTariffForm[tariff.id] ? 'btn btn-ghost btn-sm' : 'btn btn-soft btn-sm'}
-                                            >
-                                              {showSubTariffForm[tariff.id]
-                                                ? <IconX className="h-4 w-4" stroke={1.8} />
-                                                : <IconPlus className="h-4 w-4" stroke={2} />}
-                                              {showSubTariffForm[tariff.id] ? "Bekor qilish" : "Sub-tarif qo'shish"}
-                                            </button>
-                                          </div>
-
-                                          {showSubTariffForm[tariff.id] && (
-                                            <div className="mb-3 grid animate-rise-in grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
-                                              <input
-                                                value={newSubTariffName[tariff.id] || ''}
-                                                onChange={(event) =>
-                                                  setNewSubTariffName((prev) => ({ ...prev, [tariff.id]: event.target.value }))
-                                                }
-                                                placeholder="Yangi sub-tarif"
-                                                className="field"
-                                              />
-                                              <button
-                                                type="button"
-                                                onClick={() => handleCreateSubTariff(tariff.id)}
-                                                className="btn btn-primary"
-                                              >
-                                                Sub-tarifni saqlash
-                                              </button>
-                                            </div>
-                                          )}
-
-                                          {tariff.subTariffs?.length ? (
-                                            <div className="divide-y divide-gray-100">
-                                              {tariff.subTariffs.map((subTariff) => (
-                                                <div key={subTariff.id} className="grid grid-cols-1 gap-2 py-2 first:pt-0 last:pb-0 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center">
-                                                  <input
-                                                    value={subTariffEditName[subTariff.id] ?? subTariff.name}
-                                                    onChange={(event) =>
-                                                      setSubTariffEditName((prev) => ({ ...prev, [subTariff.id]: event.target.value }))
-                                                    }
-                                                    className="field"
-                                                  />
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => handleUpdateSubTariff(subTariff)}
-                                                    className="btn btn-secondary btn-sm"
-                                                  >
-                                                    Saqlash
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => handleToggleSubTariff(subTariff)}
-                                                    className={`${activeToggleClass(subTariff.isActive)} btn-sm`}
-                                                  >
-                                                    {subTariff.isActive ? 'Faolsizlantirish' : 'Faollashtirish'}
-                                                  </button>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          ) : (
-                                            <p className="text-sm text-gray-500">Hozircha sub-tariflar yo'q.</p>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <CourseCard
+                      key={course.id}
+                      course={course}
+                      isOpen={Boolean(openCourseIds[course.id])}
+                      onToggle={() => toggleCourseOchish(course.id)}
+                    />
                   ))}
                 </div>
               )}
@@ -296,6 +114,8 @@ export function CourseCatalog({ vm }: { vm: CoursesPageModel }) {
           ))}
         </div>
       )}
+
+      {openCourse && <CourseEditSheet vm={vm} course={openCourse} />}
     </section>
   );
 }

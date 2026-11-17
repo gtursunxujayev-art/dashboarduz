@@ -9,16 +9,16 @@ export function AttendanceCorrectionForm({ vm }: { vm: AttendancePageModel }) {
   return (
     <>
       {isAdmin && (
-        <section className="panel xl:sticky xl:top-6">
+        <section className="panel">
           <div className="panel-header">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-blue-50 text-blue-600">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                 <IconAdjustmentsHorizontal className="h-4 w-4" stroke={1.8} />
               </span>
               <h3 className="section-title">Admin tuzatishlari</h3>
             </div>
           </div>
-          <form onSubmit={handleApplyCorrection} className="panel-body space-y-4">
+          <form onSubmit={handleApplyCorrection} className="space-y-4 p-5 pt-4 sm:p-6 sm:pt-5">
             <div>
               <label className="field-label">Amal</label>
               <select
@@ -111,11 +111,11 @@ export function AttendanceCorrectionForm({ vm }: { vm: AttendancePageModel }) {
                 Xodimlar ro&apos;yxatini yuklashda xatolik: {usersQuery.error.message}
               </p>
             )}
-            <div className="flex justify-end border-t border-gray-100 pt-4">
+            <div className="border-t border-gray-100 pt-4">
               <button
                 type="submit"
                 disabled={correctionMutation.isLoading}
-                className="btn btn-primary w-full sm:w-auto"
+                className="btn btn-primary w-full"
               >
                 <IconDeviceFloppy className="h-4 w-4" stroke={1.8} />
                 {correctionMutation.isLoading ? 'Saqlanmoqda...' : 'Tuzatishni saqlash'}

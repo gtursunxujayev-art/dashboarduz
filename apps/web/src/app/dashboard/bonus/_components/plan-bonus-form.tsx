@@ -1,6 +1,6 @@
 'use client';
 
-import { IconTargetArrow } from '@tabler/icons-react';
+import { IconPencil, IconTargetArrow } from '@tabler/icons-react';
 import type { CourseCategory as PlanCategory, PlanBonusPeriodMode as PlanPeriodMode } from '@dashboarduz/shared';
 import { SettingsCard, SettingsFooter } from './settings-card';
 import type { BonusPageModel } from './use-bonus-page';
@@ -14,6 +14,12 @@ export function PlanBonusForm({ vm }: { vm: BonusPageModel }) {
       icon={IconTargetArrow}
       title={<>Yangi plan bonus qo&apos;shish</>}
       description={<>Plan: yopilgan sotuv soni maqsadi + qat&apos;iy bonus summasi.</>}
+      aside={editingPlanId ? (
+        <span className="badge badge-amber">
+          <IconPencil className="h-3.5 w-3.5" stroke={1.8} />
+          Tahrirlash
+        </span>
+      ) : null}
     >
       <form onSubmit={handleSavePlan}>
         <div className="panel-body space-y-5">
@@ -26,7 +32,7 @@ export function PlanBonusForm({ vm }: { vm: BonusPageModel }) {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-1">
             <div>
               <label className="field-label">Plan nomi</label>
               <input
@@ -51,7 +57,7 @@ export function PlanBonusForm({ vm }: { vm: BonusPageModel }) {
             </div>
           </div>
 
-          <div className="panel-inset grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="panel-inset grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="field-label">Kurs turi</label>
               <select
@@ -131,7 +137,7 @@ export function PlanBonusForm({ vm }: { vm: BonusPageModel }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="field-label">Yopilgan sotuv maqsadi</label>
               <input
@@ -154,7 +160,7 @@ export function PlanBonusForm({ vm }: { vm: BonusPageModel }) {
                 className="field tabular"
               />
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <label className="field-label">Holat</label>
               <select
                 value={planActive ? 'active' : 'inactive'}

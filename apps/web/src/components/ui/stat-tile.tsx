@@ -2,11 +2,11 @@ import type { ReactNode } from 'react';
 import type { Icon } from '@tabler/icons-react';
 
 const TONES = {
-  neutral: { icon: 'bg-gray-100 text-gray-700', value: 'text-gray-900' },
-  blue: { icon: 'bg-blue-50 text-blue-600', value: 'text-gray-900' },
-  green: { icon: 'bg-emerald-50 text-emerald-600', value: 'text-emerald-700' },
-  amber: { icon: 'bg-amber-50 text-amber-600', value: 'text-amber-700' },
-  red: { icon: 'bg-red-50 text-red-600', value: 'text-red-700' },
+  neutral: { icon: 'bg-gray-100 text-gray-600', value: 'text-gray-900', bar: 'bg-gray-300' },
+  blue: { icon: 'bg-blue-50 text-blue-600', value: 'text-gray-900', bar: 'bg-blue-600' },
+  green: { icon: 'bg-emerald-50 text-emerald-600', value: 'text-emerald-700', bar: 'bg-emerald-500' },
+  amber: { icon: 'bg-amber-50 text-amber-600', value: 'text-amber-700', bar: 'bg-amber-500' },
+  red: { icon: 'bg-red-50 text-red-600', value: 'text-red-700', bar: 'bg-red-500' },
 } as const;
 
 export type StatTone = keyof typeof TONES;
@@ -29,15 +29,18 @@ export function StatTile({
 }) {
   const colors = TONES[tone];
   return (
-    <div className={`panel flex items-start gap-3.5 p-4 sm:p-5 ${className}`}>
-      {TileIcon ? (
-        <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] ${colors.icon}`}>
-          <TileIcon className="h-5 w-5" stroke={1.6} />
-        </span>
-      ) : null}
+    <div className={`panel relative flex min-w-0 flex-col justify-between gap-2 overflow-hidden px-4 py-3.5 ${className}`}>
+      <span aria-hidden="true" className={`absolute inset-y-3.5 left-0 w-[3px] rounded-r-full ${colors.bar}`} />
+      <div className="flex items-center justify-between gap-3">
+        <p className="caption leading-snug">{label}</p>
+        {TileIcon ? (
+          <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full ${colors.icon}`}>
+            <TileIcon className="h-4 w-4" stroke={1.7} />
+          </span>
+        ) : null}
+      </div>
       <div className="min-w-0">
-        <p className="text-[13px] font-medium text-gray-500">{label}</p>
-        <p className={`tabular mt-1 break-words text-2xl font-semibold leading-tight tracking-tight ${colors.value}`}>{value}</p>
+        <p className={`tabular break-words text-[22px] font-semibold leading-tight tracking-[-0.02em] ${colors.value}`}>{value}</p>
         {hint ? <p className="mt-1 text-xs text-gray-500">{hint}</p> : null}
       </div>
     </div>

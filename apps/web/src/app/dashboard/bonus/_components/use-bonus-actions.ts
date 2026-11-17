@@ -1,7 +1,7 @@
 'use client';
 
 import { parseAmountInput } from '@/lib/format';
-import { COURSE_CATEGORIES, type SalaryRuleMode as CourseBonusMode, normalizeSubTariffName, type CourseCategory as SalaryCategory } from '@dashboarduz/shared';
+import { COURSE_CATEGORIES, type SalaryRuleMode as CourseBonusMode, normalizeSubTariffName, type CourseCategory as SalaryCategory, type SalaryTierBasis } from '@dashboarduz/shared';
 import { type AgentUserOption, type BonusPlan, type CategoryBonusRule, getSalaryCategoryLabel, KPI_METRIC_KEYS, KPI_METRICS, type KpiMetricKey, parsePercentInput, parsePositiveInt } from './bonus-helpers';
 import type { useBonusSettings } from './use-bonus-settings';
 
@@ -36,6 +36,7 @@ export function useBonusActions(base: ReturnType<typeof useBonusSettings>) {
         const simplePercent = parsePercentInput(currentRule.simplePercent);
         payload[category] = {
           mode: 'simple',
+          tierBasis: currentRule.tierBasis,
           simplePercent,
           tiers: [],
         };
@@ -90,6 +91,7 @@ export function useBonusActions(base: ReturnType<typeof useBonusSettings>) {
 
       payload[category] = {
         mode: 'tiered',
+        tierBasis: currentRule.tierBasis,
         simplePercent: parsePercentInput(currentRule.simplePercent),
         tiers: normalizedTiers,
       };
@@ -372,6 +374,13 @@ export function useBonusActions(base: ReturnType<typeof useBonusSettings>) {
       };
     });
   };
+  const handleTierBasisChange = (category: SalaryCategory, tierBasis: SalaryTierBasis) => {
+    setBonusRulesState((prev) => {
+      const current = prev[category];
+      if (!current) return prev;
+      return { ...prev, [category]: { ...current, tierBasis } };
+    });
+  };
   const handleSimplePercentChange = (category: SalaryCategory, value: string) => {
     setBonusRulesState((prev) => {
       const current = prev[category];
@@ -438,5 +447,5 @@ export function useBonusActions(base: ReturnType<typeof useBonusSettings>) {
     });
   };
 
-  return { ...base, resetPlanForm, validateAndBuildBonusRulesPayload, handleSaveBonusRules, handleSaveFixedSalaries, handleSaveAttendancePenaltySettings, handleKpiMetricSlotChange, handleSaveKpiSettings, handleSavePlan, handleEditPlan, handleTogglePlan, handleDeletePlan, handleRuleModeChange, handleSimplePercentChange, handleTierChange, handleAddTier, handleRemoveTier };
+  return { ...base, resetPlanForm, validateAndBuildBonusRulesPayload, handleSaveBonusRules, handleSaveFixedSalaries, handleSaveAttendancePenaltySettings, handleKpiMetricSlotChange, handleSaveKpiSettings, handleSavePlan, handleEditPlan, handleTogglePlan, handleDeletePlan, handleRuleModeChange, handleTierBasisChange, handleSimplePercentChange, handleTierChange, handleAddTier, handleRemoveTier };
 }

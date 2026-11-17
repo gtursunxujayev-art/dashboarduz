@@ -40,10 +40,10 @@ export function AmoCallsSourcePanel() {
   };
 
   return (
-    <div className="mt-4 rounded-[12px] border border-gray-200 p-4" data-testid="amo-calls-source">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <div className="panel-inset mt-4" data-testid="amo-calls-source">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
+          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white text-blue-600 shadow-sm">
             <IconPhoneCall className="h-[18px] w-[18px]" stroke={1.6} aria-hidden="true" />
           </span>
           <div className="min-w-0">
@@ -55,7 +55,7 @@ export function AmoCallsSourcePanel() {
           </div>
         </div>
 
-        <div className="segmented flex-shrink-0 self-start" role="radiogroup" aria-label="Qo'ng'iroqlar manbasi">
+        <div className="segmented flex-shrink-0 self-start md:self-center" role="radiogroup" aria-label="Qo'ng'iroqlar manbasi">
           {SOURCE_OPTIONS.map((option) => {
             const active = status?.source === option.value;
             return (
@@ -79,25 +79,27 @@ export function AmoCallsSourcePanel() {
       </div>
 
       {status?.source === 'amocrm' && (
-        <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-          <div className="grid grid-cols-1 gap-3 text-xs text-gray-500 sm:grid-cols-3">
-            <p className="panel-inset p-3">AmoCRM dan olingan qo&apos;ng&apos;iroqlar: <span className="tabular mt-1 block text-sm font-semibold text-gray-900">{status.importedCalls.toLocaleString()}</span></p>
-            <p className="panel-inset p-3">Oxirgi sinxron: <span className="tabular mt-1 block text-sm font-medium text-gray-900">{formatDateTime(status.lastRunAt, { emptyText: '—' })}</span></p>
-            <p className="panel-inset p-3">Shu vaqtgacha yuklangan: <span className="tabular mt-1 block text-sm font-medium text-gray-900">{formatDateTime(status.syncedUntil, { emptyText: '—' })}</span></p>
+        <div className="mt-4 space-y-3 border-t border-gray-200 pt-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="grid min-w-0 flex-1 grid-cols-1 gap-3 text-xs text-gray-500 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-gray-200">
+              <p className="min-w-0 sm:pr-4">AmoCRM dan olingan qo&apos;ng&apos;iroqlar: <span className="tabular mt-1 block text-base font-semibold text-gray-900">{status.importedCalls.toLocaleString()}</span></p>
+              <p className="min-w-0 sm:px-4">Oxirgi sinxron: <span className="tabular mt-1 block text-sm font-medium text-gray-900">{formatDateTime(status.lastRunAt, { emptyText: '—' })}</span></p>
+              <p className="min-w-0 sm:px-4">Shu vaqtgacha yuklangan: <span className="tabular mt-1 block text-sm font-medium text-gray-900">{formatDateTime(status.syncedUntil, { emptyText: '—' })}</span></p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void runSync()}
+              disabled={syncNow.isLoading}
+              className="btn btn-secondary btn-sm flex-shrink-0 self-start sm:self-end"
+            >
+              <IconRefresh className={`h-3.5 w-3.5 ${syncNow.isLoading ? 'animate-spin' : ''}`} stroke={1.8} aria-hidden="true" />
+              {syncNow.isLoading ? 'Boshlanmoqda...' : 'Hozir sinxronlash'}
+            </button>
           </div>
           {!status.backfillComplete && (
             <p className="alert alert-warning text-xs">O&apos;tgan oydan beri bo&apos;lgan qo&apos;ng&apos;iroqlar yuklanmoqda — raqamlar hali to&apos;liq emas.</p>
           )}
           {status.lastError && <p className="alert alert-error text-xs">Oxirgi xatolik: {status.lastError}</p>}
-          <button
-            type="button"
-            onClick={() => void runSync()}
-            disabled={syncNow.isLoading}
-            className="btn btn-soft btn-sm"
-          >
-            <IconRefresh className={`h-3.5 w-3.5 ${syncNow.isLoading ? 'animate-spin' : ''}`} stroke={1.8} aria-hidden="true" />
-            {syncNow.isLoading ? 'Boshlanmoqda...' : 'Hozir sinxronlash'}
-          </button>
         </div>
       )}
 

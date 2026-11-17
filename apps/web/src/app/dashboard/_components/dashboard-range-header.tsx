@@ -1,5 +1,6 @@
 'use client';
 
+import { AmoLeadSnapshotRefresh } from '@/components/dashboard/amo-lead-snapshot-refresh';
 import MultiSelectDropdown from '@/components/dashboard/multi-select-dropdown';
 import { DateRangePill } from '@/components/ui/date-range-pill';
 import { formatRangeBounds, getRangeBounds, getRangeLabel } from '@/lib/date-range';
@@ -12,15 +13,15 @@ export function DashboardRangeHeader({ vm }: { vm: DashboardPageModel }) {
   const bounds = getRangeBounds(range, { dateFrom, dateTo });
 
   return (
-    <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:flex-wrap md:items-center md:justify-end">
-      <div ref={rangeTabsRef} className="inline-flex h-11 w-full gap-1 rounded-[12px] bg-white p-1 shadow md:w-auto" role="group" aria-label="Davr">
+    <div className="flex w-full flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+      <div ref={rangeTabsRef} className="inline-flex h-10 w-full gap-1 rounded-full bg-white p-1 shadow md:w-auto" role="group" aria-label="Davr">
         {PRESETS.map((option) => (
           <button
             key={option}
             type="button"
             onClick={() => setRange(option)}
             aria-pressed={range === option}
-            className={`h-9 flex-1 rounded-[9px] px-5 text-sm font-medium active:scale-[0.98] md:flex-none ${
+            className={`h-8 flex-1 rounded-full px-5 text-sm font-medium active:scale-[0.98] md:flex-none ${
               range === option ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
             }`}
           >
@@ -48,6 +49,7 @@ export function DashboardRangeHeader({ vm }: { vm: DashboardPageModel }) {
         </span>
       ) : null}
 
+      {!isFinanceOnly ? <AmoLeadSnapshotRefresh isAdmin={isAdmin} /> : null}
 
       {!isFinanceOnly && isAdmin && (
         <div className="w-full md:w-[240px]">

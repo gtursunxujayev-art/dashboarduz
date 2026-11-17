@@ -8,23 +8,11 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { roleNeedsManagerMapping } from '@dashboarduz/shared';
-import { IconKey, IconRefresh, IconUserCheck, IconUserOff, IconUserPlus, IconUsers } from '@tabler/icons-react';
-
-const availableRoles = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'OfflineDashboard', 'Finance', 'Tashkiliy'] as const;
-const roleLabels: Record<(typeof availableRoles)[number], string> = {
-  Admin: 'Admin',
-  Manager: 'Menejer',
-  TeamLeader: 'Team lider',
-  Agent: 'Agent',
-  OnlineAgent: 'Online agent',
-  OfflineAgent: 'Offline agent',
-  Dashboard: 'Dashboard',
-  OfflineDashboard: 'Offline dashboard',
-  Finance: 'Moliya',
-  Tashkiliy: 'Tashkiliy',
-};
-
-type UserRole = (typeof availableRoles)[number];
+import { IconPencil, IconRefresh, IconSearch, IconUserCheck, IconUserOff, IconUserPlus, IconUsers } from '@tabler/icons-react';
+import { UserCreateSheet } from './_components/user-create-sheet';
+import { UserEditSheet } from './_components/user-edit-sheet';
+import { availableRoles, roleLabels } from './_components/user-roles';
+import type { UserRole } from './_components/user-roles';
 
 export default function UsersPage() {
   const { user: currentUser } = useAuth();
@@ -66,6 +54,12 @@ export default function UsersPage() {
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
+
+  // UI-only: which sheet is open and how the directory is filtered.
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
+  const [search, setSearch] = useState('');
 
   const amocrmManagers = useMemo(() => amocrmManagersQuery.data || [], [amocrmManagersQuery.data]);
   const utelManagers = useMemo(() => utelManagersQuery.data || [], [utelManagersQuery.data]);
@@ -229,23 +223,88 @@ export default function UsersPage() {
 
   const users = (usersQuery.data || []) as any[];
 
+  const roleCounts = new Map<string, number>();
+  for (const user of users) {
+    for (const role of (Array.isArray(user.roles) ? user.roles : []) as string[]) {
+      roleCounts.set(role, (roleCounts.get(role) || 0) + 1);
+    }
+  }
+  const roleFilters = availableRoles.filter((role) => roleCounts.has(role));
+  const searchQuery = search.trim().toLowerCase();
+  const visibleUsers = users.filter((user) => {
+    if (roleFilter !== 'all' && !(Array.isArray(user.roles) && user.roles.includes(roleFilter))) {
+      return false;
+    }
+    if (!searchQuery) {
+      return true;
+    }
+    return [user.name, user.username, user.phone, user.id]
+      .some((value) => String(value || '').toLowerCase().includes(searchQuery));
+  });
+  const editingUser = editingUserId ? users.find((user) => user.id === editingUserId) : null;
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Foydalanuvchilar"
         description="Foydalanuvchi yarating, agentni AmoCRM/UTeL menejeriga bog'lang va login/parolni boshqaring."
         actions={
-          <button
-            type="button"
-            onClick={() => telegramRecipientsQuery.refetch()}
-            disabled={telegramRecipientsQuery.isFetching}
-            className="btn btn-secondary"
-          >
-            <IconRefresh className={`h-4 w-4 ${telegramRecipientsQuery.isFetching ? 'animate-spin' : ''}`} stroke={1.8} />
-            {telegramRecipientsQuery.isFetching ? 'Yangilanmoqda...' : "Telegram ro'yxatini yangilash"}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => telegramRecipientsQuery.refetch()}
+              disabled={telegramRecipientsQuery.isFetching}
+              className="btn btn-secondary"
+            >
+              <IconRefresh className={`h-4 w-4 ${telegramRecipientsQuery.isFetching ? 'animate-spin' : ''}`} stroke={1.8} />
+              {telegramRecipientsQuery.isFetching ? 'Yangilanmoqda...' : "Telegram ro'yxatini yangilash"}
+            </button>
+            <button type="button" onClick={() => setCreateOpen(true)} className="btn btn-primary">
+              <IconUserPlus className="h-4 w-4" stroke={1.8} />
+              Foydalanuvchi qo&apos;shish
+            </button>
+          </>
         }
-      />
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="relative w-full lg:max-w-xs">
+            <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Ism, login yoki telefon bo'yicha qidirish"
+              aria-label="Ism, login yoki telefon bo'yicha qidirish"
+              className="field rounded-full pl-10 shadow-sm"
+            />
+          </div>
+          {roleFilters.length > 0 && (
+            <div className="-mx-1 min-w-0 overflow-x-auto px-1 py-1">
+              <div className="segmented" role="group" aria-label="Rol">
+                <button
+                  type="button"
+                  onClick={() => setRoleFilter('all')}
+                  aria-pressed={roleFilter === 'all'}
+                  className={`segmented-item ${roleFilter === 'all' ? 'segmented-item-active' : ''}`}
+                >
+                  Hammasi <span className="tabular ml-1 opacity-70">{users.length}</span>
+                </button>
+                {roleFilters.map((role) => (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => setRoleFilter(role)}
+                    aria-pressed={roleFilter === role}
+                    className={`segmented-item ${roleFilter === role ? 'segmented-item-active' : ''}`}
+                  >
+                    {roleLabels[role]} <span className="tabular ml-1 opacity-70">{roleCounts.get(role)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </PageHeader>
 
       {(error || success || amocrmManagersQuery.error || utelManagersQuery.error || telegramRecipientsQuery.error || createdCredentials) && (
         <div className="space-y-3">
@@ -274,145 +333,76 @@ export default function UsersPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="panel 2xl:sticky 2xl:top-6 2xl:order-2">
-          <div className="panel-header">
-            <div className="flex items-center gap-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
-                <IconUserPlus className="h-[18px] w-[18px]" stroke={1.8} />
-              </span>
-              <h2 className="section-title">Yangi foydalanuvchi</h2>
-            </div>
+      <section className="panel min-w-0 overflow-hidden">
+        <div className="panel-header pb-4 sm:pb-4">
+          <div className="flex items-center gap-2">
+            <h2 className="section-title">Ish maydoni foydalanuvchilari</h2>
+            {users.length > 0 && <span className="badge badge-neutral tabular">{users.length}</span>}
           </div>
-          <div className="panel-body grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-1">
-            <input
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-              placeholder="Foydalanuvchi ismi (ixtiyoriy)"
-              className="field min-w-0"
-            />
-            <input
-              value={newPhone}
-              onChange={(event) => setNewPhone(event.target.value)}
-              placeholder="Telefon raqam (ixtiyoriy)"
-              className="field min-w-0"
-            />
-            <select
-              value={newRole}
-              onChange={(event) => setNewRole(event.target.value as UserRole)}
-              className="field min-w-0"
-            >
-              {availableRoles.map((role) => (
-                <option key={role} value={role}>
-                  {roleLabels[role]}
-                </option>
-              ))}
-            </select>
-            <select
-              value={newAmoManagerId}
-              onChange={(event) => setNewAmoManagerId(event.target.value)}
-              disabled={!roleNeedsManagerMapping(newRole)}
-              className="field min-w-0"
-            >
-              <option value="">{roleNeedsManagerMapping(newRole) ? 'AmoCRM menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
-              {amocrmManagers.map((manager: any) => (
-                <option key={manager.id} value={manager.id}>
-                  {manager.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={newUtelManagerId}
-              onChange={(event) => setNewUtelManagerId(event.target.value)}
-              disabled={!roleNeedsManagerMapping(newRole)}
-              className="field min-w-0"
-            >
-              <option value="">{roleNeedsManagerMapping(newRole) ? 'UTeL menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
-              {utelManagers.map((manager: any) => (
-                <option key={manager.id} value={manager.id}>
-                  {manager.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={newTelegramChatId}
-              onChange={(event) => setNewTelegramChatId(event.target.value)}
-              className="field min-w-0"
-            >
-              <option value="">Telegram (ixtiyoriy)</option>
-              {telegramRecipients.map((recipient: any) => (
-                <option key={recipient.id} value={recipient.id}>
-                  {recipient.name}{recipient.username ? ` (@${recipient.username})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex justify-end border-t border-gray-100 px-5 py-4 sm:px-6">
-            <button
-              type="button"
-              onClick={handleCreateUser}
-              disabled={createUser.isLoading}
-              className="btn btn-primary w-full sm:w-auto 2xl:w-full"
-            >
-              <IconUserPlus className="h-4 w-4" stroke={1.8} />
-              {createUser.isLoading ? 'Yaratilmoqda...' : "Foydalanuvchi qo'shish"}
-            </button>
-          </div>
-        </section>
+        </div>
 
-        <section className="panel min-w-0 2xl:order-1">
-          <div className="panel-header">
-            <div className="flex items-center gap-2">
-              <h2 className="section-title">Ish maydoni foydalanuvchilari</h2>
-              {users.length > 0 && <span className="badge badge-neutral tabular">{users.length}</span>}
-            </div>
-          </div>
-
-          <div className="p-2 pt-3 sm:p-3 sm:pt-4">
-            {usersQuery.isLoading ? (
-              <LoadingBlock message="Foydalanuvchilar yuklanmoqda..." className="m-2" />
-            ) : users.length ? (
-              <ul className="divide-y divide-gray-100">
-                {users.map((user) => {
-                  const resetState = generatedResetPassword;
-                  const generatedPasswordForRow =
-                    resetState && resetState.userId === user.id ? resetState.password : null;
+        {usersQuery.isLoading ? (
+          <LoadingBlock message="Foydalanuvchilar yuklanmoqda..." className="mx-5 mb-5 sm:mx-6 sm:mb-6" />
+        ) : visibleUsers.length ? (
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="pl-5 sm:pl-6">Foydalanuvchi</th>
+                  <th>Rol</th>
+                  <th>Oxirgi kirish</th>
+                  <th>Holat</th>
+                  <th className="pr-5 text-right sm:pr-6"><span className="sr-only">Amal</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleUsers.map((user) => {
                   const userRoles: string[] = Array.isArray(user.roles) ? user.roles : [];
+                  const contact = [user.username, user.phone].filter(Boolean).join(' · ');
 
                   return (
-                    <li key={user.id} className="space-y-4 px-3 py-5 first:pt-2">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div className="flex min-w-0 items-center gap-3">
+                    <tr key={user.id}>
+                      <td className="pl-5 sm:pl-6">
+                        <div className="flex min-w-[220px] items-center gap-3">
                           <UserAvatar name={user.name || user.username || '?'} />
                           <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate font-medium text-gray-900">{user.name || user.username || user.id}</p>
-                              {userRoles.map((role) => (
-                                <span key={role} className="badge badge-blue">{roleLabels[role as UserRole] || role}</span>
-                              ))}
-                            </div>
-                            <p className="mt-0.5 truncate text-xs text-gray-500">ID: {user.id}</p>
+                            <p className="truncate font-medium text-gray-900">{user.name || user.username || user.id}</p>
+                            {contact && <p className="tabular truncate text-xs text-gray-500">{contact}</p>}
+                            <p className="truncate text-[11px] text-gray-400">ID: {user.id}</p>
                           </div>
                         </div>
-
-                        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-                          <div>
-                            <p className="text-xs text-gray-500">Oxirgi kirish</p>
-                            <p className="tabular mt-0.5 text-sm text-gray-700">
-                              {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Hech qachon'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Holat</p>
-                            <span className={`badge mt-0.5 ${user.isActive ? 'badge-green' : 'badge-amber'}`}>
-                              {user.isActive ? 'Faol' : 'Nofaol'}
-                            </span>
-                          </div>
+                      </td>
+                      <td>
+                        <div className="flex flex-wrap gap-1.5">
+                          {userRoles.map((role) => (
+                            <span key={role} className="badge badge-blue">{roleLabels[role as UserRole] || role}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="tabular whitespace-nowrap text-gray-600">
+                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Hech qachon'}
+                      </td>
+                      <td>
+                        <span className={`badge ${user.isActive ? 'badge-green' : 'badge-amber'}`}>
+                          <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${user.isActive ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          {user.isActive ? 'Faol' : 'Nofaol'}
+                        </span>
+                      </td>
+                      <td className="pr-5 sm:pr-6">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditingUserId(user.id)}
+                            className="btn btn-soft btn-sm"
+                          >
+                            <IconPencil className="h-4 w-4" stroke={1.8} />
+                            Tahrirlash
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleToggleActive(user.id, !user.isActive)}
                             disabled={!isAdmin || setActiveMutation.isLoading}
-                            className={`btn btn-sm ${user.isActive ? 'btn-secondary' : 'btn-soft'}`}
+                            className="btn btn-ghost btn-sm"
                           >
                             {user.isActive ? <IconUserOff className="h-4 w-4" stroke={1.8} /> : <IconUserCheck className="h-4 w-4" stroke={1.8} />}
                             {!isAdmin
@@ -424,170 +414,76 @@ export default function UsersPage() {
                                 : 'Faollashtirish'}
                           </button>
                         </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                        <div className="panel-inset space-y-2.5">
-                          <p className="text-xs font-medium text-gray-500">Foydalanuvchi</p>
-                          <input
-                            value={nameDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setNameDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Foydalanuvchi ismi"
-                            className="field"
-                          />
-                          <input
-                            value={phoneDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setPhoneDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Telefon raqam"
-                            className="field"
-                          />
-                          <div className="flex justify-end">
-                            <button
-                              type="button"
-                              onClick={() => handleNameSave(user.id)}
-                              disabled={updateName.isLoading}
-                              className="btn btn-secondary btn-sm"
-                            >
-                              {updateName.isLoading ? 'Saqlanmoqda...' : "Ism/telefonni saqlash"}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="panel-inset space-y-2.5">
-                          <p className="text-xs font-medium text-gray-500">Login/Parol</p>
-                          <input
-                            value={loginDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setLoginDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Login"
-                            className="field"
-                          />
-                          <input
-                            type="password"
-                            value={passwordDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setPasswordDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Yangi parol"
-                            className="field"
-                          />
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleGeneratePassword(user.id)}
-                              className="btn btn-soft btn-sm"
-                            >
-                              <IconKey className="h-4 w-4" stroke={1.8} />
-                              Yaratish
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleCredentialsSave(user.id)}
-                              className="btn btn-secondary btn-sm"
-                            >
-                              Saqlash
-                            </button>
-                          </div>
-                          {generatedPasswordForRow && (
-                            <p className="alert alert-success px-3 py-2 text-xs">
-                              Yangi yaratilgan parol: <strong>{generatedPasswordForRow}</strong>
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="panel-inset space-y-2.5 lg:col-span-2">
-                          <p className="text-xs font-medium text-gray-500">Rol + CRM/UTeL/Telegram</p>
-                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[150px_1fr_1fr_1fr_auto]">
-                            <select
-                              value={roleDrafts[user.id] || 'Agent'}
-                              onChange={(event) =>
-                                setRoleDrafts((prev) => ({ ...prev, [user.id]: event.target.value as UserRole }))
-                              }
-                              className="field min-w-0"
-                            >
-                              {availableRoles.map((role) => (
-                                <option key={role} value={role}>
-                                  {roleLabels[role]}
-                                </option>
-                              ))}
-                            </select>
-                            <select
-                              value={managerDrafts[user.id] || ''}
-                              onChange={(event) =>
-                                setManagerDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                              }
-                              disabled={!roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')}
-                              className="field min-w-0"
-                            >
-                              <option value="">
-                                {roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')
-                                  ? 'AmoCRM menejerini tanlang'
-                                  : 'Bu rol uchun shart emas'}
-                              </option>
-                              {amocrmManagers.map((manager: any) => (
-                                <option key={manager.id} value={manager.id}>
-                                  {manager.name}
-                                </option>
-                              ))}
-                            </select>
-                            <select
-                              value={utelDrafts[user.id] || ''}
-                              onChange={(event) =>
-                                setUtelDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                              }
-                              disabled={!roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')}
-                              className="field min-w-0"
-                            >
-                              <option value="">
-                                {roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')
-                                  ? 'UTeL menejerini tanlang'
-                                  : 'Bu rol uchun shart emas'}
-                              </option>
-                              {utelManagers.map((manager: any) => (
-                                <option key={manager.id} value={manager.id}>
-                                  {manager.name}
-                                </option>
-                              ))}
-                            </select>
-                            <select
-                              value={telegramDrafts[user.id] || ''}
-                              onChange={(event) =>
-                                setTelegramDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                              }
-                              className="field min-w-0"
-                            >
-                              <option value="">Telegram (ixtiyoriy)</option>
-                              {telegramRecipients.map((recipient: any) => (
-                                <option key={recipient.id} value={recipient.id}>
-                                  {recipient.name}{recipient.username ? ` (@${recipient.username})` : ''}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => handleRoleSave(user.id)}
-                              className="btn btn-secondary sm:col-span-2 xl:col-span-1"
-                            >
-                              Saqlash
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </li>
+                      </td>
+                    </tr>
                   );
                 })}
-              </ul>
-            ) : (
-              <EmptyState icon={IconUsers} title="Bu ish maydonida foydalanuvchi topilmadi." className="m-2" />
-            )}
+              </tbody>
+            </table>
           </div>
-        </section>
-      </div>
+        ) : (
+          <EmptyState icon={IconUsers} title="Bu ish maydonida foydalanuvchi topilmadi." className="mx-5 mb-5 sm:mx-6 sm:mb-6" />
+        )}
+      </section>
+
+      {createOpen && (
+        <UserCreateSheet
+          onClose={() => setCreateOpen(false)}
+          onSubmit={handleCreateUser}
+          isSubmitting={createUser.isLoading}
+          error={error}
+          createdCredentials={createdCredentials}
+          newName={newName}
+          setNewName={setNewName}
+          newPhone={newPhone}
+          setNewPhone={setNewPhone}
+          newRole={newRole}
+          setNewRole={setNewRole}
+          newAmoManagerId={newAmoManagerId}
+          setNewAmoManagerId={setNewAmoManagerId}
+          newUtelManagerId={newUtelManagerId}
+          setNewUtelManagerId={setNewUtelManagerId}
+          newTelegramChatId={newTelegramChatId}
+          setNewTelegramChatId={setNewTelegramChatId}
+          amocrmManagers={amocrmManagers}
+          utelManagers={utelManagers}
+          telegramRecipients={telegramRecipients}
+        />
+      )}
+
+      {editingUser && (
+        <UserEditSheet
+          user={editingUser}
+          onClose={() => setEditingUserId(null)}
+          error={error}
+          success={success}
+          generatedPassword={generatedResetPassword && generatedResetPassword.userId === editingUser.id ? generatedResetPassword.password : null}
+          nameDrafts={nameDrafts}
+          setNameDrafts={setNameDrafts}
+          phoneDrafts={phoneDrafts}
+          setPhoneDrafts={setPhoneDrafts}
+          loginDrafts={loginDrafts}
+          setLoginDrafts={setLoginDrafts}
+          passwordDrafts={passwordDrafts}
+          setPasswordDrafts={setPasswordDrafts}
+          roleDrafts={roleDrafts}
+          setRoleDrafts={setRoleDrafts}
+          managerDrafts={managerDrafts}
+          setManagerDrafts={setManagerDrafts}
+          utelDrafts={utelDrafts}
+          setUtelDrafts={setUtelDrafts}
+          telegramDrafts={telegramDrafts}
+          setTelegramDrafts={setTelegramDrafts}
+          amocrmManagers={amocrmManagers}
+          utelManagers={utelManagers}
+          telegramRecipients={telegramRecipients}
+          isSavingName={updateName.isLoading}
+          onSaveName={handleNameSave}
+          onGeneratePassword={handleGeneratePassword}
+          onSaveCredentials={handleCredentialsSave}
+          onSaveRole={handleRoleSave}
+        />
+      )}
     </div>
   );
 }

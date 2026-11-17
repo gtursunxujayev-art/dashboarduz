@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
   IconAlertCircle,
+  IconCalendar,
   IconCash,
   IconClock,
   IconDownload,
@@ -13,6 +14,7 @@ import {
 } from '@tabler/icons-react';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { FilterPill, pillControlClass } from '@/components/dashboard/filter-pill';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatTile } from '@/components/ui/stat-tile';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -184,97 +186,88 @@ export default function ReportsPage() {
           </>
         )}
       >
-        <div className="max-w-full overflow-x-auto">
-          <div className="segmented">
+        <div className="space-y-4">
+          <div className="tabs" role="tablist" aria-label="Hisobotlar">
             {visibleTabs.map((option) => (
               <button
                 key={option}
                 type="button"
+                role="tab"
                 onClick={() => setTab(option)}
-                aria-pressed={tab === option}
-                className={`segmented-item ${tab === option ? 'segmented-item-active' : ''}`}
+                aria-selected={tab === option}
+                className={`tab ${tab === option ? 'tab-active' : ''}`}
               >
                 {TAB_LABELS[option]}
               </button>
             ))}
           </div>
-        </div>
-      </PageHeader>
 
-      {exportError && <p className="alert alert-error">{exportError}</p>}
-
-      <div className="panel p-3 sm:p-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:flex xl:flex-wrap xl:items-end">
-          <label className="block xl:w-44">
-            <span className="field-label">{tab === 'debtors' ? "Birinchi to'lov (dan)" : "So'rov sanasi (dan)"}</span>
-            <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="field" />
-          </label>
-          <label className="block xl:w-44">
-            <span className="field-label">gacha</span>
-            <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="field" />
-          </label>
-          <label className="block xl:w-48">
-            <span className="field-label">Sotuvchi</span>
-            <select value={managerUserId} onChange={(event) => setManagerUserId(event.target.value)} className="field">
-              <option value="">Barchasi</option>
-              {optionsQuery.data?.managers.map((manager) => (
-                <option key={manager.id} value={manager.id}>{manager.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block xl:w-52">
-            <span className="field-label">Kurs</span>
-            <select
-              value={courseId}
-              onChange={(event) => {
-                setCourseId(event.target.value);
-                setTariffId('');
-              }}
-              className="field"
-            >
-              <option value="">Barcha kurslar</option>
-              {optionsQuery.data?.courses.map((course) => (
-                <option key={course.id} value={course.id}>{course.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block xl:w-44">
-            <span className="field-label">Tarif</span>
-            <select
-              value={tariffId}
-              onChange={(event) => setTariffId(event.target.value)}
-              disabled={!courseId}
-              className="field"
-            >
-              <option value="">Barcha tariflar</option>
-              {tariffOptions.map((tariff) => (
-                <option key={tariff.id} value={tariff.id}>{tariff.name}</option>
-              ))}
-            </select>
-          </label>
-          {tab !== 'debtors' && (
-            <label className="block xl:w-40">
-              <span className="field-label">Holat</span>
-              <select value={status} onChange={(event) => setStatus(event.target.value as AdjustmentStatusFilter)} className="field">
-                <option value="">Hammasi</option>
-                <option value="pending">Kutilmoqda</option>
-                <option value="approved">Tasdiqlangan</option>
-                <option value="rejected">Rad etilgan</option>
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterPill icon={IconCalendar} label={tab === 'debtors' ? "Birinchi to'lov (dan)" : "So'rov sanasi (dan)"}>
+              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className={`${pillControlClass} w-[9.5rem] flex-none`} />
+            </FilterPill>
+            <FilterPill label="gacha">
+              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className={`${pillControlClass} w-[9.5rem] flex-none`} />
+            </FilterPill>
+            <FilterPill label="Sotuvchi">
+              <select value={managerUserId} onChange={(event) => setManagerUserId(event.target.value)} className={`${pillControlClass} max-w-[12rem]`}>
+                <option value="">Barchasi</option>
+                {optionsQuery.data?.managers.map((manager) => (
+                  <option key={manager.id} value={manager.id}>{manager.label}</option>
+                ))}
               </select>
-            </label>
-          )}
-          <div className="flex items-end">
+            </FilterPill>
+            <FilterPill label="Kurs">
+              <select
+                value={courseId}
+                onChange={(event) => {
+                  setCourseId(event.target.value);
+                  setTariffId('');
+                }}
+                className={`${pillControlClass} max-w-[14rem]`}
+              >
+                <option value="">Barcha kurslar</option>
+                {optionsQuery.data?.courses.map((course) => (
+                  <option key={course.id} value={course.id}>{course.name}</option>
+                ))}
+              </select>
+            </FilterPill>
+            <FilterPill label="Tarif" className={courseId ? '' : 'opacity-70'}>
+              <select
+                value={tariffId}
+                onChange={(event) => setTariffId(event.target.value)}
+                disabled={!courseId}
+                className={`${pillControlClass} max-w-[12rem]`}
+              >
+                <option value="">Barcha tariflar</option>
+                {tariffOptions.map((tariff) => (
+                  <option key={tariff.id} value={tariff.id}>{tariff.name}</option>
+                ))}
+              </select>
+            </FilterPill>
+            {tab !== 'debtors' && (
+              <FilterPill label="Holat">
+                <select value={status} onChange={(event) => setStatus(event.target.value as AdjustmentStatusFilter)} className={`${pillControlClass} max-w-[10rem]`}>
+                  <option value="">Hammasi</option>
+                  <option value="pending">Kutilmoqda</option>
+                  <option value="approved">Tasdiqlangan</option>
+                  <option value="rejected">Rad etilgan</option>
+                </select>
+              </FilterPill>
+            )}
             <button
               type="button"
               onClick={clearFilters}
-              className="btn btn-ghost w-full xl:w-auto"
+              className="btn btn-ghost"
             >
               <IconX className="h-4 w-4" stroke={1.8} aria-hidden="true" />
               Tozalash
             </button>
           </div>
         </div>
-      </div>
+      </PageHeader>
+
+      {exportError && <p className="alert alert-error">{exportError}</p>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -287,10 +280,12 @@ export default function ReportsPage() {
         ))}
       </div>
 
-      <div className="panel">
-        <div className="panel-header">
-          <h2 className="section-title">{TAB_LABELS[tab]}</h2>
-          <span className="badge badge-neutral tabular">{activeRows.length}</span>
+      <section className="panel" role="tabpanel" aria-label={TAB_LABELS[tab]}>
+        <div className="panel-header pb-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="section-title">{TAB_LABELS[tab]}</h2>
+            <span className="badge badge-neutral tabular">{activeRows.length}</span>
+          </div>
         </div>
         <div className="p-2 sm:p-3">
           {activeQuery.error ? (
@@ -403,7 +398,7 @@ export default function ReportsPage() {
             </div>
           )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

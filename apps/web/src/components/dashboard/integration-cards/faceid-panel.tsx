@@ -55,12 +55,12 @@ export function FaceIdPanel({ vm }: { vm: IntegrationCardModel }) {
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="tabular space-y-0.5 rounded-[10px] border border-gray-200 px-3 py-2.5 text-xs text-gray-600">
+                <div className="tabular space-y-0.5 rounded-[12px] border border-gray-200 px-3 py-2.5 text-xs text-gray-600">
                   <p>Kutilayotgan webhook: {Number(faceIdStatus?.health?.webhookPending || 0)}</p>
                   <p>24 soat xatolik: {Number(faceIdStatus?.health?.webhookFailedLast24h || 0)}</p>
                   <p>24 soat processed: {Number(faceIdStatus?.health?.webhookProcessedLast24h || 0)}</p>
                 </div>
-                <div className="tabular space-y-0.5 rounded-[10px] border border-gray-200 px-3 py-2.5 text-xs text-gray-600">
+                <div className="tabular space-y-0.5 rounded-[12px] border border-gray-200 px-3 py-2.5 text-xs text-gray-600">
                   <p>7 kun eventlar: {Number(faceIdStatus?.health?.eventsLast7d || 0)}</p>
                   <p>7 kun matched: {Number(faceIdStatus?.health?.matchedEventsLast7d || 0)}</p>
                   <p>7 kun unmatched: {Number(faceIdStatus?.health?.unmatchedEventsLast7d || 0)}</p>

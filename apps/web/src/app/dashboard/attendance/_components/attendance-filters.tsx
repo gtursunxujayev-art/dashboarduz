@@ -1,6 +1,7 @@
 'use client';
 
 import { IconAlertTriangle, IconCalendar, IconFileSpreadsheet, IconRefresh, IconSearch } from '@tabler/icons-react';
+import { FilterPill, pillControlClass } from '@/components/dashboard/filter-pill';
 import type { AttendancePageModel } from './use-attendance-page';
 
 /** Page-level actions (recompute, period export), rendered in the PageHeader. */
@@ -33,67 +34,61 @@ export function AttendanceHeaderActions({ vm }: { vm: AttendancePageModel }) {
   );
 }
 
+/** The period, search and anomaly filters, rendered as one pill toolbar under the PageHeader title. */
 export function AttendanceFilters({ vm }: { vm: AttendancePageModel }) {
-  const { anomaliesOnly, dateFrom, dateTo, exportError, exportSuccess, query, recomputeMutation, setAnomaliesOnly, setDateFrom, setDateTo, setQuery } = vm;
+  const { anomaliesOnly, dateFrom, dateTo, query, setAnomaliesOnly, setDateFrom, setDateTo, setQuery } = vm;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <FilterPill icon={IconCalendar} label="Boshlanish">
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(event) => setDateFrom(event.target.value)}
+          className={`${pillControlClass} w-[9.5rem] flex-none`}
+        />
+      </FilterPill>
+      <FilterPill label="Tugash">
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(event) => setDateTo(event.target.value)}
+          className={`${pillControlClass} w-[9.5rem] flex-none`}
+        />
+      </FilterPill>
+      <FilterPill icon={IconSearch} label="Qidiruv" className="w-full sm:w-auto sm:min-w-[18rem] sm:flex-1 lg:max-w-md">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Ism, username yoki telefon"
+          className={pillControlClass}
+        />
+      </FilterPill>
+      <label
+        className={`inline-flex h-10 flex-none cursor-pointer items-center gap-2 rounded-full px-4 text-sm font-medium shadow ${
+          anomaliesOnly ? 'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200' : 'bg-white text-gray-700 hover:bg-gray-50'
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={anomaliesOnly}
+          onChange={(event) => setAnomaliesOnly(event.target.checked)}
+          className="checkbox"
+        />
+        <IconAlertTriangle className="h-4 w-4" stroke={1.8} />
+        Faqat anomaliya
+      </label>
+    </div>
+  );
+}
+
+/** Messages from the recompute and export actions. */
+export function AttendanceAlerts({ vm }: { vm: AttendancePageModel }) {
+  const { exportError, exportSuccess, recomputeMutation } = vm;
+  if (!recomputeMutation.error && !exportError && !exportSuccess) return null;
 
   return (
     <div className="space-y-3">
-      <div className="panel p-3 sm:p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-none">
-            <div className="lg:w-44">
-              <label className="field-label">Boshlanish</label>
-              <div className="relative">
-                <IconCalendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(event) => setDateFrom(event.target.value)}
-                  className="field pl-9"
-                />
-              </div>
-            </div>
-            <div className="lg:w-44">
-              <label className="field-label">Tugash</label>
-              <div className="relative">
-                <IconCalendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(event) => setDateTo(event.target.value)}
-                  className="field pl-9"
-                />
-              </div>
-            </div>
-          </div>
-          <div className="min-w-0 flex-1">
-            <label className="field-label">Qidiruv</label>
-            <div className="relative">
-              <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Ism, username yoki telefon"
-                className="field pl-9"
-              />
-            </div>
-          </div>
-          <label
-            className={`inline-flex h-10 flex-none cursor-pointer items-center gap-2 rounded-[10px] border px-3 text-sm font-medium ${
-              anomaliesOnly ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            <input
-              type="checkbox"
-              checked={anomaliesOnly}
-              onChange={(event) => setAnomaliesOnly(event.target.checked)}
-              className="checkbox"
-            />
-            <IconAlertTriangle className="h-4 w-4" stroke={1.8} />
-            Faqat anomaliya
-          </label>
-        </div>
-      </div>
       {recomputeMutation.error && (
         <p className="alert alert-error">
           {recomputeMutation.error.message}

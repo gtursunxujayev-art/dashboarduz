@@ -3,10 +3,9 @@
 import type { ReactNode } from 'react';
 import {
   IconCalendarEvent,
+  IconCheck,
   IconCreditCard,
   IconDeviceFloppy,
-  IconDownload,
-  IconFileSpreadsheet,
   IconInfoCircle,
   IconReceipt2,
   IconSchool,
@@ -18,6 +17,7 @@ import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatAmountDigits } from '@/lib/format';
 import { groupDigits, normalizeDigits, sanitizeTelegramUsername } from '@dashboarduz/shared';
 import type { FieldErrors, IncomeTypeChoice } from './income-helpers';
+import { IncomeEntryAside } from './income-entry-aside';
 import type { IncomePageModel } from './use-income-page';
 
 /** Kit `field` plus a red outline when the field has a validation error. */
@@ -30,37 +30,92 @@ function Required() {
   return <span className="text-red-500">*</span>;
 }
 
-/** One titled block of the form: heading on the left on wide screens, fields on the right. */
-function FormSection({ title, icon: SectionIcon, children }: { title: ReactNode; icon: Icon; children: ReactNode }) {
+function hasError(fieldErrors: FieldErrors, fields: string[]): boolean {
+  return fields.some((field) => Boolean(fieldErrors[field]));
+}
+
+/**
+ * One step of the guided entry: a numbered marker on a thin vertical line, the step title,
+ * then its fields. The marker turns into a check once the step's required fields are filled.
+ */
+function FormStep({
+  index,
+  title,
+  icon: StepIcon,
+  done,
+  invalid,
+  last = false,
+  children,
+}: {
+  index: number;
+  title: ReactNode;
+  icon: Icon;
+  done: boolean;
+  invalid: boolean;
+  last?: boolean;
+  children: ReactNode;
+}) {
+  const markerTone = invalid
+    ? 'bg-red-50 text-red-600 ring-1 ring-inset ring-red-200'
+    : done
+      ? 'bg-blue-600 text-white shadow-[0_4px_10px_-4px_rgb(34_72_226/0.6)]'
+      : 'bg-white text-gray-600 ring-1 ring-inset ring-gray-200';
+
   return (
-    <section className="grid grid-cols-1 gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-8">
-      <div className="flex items-center gap-2.5 lg:items-start lg:pt-1">
-        <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px] bg-gray-100 text-gray-600">
-          <SectionIcon className="h-4 w-4" stroke={1.8} />
-        </span>
-        <h3 className="section-title lg:pt-1">{title}</h3>
+    <section className="relative grid grid-cols-[32px_minmax(0,1fr)] gap-x-4 sm:gap-x-5">
+      {!last && (
+        <span
+          aria-hidden="true"
+          className={`absolute bottom-1 left-[15.5px] top-10 w-px ${done ? 'bg-blue-600/40' : 'bg-gray-200'}`}
+        />
+      )}
+      <span className={`tabular relative flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-semibold transition-colors ${markerTone}`}>
+        {done && !invalid ? <IconCheck className="h-4 w-4" stroke={2} /> : index}
+      </span>
+      <div className={`min-w-0 space-y-4 ${last ? '' : 'pb-8'}`}>
+        <div className="flex min-h-8 items-center gap-2">
+          <h3 className="section-title">{title}</h3>
+          <StepIcon className="h-4 w-4 text-gray-400" stroke={1.8} />
+        </div>
+        {children}
       </div>
-      <div className="min-w-0 space-y-4">{children}</div>
     </section>
   );
 }
 
 export function IncomeEntryForm({ vm }: { vm: IncomePageModel }) {
-  const { canUseRepayment, clearFieldError, courseId, coursePriceInput, createIncomeMutation, customerInputWrapperRef, customerName, customerNumber, customerSuggestions, deadline, debtOptionsForCustomer, debtSourceIncomeId, entryDate, error, exportDateFrom, exportDateTo, exportError, exportIncomesMutation, exportSuccess, fieldErrors, formOptionsQuery, groupedCourseOptions, handleDownloadIncomesByCustomRange, handleSubmit, isAdmin, isCustomerSuggestionsOpen, isDebtLookupPending, isExistingCustomer, managerUserId, managers, paymentInput, remainingDebtAmount, selectedCustomer, setCourseId, setCoursePriceInput, setCustomerName, setCustomerNumber, setDeadline, setDebtSourceIncomeId, setEntryDate, setExportDateFrom, setExportDateTo, setIsCustomerSuggestionsOpen, setManagerUserId, setPaymentInput, setSkipTelegramNotification, setSubTariffId, setTariffId, setTelegramUsername, setType, skipTelegramNotification, sourceDebtAmount, subTariffId, subTariffOptions, success, tariffId, tariffOptions, telegramUsername, type } = vm;
+  const { canUseRepayment, clearFieldError, courseId, coursePriceInput, createIncomeMutation, customerInputWrapperRef, customerName, customerNumber, customerSuggestions, deadline, debtOptionsForCustomer, debtSourceIncomeId, entryDate, error, fieldErrors, formOptionsQuery, groupedCourseOptions, handleSubmit, isAdmin, isCustomerSuggestionsOpen, isDebtLookupPending, isExistingCustomer, managerUserId, managers, paymentInput, remainingDebtAmount, selectedCustomer, setCourseId, setCoursePriceInput, setCustomerName, setCustomerNumber, setDeadline, setDebtSourceIncomeId, setEntryDate, setIsCustomerSuggestionsOpen, setManagerUserId, setPaymentInput, setSkipTelegramNotification, setSubTariffId, setTariffId, setTelegramUsername, setType, skipTelegramNotification, sourceDebtAmount, subTariffId, subTariffOptions, success, tariffId, tariffOptions, telegramUsername, type } = vm;
+
+  // UI-only progress markers for the step rail; validation itself stays in the page model.
+  const hasDetailsStep = type === 'repayment' || type === 'new_sale';
+  const stepDone = {
+    dateAndManager: Boolean(entryDate && managerUserId),
+    customer: Boolean(customerNumber && (customerName || isExistingCustomer)),
+    payment: Boolean(type),
+    details: type === 'repayment'
+      ? Boolean(debtSourceIncomeId && paymentInput)
+      : Boolean(courseId && tariffId && (subTariffOptions.length === 0 || subTariffId) && coursePriceInput),
+  };
 
   return (
     <div className="space-y-4">
       {error && <p className="alert alert-error">{error}</p>}
       {success && <p className="alert alert-success">{success}</p>}
 
-      <div className={`grid grid-cols-1 items-start gap-6 ${isAdmin ? 'xl:grid-cols-[minmax(0,1fr)_300px]' : ''}`}>
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <form onSubmit={handleSubmit} className="panel overflow-hidden">
-          <div className="panel-header pb-4">
+          <div className="panel-header pb-5">
             <h2 className="section-title">Tushum kiritish formasi</h2>
           </div>
 
-          <div className="divide-y divide-gray-100 border-t border-gray-100">
-            <FormSection title="Sana va menedjer" icon={IconCalendarEvent}>
+          <div className="border-t border-gray-100 px-5 py-6 sm:px-6 sm:py-7">
+            <FormStep
+              index={1}
+              title="Sana va menedjer"
+              icon={IconCalendarEvent}
+              done={stepDone.dateAndManager}
+              invalid={hasError(fieldErrors, ['entryDate', 'managerUserId'])}
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <label className="field-label">Sana <Required /></label>
@@ -96,9 +151,15 @@ export function IncomeEntryForm({ vm }: { vm: IncomePageModel }) {
                   {fieldErrors.managerUserId && <p className="field-error">{fieldErrors.managerUserId}</p>}
                 </div>
               </div>
-            </FormSection>
+            </FormStep>
 
-            <FormSection title="Mijoz" icon={IconUser}>
+            <FormStep
+              index={2}
+              title="Mijoz"
+              icon={IconUser}
+              done={stepDone.customer}
+              invalid={hasError(fieldErrors, ['customerNumber', 'customerName', 'telegramUsername'])}
+            >
               <div>
                 <label className="field-label">Mijoz raqami <Required /></label>
                 <div className="relative" ref={customerInputWrapperRef}>
@@ -122,12 +183,12 @@ export function IncomeEntryForm({ vm }: { vm: IncomePageModel }) {
                     autoComplete="off"
                   />
                   {isCustomerSuggestionsOpen && customerSuggestions.length > 0 && (
-                    <div className="absolute z-30 mt-1.5 max-h-60 w-full overflow-y-auto rounded-[12px] border border-gray-200 bg-white p-1 shadow-lg">
+                    <div className="absolute z-30 mt-1.5 max-h-60 w-full overflow-y-auto rounded-[16px] border border-gray-200 bg-white p-1 shadow-lg">
                       {customerSuggestions.map((customer) => (
                         <button
                           key={customer.id}
                           type="button"
-                          className="flex w-full flex-col gap-0.5 rounded-[9px] px-3 py-2 text-left text-sm hover:bg-gray-50"
+                          className="flex w-full flex-col gap-0.5 rounded-[12px] px-3 py-2 text-left text-sm hover:bg-gray-50"
                           onClick={() => {
                             setCustomerNumber(customer.customerNumber);
                             setIsCustomerSuggestionsOpen(false);
@@ -184,16 +245,25 @@ export function IncomeEntryForm({ vm }: { vm: IncomePageModel }) {
               </div>
 
               {selectedCustomer && (
-                <div className="panel-inset flex items-center gap-2 px-3.5 py-2.5 text-sm text-gray-700">
-                  <IconUserCheck className="h-4 w-4 flex-shrink-0 text-gray-500" stroke={1.8} />
+                <div className="panel-inset flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-gray-700">
+                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                    <IconUserCheck className="h-4 w-4" stroke={1.8} />
+                  </span>
                   <span>
                     Mas&apos;ul agent: <span className="font-medium text-gray-900">{selectedCustomer.responsibleManagerLabel || '-'}</span>
                   </span>
                 </div>
               )}
-            </FormSection>
+            </FormStep>
 
-            <FormSection title="To'lov" icon={IconCreditCard}>
+            <FormStep
+              index={3}
+              title="To'lov"
+              icon={IconCreditCard}
+              done={stepDone.payment}
+              invalid={hasError(fieldErrors, ['type'])}
+              last={!hasDetailsStep}
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <label className="field-label">To'lov turi <Required /></label>
@@ -233,16 +303,23 @@ export function IncomeEntryForm({ vm }: { vm: IncomePageModel }) {
                 </div>
               </div>
 
-              {type !== 'repayment' && type !== 'new_sale' && (
-                <div className="flex items-start gap-2.5 rounded-[12px] border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-500">
+              {!hasDetailsStep && (
+                <div className="flex items-start gap-2.5 rounded-[16px] border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-500">
                   <IconInfoCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" stroke={1.8} />
                   <span>To'lov turi tanlangandan keyin Kurs yoki Qarzdorlik maydonlari chiqadi.</span>
                 </div>
               )}
-            </FormSection>
+            </FormStep>
 
             {type === 'repayment' ? (
-              <FormSection title="Qarzdorlik" icon={IconReceipt2}>
+              <FormStep
+                index={4}
+                title="Qarzdorlik"
+                icon={IconReceipt2}
+                done={stepDone.details}
+                invalid={hasError(fieldErrors, ['debtSourceIncomeId', 'paymentInput'])}
+                last
+              >
                 <div>
                   <label className="field-label">Current debt <Required /></label>
                   <select
@@ -263,7 +340,7 @@ export function IncomeEntryForm({ vm }: { vm: IncomePageModel }) {
                   {fieldErrors.debtSourceIncomeId && <p className="field-error">{fieldErrors.debtSourceIncomeId}</p>}
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="panel-inset grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div>
                     <label className="field-label">Qarz summasi</label>
                     <input
@@ -295,9 +372,16 @@ export function IncomeEntryForm({ vm }: { vm: IncomePageModel }) {
                     />
                   </div>
                 </div>
-              </FormSection>
+              </FormStep>
             ) : type === 'new_sale' ? (
-              <FormSection title="Kurs" icon={IconSchool}>
+              <FormStep
+                index={4}
+                title="Kurs"
+                icon={IconSchool}
+                done={stepDone.details}
+                invalid={hasError(fieldErrors, ['courseId', 'tariffId', 'subTariffId', 'coursePriceInput', 'paymentInput'])}
+                last
+              >
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <label className="field-label">Kurs <Required /></label>
@@ -408,7 +492,7 @@ export function IncomeEntryForm({ vm }: { vm: IncomePageModel }) {
                     />
                   </div>
                 </div>
-              </FormSection>
+              </FormStep>
             ) : null}
           </div>
 
@@ -437,51 +521,7 @@ export function IncomeEntryForm({ vm }: { vm: IncomePageModel }) {
           </div>
         </form>
 
-        {isAdmin && (
-          <aside className="panel">
-            <div className="panel-header">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-blue-50 text-blue-600">
-                  <IconFileSpreadsheet className="h-4 w-4" stroke={1.8} />
-                </span>
-                <h2 className="section-title">Eksport</h2>
-              </div>
-            </div>
-            <div className="panel-body space-y-4">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <div>
-                  <label className="field-label">Boshlanish</label>
-                  <input
-                    type="date"
-                    value={exportDateFrom}
-                    onChange={(event) => setExportDateFrom(event.target.value)}
-                    className="field"
-                  />
-                </div>
-                <div>
-                  <label className="field-label">Tugash</label>
-                  <input
-                    type="date"
-                    value={exportDateTo}
-                    onChange={(event) => setExportDateTo(event.target.value)}
-                    className="field"
-                  />
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleDownloadIncomesByCustomRange}
-                disabled={exportIncomesMutation.isLoading}
-                className="btn btn-secondary w-full"
-              >
-                <IconDownload className="h-4 w-4" stroke={1.8} />
-                {exportIncomesMutation.isLoading ? 'Yuklanmoqda...' : "Davr bo'yicha yuklab olish"}
-              </button>
-              {exportError && <p className="field-error">{exportError}</p>}
-              {exportSuccess && <p className="mt-1.5 text-xs text-emerald-600">{exportSuccess}</p>}
-            </div>
-          </aside>
-        )}
+        <IncomeEntryAside vm={vm} />
       </div>
     </div>
   );

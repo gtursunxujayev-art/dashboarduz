@@ -1,7 +1,7 @@
 'use client';
 
 import { IconCoins, IconSearch } from '@tabler/icons-react';
-import { type SalaryBonusMode as BonusMode, COURSE_CATEGORIES, type SalaryRuleMode as CourseBonusMode, type CourseCategory as SalaryCategory } from '@dashboarduz/shared';
+import { type SalaryBonusMode as BonusMode, COURSE_CATEGORIES, type SalaryRuleMode as CourseBonusMode, groupDigits, type CourseCategory as SalaryCategory, type SalaryTierBasis } from '@dashboarduz/shared';
 import { type CourseOverrideState, getSalaryCategoryLabel } from './bonus-helpers';
 import { SettingRow, SettingsCard, SettingsFooter } from './settings-card';
 import type { BonusPageModel } from './use-bonus-page';
@@ -11,8 +11,13 @@ const RULE_MODES: { value: CourseBonusMode; label: string }[] = [
   { value: 'tiered', label: 'Tiered' },
 ];
 
+const TIER_BASES: { value: SalaryTierBasis; label: string }[] = [
+  { value: 'sales_count', label: 'Sotuvlar soni' },
+  { value: 'agreement_amount', label: 'Kelishuv summasi' },
+];
+
 export function BonusRulesSection({ vm }: { vm: BonusPageModel }) {
-  const { bonusRulesState, courseOverrides, courseSearch, effectiveMonth, handleAddTier, handleRemoveTier, handleRuleModeChange, handleSaveBonusRules, handleSimplePercentChange, handleTierChange, isAdmin, isPastPolicyMonth, policyCourses, policyEditorQuery, salaryBonusMode, salaryConfigQuery, savePolicyVersionMutation, setCourseOverrides, setCourseSearch, setEffectiveMonth, setSalaryBonusMode } = vm;
+  const { bonusRulesState, courseOverrides, courseSearch, effectiveMonth, handleAddTier, handleRemoveTier, handleRuleModeChange, handleTierBasisChange, handleSaveBonusRules, handleSimplePercentChange, handleTierChange, isAdmin, isPastPolicyMonth, policyCourses, policyEditorQuery, salaryBonusMode, salaryConfigQuery, savePolicyVersionMutation, setCourseOverrides, setCourseSearch, setEffectiveMonth, setSalaryBonusMode } = vm;
 
   return (
     <SettingsCard
@@ -71,12 +76,32 @@ export function BonusRulesSection({ vm }: { vm: BonusPageModel }) {
               const rule = bonusRulesState[category];
               if (!rule) return null;
               return (
-                <div key={category} className="rounded-[12px] border border-gray-200 p-4">
+                <div key={category} className="rounded-[16px] border border-gray-200 p-4 transition-shadow hover:shadow-sm sm:p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">{getSalaryCategoryLabel(category)}</p>
-                      <p className="mt-0.5 text-xs text-gray-500">Bonus qoidasi</p>
+                      <p className="text-[15px] font-semibold text-gray-900">{getSalaryCategoryLabel(category)}</p>
+                      <p className="caption mt-0.5">Bonus qoidasi</p>
                     </div>
+                    <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+                      {rule.mode === 'tiered' ? (
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-medium text-gray-500">Tier asosi</p>
+                          <div className="segmented" role="group" aria-label="Tier asosi">
+                            {TIER_BASES.map((basis) => (
+                              <button
+                                key={basis.value}
+                                type="button"
+                                onClick={() => handleTierBasisChange(category, basis.value)}
+                                disabled={!isAdmin}
+                                aria-pressed={rule.tierBasis === basis.value}
+                                className={rule.tierBasis === basis.value ? 'segmented-item segmented-item-active' : 'segmented-item'}
+                              >
+                                {basis.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     <div className="flex items-center gap-2">
                       <p className="text-xs font-medium text-gray-500">Rejim</p>
                       <div className="segmented" role="group" aria-label="Rejim">
@@ -93,6 +118,7 @@ export function BonusRulesSection({ vm }: { vm: BonusPageModel }) {
                           </button>
                         ))}
                       </div>
+                    </div>
                     </div>
                   </div>
 
@@ -127,24 +153,28 @@ export function BonusRulesSection({ vm }: { vm: BonusPageModel }) {
                   {rule.mode === 'tiered' && (
                     <div className="panel-inset mt-4 space-y-2 p-3">
                       <p className="text-xs text-gray-500">
-                        Tier diapazonlari inclusive ishlaydi: masalan, <span className="font-medium">1-3</span> bo&apos;lsa 1, 2 va 3 ham kiradi.
+                        {rule.tierBasis === 'agreement_amount' ? (
+                          <>Menejerning oy davomida yopilgan sotuvlari kelishuv summasi (so&apos;m) bo&apos;yicha. Diapazonlar inclusive: masalan, <span className="font-medium">10,000,000 – 49,999,999</span>.</>
+                        ) : (
+                          <>Menejerning oy davomida yopilgan sotuvlari soni bo&apos;yicha. Diapazonlar inclusive: masalan, <span className="font-medium">1-3</span> bo&apos;lsa 1, 2 va 3 ham kiradi.</>
+                        )}
                       </p>
                       {rule.tiers.map((tier, tierIndex) => (
                         <div key={`${category}-tier-${tierIndex}`} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
                           <input
-                            value={tier.minSales}
+                            value={rule.tierBasis === 'agreement_amount' ? groupDigits(tier.minSales) : tier.minSales}
                             onChange={(event) => handleTierChange(category, tierIndex, 'minSales', event.target.value)}
                             disabled={!isAdmin}
                             inputMode="numeric"
-                            placeholder="Boshlanish (min)"
+                            placeholder={rule.tierBasis === 'agreement_amount' ? "Min so'm" : 'Boshlanish (min)'}
                             className="field tabular"
                           />
                           <input
-                            value={tier.maxSales}
+                            value={rule.tierBasis === 'agreement_amount' ? groupDigits(tier.maxSales) : tier.maxSales}
                             onChange={(event) => handleTierChange(category, tierIndex, 'maxSales', event.target.value)}
                             disabled={!isAdmin}
                             inputMode="numeric"
-                            placeholder="Tugash (max), bo'sh=ochiq"
+                            placeholder={rule.tierBasis === 'agreement_amount' ? "Max so'm, bo'sh=ochiq" : "Tugash (max), bo'sh=ochiq"}
                             className="field tabular"
                           />
                           <input
@@ -182,8 +212,8 @@ export function BonusRulesSection({ vm }: { vm: BonusPageModel }) {
             })}
           </div>
 
-          <div className="rounded-[12px] border border-gray-200">
-            <div className="flex flex-col gap-3 border-b border-gray-100 p-4 md:flex-row md:items-end md:justify-between">
+          <div className="overflow-hidden rounded-[16px] border border-gray-200">
+            <div className="flex flex-col gap-3 border-b border-gray-100 bg-gray-50/60 p-4 sm:px-5 md:flex-row md:items-center md:justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">Kurs bo&apos;yicha oylik jamoa bonusi</h3>
                 <p className="mt-0.5 text-xs text-gray-500">Yoqilmagan kurslar kategoriya qoidasini meros oladi. Tier summalari UZS.</p>
@@ -194,7 +224,7 @@ export function BonusRulesSection({ vm }: { vm: BonusPageModel }) {
                   value={courseSearch}
                   onChange={(event) => setCourseSearch(event.target.value)}
                   placeholder="Kurs qidirish"
-                  className="field pl-9"
+                  className="field rounded-full pl-9"
                 />
               </div>
             </div>
@@ -203,7 +233,7 @@ export function BonusRulesSection({ vm }: { vm: BonusPageModel }) {
                 const state = courseOverrides[course.id] || { enabled: false, fallbackPercent: '0', tiers: [{ minAmount: '0', maxAmount: '', percent: '' }] };
                 const updateState = (next: CourseOverrideState) => setCourseOverrides((current) => ({ ...current, [course.id]: next }));
                 return (
-                  <div key={course.id} className={course.isActive ? 'p-4' : 'bg-amber-50/40 p-4'}>
+                  <div key={course.id} className={course.isActive ? 'p-4 sm:px-5' : 'bg-amber-50/40 p-4 sm:px-5'}>
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div className="min-w-0">
                         <p className="font-medium text-gray-900">{course.name}</p>

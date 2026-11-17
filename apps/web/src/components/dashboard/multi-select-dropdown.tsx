@@ -87,7 +87,7 @@ export default function MultiSelectDropdown({
           }}
           aria-expanded={isOpen}
           aria-label={hideLabel ? label : undefined}
-          className={`w-full text-left text-sm ${hideLabel ? 'h-11 rounded-[12px] px-4 shadow' : 'h-10 rounded-md border border-gray-200 px-3'} ${disabled ? 'bg-gray-50 text-gray-500' : `cursor-pointer bg-white text-gray-900 ${hideLabel ? 'hover:bg-gray-50' : 'hover:border-gray-300'}`}`}
+          className={`w-full text-left text-sm ${hideLabel ? 'h-10 rounded-full px-4 shadow' : 'h-10 rounded-[12px] border border-gray-200 px-3.5'} ${disabled ? 'bg-gray-50 text-gray-500' : `cursor-pointer bg-white text-gray-900 ${hideLabel ? 'hover:bg-gray-50' : 'hover:border-gray-300'}`}`}
         >
           <div className="flex items-center justify-between gap-3">
             <span className="truncate">{selectedLabels}</span>
@@ -97,7 +97,7 @@ export default function MultiSelectDropdown({
 
         {!disabled && isOpen && (
           <div
-            className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-lg bg-white p-2 text-gray-900 shadow-lg"
+            className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-[16px] bg-white p-2 text-gray-900 shadow-lg"
           >
             {loading ? (
               <p className="px-2 py-2 text-sm text-gray-500">{loadingText}</p>
@@ -106,7 +106,7 @@ export default function MultiSelectDropdown({
             ) : (
               <div className="space-y-1">
                 {options.map((option) => (
-                  <label key={option.id} className="flex items-start gap-3 rounded-md px-2 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                  <label key={option.id} className="flex items-start gap-3 rounded-[10px] px-2 py-2 text-sm text-gray-700 hover:bg-gray-50">
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(option.id)}

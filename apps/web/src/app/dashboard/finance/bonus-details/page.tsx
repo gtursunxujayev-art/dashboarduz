@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { getCurrentMonthToDateRange, getPreviousMonthRange, getPreviousWeekRange, getTashkentToday, type ExtendedDashboardRange as DashboardRange } from '@/lib/date-range';
 import Link from 'next/link';
@@ -13,22 +13,14 @@ import {
   buildBonusDetailExportRows,
 } from './bonus-detail-export';
 import { formatSom } from '@/lib/format';
-import { IconArrowLeft, IconCalendar, IconCalendarCheck, IconCash, IconCircleCheck, IconDownload, IconListDetails, IconUsers } from '@tabler/icons-react';
+import { IconAdjustments, IconArrowLeft, IconCalendarCheck, IconCash, IconCheck, IconCircleCheck, IconCoins, IconDownload, IconListDetails, IconUsers, IconX } from '@tabler/icons-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatTile } from '@/components/ui/stat-tile';
-import { UserAvatar } from '@/components/ui/user-avatar';
+import { FinanceFilterBar } from '../_components/finance-filter-bar';
+import { AgentBonusCards } from './agent-bonus-cards';
 
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
-
-const RANGE_OPTIONS: { value: DashboardRange; label: string }[] = [
-  { value: 'today', label: 'Bugun' },
-  { value: 'week', label: 'Hafta' },
-  { value: 'month', label: 'Oy' },
-  { value: 'last_week', label: "O'tgan hafta" },
-  { value: 'last_month', label: "O'tgan oy" },
-  { value: 'custom', label: 'Ixtiyoriy' },
-];
 
 const ADJUSTMENT_STATUS_BADGE: Record<string, string> = {
   pending: 'badge-amber',
@@ -240,6 +232,9 @@ export default function FinanceBonusDetailsPage() {
   };
 
 
+  const adjustments = bonusOperationsQuery.data?.adjustments || [];
+  const snapshots = bonusOperationsQuery.data?.snapshots || [];
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -262,77 +257,28 @@ export default function FinanceBonusDetailsPage() {
             </button>
           </>
         )}
-      />
+      >
+        <FinanceFilterBar
+          range={range}
+          onRangeChange={setRange}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          effectiveDateFrom={effectiveDateRange.dateFrom}
+          effectiveDateTo={effectiveDateRange.dateTo}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+          courseId={courseId}
+          onCourseChange={setCourseId}
+          courseOptions={courseOptions}
+          showManagerFilter={!isAgentOnly}
+          managerUserId={managerUserId}
+          onManagerChange={setManagerUserId}
+          managerOptions={managerOptions}
+        />
+      </PageHeader>
 
       {exportError ? <p className="alert alert-error">{exportError}</p> : null}
       {exportSuccess ? <p className="alert alert-success">{exportSuccess}</p> : null}
-
-      <div className="panel p-3 sm:p-4">
-        <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center">
-          <div className="-mx-1 overflow-x-auto px-1">
-            <div className="segmented" role="group" aria-label="Davr">
-              {RANGE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setRange(option.value)}
-                  aria-pressed={range === option.value}
-                  className={range === option.value ? 'segmented-item segmented-item-active' : 'segmented-item'}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className={isAgentOnly ? 'grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3' : 'grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4'}>
-            <div className="relative">
-              <IconCalendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
-              <input
-                type="date"
-                value={range === 'custom' ? dateFrom : effectiveDateRange.dateFrom}
-                disabled={range !== 'custom'}
-                onChange={(event) => setDateFrom(event.target.value)}
-                className="field pl-9"
-              />
-            </div>
-            <div className="relative">
-              <IconCalendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
-              <input
-                type="date"
-                value={range === 'custom' ? dateTo : effectiveDateRange.dateTo}
-                disabled={range !== 'custom'}
-                onChange={(event) => setDateTo(event.target.value)}
-                className="field pl-9"
-              />
-            </div>
-
-            <select
-              value={courseId}
-              onChange={(event) => setCourseId(event.target.value)}
-              className="field"
-            >
-              <option value="">Barcha kurslar</option>
-              {courseOptions.map((course) => (
-                <option key={course.id} value={course.id}>{course.name}</option>
-              ))}
-            </select>
-
-            {!isAgentOnly && (
-              <select
-                value={managerUserId}
-                onChange={(event) => setManagerUserId(event.target.value)}
-                className="field"
-              >
-                <option value="">Barcha agentlar</option>
-                {managerOptions.map((manager) => (
-                  <option key={manager.id} value={manager.id}>{manager.label}</option>
-                ))}
-              </select>
-            )}
-          </div>
-        </div>
-      </div>
 
       {bonusDetailsQuery.error && (
         <div className="alert alert-error">
@@ -340,84 +286,135 @@ export default function FinanceBonusDetailsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile label="Jami bonus" value={formatSom(summaryTotals?.totalBonusAmount ?? bonusTotals?.bonusAmount)} icon={IconCoins} tone="blue" />
         <StatTile label="Agentlar" value={bonusAgentCount} icon={IconUsers} />
-        <StatTile label="Filtr bo'yicha tushum" value={formatSom(summaryTotals?.incomeAmount ?? bonusTotals?.incomeAmount)} icon={IconCash} tone="blue" />
+        <StatTile label="Filtr bo'yicha tushum" value={formatSom(summaryTotals?.incomeAmount ?? bonusTotals?.incomeAmount)} icon={IconCash} />
         <StatTile label="Yopilgan tushum (kelishuv)" value={formatSom(summaryTotals?.closedAgreementAmount)} icon={IconCircleCheck} tone="green" />
       </div>
 
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <h2 className="section-title">Agentlar bo'yicha bonuslar</h2>
-            <p className="mt-0.5 text-sm text-gray-500">
-              Tushum, yopilgan tushum va bonuslar kesimi (tanlangan davr bo'yicha).
-            </p>
+      <div className={!isAgentOnly ? 'grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]' : 'grid grid-cols-1 gap-6'}>
+        <section className="panel">
+          <div className="panel-header">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5">
+                <h2 className="section-title">Agentlar bo'yicha bonuslar</h2>
+                {agentSummary.length ? <span className="badge badge-neutral tabular">{agentSummary.length}</span> : null}
+              </div>
+              <p className="mt-0.5 text-sm text-gray-500">
+                Tushum, yopilgan tushum va bonuslar kesimi (tanlangan davr bo'yicha).
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="p-2 sm:p-3">
-          {bonusDetailsQuery.isLoading ? (
-            <LoadingBlock message="Yuklanmoqda..." className="m-2" />
-          ) : agentSummary.length ? (
+          <div className="panel-body">
+            {bonusDetailsQuery.isLoading ? (
+              <LoadingBlock message="Yuklanmoqda..." />
+            ) : agentSummary.length ? (
+              <AgentBonusCards agents={agentSummary} lines={bonusRows} totals={summaryTotals} />
+            ) : (
+              <EmptyState icon={IconUsers} title="Tanlangan filtr bo'yicha agentlar kesimi topilmadi." />
+            )}
+          </div>
+        </section>
+
+        {!isAgentOnly ? (
+          <aside className="panel xl:sticky xl:top-20">
+            <div className="panel-header items-start">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <IconCalendarCheck className="h-[18px] w-[18px]" stroke={1.6} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="section-title">Bonus oyini yakunlash</h2>
+                  <p className="mt-0.5 text-sm text-gray-500">Yakunlangan oylar snapshot bo&apos;lib saqlanadi; keyingi o&apos;zgarishlar tuzatish yaratadi.</p>
+                </div>
+              </div>
+            </div>
+            <div className="panel-body space-y-4">
+              <input type="month" value={operationMonth} onChange={(event) => setOperationMonth(event.target.value)} className="field tabular" />
+              {isAdmin ? (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 xl:grid-cols-1">
+                  <button type="button" onClick={() => void runMonthAction('finalize')} className="btn btn-primary">Yakunlash</button>
+                  <button type="button" onClick={() => void runMonthAction('preview')} className="btn btn-soft">Ko&apos;rib chiqish</button>
+                  <button type="button" onClick={() => void runMonthAction('reconcile')} className="btn btn-warning-soft">Qayta solishtirish</button>
+                </div>
+              ) : null}
+              {operationMessage ? <p className="alert alert-info">{operationMessage}</p> : null}
+              {snapshots.length > 0 && (
+                <ul className="divide-y divide-gray-100 rounded-[16px] bg-gray-50 px-4">
+                  {snapshots.slice(0, 6).map((snapshot) => (
+                    <li key={snapshot.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                      <div className="min-w-0">
+                        <p className="tabular font-medium text-gray-900">{snapshot.month}</p>
+                        <p className="tabular text-gray-600">{formatSom(snapshot.totalBonusAmount)}</p>
+                      </div>
+                      <span className="badge badge-green">Yakunlangan</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </aside>
+        ) : null}
+      </div>
+
+      {!isAgentOnly && adjustments.length > 0 ? (
+        <section className="panel">
+          <div className="panel-header">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                <IconAdjustments className="h-[18px] w-[18px]" stroke={1.6} />
+              </span>
+              <h2 className="section-title">Bonus tuzatishlari</h2>
+              <span className="badge badge-neutral tabular">{adjustments.length}</span>
+            </div>
+          </div>
+          <div className="p-2 sm:p-3">
             <div className="overflow-x-auto">
               <table className="data-table">
-                <thead>
-                  <tr>
-                    <th className="text-left">Agent</th>
-                    <th className="text-right">Tushum</th>
-                    <th className="text-right">Yopilgan tushum</th>
-                    <th className="text-right">Jami bonus</th>
-                    <th className="text-right">Online</th>
-                    <th className="text-right">Offline</th>
-                    <th className="text-right">Intensiv</th>
-                    <th className="text-right">Qo'shimcha xizmat</th>
-                  </tr>
-                </thead>
+                <thead><tr>
+                  <th className="text-left">Manba oy</th>
+                  <th className="text-left">Agent</th>
+                  <th className="text-right">Farq</th>
+                  <th className="text-left">Holat</th>
+                  <th className="text-right">Amal</th>
+                </tr></thead>
                 <tbody>
-                  {agentSummary.map((row) => (
-                    <tr key={row.managerUserId}>
-                      <td>
-                        <div className="flex items-center gap-2.5">
-                          <UserAvatar name={row.managerLabel || '?'} size="sm" />
-                          <span className="whitespace-nowrap font-medium text-gray-900">{row.managerLabel}</span>
-                        </div>
+                  {adjustments.map((adjustment) => (
+                    <tr key={adjustment.id}>
+                      <td className="tabular whitespace-nowrap">{adjustment.sourceMonth}</td>
+                      <td className="font-medium text-gray-900">{adjustment.agentUserId}</td>
+                      <td className={adjustment.deltaAmount < 0 ? 'tabular whitespace-nowrap text-right font-medium text-red-700' : 'tabular whitespace-nowrap text-right font-medium text-emerald-700'}>{formatSom(adjustment.deltaAmount)}</td>
+                      <td><span className={`badge ${ADJUSTMENT_STATUS_BADGE[adjustment.status] || 'badge-neutral'}`}>{adjustment.status}</span></td>
+                      <td className="text-right">
+                        {isAdmin && adjustment.status === 'pending' ? (
+                          <div className="flex justify-end gap-2">
+                            <button type="button" onClick={() => void handleReviewAdjustment(adjustment.id, 'approve')} className="btn btn-sm btn-success">
+                              <IconCheck className="h-4 w-4" stroke={1.8} />
+                              Tasdiqlash
+                            </button>
+                            <button type="button" onClick={() => void handleReviewAdjustment(adjustment.id, 'reject')} className="btn btn-sm btn-danger-soft">
+                              <IconX className="h-4 w-4" stroke={1.8} />
+                              Rad etish
+                            </button>
+                          </div>
+                        ) : '-'}
                       </td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.incomeAmount)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.closedAgreementAmount)}</td>
-                      <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">{formatSom(row.totalBonusAmount)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.bonusByCategory?.online)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.bonusByCategory?.offline)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.bonusByCategory?.intensive)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.bonusByCategory?.additional_service)}</td>
                     </tr>
                   ))}
                 </tbody>
-                {summaryTotals && (
-                  <tfoot>
-                    <tr>
-                      <td className="whitespace-nowrap">Jami</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.incomeAmount)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.closedAgreementAmount)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.totalBonusAmount)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.bonusByCategory?.online)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.bonusByCategory?.offline)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.bonusByCategory?.intensive)}</td>
-                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.bonusByCategory?.additional_service)}</td>
-                    </tr>
-                  </tfoot>
-                )}
               </table>
             </div>
-          ) : (
-            <EmptyState icon={IconUsers} title="Tanlangan filtr bo'yicha agentlar kesimi topilmadi." className="m-2" />
-          )}
-        </div>
-      </div>
+          </div>
+        </section>
+      ) : null}
 
-      <div className="panel">
+      <section className="panel">
         <div className="panel-header">
-          <h2 className="section-title">Bonus qatorlari tafsiloti</h2>
-          {bonusRows.length ? <span className="badge badge-neutral tabular">{bonusRows.length}</span> : null}
+          <div className="flex items-center gap-2.5">
+            <h2 className="section-title">Bonus qatorlari tafsiloti</h2>
+            {bonusRows.length ? <span className="badge badge-neutral tabular">{bonusRows.length}</span> : null}
+          </div>
         </div>
         <div className="p-2 sm:p-3">
           {bonusDetailsQuery.isLoading ? (
@@ -436,10 +433,10 @@ export default function FinanceBonusDetailsPage() {
                     <th className="text-right">Tushum</th>
                     <th className="text-right">Qolgan qarz</th>
                     <th className="text-right">Hisoblangan bonus</th>
-                    <th className="text-left">Debug: Kategoriya</th>
-                    <th className="text-right">Debug: Fakt</th>
-                    <th className="text-right">Debug: Foiz</th>
-                    <th className="text-left">Debug: Fallback</th>
+                    <th className="bg-gray-50 text-left">Debug: Kategoriya</th>
+                    <th className="bg-gray-50 text-right">Debug: Fakt</th>
+                    <th className="bg-gray-50 text-right">Debug: Foiz</th>
+                    <th className="bg-gray-50 text-left">Debug: Fallback</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -466,12 +463,12 @@ export default function FinanceBonusDetailsPage() {
                       <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">
                         {row.isLastPayment ? formatSom(row.calculatedBonus) : '-'}
                       </td>
-                      <td className="whitespace-nowrap text-xs text-gray-500">{row.bonusDebug?.category || '-'}</td>
-                      <td className="tabular whitespace-nowrap text-right text-xs text-gray-500">{row.bonusDebug?.closedCount ?? '-'}</td>
-                      <td className="tabular whitespace-nowrap text-right text-xs text-gray-500">
+                      <td className="whitespace-nowrap bg-gray-50/60 text-xs text-gray-500">{row.bonusDebug?.category || '-'}</td>
+                      <td className="tabular whitespace-nowrap bg-gray-50/60 text-right text-xs text-gray-500">{row.bonusDebug?.closedCount ?? '-'}</td>
+                      <td className="tabular whitespace-nowrap bg-gray-50/60 text-right text-xs text-gray-500">
                         {row.bonusDebug?.appliedPercent == null ? '-' : `${row.bonusDebug.appliedPercent}%`}
                       </td>
-                      <td className="whitespace-nowrap text-xs text-gray-500">{row.bonusDebug?.usedFallback ? 'ha' : 'yo\'q'}</td>
+                      <td className="whitespace-nowrap bg-gray-50/60 text-xs text-gray-500">{row.bonusDebug?.usedFallback ? 'ha' : 'yo\'q'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -481,91 +478,7 @@ export default function FinanceBonusDetailsPage() {
             <EmptyState icon={IconListDetails} title="Tanlangan filtr bo'yicha bonus tafsiloti topilmadi." className="m-2" />
           )}
         </div>
-      </div>
-
-      {!isAgentOnly ? (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-          <div className="panel">
-            <div className="panel-header items-start">
-              <div className="flex min-w-0 items-start gap-3">
-                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
-                  <IconCalendarCheck className="h-[18px] w-[18px]" stroke={1.8} />
-                </span>
-                <div className="min-w-0">
-                  <h2 className="section-title">Bonus oyini yakunlash</h2>
-                  <p className="mt-0.5 text-sm text-gray-500">Yakunlangan oylar snapshot bo&apos;lib saqlanadi; keyingi o&apos;zgarishlar tuzatish yaratadi.</p>
-                </div>
-              </div>
-            </div>
-            <div className="panel-body space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <input type="month" value={operationMonth} onChange={(event) => setOperationMonth(event.target.value)} className="field w-auto flex-1 sm:flex-none" />
-                {isAdmin ? (
-                  <>
-                    <button type="button" onClick={() => void runMonthAction('preview')} className="btn btn-soft">Ko&apos;rib chiqish</button>
-                    <button type="button" onClick={() => void runMonthAction('finalize')} className="btn btn-primary">Yakunlash</button>
-                    <button type="button" onClick={() => void runMonthAction('reconcile')} className="btn btn-warning-soft">Qayta solishtirish</button>
-                  </>
-                ) : null}
-              </div>
-              {operationMessage ? <p className="alert alert-info">{operationMessage}</p> : null}
-              {(bonusOperationsQuery.data?.snapshots || []).length > 0 && (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {(bonusOperationsQuery.data?.snapshots || []).slice(0, 6).map((snapshot) => (
-                    <div key={snapshot.id} className="panel-inset flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
-                      <div className="min-w-0">
-                        <p className="tabular font-medium text-gray-900">{snapshot.month}</p>
-                        <p className="tabular text-gray-600">{formatSom(snapshot.totalBonusAmount)}</p>
-                      </div>
-                      <span className="badge badge-green">Yakunlangan</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {(bonusOperationsQuery.data?.adjustments.length || 0) > 0 ? (
-            <div className="panel">
-              <div className="panel-header">
-                <h2 className="section-title">Bonus tuzatishlari</h2>
-                <span className="badge badge-neutral tabular">{bonusOperationsQuery.data?.adjustments.length}</span>
-              </div>
-              <div className="p-2 sm:p-3">
-                <div className="overflow-x-auto">
-                  <table className="data-table">
-                    <thead><tr>
-                      <th className="text-left">Manba oy</th>
-                      <th className="text-left">Agent</th>
-                      <th className="text-right">Farq</th>
-                      <th className="text-left">Holat</th>
-                      <th className="text-left">Amal</th>
-                    </tr></thead>
-                    <tbody>
-                      {bonusOperationsQuery.data?.adjustments.map((adjustment) => (
-                        <tr key={adjustment.id}>
-                          <td className="tabular whitespace-nowrap">{adjustment.sourceMonth}</td>
-                          <td>{adjustment.agentUserId}</td>
-                          <td className={adjustment.deltaAmount < 0 ? 'tabular whitespace-nowrap text-right font-medium text-red-700' : 'tabular whitespace-nowrap text-right font-medium text-emerald-700'}>{formatSom(adjustment.deltaAmount)}</td>
-                          <td><span className={`badge ${ADJUSTMENT_STATUS_BADGE[adjustment.status] || 'badge-neutral'}`}>{adjustment.status}</span></td>
-                          <td>
-                            {isAdmin && adjustment.status === 'pending' ? (
-                              <div className="flex gap-2">
-                                <button type="button" onClick={() => void handleReviewAdjustment(adjustment.id, 'approve')} className="btn btn-sm btn-success">Tasdiqlash</button>
-                                <button type="button" onClick={() => void handleReviewAdjustment(adjustment.id, 'reject')} className="btn btn-sm btn-danger-soft">Rad etish</button>
-                              </div>
-                            ) : '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      </section>
     </div>
   );
 }

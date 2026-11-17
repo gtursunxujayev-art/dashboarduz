@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { IconArrowRight, IconChevronLeft, IconChevronRight, IconClipboardList, IconSearch } from '@tabler/icons-react';
+import { IconArrowRight, IconChevronLeft, IconChevronRight, IconClipboardList, IconFileDescription, IconSearch } from '@tabler/icons-react';
 import { trpc } from '@/lib/trpc';
 import Link from 'next/link';
 import LoadingBlock from '@/components/dashboard/loading-block';
@@ -40,22 +40,25 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
   const getStatusColor = (status: string) => status ? 'badge-blue' : 'badge-neutral';
 
   return (
-    <div className="space-y-4">
-      {/* Filters */}
-      <div className="panel p-3 sm:p-4">
+    <section className="panel overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 p-3 sm:px-4">
         <div className="relative w-full sm:max-w-sm">
-          <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+          <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
           <input
             type="text"
             placeholder="Jonli AmoCRM lidlarini qidirish..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="field pl-9"
+            className="field rounded-full pl-10"
           />
         </div>
+        {typeof pagination?.total === 'number' ? (
+          <span className="badge badge-neutral tabular">{pagination.total}</span>
+        ) : null}
       </div>
 
-      <div className="panel p-2 sm:p-3">
+      <div className="px-2 sm:px-3">
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="data-table">
@@ -73,22 +76,29 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
               {(leads as LeadRow[]).map((lead) => (
                 <tr key={lead.id}>
                   <td className="whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {lead.title}
-                    </div>
-                    {lead.amocrmId && (
-                      <div className="tabular mt-0.5 text-xs text-gray-500">
-                        AmoCRM: {lead.amocrmId}
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600" aria-hidden="true">
+                        <IconFileDescription className="h-[18px] w-[18px]" stroke={1.6} />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium leading-tight text-gray-900">
+                          {lead.title}
+                        </div>
+                        {lead.amocrmId && (
+                          <div className="tabular mt-0.5 text-[13px] text-gray-500">
+                            AmoCRM: {lead.amocrmId}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </td>
                   <td className="whitespace-nowrap">
                     {lead.contact ? (
-                      <div className="flex items-center gap-2.5">
-                        <UserAvatar name={lead.contact.name || lead.contact.phone || lead.contact.email || '?'} size="sm" />
+                      <div className="flex items-center gap-3">
+                        <UserAvatar name={lead.contact.name || lead.contact.phone || lead.contact.email || '?'} />
                         <div className="min-w-0">
-                          <div className="text-sm text-gray-900">{lead.contact.name}</div>
-                          <div className="tabular text-xs text-gray-500">{lead.contact.phone || lead.contact.email}</div>
+                          <div className="text-sm font-medium leading-tight text-gray-900">{lead.contact.name}</div>
+                          <div className="tabular mt-0.5 text-[13px] text-gray-500">{lead.contact.phone || lead.contact.email}</div>
                         </div>
                       </div>
                     ) : (
@@ -103,16 +113,16 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
                   <td className="whitespace-nowrap text-sm text-gray-600">
                     <div>{lead.source || '-'}</div>
                     {lead.pipelineName && (
-                      <div className="text-xs text-gray-400">{lead.pipelineName}</div>
+                      <div className="mt-0.5 text-[13px] text-gray-400">{lead.pipelineName}</div>
                     )}
                   </td>
-                  <td className="tabular whitespace-nowrap text-sm text-gray-600">
+                  <td className="tabular whitespace-nowrap text-sm text-gray-500">
                     {new Date(lead.createdAt).toLocaleDateString()}
                   </td>
                   <td className="whitespace-nowrap text-right">
                     <Link
                       href={`/dashboard/leads/${lead.id}`}
-                      className="btn btn-sm btn-secondary"
+                      className="btn btn-sm btn-ghost"
                     >
                       Ko&apos;rish
                       <IconArrowRight className="h-3.5 w-3.5" stroke={1.8} />
@@ -130,71 +140,71 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
             icon={IconClipboardList}
             title="Lidlar topilmadi"
             description="Lidlarni ko'rish uchun AmoCRM ni ulang va webhook yuborishni yoqing."
-            className="m-1 py-12"
+            className="mb-3 mt-1 py-12"
           />
         )}
 
         {/* Loading State */}
         {leadsQuery.isLoading && (
-          <LoadingBlock className="m-1 py-12" message="Lidlar yuklanmoqda..." />
+          <LoadingBlock className="mb-3 mt-1 py-12" message="Lidlar yuklanmoqda..." />
         )}
+      </div>
 
-        {/* Pagination */}
-        {pagination && (
-          <div className="mt-2 flex items-center justify-between gap-3 border-t border-gray-100 px-2 pb-1 pt-3 sm:px-3">
-            <div className="flex flex-1 justify-between sm:hidden">
+      {/* Pagination */}
+      {pagination && (
+        <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-4 py-3 sm:px-5">
+          <div className="flex flex-1 justify-between sm:hidden">
+            <button
+              onClick={() => setPage(page - 1)}
+              disabled={page === 1}
+              className="btn btn-secondary btn-sm"
+            >
+              Oldingi
+            </button>
+            <button
+              onClick={() => setPage(page + 1)}
+              disabled={!pagination.hasMore}
+              className="btn btn-secondary btn-sm"
+            >
+              Keyingi
+            </button>
+          </div>
+          <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+            <div>
+              <p className="tabular text-sm text-gray-600">
+                <span className="font-medium text-gray-900">{leads.length === 0 ? 0 : (page - 1) * 10 + 1}</span> dan{' '}
+                <span className="font-medium text-gray-900">{(page - 1) * 10 + leads.length}</span>
+                {typeof pagination.total === 'number' ? (
+                  <>
+                    {' '} / <span className="font-medium text-gray-900">{pagination.total}</span> ta natija
+                  </>
+                ) : (
+                  " (jonli AmoCRM ma'lumotlari)"
+                )}
+              </p>
+            </div>
+            <nav className="flex items-center gap-1.5" aria-label="Pagination">
               <button
                 onClick={() => setPage(page - 1)}
                 disabled={page === 1}
-                className="btn btn-secondary btn-sm"
+                className="btn btn-secondary btn-sm btn-icon w-8"
               >
-                Oldingi
+                <span className="sr-only">Oldingi</span>
+                <IconChevronLeft className="h-4 w-4" stroke={1.8} aria-hidden="true" />
               </button>
+              <span className="tabular flex h-8 min-w-[2rem] items-center justify-center rounded-full bg-blue-600 px-2 text-sm font-medium text-white">{page}</span>
               <button
                 onClick={() => setPage(page + 1)}
                 disabled={!pagination.hasMore}
-                className="btn btn-secondary btn-sm"
+                className="btn btn-secondary btn-sm btn-icon w-8"
               >
-                Keyingi
+                <span className="sr-only">Keyingi</span>
+                <IconChevronRight className="h-4 w-4" stroke={1.8} aria-hidden="true" />
               </button>
-            </div>
-            <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-              <div>
-                <p className="tabular text-sm text-gray-600">
-                  <span className="font-medium text-gray-900">{leads.length === 0 ? 0 : (page - 1) * 10 + 1}</span> dan{' '}
-                  <span className="font-medium text-gray-900">{(page - 1) * 10 + leads.length}</span>
-                  {typeof pagination.total === 'number' ? (
-                    <>
-                      {' '} / <span className="font-medium text-gray-900">{pagination.total}</span> ta natija
-                    </>
-                  ) : (
-                    " (jonli AmoCRM ma'lumotlari)"
-                  )}
-                </p>
-              </div>
-              <nav className="flex items-center gap-1.5" aria-label="Pagination">
-                <button
-                  onClick={() => setPage(page - 1)}
-                  disabled={page === 1}
-                  className="btn btn-secondary btn-sm btn-icon w-8"
-                >
-                  <span className="sr-only">Oldingi</span>
-                  <IconChevronLeft className="h-4 w-4" stroke={1.8} aria-hidden="true" />
-                </button>
-                <span className="tabular min-w-[2rem] text-center text-sm font-medium text-gray-700">{page}</span>
-                <button
-                  onClick={() => setPage(page + 1)}
-                  disabled={!pagination.hasMore}
-                  className="btn btn-secondary btn-sm btn-icon w-8"
-                >
-                  <span className="sr-only">Keyingi</span>
-                  <IconChevronRight className="h-4 w-4" stroke={1.8} aria-hidden="true" />
-                </button>
-              </nav>
-            </div>
+            </nav>
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </section>
   );
 }

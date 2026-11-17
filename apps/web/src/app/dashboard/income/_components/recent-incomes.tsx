@@ -1,6 +1,6 @@
 'use client';
 
-import { IconChevronDown, IconPencil, IconSearch, IconTrash } from '@tabler/icons-react';
+import { IconChevronDown, IconHistory, IconPencil, IconSearch, IconTrash, IconX } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { EmptyState } from '@/components/ui/empty-state';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -19,17 +19,20 @@ export function RecentIncomes({ vm }: { vm: IncomePageModel }) {
   const { deletingIncomeId, formatIncomeType, getLifecycleStatusBadge, handleDeleteIncome, incomesQuery, isAdmin, openEditIncome, recentLimit, recentSearchQuery, setRecentLimit, setRecentSearchQuery } = vm;
 
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <div className="flex items-center gap-2">
+    <section className="panel overflow-hidden">
+      <div className="flex flex-col gap-4 border-b border-gray-100 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+            <IconHistory className="h-[18px] w-[18px]" stroke={1.6} />
+          </span>
           <h2 className="section-title">So'nggi tushumlar</h2>
           {incomesQuery.data?.length ? (
             <span className="badge badge-neutral tabular">{incomesQuery.data.length}</span>
           ) : null}
         </div>
-        <div className="flex w-full gap-2 sm:w-auto">
-          <div className="relative min-w-0 flex-1 sm:w-80 sm:flex-none">
-            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+        <div className="flex w-full items-center gap-2 lg:w-auto">
+          <div className="relative min-w-0 flex-1 lg:w-80 lg:flex-none">
+            <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
             <input
               value={recentSearchQuery}
               onChange={(event) => {
@@ -38,7 +41,7 @@ export function RecentIncomes({ vm }: { vm: IncomePageModel }) {
               }}
               placeholder="Mijoz raqami yoki ismi bo'yicha qidirish"
               aria-label="Mijoz raqami yoki ismi bo'yicha qidirish"
-              className="field pl-9"
+              className="field rounded-full pl-10"
             />
           </div>
           <button
@@ -50,14 +53,15 @@ export function RecentIncomes({ vm }: { vm: IncomePageModel }) {
             disabled={!recentSearchQuery}
             className="btn btn-ghost"
           >
+            <IconX className="h-4 w-4" stroke={1.8} />
             Tozalash
           </button>
         </div>
       </div>
 
-      <div className="p-2 pt-4 sm:p-3 sm:pt-4">
+      <div className="px-1 pb-2 sm:px-2">
         {incomesQuery.isLoading ? (
-          <LoadingBlock message="Tushumlar yuklanmoqda..." className="m-2" />
+          <LoadingBlock message="Tushumlar yuklanmoqda..." className="m-4" />
         ) : incomesQuery.data?.length ? (
           <div className="space-y-3">
             <div className="overflow-x-auto">
@@ -151,7 +155,7 @@ export function RecentIncomes({ vm }: { vm: IncomePageModel }) {
             </div>
 
             {incomesQuery.data.length >= recentLimit && recentLimit < 200 && (
-              <div className="flex justify-center pb-2">
+              <div className="flex justify-center border-t border-gray-100 pb-2 pt-4">
                 <button
                   type="button"
                   onClick={() => setRecentLimit((prev) => Math.min(prev + 20, 200))}
@@ -164,7 +168,7 @@ export function RecentIncomes({ vm }: { vm: IncomePageModel }) {
             )}
           </div>
         ) : (
-          <EmptyState title="Hozircha tushum yozuvlari yo'q." className="m-2" />
+          <EmptyState title="Hozircha tushum yozuvlari yo'q." className="m-4" />
         )}
       </div>
     </section>

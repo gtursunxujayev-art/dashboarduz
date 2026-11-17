@@ -11,7 +11,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Boshqaruv" actions={<DashboardRangeHeader vm={vm} />} />
+      <PageHeader title="Boshqaruv">
+        <DashboardRangeHeader vm={vm} />
+      </PageHeader>
 
       <DashboardLayoutEditor vm={vm} />
 

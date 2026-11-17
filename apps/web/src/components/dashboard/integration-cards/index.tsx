@@ -13,7 +13,7 @@ export default function IntegrationCards() {
         <p className="alert alert-error">{error}</p>
       )}
 
-      <div className="grid grid-flow-row-dense grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid grid-flow-row-dense grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
         <IntegrationList vm={vm} />
       </div>
     </div>

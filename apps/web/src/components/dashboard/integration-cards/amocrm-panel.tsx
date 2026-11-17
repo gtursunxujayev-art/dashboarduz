@@ -48,7 +48,7 @@ export function AmoCrmPanel({ vm }: { vm: IntegrationCardModel }) {
                 return (
                   <label
                     key={pipeline.id}
-                    className={`flex cursor-pointer items-start gap-3 rounded-[10px] border px-3 py-2.5 text-sm text-gray-700 hover:border-gray-300 ${checked ? 'border-blue-200 bg-blue-50/60' : 'border-gray-200'}`}
+                    className={`flex cursor-pointer items-start gap-3 rounded-[12px] border px-3 py-2.5 text-sm text-gray-700 hover:border-gray-300 ${checked ? 'border-blue-200 bg-blue-50/60' : 'border-gray-200'}`}
                   >
                     <input
                       type="checkbox"

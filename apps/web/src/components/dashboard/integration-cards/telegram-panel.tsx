@@ -34,22 +34,22 @@ export function TelegramPanel({ vm }: { vm: IntegrationCardModel }) {
               ) : telegramHealthQuery.data ? (
                 <div className="mt-3 space-y-3 text-xs text-gray-600">
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <p className="rounded-[10px] bg-white px-3 py-2">
+                    <p className="rounded-[12px] bg-white px-3 py-2">
                       Holat:{' '}
                       <span className={telegramHealthQuery.data.healthy ? 'font-semibold text-green-600' : 'font-semibold text-red-600'}>
                         {telegramHealthQuery.data.healthy ? 'Sog‘lom' : 'Muammo aniqlandi'}
                       </span>
                     </p>
-                    <p className="rounded-[10px] bg-white px-3 py-2">
+                    <p className="rounded-[12px] bg-white px-3 py-2">
                       18:00 / 23:59 reja:{' '}
                       <span className={telegramHealthQuery.data.schedulerReady ? 'font-semibold text-green-600' : 'font-semibold text-amber-600'}>
                         {telegramHealthQuery.data.schedulerReady ? 'Tayyor' : 'Sozlash kerak'}
                       </span>
                     </p>
-                    <p className="tabular rounded-[10px] bg-white px-3 py-2">Foydalanuvchilar: {telegramHealthQuery.data.recipientCount}</p>
-                    <p className="tabular rounded-[10px] bg-white px-3 py-2">Navbatdagi update: {telegramHealthQuery.data.pendingUpdateCount}</p>
-                    <p className="tabular rounded-[10px] bg-white px-3 py-2">Online guruhlar: {telegramHealthQuery.data.onlineGroupCount}</p>
-                    <p className="tabular rounded-[10px] bg-white px-3 py-2">Offline guruhlar: {telegramHealthQuery.data.offlineGroupCount}</p>
+                    <p className="tabular rounded-[12px] bg-white px-3 py-2">Foydalanuvchilar: {telegramHealthQuery.data.recipientCount}</p>
+                    <p className="tabular rounded-[12px] bg-white px-3 py-2">Navbatdagi update: {telegramHealthQuery.data.pendingUpdateCount}</p>
+                    <p className="tabular rounded-[12px] bg-white px-3 py-2">Online guruhlar: {telegramHealthQuery.data.onlineGroupCount}</p>
+                    <p className="tabular rounded-[12px] bg-white px-3 py-2">Offline guruhlar: {telegramHealthQuery.data.offlineGroupCount}</p>
                   </div>
                   <div className="space-y-1">
                     <p>Kutilayotgan webhook: <span className="break-all font-mono">{telegramHealthQuery.data.expectedWebhookUrl}</span></p>
@@ -178,7 +178,7 @@ export function TelegramPanel({ vm }: { vm: IntegrationCardModel }) {
                     return (
                       <label
                         key={recipient.chatId}
-                        className={`flex cursor-pointer items-start gap-3 rounded-[10px] border px-3 py-2.5 text-sm text-gray-700 hover:border-gray-300 ${checked ? 'border-blue-200 bg-blue-50/60' : 'border-gray-200'}`}
+                        className={`flex cursor-pointer items-start gap-3 rounded-[12px] border px-3 py-2.5 text-sm text-gray-700 hover:border-gray-300 ${checked ? 'border-blue-200 bg-blue-50/60' : 'border-gray-200'}`}
                       >
                         <input
                           type="checkbox"

@@ -11,10 +11,10 @@ export function CustomerIdentityModal({ vm }: { vm: CustomersPageModel }) {
     <>
       {isAdmin && isIdentityModalOpen && (
         <div className="modal-backdrop">
-          <div className="modal-panel max-w-md">
+          <div className="modal-panel max-w-[480px]">
             <div className="modal-header">
-              <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                   <IconId className="h-5 w-5" stroke={1.6} />
                 </span>
                 <div className="min-w-0">

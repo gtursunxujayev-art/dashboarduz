@@ -33,16 +33,16 @@ export function AttendanceSummaryTable({ vm }: { vm: AttendancePageModel }) {
 
   return (
     <section className="panel">
-      <div className="panel-header">
+      <div className="panel-header pb-1">
         <div className="flex items-center gap-2">
           <h2 className="section-title">Kunlik davomat</h2>
           {displayRows.length > 0 && <span className="badge badge-neutral tabular">{displayRows.length}</span>}
         </div>
       </div>
       <div className="p-2 sm:p-3">
-        <div className="max-h-[520px] overflow-auto">
+        <div className="max-h-[640px] overflow-auto">
           <table className="data-table">
-            <thead className="sticky top-0 z-[1]">
+            <thead className="sticky top-0 z-[1] [&_th]:bg-white">
               <tr>
                 <th className="text-left">Sana</th>
                 <th className="text-left">Xodim</th>

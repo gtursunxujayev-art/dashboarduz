@@ -28,7 +28,7 @@ function CourseCard({ group, course }: { group: GroupKey; course: SelectedCourse
   return (
     <article className="panel flex min-h-[212px] flex-col p-5 sm:p-6">
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-gray-100 text-gray-700">
+        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-700">
           <GroupIcon className="h-5 w-5" stroke={1.6} />
         </span>
         <div className="min-w-0">

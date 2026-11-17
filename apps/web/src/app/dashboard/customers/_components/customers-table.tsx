@@ -1,5 +1,6 @@
 'use client';
 
+import { IconBook2, IconBrandTelegram, IconChevronRight, IconId, IconPencil, IconUsers } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { EmptyState } from '@/components/ui/empty-state';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -10,15 +11,15 @@ export function CustomersTable({ vm }: { vm: CustomersPageModel }) {
   const { customers, customersQuery, editMode, handleToggleCustomer, handleToggleSelectAll, isAdmin, isAllSelected, isTashkiliyOnly, openCourseEditorModal, openDetailsModal, openIdentityModal, selectedCustomerIds } = vm;
 
   return (
-    <div className="panel p-2 sm:p-3">
+    <div className="panel overflow-hidden">
       {customersQuery.isLoading ? (
-        <LoadingBlock message="Mijozlar yuklanmoqda..." className="m-2" />
+        <LoadingBlock message="Mijozlar yuklanmoqda..." className="m-3" />
       ) : customersQuery.error ? (
-        <p className="alert alert-error m-2">
+        <p className="alert alert-error m-3">
           {customersQuery.error.message || "Mijozlarni yuklab bo'lmadi."}
         </p>
       ) : customers.length ? (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto px-2 pb-2 sm:px-3">
           <table className="data-table">
             <thead>
               <tr>
@@ -33,8 +34,11 @@ export function CustomersTable({ vm }: { vm: CustomersPageModel }) {
                     />
                   </th>
                 )}
-                <th>Mijoz ismi</th>
-                <th>Mijoz raqami</th>
+                <th>
+                  <span>Mijoz ismi</span>
+                  <span className="text-gray-300" aria-hidden="true"> / </span>
+                  <span>Mijoz raqami</span>
+                </th>
                 <th>Telegram</th>
                 <th>Mas&apos;ul agent</th>
                 <th>Kurslar</th>
@@ -63,18 +67,28 @@ export function CustomersTable({ vm }: { vm: CustomersPageModel }) {
                     )}
                     <td className="whitespace-nowrap">
                       <div className="flex items-center gap-3">
-                        <UserAvatar name={customer.name || String(customer.customerNumber || '?')} size="sm" />
-                        <span className="font-medium text-gray-900">{customer.name}</span>
+                        <UserAvatar name={customer.name || String(customer.customerNumber || '?')} />
+                        <div className="min-w-0">
+                          <p className="font-medium leading-tight text-gray-900">{customer.name}</p>
+                          <p className="tabular mt-0.5 text-[13px] text-gray-500">{customer.customerNumber}</p>
+                        </div>
                       </div>
                     </td>
-                    <td className="tabular whitespace-nowrap text-gray-600">{customer.customerNumber}</td>
-                    <td className="whitespace-nowrap text-gray-600">{customer.telegramUsername || '-'}</td>
+                    <td className="whitespace-nowrap text-gray-600">
+                      {customer.telegramUsername ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <IconBrandTelegram className="h-4 w-4 text-gray-400" stroke={1.8} aria-hidden="true" />
+                          {customer.telegramUsername}
+                        </span>
+                      ) : '-'}
+                    </td>
                     <td className="whitespace-nowrap">{customer.responsibleManagerLabel || '-'}</td>
-                    <td className="min-w-[180px]">
+                    <td className="min-w-[200px]">
                       {Array.isArray(customer.courseEntries) && customer.courseEntries.length ? (
                         <div className="flex flex-wrap items-center gap-1.5">
                           {customer.courseEntries.map((entry: any) => (
-                            <span key={entry.saleIncomeId} className="badge badge-neutral max-w-[220px]">
+                            <span key={entry.saleIncomeId} className="badge badge-blue max-w-[220px]">
+                              <IconBook2 className="h-3.5 w-3.5 flex-shrink-0" stroke={1.8} aria-hidden="true" />
                               <span className="truncate">{entry.label}</span>
                             </span>
                           ))}
@@ -82,8 +96,9 @@ export function CustomersTable({ vm }: { vm: CustomersPageModel }) {
                             <button
                               type="button"
                               onClick={() => openCourseEditorModal(customer.id)}
-                              className="btn btn-sm btn-soft"
+                              className="btn btn-sm btn-ghost"
                             >
+                              <IconPencil className="h-3.5 w-3.5" stroke={1.8} />
                               Tahrirlash
                             </button>
                           )}
@@ -96,20 +111,22 @@ export function CustomersTable({ vm }: { vm: CustomersPageModel }) {
                     </td>
                     <td className="tabular whitespace-nowrap text-right">
                       <span className={customer.hasDebt ? 'badge badge-amber' : 'font-medium text-emerald-700'}>
+                        {customer.hasDebt ? <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" /> : null}
                         {formatNumberEn(customer.totalDebtAmount || 0)}
                       </span>
                     </td>
                     {!isTashkiliyOnly && (
                       <td className="tabular whitespace-nowrap text-right font-medium text-gray-900">{formatNumberEn(customer.totalPaidAmount || 0)}</td>
                     )}
-                    <td className="tabular whitespace-nowrap text-gray-600">{formatTashkentDate(customer.lastActivityAt)}</td>
+                    <td className="tabular whitespace-nowrap text-gray-500">{formatTashkentDate(customer.lastActivityAt)}</td>
                     <td className="whitespace-nowrap text-right">
                       <button
                         type="button"
                         onClick={() => openDetailsModal(customer.id)}
-                        className="btn btn-sm btn-secondary"
+                        className="btn btn-sm btn-ghost"
                       >
                         Batafsil
+                        <IconChevronRight className="h-3.5 w-3.5" stroke={1.8} />
                       </button>
                     </td>
                     {isAdmin && editMode && (
@@ -117,8 +134,9 @@ export function CustomersTable({ vm }: { vm: CustomersPageModel }) {
                         <button
                           type="button"
                           onClick={() => openIdentityModal(customer)}
-                          className="btn btn-sm btn-soft"
+                          className="btn btn-sm btn-ghost"
                         >
+                          <IconId className="h-3.5 w-3.5" stroke={1.8} />
                           Ism/raqam
                         </button>
                       </td>
@@ -130,7 +148,7 @@ export function CustomersTable({ vm }: { vm: CustomersPageModel }) {
           </table>
         </div>
       ) : (
-        <EmptyState title="Tanlangan filtr bo'yicha mijoz topilmadi." className="m-2" />
+        <EmptyState title="Tanlangan filtr bo'yicha mijoz topilmadi." icon={IconUsers} className="m-3" />
       )}
     </div>
   );

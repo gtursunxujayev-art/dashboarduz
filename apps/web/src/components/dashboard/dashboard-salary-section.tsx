@@ -1,9 +1,9 @@
 'use client';
 
 import { IconCoins, IconGauge, IconTargetArrow, IconUsers, IconWallet, IconCash } from '@tabler/icons-react';
+import type { Icon } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { EmptyState } from '@/components/ui/empty-state';
-import { StatTile } from '@/components/ui/stat-tile';
 import { UserAvatar } from '@/components/ui/user-avatar';
 
 type Props = {
@@ -29,7 +29,7 @@ function SalaryByPersonTable({
   formatAmount: (value?: number | null) => string;
 }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-[16px] border border-gray-100">
       <table className="data-table">
         <thead>
           <tr>
@@ -63,6 +63,34 @@ function SalaryByPersonTable({
   );
 }
 
+function SalaryFigures({
+  items,
+}: {
+  items: { label: string; value: string; icon: Icon; accent?: boolean }[];
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+      {items.map(({ label, value, icon: FigureIcon, accent }) => (
+        <div
+          key={label}
+          className={`flex min-w-0 flex-col justify-between gap-3 rounded-[16px] p-4 ${accent ? 'bg-blue-600 text-white shadow-[0_10px_24px_-12px_rgb(34_72_226/0.7)]' : 'bg-gray-50'}`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <p className={accent ? 'text-[11px] font-medium uppercase tracking-[0.08em] text-white/75' : 'caption'}>{label}</p>
+            <span
+              className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${accent ? 'bg-white/15 text-white' : 'bg-white text-gray-500 shadow-sm'}`}
+              aria-hidden="true"
+            >
+              <FigureIcon className="h-4 w-4" stroke={1.8} />
+            </span>
+          </div>
+          <p className={`tabular truncate text-[22px] font-semibold leading-none tracking-[-0.02em] ${accent ? 'text-white' : 'text-gray-900'}`}>{value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function DashboardSalarySection({
   showSalarySection,
   isLoading,
@@ -83,8 +111,8 @@ export default function DashboardSalarySection({
     <section className="panel">
       <div className="panel-header items-start">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
-            <IconWallet className="h-[18px] w-[18px]" stroke={1.8} />
+          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+            <IconWallet className="h-5 w-5" stroke={1.6} />
           </span>
           <div className="min-w-0">
             <h3 className="section-title">Maosh (joriy oy)</h3>
@@ -104,19 +132,21 @@ export default function DashboardSalarySection({
           <LoadingBlock message="Maosh ma'lumotlari yuklanmoqda..." />
         ) : isAgentOnly || isTeamLeaderView ? (
           <div className="space-y-5">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-              <StatTile className="panel-inset shadow-none" label="Fiks maosh" value={formatAmount(salaryCurrentUser?.fixedSalary)} icon={IconWallet} />
-              <StatTile className="panel-inset shadow-none" label="KPI" value={formatAmount(salaryCurrentUser?.kpiAmount)} icon={IconGauge} />
-              <StatTile className="panel-inset shadow-none" label="Bonus" value={formatAmount(salaryCurrentUser?.bonusAmount)} icon={IconCoins} />
-              <StatTile className="panel-inset shadow-none" label="Plan Bonus" value={formatAmount(salaryCurrentUser?.planBonusAmount)} icon={IconTargetArrow} />
-              <StatTile className="panel-inset shadow-none" label="Jami maosh" value={formatAmount(salaryCurrentUser?.totalSalary)} icon={IconCash} tone="blue" />
-            </div>
+            <SalaryFigures
+              items={[
+                { label: 'Fiks maosh', value: formatAmount(salaryCurrentUser?.fixedSalary), icon: IconWallet },
+                { label: 'KPI', value: formatAmount(salaryCurrentUser?.kpiAmount), icon: IconGauge },
+                { label: 'Bonus', value: formatAmount(salaryCurrentUser?.bonusAmount), icon: IconCoins },
+                { label: 'Plan Bonus', value: formatAmount(salaryCurrentUser?.planBonusAmount), icon: IconTargetArrow },
+                { label: 'Jami maosh', value: formatAmount(salaryCurrentUser?.totalSalary), icon: IconCash, accent: true },
+              ]}
+            />
 
             {isAgentOnly && (
               <div className="space-y-3">
-                <h4 className="text-sm font-semibold text-gray-900">Plan bonuslar</h4>
+                <h4 className="caption">Plan bonuslar</h4>
                 {Array.isArray(salaryCurrentUser?.planProgress) && salaryCurrentUser.planProgress.length ? (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto rounded-[16px] border border-gray-100">
                     <table className="data-table">
                       <thead>
                         <tr>
@@ -133,7 +163,7 @@ export default function DashboardSalarySection({
                             <td className="tabular whitespace-nowrap text-right">{plan.fact}/{plan.target}</td>
                             <td className="whitespace-nowrap">
                               <div className="flex items-center gap-2.5">
-                                <span className="h-1.5 w-20 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+                                <span className="h-2 w-24 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
                                   <span
                                     className="block h-full rounded-full bg-blue-600"
                                     style={{ width: `${Math.min(100, Math.max(0, plan.completionPercent ?? 0))}%` }}
@@ -156,7 +186,7 @@ export default function DashboardSalarySection({
 
             {isTeamLeaderView && (
               <div className="space-y-3">
-                <h4 className="text-sm font-semibold text-gray-900">Faol foydalanuvchilar bonusi</h4>
+                <h4 className="caption">Faol foydalanuvchilar bonusi</h4>
                 {salaryByAgent.length ? (
                   <SalaryByPersonTable rows={salaryByAgent} nameHeader="Xodim" formatAmount={formatAmount} />
                 ) : (
@@ -167,13 +197,15 @@ export default function DashboardSalarySection({
           </div>
         ) : (
           <div className="space-y-5">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-              <StatTile className="panel-inset shadow-none" label="Jami fiks maosh" value={formatAmount(salaryTotals?.fixedSalary)} icon={IconWallet} />
-              <StatTile className="panel-inset shadow-none" label="Jami KPI" value={formatAmount(salaryTotals?.kpi)} icon={IconGauge} />
-              <StatTile className="panel-inset shadow-none" label="Jami bonus" value={formatAmount(salaryTotals?.bonus)} icon={IconCoins} />
-              <StatTile className="panel-inset shadow-none" label="Jami plan bonus" value={formatAmount(salaryTotals?.planBonus)} icon={IconTargetArrow} />
-              <StatTile className="panel-inset shadow-none" label="Jami maosh to'lovi" value={formatAmount(salaryTotals?.salary)} icon={IconCash} tone="blue" />
-            </div>
+            <SalaryFigures
+              items={[
+                { label: 'Jami fiks maosh', value: formatAmount(salaryTotals?.fixedSalary), icon: IconWallet },
+                { label: 'Jami KPI', value: formatAmount(salaryTotals?.kpi), icon: IconGauge },
+                { label: 'Jami bonus', value: formatAmount(salaryTotals?.bonus), icon: IconCoins },
+                { label: 'Jami plan bonus', value: formatAmount(salaryTotals?.planBonus), icon: IconTargetArrow },
+                { label: "Jami maosh to'lovi", value: formatAmount(salaryTotals?.salary), icon: IconCash, accent: true },
+              ]}
+            />
 
             {salaryByAgent.length ? (
               <SalaryByPersonTable rows={salaryByAgent} nameHeader="Agent" formatAmount={formatAmount} />

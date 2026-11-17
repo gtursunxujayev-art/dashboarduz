@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { IconFilePlus, IconSend } from '@tabler/icons-react';
 import { getIncomeStatusBadge } from '@/components/dashboard/income-status-badge';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -15,24 +16,35 @@ function incomeStatusTone(status: string): string {
   return 'badge-green';
 }
 
+/** Label left, value right: one line of the selected transaction's facts. */
+function FactRow({ label, children }: { label: ReactNode; children: ReactNode }) {
+  return (
+    <p className="flex items-start justify-between gap-4 py-2">
+      <span className="flex-shrink-0 font-medium text-gray-900">{label}</span>
+      <span className="min-w-0 break-words text-right text-gray-700">{children}</span>
+    </p>
+  );
+}
+
 export function AdjustmentRequestForm({ vm }: { vm: AdjustmentsPageModel }) {
   const { courseOptions, createRequestMutation, customerNumberInput, customerOptions, error, handleCreateRequest, incomeOptions, mode, newAgreementInput, newCourseId, newTariffId, reason, refundCardNumberInput, selectedCustomer, selectedCustomerId, selectedIncome, selectedIncomeId, setCustomerNumberInput, setMode, setNewAgreementInput, setNewCourseId, setNewTariffId, setReason, setRefundCardNumberInput, setSelectedIncomeId, success, tariffOptions } = vm;
 
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-blue-50 text-blue-600">
-            <IconFilePlus className="h-4 w-4" stroke={1.8} />
+    <section className="panel overflow-hidden">
+      <div className="panel-header pb-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+            <IconFilePlus className="h-[18px] w-[18px]" stroke={1.6} />
           </span>
           <h2 className="section-title">Yangi so&apos;rov</h2>
         </div>
       </div>
-      <div className="panel-body space-y-4">
-        {error && <p className="alert alert-error">{error}</p>}
-        {success && <p className="alert alert-success">{success}</p>}
 
-        <form onSubmit={handleCreateRequest} className="space-y-4">
+      <form onSubmit={handleCreateRequest}>
+        <div className="space-y-4 border-t border-gray-100 px-5 py-5 sm:px-6">
+          {error && <p className="alert alert-error">{error}</p>}
+          {success && <p className="alert alert-success">{success}</p>}
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-1">
             <div>
               <label className="field-label">So&apos;rov turi</label>
@@ -97,15 +109,15 @@ export function AdjustmentRequestForm({ vm }: { vm: AdjustmentsPageModel }) {
           )}
 
           {selectedIncome && (
-            <div className="space-y-3 rounded-[12px] border border-gray-200 p-4">
+            <div className="rounded-[16px] border border-gray-200 px-4 pb-2 pt-3.5 text-sm">
               <span className={`badge ${incomeStatusTone(selectedIncome.lifecycleStatus)}`}>
                 {getIncomeStatusBadge(selectedIncome.lifecycleStatus, { darkMode: true }).label}
               </span>
-              <div className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm text-gray-700 sm:grid-cols-2 xl:grid-cols-1">
-                <p><span className="font-medium text-gray-900">Kurs/Tarif:</span> {[selectedIncome.course?.name, selectedIncome.tariff?.name].filter(Boolean).join(' / ') || '-'}</p>
-                <p><span className="font-medium text-gray-900">To&apos;lov:</span> <span className="tabular">{formatAmountDigits(selectedIncome.paymentAmount)} UZS</span></p>
-                <p><span className="font-medium text-gray-900">Kelishuv:</span> <span className="tabular">{formatAmountDigits(selectedIncome.coursePriceAmount)} UZS</span></p>
-                <p><span className="font-medium text-gray-900">Qolgan qarz:</span> <span className="tabular">{formatAmountDigits(selectedIncome.remainingDebtAmount)} UZS</span></p>
+              <div className="mt-2 divide-y divide-gray-100">
+                <FactRow label="Kurs/Tarif:">{[selectedIncome.course?.name, selectedIncome.tariff?.name].filter(Boolean).join(' / ') || '-'}</FactRow>
+                <FactRow label={<>To&apos;lov:</>}><span className="tabular">{formatAmountDigits(selectedIncome.paymentAmount)} UZS</span></FactRow>
+                <FactRow label="Kelishuv:"><span className="tabular">{formatAmountDigits(selectedIncome.coursePriceAmount)} UZS</span></FactRow>
+                <FactRow label="Qolgan qarz:"><span className="tabular">{formatAmountDigits(selectedIncome.remainingDebtAmount)} UZS</span></FactRow>
               </div>
             </div>
           )}
@@ -179,19 +191,19 @@ export function AdjustmentRequestForm({ vm }: { vm: AdjustmentsPageModel }) {
               placeholder="Ixtiyoriy izoh..."
             />
           </div>
+        </div>
 
-          <div className="flex justify-end border-t border-gray-100 pt-4">
-            <button
-              type="submit"
-              disabled={createRequestMutation.isLoading || !mode || !selectedCustomerId || !selectedIncomeId}
-              className="btn btn-primary w-full sm:w-auto xl:w-full"
-            >
-              <IconSend className="h-4 w-4" stroke={1.8} />
-              {createRequestMutation.isLoading ? "Yuborilmoqda..." : "So'rov yuborish"}
-            </button>
-          </div>
-        </form>
-      </div>
+        <div className="flex justify-end border-t border-gray-100 bg-gray-50 px-5 py-4 sm:px-6">
+          <button
+            type="submit"
+            disabled={createRequestMutation.isLoading || !mode || !selectedCustomerId || !selectedIncomeId}
+            className="btn btn-primary w-full sm:w-auto xl:w-full"
+          >
+            <IconSend className="h-4 w-4" stroke={1.8} />
+            {createRequestMutation.isLoading ? "Yuborilmoqda..." : "So'rov yuborish"}
+          </button>
+        </div>
+      </form>
     </section>
   );
 }

@@ -12,10 +12,10 @@ export function AddCustomerModal({ vm }: { vm: CustomersPageModel }) {
     <>
       {isAdmin && isAddModalOpen && (
         <div className="modal-backdrop">
-          <div className="modal-panel max-w-2xl">
+          <div className="modal-panel max-w-[560px]">
             <div className="modal-header">
               <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                   <IconUserPlus className="h-5 w-5" stroke={1.6} />
                 </span>
                 <div className="min-w-0">
@@ -26,7 +26,7 @@ export function AddCustomerModal({ vm }: { vm: CustomersPageModel }) {
             </div>
 
             <div className="modal-body space-y-5">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="field-label">Mijoz raqami</label>
                   <input
@@ -45,7 +45,7 @@ export function AddCustomerModal({ vm }: { vm: CustomersPageModel }) {
                     className="field"
                   />
                 </div>
-                <div className="md:col-span-2">
+                <div className="sm:col-span-2">
                   <label className="field-label">Telegram username</label>
                   <input
                     value={newTelegram}
@@ -57,7 +57,7 @@ export function AddCustomerModal({ vm }: { vm: CustomersPageModel }) {
               </div>
 
               <div className="panel-inset">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3">
                   <div>
                     <label className="field-label">Kurs</label>
                     <select

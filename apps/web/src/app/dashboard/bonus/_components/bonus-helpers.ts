@@ -1,4 +1,4 @@
-import type { SalaryRuleMode as CourseBonusMode, CourseCategory as PlanCategory, PlanBonusPeriodMode as PlanPeriodMode, CourseCategory as SalaryCategory } from '@dashboarduz/shared';
+import type { SalaryRuleMode as CourseBonusMode, CourseCategory as PlanCategory, PlanBonusPeriodMode as PlanPeriodMode, CourseCategory as SalaryCategory, SalaryTierBasis } from '@dashboarduz/shared';
 
 type BonusTier = {
   minSales: number;
@@ -8,12 +8,15 @@ type BonusTier = {
 
 export type CategoryBonusRule = {
   mode: CourseBonusMode;
+  /** What the tier min/max measure; missing on rules saved before the basis existed, which tier on the sales count. */
+  tierBasis?: SalaryTierBasis;
   simplePercent: number;
   tiers: BonusTier[];
 };
 
 type CategoryBonusRuleState = {
   mode: CourseBonusMode;
+  tierBasis: SalaryTierBasis;
   simplePercent: string;
   tiers: Array<{
     minSales: string;
@@ -120,10 +123,10 @@ export function getSalaryCategoryLabel(category: SalaryCategory): string {
 export function createDefaultBonusRulesState(): BonusRulesState {
   const emptyTier = { minSales: '', maxSales: '', percent: '' };
   return {
-    online: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
-    offline: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
-    intensive: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
-    additional_service: { mode: 'simple', simplePercent: '0', tiers: [emptyTier] },
+    online: { mode: 'simple', tierBasis: 'sales_count', simplePercent: '0', tiers: [emptyTier] },
+    offline: { mode: 'simple', tierBasis: 'sales_count', simplePercent: '0', tiers: [emptyTier] },
+    intensive: { mode: 'simple', tierBasis: 'sales_count', simplePercent: '0', tiers: [emptyTier] },
+    additional_service: { mode: 'simple', tierBasis: 'sales_count', simplePercent: '0', tiers: [emptyTier] },
   };
 }
 
@@ -148,15 +151,18 @@ export function createDefaultKpiThresholds(): KpiThresholdStateMap {
 }
 
 export function mapRuleToState(rule: CategoryBonusRule | undefined): CategoryBonusRuleState {
+  const tierBasis: SalaryTierBasis = rule?.tierBasis === 'agreement_amount' ? 'agreement_amount' : 'sales_count';
   if (!rule || rule.mode === 'simple') {
     return {
       mode: 'simple',
+      tierBasis,
       simplePercent: String(rule?.simplePercent ?? 0),
       tiers: [{ minSales: '', maxSales: '', percent: '' }],
     };
   }
   return {
     mode: 'tiered',
+    tierBasis,
     simplePercent: String(rule.simplePercent ?? 0),
     tiers: rule.tiers.length
       ? rule.tiers.map((tier) => ({

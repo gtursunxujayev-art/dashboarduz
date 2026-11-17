@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { IconArrowRight, IconChartBar, IconCoin, IconPhone, IconUsersGroup } from '@tabler/icons-react';
+import { IconArrowRight, IconChartBar, IconCoin, IconPhone, IconTrophy, IconUsersGroup } from '@tabler/icons-react';
 import { trpc } from '@/lib/trpc';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import { formatDurationCompact, formatPercent, formatResponseTime, formatSomRounded } from '@/lib/format';
@@ -11,7 +11,7 @@ import { getTashkentDateShift, getTashkentToday } from '@/lib/date-range';
 import { getConversionBadge, getDebtCollectionBadge, getFollowUpBadge, getMissedCallBadge, getOutboundBadge, getRefundBadge, getResponseTimeBadge, type KpiBadge } from '@/components/dashboard/seller-kpi-badges';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
-import { UserAvatar } from '@/components/ui/user-avatar';
+import { getInitials } from '@/components/ui/user-avatar';
 
 const BADGE_COLORS: Record<KpiBadge, string> = {
   good: 'bg-emerald-50 text-emerald-700',
@@ -27,9 +27,11 @@ const BADGE_DOTS: Record<KpiBadge, string> = {
   neutral: 'bg-gray-300',
 };
 
+type CardVariant = 'podium' | 'grid';
+
 function KpiPill({ label, value, badge }: { label: string; value: string; badge: KpiBadge }) {
   return (
-    <div className={`flex min-w-0 items-center justify-between gap-2 rounded-[10px] px-3 py-2 ${BADGE_COLORS[badge]}`}>
+    <div className={`flex min-w-0 items-center justify-between gap-2 rounded-full px-3 py-1.5 ${BADGE_COLORS[badge]}`}>
       <span className="flex min-w-0 items-center gap-1.5 text-xs">
         <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${BADGE_DOTS[badge]}`} aria-hidden="true" />
         <span className="truncate">{label}</span>
@@ -51,18 +53,35 @@ function CoreMetric({
   children?: ReactNode;
 }) {
   return (
-    <div className="min-w-0 px-3 py-1 first:pl-0 last:pr-0 sm:px-4">
+    <div className="min-w-0 rounded-[16px] bg-gray-50 px-3.5 py-3">
       <p className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
         <MetricIcon className="h-3.5 w-3.5 text-gray-400" stroke={1.8} />
         <span className="truncate">{label}</span>
       </p>
-      <p className="tabular mt-1.5 truncate text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">{value}</p>
-      <div className="mt-1 space-y-0.5 text-xs text-gray-500">{children}</div>
+      <p className="tabular mt-1 truncate text-lg font-semibold tracking-tight text-gray-900">{value}</p>
+      <div className="mt-0.5 space-y-0.5 text-xs text-gray-500">{children}</div>
     </div>
   );
 }
 
-function AgentCard({ seller }: { seller: any }) {
+function RankMark({ rank, variant }: { rank: number; variant: CardVariant }) {
+  if (variant === 'podium') {
+    const tone = rank === 1 ? 'bg-blue-600 text-white shadow-[0_6px_16px_-6px_rgb(34_72_226/0.6)]' : 'bg-gray-100 text-gray-700';
+    return (
+      <span className={`inline-flex h-8 flex-shrink-0 items-center gap-1 rounded-full px-3 text-sm font-semibold tabular ${tone}`}>
+        <IconTrophy className="h-4 w-4" stroke={1.8} aria-hidden="true" />
+        {rank}
+      </span>
+    );
+  }
+  return (
+    <span className="tabular flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
+      {rank}
+    </span>
+  );
+}
+
+function AgentCard({ seller, rank, maxSales, variant }: { seller: any; rank: number; maxSales: number; variant: CardVariant }) {
   const m = seller.metrics;
   const displayName = seller.name || seller.email || seller.phone || 'Sotuvchi';
   const salesCount = m.newSalesCount ?? m.salesCount ?? 0;
@@ -71,32 +90,64 @@ function AgentCard({ seller }: { seller: any }) {
   const followUpRate = followUpTotal > 0 ? ((m.followUpCount ?? 0) / followUpTotal) * 100 : null;
   const outboundRate = (m.totalCalls ?? 0) > 0 ? ((m.outboundCalls ?? 0) / m.totalCalls) * 100 : null;
   const avgDeal = salesCount > 0 ? (m.newSalesAgreementAmount ?? 0) / salesCount : 0;
+  const share = maxSales > 0 ? Math.min(100, (salesCount / maxSales) * 100) : 0;
+  const isPodium = variant === 'podium';
+  const isLeader = isPodium && rank === 1;
 
   return (
     <Link
       href={`/dashboard/sotuvchilar/${seller.id}`}
-      className="panel group block p-5 transition-shadow hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 sm:p-6"
+      className={`panel group flex flex-col transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
+        isPodium ? 'p-6' : 'p-5'
+      } ${isLeader ? 'ring-1 ring-blue-500/30' : ''}`}
     >
-      <div className="flex items-center justify-between gap-4">
+      {/* Identity row */}
+      <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <UserAvatar name={displayName} />
+          {!isPodium && <RankMark rank={rank} variant={variant} />}
+          <span
+            aria-hidden="true"
+            className={`flex flex-shrink-0 items-center justify-center rounded-full font-semibold ${
+              isPodium ? 'h-12 w-12 text-sm' : 'h-9 w-9 text-xs'
+            } ${isLeader ? 'bg-blue-50 text-blue-700' : 'bg-gray-200 text-gray-700'}`}
+          >
+            {getInitials(displayName)}
+          </span>
           <div className="min-w-0">
-            <h2 className="truncate text-[15px] font-semibold text-gray-900">{displayName}</h2>
+            <h2 className={`truncate font-semibold text-gray-900 ${isPodium ? 'text-base' : 'text-[15px]'}`}>{displayName}</h2>
             <p className="text-[13px] font-medium text-gray-500">Agent</p>
           </div>
         </div>
-        <span className="inline-flex flex-shrink-0 items-center gap-1 text-[13px] font-medium text-blue-600 group-hover:text-blue-700">
-          Batafsil
-          <IconArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" stroke={1.8} />
-        </span>
+        {isPodium ? <RankMark rank={rank} variant={variant} /> : null}
       </div>
 
-      {/* Core metrics row */}
-      <div className="mt-5 grid grid-cols-3 divide-x divide-gray-100">
-        <CoreMetric icon={IconChartBar} label="Sotuvlar" value={salesCount}>
-          <p className="tabular truncate">{formatSomRounded(m.incomeAmount)}</p>
-          <p className="tabular truncate text-gray-400">Yangi lid: {newLeadsInRange}</p>
-        </CoreMetric>
+      {/* Main figure: sales, with the bar against the leader */}
+      <div className={isPodium ? 'mt-6' : 'mt-5'}>
+        <div className="flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+              <IconChartBar className="h-3.5 w-3.5 text-gray-400" stroke={1.8} />
+              Sotuvlar
+            </p>
+            <p className={`tabular mt-1 font-semibold leading-none tracking-[-0.02em] text-gray-900 ${isPodium ? 'text-[40px]' : 'text-[28px]'}`}>
+              {salesCount}
+            </p>
+          </div>
+          <div className="min-w-0 text-right text-xs text-gray-500">
+            <p className="tabular truncate text-sm font-medium text-gray-900">{formatSomRounded(m.incomeAmount)}</p>
+            <p className="tabular truncate">Yangi lid: {newLeadsInRange}</p>
+          </div>
+        </div>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+          <span
+            className={`block h-full origin-left animate-grow-x rounded-full ${isLeader || !isPodium ? 'bg-blue-600' : 'bg-blue-400'}`}
+            style={{ width: `${share}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Calls and average deal */}
+      <div className="mt-4 grid grid-cols-2 gap-2">
         <CoreMetric icon={IconPhone} label="Qo'ng'iroqlar" value={m.totalCalls ?? 0}>
           <p className="tabular truncate">{formatDurationCompact(m.totalCallDuration)}</p>
         </CoreMetric>
@@ -106,7 +157,7 @@ function AgentCard({ seller }: { seller: any }) {
       </div>
 
       {/* KPI indicators */}
-      <div className="mt-5 grid grid-cols-2 gap-2 border-t border-gray-100 pt-4 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-1 gap-1.5 min-[420px]:grid-cols-2">
         <KpiPill
           label="Konversiya"
           value={formatPercent(m.conversionRate, 1)}
@@ -148,7 +199,38 @@ function AgentCard({ seller }: { seller: any }) {
           badge={getResponseTimeBadge(m.leadResponseTime?.avgResponseSeconds ?? 0)}
         />
       </div>
+
+      <span className="mt-5 inline-flex items-center gap-1 self-end text-[13px] font-medium text-blue-600 group-hover:text-blue-700">
+        Batafsil
+        <IconArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" stroke={1.8} />
+      </span>
     </Link>
+  );
+}
+
+function CardSkeleton({ variant }: { variant: CardVariant }) {
+  const isPodium = variant === 'podium';
+  return (
+    <div className={`panel animate-pulse ${isPodium ? 'p-6' : 'p-5'}`}>
+      <div className="flex items-center gap-3">
+        <div className={`rounded-full bg-gray-100 ${isPodium ? 'h-12 w-12' : 'h-9 w-9'}`} />
+        <div className="space-y-2">
+          <div className="h-4 w-32 rounded-full bg-gray-100" />
+          <div className="h-3 w-16 rounded-full bg-gray-100" />
+        </div>
+      </div>
+      <div className={`rounded-full bg-gray-100 ${isPodium ? 'mt-6 h-10 w-20' : 'mt-5 h-7 w-14'}`} />
+      <div className="mt-3 h-1.5 rounded-full bg-gray-100" />
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="h-[76px] rounded-[16px] bg-gray-100" />
+        <div className="h-[76px] rounded-[16px] bg-gray-100" />
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-1.5">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div key={index} className="h-7 rounded-full bg-gray-100" />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -186,6 +268,14 @@ export default function SotuvchilarPage() {
   }), [dateFrom, dateTo, sellers]);
   useDashboardAiPageContext(aiPageContext);
 
+  // The API already returns sellers ranked (sales, then income); the order is kept as is.
+  const maxSales = (sellers || []).reduce(
+    (max: number, seller: any) => Math.max(max, Number(seller?.metrics?.newSalesCount ?? seller?.metrics?.salesCount ?? 0)),
+    0,
+  );
+  const podium = (sellers || []).slice(0, 3);
+  const rest = (sellers || []).slice(3);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -202,26 +292,17 @@ export default function SotuvchilarPage() {
       />
 
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="panel animate-pulse p-5 sm:p-6">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-full bg-gray-100" />
-                <div className="h-5 w-40 rounded bg-gray-100" />
-              </div>
-              <div className="mt-6 grid grid-cols-3 gap-3">
-                <div className="h-20 rounded-[10px] bg-gray-100" />
-                <div className="h-20 rounded-[10px] bg-gray-100" />
-                <div className="h-20 rounded-[10px] bg-gray-100" />
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="h-9 rounded-[10px] bg-gray-100" />
-                <div className="h-9 rounded-[10px] bg-gray-100" />
-                <div className="h-9 rounded-[10px] bg-gray-100" />
-                <div className="h-9 rounded-[10px] bg-gray-100" />
-              </div>
-            </div>
-          ))}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <CardSkeleton key={index} variant="podium" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <CardSkeleton key={index} variant="grid" />
+            ))}
+          </div>
         </div>
       ) : error ? (
         <p className="alert alert-error">
@@ -230,10 +311,19 @@ export default function SotuvchilarPage() {
       ) : !sellers?.length ? (
         <EmptyState title="Ko'rsatish uchun sotuvchi topilmadi." icon={IconUsersGroup} />
       ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {sellers.map((seller: any) => (
-            <AgentCard key={seller.id} seller={seller} />
-          ))}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-3">
+            {podium.map((seller: any, index: number) => (
+              <AgentCard key={seller.id} seller={seller} rank={index + 1} maxSales={maxSales} variant="podium" />
+            ))}
+          </div>
+          {rest.length > 0 && (
+            <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {rest.map((seller: any, index: number) => (
+                <AgentCard key={seller.id} seller={seller} rank={index + 4} maxSales={maxSales} variant="grid" />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

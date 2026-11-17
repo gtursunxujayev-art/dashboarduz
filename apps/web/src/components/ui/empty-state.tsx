@@ -17,7 +17,7 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <div className={`flex flex-col items-center justify-center rounded-[12px] border border-dashed border-gray-200 px-6 py-10 text-center ${className}`}>
+    <div className={`flex flex-col items-center justify-center rounded-[16px] border border-dashed border-gray-200 px-6 py-10 text-center ${className}`}>
       <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-gray-500">
         <StateIcon className="h-5 w-5" stroke={1.6} />
       </span>

@@ -164,26 +164,26 @@ export default function IncomeDebugPage() {
             Barcha aktiv chainni qayta hisoblash
           </button>
         )}
-      />
-
-      <div className="panel p-3 sm:p-4">
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-[260px_minmax(0,1fr)_auto]">
+      >
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={mode}
             onChange={(event) => setMode(event.target.value as (typeof MODE_OPTIONS)[number]['value'])}
-            className="field"
+            aria-label="Rejim"
+            className="field w-full rounded-full sm:w-[260px]"
           >
             {MODE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
-          <div className="relative min-w-0">
-            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+          <div className="relative min-w-0 flex-1 basis-full sm:basis-64">
+            <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Telefon yoki mijoz ismi"
-              className="field pl-9"
+              aria-label="Telefon yoki mijoz ismi"
+              className="field rounded-full pl-10"
             />
           </div>
           <button
@@ -192,16 +192,16 @@ export default function IncomeDebugPage() {
               setApplied({ mode, query: query.trim(), limit: 200 });
               setSelectedIds([]);
             }}
-            className="btn btn-primary"
+            className="btn btn-primary w-full sm:w-auto"
           >
             <IconFilter className="h-4 w-4" stroke={1.8} />
             Ko'rsatish
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       {summary ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           <StatTile
             label="Tekshirilgan qator"
             value={summary.inspectedCount}
@@ -218,132 +218,142 @@ export default function IncomeDebugPage() {
       ) : null}
 
       {repairResults.length > 0 ? (
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2 className="section-title">
-                Oxirgi sana tiklash natijalari
-              </h2>
-              <p className="mt-1 text-xs text-gray-500">
-                O'tkazib yuborilgan qatorlar va sabablarini shu yerda ko'rasiz.
-              </p>
+        <section className="panel overflow-hidden">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-5 py-5 sm:px-6">
+            <div className="flex items-start gap-3">
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                <IconCalendarRepeat className="h-[18px] w-[18px]" stroke={1.6} />
+              </span>
+              <div>
+                <h2 className="section-title">
+                  Oxirgi sana tiklash natijalari
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  O'tkazib yuborilgan qatorlar va sabablarini shu yerda ko'rasiz.
+                </p>
+              </div>
             </div>
             <span className="badge badge-neutral tabular">{repairResults.length}</span>
           </div>
-          <div className="p-2 pt-4 sm:p-3 sm:pt-4">
-            <div className="max-h-80 overflow-auto">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th className="text-left">Mijoz</th>
-                    <th className="text-left">Eski sana</th>
-                    <th className="text-left">Yangi sana</th>
-                    <th className="text-left">Holat</th>
-                    <th className="text-left">Sabab</th>
+          <div className="max-h-80 overflow-auto px-1 pb-2 sm:px-2">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="text-left">Mijoz</th>
+                  <th className="text-left">Eski sana</th>
+                  <th className="text-left">Yangi sana</th>
+                  <th className="text-left">Holat</th>
+                  <th className="text-left">Sabab</th>
+                </tr>
+              </thead>
+              <tbody>
+                {repairResults.map((row) => (
+                  <tr key={`${row.incomeId ?? row.saleIncomeId}-${row.oldDate ?? 'none'}-${row.newDate ?? 'none'}`}>
+                    <td>
+                      <div className="tabular font-medium text-gray-900">{row.customerNumber || '-'}</div>
+                      <div className="text-xs text-gray-500">{row.customerName}</div>
+                    </td>
+                    <td className="tabular whitespace-nowrap text-gray-600">{row.oldDate || '-'}</td>
+                    <td className="tabular whitespace-nowrap">{row.newDate || '-'}</td>
+                    <td className="whitespace-nowrap">
+                      <span className={`badge ${
+                        row.status === 'updated' || row.status === 'fixed'
+                          ? 'badge-green'
+                          : row.status === 'unchanged'
+                            ? 'badge-neutral'
+                            : 'badge-amber'
+                      }`}>
+                        {row.status === 'updated'
+                          ? 'Yangilandi'
+                          : row.status === 'fixed'
+                            ? 'Qayta hisoblandi'
+                          : row.status === 'unchanged'
+                            ? "To'g'ri edi"
+                            : row.status === 'ambiguous'
+                              ? 'Noaniq moslik'
+                              : row.status === 'no_match'
+                                ? 'Mos qator topilmadi'
+                                : row.status === 'invalid_snapshot_date'
+                                  ? 'Snapshot xato'
+                                  : row.status === 'failed'
+                                    ? 'Xatolik'
+                                    : row.status}
+                      </span>
+                    </td>
+                    <td className="text-xs text-gray-500">{row.reason}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {repairResults.map((row) => (
-                    <tr key={`${row.incomeId ?? row.saleIncomeId}-${row.oldDate ?? 'none'}-${row.newDate ?? 'none'}`}>
-                      <td>
-                        <div className="tabular font-medium text-gray-900">{row.customerNumber || '-'}</div>
-                        <div className="text-xs text-gray-500">{row.customerName}</div>
-                      </td>
-                      <td className="tabular whitespace-nowrap text-gray-600">{row.oldDate || '-'}</td>
-                      <td className="tabular whitespace-nowrap">{row.newDate || '-'}</td>
-                      <td className="whitespace-nowrap">
-                        <span className={`badge ${
-                          row.status === 'updated' || row.status === 'fixed'
-                            ? 'badge-green'
-                            : row.status === 'unchanged'
-                              ? 'badge-neutral'
-                              : 'badge-amber'
-                        }`}>
-                          {row.status === 'updated'
-                            ? 'Yangilandi'
-                            : row.status === 'fixed'
-                              ? 'Qayta hisoblandi'
-                            : row.status === 'unchanged'
-                              ? "To'g'ri edi"
-                              : row.status === 'ambiguous'
-                                ? 'Noaniq moslik'
-                                : row.status === 'no_match'
-                                  ? 'Mos qator topilmadi'
-                                  : row.status === 'invalid_snapshot_date'
-                                    ? 'Snapshot xato'
-                                    : row.status === 'failed'
-                                      ? 'Xatolik'
-                                      : row.status}
-                        </span>
-                      </td>
-                      <td className="text-xs text-gray-500">{row.reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       ) : null}
 
-      <section className="panel">
-        <div className="panel-header">
+      <section className="panel overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-4 pt-5 sm:px-6">
           <div className="flex items-center gap-2">
             <h2 className="section-title">{appliedModeLabel}</h2>
             {!debugQuery.isLoading ? <span className="badge badge-neutral tabular">{rows.length}</span> : null}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="mr-1 text-sm text-gray-500">
-              Tanlangan: <span className="tabular font-semibold text-gray-900">{selectedIds.length}</span>
-            </div>
-            {applied.mode !== 'hidden' ? (
-              <button
-                type="button"
-                disabled={!selectedIds.length || hideMutation.isLoading}
-                onClick={() => handleHide(true)}
-                className="btn btn-warning-soft btn-sm"
-              >
-                <IconEyeOff className="h-4 w-4" stroke={1.8} />
-                Tanlanganlarni yashirish
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={!selectedIds.length || hideMutation.isLoading}
-                onClick={() => handleHide(false)}
-                className="btn btn-soft btn-sm"
-              >
-                <IconEye className="h-4 w-4" stroke={1.8} />
-                Tanlanganlarni qayta ko'rsatish
-              </button>
-            )}
-            <button
-              type="button"
-              disabled={!selectedIds.length || repairMutation.isLoading}
-              onClick={handleRepairDates}
-              className="btn btn-soft btn-sm"
-            >
-              <IconCalendarRepeat className="h-4 w-4" stroke={1.8} />
-              Snapshotdan sanani tiklash
-            </button>
-            <button
-              type="button"
-              disabled={!selectedIds.length || deleteIncomeMutation.isLoading}
-              onClick={handleDelete}
-              className="btn btn-danger-soft btn-sm"
-            >
-              <IconTrash className="h-4 w-4" stroke={1.8} />
-              Tanlanganlarni o'chirish
-            </button>
-          </div>
-          {actionError ? (
-            <div className="alert alert-error w-full py-2">
-              {actionError}
-            </div>
-          ) : null}
         </div>
 
-        <div className="p-2 pt-4 sm:p-3 sm:pt-4">
+        {/* Bulk action bar: lights up once rows are selected. */}
+        <div
+          className={`mx-3 flex flex-wrap items-center gap-2 rounded-[16px] px-3 py-2 transition-colors sm:mx-4 ${
+            selectedIds.length ? 'bg-blue-50' : 'bg-gray-50'
+          }`}
+        >
+          <div className="mr-auto px-2 text-sm text-gray-500">
+            Tanlangan: <span className="tabular font-semibold text-gray-900">{selectedIds.length}</span>
+          </div>
+          {applied.mode !== 'hidden' ? (
+            <button
+              type="button"
+              disabled={!selectedIds.length || hideMutation.isLoading}
+              onClick={() => handleHide(true)}
+              className="btn btn-warning-soft btn-sm"
+            >
+              <IconEyeOff className="h-4 w-4" stroke={1.8} />
+              Tanlanganlarni yashirish
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!selectedIds.length || hideMutation.isLoading}
+              onClick={() => handleHide(false)}
+              className="btn btn-soft btn-sm"
+            >
+              <IconEye className="h-4 w-4" stroke={1.8} />
+              Tanlanganlarni qayta ko'rsatish
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={!selectedIds.length || repairMutation.isLoading}
+            onClick={handleRepairDates}
+            className="btn btn-soft btn-sm"
+          >
+            <IconCalendarRepeat className="h-4 w-4" stroke={1.8} />
+            Snapshotdan sanani tiklash
+          </button>
+          <button
+            type="button"
+            disabled={!selectedIds.length || deleteIncomeMutation.isLoading}
+            onClick={handleDelete}
+            className="btn btn-danger-soft btn-sm"
+          >
+            <IconTrash className="h-4 w-4" stroke={1.8} />
+            Tanlanganlarni o'chirish
+          </button>
+        </div>
+
+        {actionError ? (
+          <div className="alert alert-error mx-3 mt-3 py-2 sm:mx-4">
+            {actionError}
+          </div>
+        ) : null}
+
+        <div className="mt-2 px-1 pb-2 sm:px-2">
           <div className="overflow-x-auto">
             <table className="data-table">
               <thead>

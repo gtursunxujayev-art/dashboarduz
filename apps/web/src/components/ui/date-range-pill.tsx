@@ -37,7 +37,7 @@ export function DateRangePill({ label, active, dateFrom, dateTo, onApply }: Prop
   }, [open, dateFrom, dateTo]);
 
   const invalid = !draftFrom || !draftTo || draftTo < draftFrom;
-  const inputClass = 'mt-1.5 h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25';
+  const inputClass = 'mt-1.5 h-10 w-full rounded-[12px] border border-gray-200 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25';
 
   return (
     <div ref={containerRef} className="relative">
@@ -46,7 +46,7 @@ export function DateRangePill({ label, active, dateFrom, dateTo, onApply }: Prop
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className={`inline-flex h-11 items-center gap-2.5 whitespace-nowrap rounded-[12px] bg-white px-4 text-sm font-medium shadow active:scale-[0.99] ${
+        className={`inline-flex h-10 items-center gap-2.5 whitespace-nowrap rounded-full bg-white px-4 text-sm font-medium shadow active:scale-[0.99] ${
           active ? 'text-blue-700 ring-2 ring-inset ring-blue-500/60 dark:text-blue-300' : 'text-gray-800 hover:bg-gray-50'
         }`}
       >
@@ -59,7 +59,7 @@ export function DateRangePill({ label, active, dateFrom, dateTo, onApply }: Prop
         <div
           role="dialog"
           aria-label="Ixtiyoriy davr"
-          className="absolute left-0 top-full z-40 mt-2 w-[300px] animate-rise-in rounded-xl bg-white p-4 shadow-xl"
+          className="absolute left-0 top-full z-40 mt-2 w-[300px] animate-rise-in rounded-[20px] bg-white p-4 shadow-xl"
         >
           <p className="text-sm font-semibold text-gray-900">Ixtiyoriy davr</p>
           <div className="mt-3 grid grid-cols-2 gap-3">
@@ -79,7 +79,7 @@ export function DateRangePill({ label, active, dateFrom, dateTo, onApply }: Prop
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="h-9 rounded-md px-3 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+              className="btn btn-sm btn-ghost h-9"
             >
               Bekor qilish
             </button>
@@ -90,7 +90,7 @@ export function DateRangePill({ label, active, dateFrom, dateTo, onApply }: Prop
                 onApply({ dateFrom: draftFrom, dateTo: draftTo });
                 setOpen(false);
               }}
-              className="h-9 rounded-md bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn btn-sm btn-primary h-9 px-4"
             >
               Qo&apos;llash
             </button>

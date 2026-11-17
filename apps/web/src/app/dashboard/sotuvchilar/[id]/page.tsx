@@ -19,7 +19,6 @@ import {
   IconWallet,
 } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
-import { PageHeader } from '@/components/ui/page-header';
 import { StatTile, type StatTone } from '@/components/ui/stat-tile';
 import { getInitials } from '@/components/ui/user-avatar';
 import { formatDurationClock, formatPercent, formatResponseTime, formatSomRounded } from '@/lib/format';
@@ -122,12 +121,23 @@ function MetricRow({
   );
 }
 
+/** A white headline number inside the dark profile band. */
+function BandFigure({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
+  return (
+    <div className="min-w-0 border-white/10 py-1 sm:border-l sm:pl-5 sm:first:border-l-0 sm:first:pl-0">
+      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">{label}</p>
+      <p className="tabular mt-2 truncate text-2xl font-semibold leading-none tracking-[-0.02em] text-white sm:text-[28px]">{value}</p>
+      {hint ? <p className="tabular mt-2 truncate text-xs text-slate-400">{hint}</p> : null}
+    </div>
+  );
+}
+
 function SectionPanel({ title, icon: SectionIcon, children, className = '' }: { title: ReactNode; icon: Icon; children: ReactNode; className?: string }) {
   return (
     <section className={`panel ${className}`}>
       <div className="panel-header">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-gray-100 text-gray-600">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-600">
             <SectionIcon className="h-4 w-4" stroke={1.8} />
           </span>
           <h3 className="section-title">{title}</h3>
@@ -183,21 +193,28 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
 
   return (
     <div className="space-y-6">
-      {/* Profile header */}
-      <PageHeader
-        title={(
-          <span className="flex items-center gap-4">
+      {/* Profile band: dark in both themes */}
+      <header className="relative isolate overflow-hidden rounded-[20px] bg-slate-950 p-6 text-white shadow-lg ring-1 ring-inset ring-white/10 sm:p-8">
+        <div
+          aria-hidden="true"
+          className="absolute -right-24 -top-24 -z-10 h-72 w-72 rounded-full bg-blue-600/25 blur-3xl"
+        />
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          <div className="flex min-w-0 items-center gap-4 sm:gap-5">
             <span
               aria-hidden="true"
-              className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-lg font-semibold text-blue-700"
+              className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full bg-white/10 text-xl font-semibold text-white ring-1 ring-inset ring-white/15"
             >
               {getInitials(displayName)}
             </span>
-            <span className="min-w-0 break-words">{displayName}</span>
-          </span>
-        )}
-        description="Agent bo'yicha sotuv, tushum, CRM va qo'ng'iroq ko'rsatkichlari."
-        actions={(
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-slate-400">Agent</p>
+              <h1 className="mt-0.5 break-words text-[26px] font-semibold leading-tight tracking-[-0.02em] text-white sm:text-[32px]">
+                {displayName}
+              </h1>
+              <p className="mt-1 max-w-[70ch] text-sm text-slate-400">Agent bo&apos;yicha sotuv, tushum, CRM va qo&apos;ng&apos;iroq ko&apos;rsatkichlari.</p>
+            </div>
+          </div>
           <button
             onClick={() => {
               setSendMessage(null);
@@ -209,8 +226,34 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
             <IconSend className="h-4 w-4" stroke={1.8} />
             {sendPdfMutation.isLoading ? 'Yuborilmoqda...' : 'PDF ni adminlarga yuborish'}
           </button>
-        )}
-      >
+        </div>
+
+        <div className="mt-8 grid grid-cols-1 gap-5 border-t border-white/10 pt-6 sm:grid-cols-2 sm:gap-y-6 lg:grid-cols-4">
+          <BandFigure
+            label="Sotuv shartnomasi"
+            value={salesCount}
+            hint={`Tushum - ${formatSomRounded(m.incomeAmount)}`}
+          />
+          <BandFigure
+            label="Konversiya"
+            value={formatPercent(m.conversionRate, 1)}
+            hint={`Yangi lidlar: ${m.newLeadsInRange ?? 0} -> Sotuvlar: ${salesCount}`}
+          />
+          <BandFigure
+            label="Jami qo'ng'iroqlar"
+            value={m.totalCalls ?? 0}
+            hint={`Davomiylik - ${formatDurationClock(m.totalCallDuration)}`}
+          />
+          <BandFigure
+            label="Faol lidlar"
+            value={m.activeLeads ?? 0}
+            hint="Hozirgi faol lidlar"
+          />
+        </div>
+      </header>
+
+      {/* Period toolbar */}
+      <div className="space-y-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="max-w-full overflow-x-auto">
             <div className="segmented">
@@ -242,14 +285,14 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
                 type="date"
                 value={dateFrom}
                 onChange={(event) => setDateFrom(event.target.value)}
-                className="field w-auto"
+                className="field w-auto rounded-full px-4"
               />
               <span className="text-gray-400" aria-hidden="true">-</span>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(event) => setDateTo(event.target.value)}
-                className="field w-auto"
+                className="field w-auto rounded-full px-4"
               />
             </div>
           ) : null}
@@ -260,12 +303,14 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
             {sendMessage}
           </p>
         ) : null}
-      </PageHeader>
+      </div>
 
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="min-w-0 space-y-6">
       {/* KPI Performance Indicators */}
       <section className="space-y-3">
         <h2 className="section-title">Asosiy ko'rsatkichlar (KPI)</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
           <MetricCard
             title="Konversiya"
             value={formatPercent(m.conversionRate, 1)}
@@ -303,7 +348,7 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-6 2xl:grid-cols-2">
         {/* Sales Breakdown */}
         <SectionPanel title="Sotuv ko'rsatkichlari" icon={IconChartBar}>
           <MetricRow
@@ -332,6 +377,61 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
           />
         </SectionPanel>
 
+        {/* Lead Metrics */}
+        <SectionPanel title="Lid ko'rsatkichlari" icon={IconUserSearch}>
+          <MetricRow title="Faol lidlar" value={m.activeLeads ?? 0} subtitle="Hozirgi faol lidlar" />
+          <MetricRow title="Yangi lidlar" value={m.newLeadsInRange ?? 0} subtitle="Filtr davridagi yangi lidlar" />
+          <MetricRow title="Yutilgan lidlar" value={m.wonLeads ?? 0} subtitle="Muvaffaqiyatli sotuvlar" />
+          <MetricRow title="Yo'qotilgan lidlar" value={m.lostLeads ?? 0} subtitle="Yo'qotilgan imkoniyatlar" />
+          <MetricRow
+            title="Konversiya"
+            value={formatPercent(m.conversionRate, 1)}
+            subtitle={`Yangi lidlar: ${m.newLeadsInRange ?? 0} -> Sotuvlar: ${salesCount}`}
+            badge={getConversionBadge(m.conversionRate)}
+          />
+        </SectionPanel>
+      </div>
+
+      {/* Financial KPIs */}
+      <section className="space-y-3">
+        <h2 className="flex items-center gap-2 section-title">
+          <IconWallet className="h-[18px] w-[18px] text-gray-400" stroke={1.6} />
+          Moliyaviy ko'rsatkichlar
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+          <MetricCard
+            title="Qarz yig'ish darajasi"
+            value={formatPercent(m.debtCollectionRate, 1)}
+            subtitle={`${formatSomRounded(m.totalPaidAmount)} / ${formatSomRounded(m.totalAgreementAmount)}`}
+            badge={getDebtCollectionBadge(m.debtCollectionRate)}
+            icon={IconWallet}
+          />
+          <MetricCard
+            title="Qaytarish darajasi"
+            value={formatPercent(m.refundRate, 1)}
+            subtitle={`${m.refundCount ?? 0} ta qaytarish / ${salesCount} sotuv`}
+            badge={getRefundBadge(m.refundRate)}
+            icon={IconPercentage}
+          />
+          <MetricCard
+            title="To'lov muddati"
+            value={formatPercent(m.deadlineAdherenceRate, 1)}
+            subtitle={`${m.deadlineMet ?? 0} / ${m.deadlineTotal ?? 0} o'z vaqtida`}
+            badge={getDeadlineBadge(m.deadlineAdherenceRate)}
+            icon={IconCalendarTime}
+          />
+          <MetricCard
+            title="Yangi vs Qayta mijozlar"
+            value={`${m.newCustomers ?? 0} / ${m.repeatCustomers ?? 0}`}
+            subtitle={`Yangi mijoz: ${formatPercent(m.newCustomerRate, 1)}`}
+            icon={IconUserSearch}
+          />
+        </div>
+      </section>
+      </div>
+
+      {/* Right column: calls and CRM activity */}
+      <aside className="min-w-0 space-y-6">
         {/* Calls & Activity */}
         <SectionPanel title="Qo'ng'iroqlar va faollik" icon={IconPhone}>
           <MetricRow
@@ -376,58 +476,8 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
           <MetricRow title="Yozuvlar" value={m.noteCount ?? 0} subtitle="CRM izohlari" />
           <MetricRow title="Bosqich o'zgarishi" value={m.stageChangeCount ?? 0} subtitle="Bosqich almashuvlari" />
         </SectionPanel>
-
-        {/* Lead Metrics */}
-        <SectionPanel title="Lid ko'rsatkichlari" icon={IconUserSearch}>
-          <MetricRow title="Faol lidlar" value={m.activeLeads ?? 0} subtitle="Hozirgi faol lidlar" />
-          <MetricRow title="Yangi lidlar" value={m.newLeadsInRange ?? 0} subtitle="Filtr davridagi yangi lidlar" />
-          <MetricRow title="Yutilgan lidlar" value={m.wonLeads ?? 0} subtitle="Muvaffaqiyatli sotuvlar" />
-          <MetricRow title="Yo'qotilgan lidlar" value={m.lostLeads ?? 0} subtitle="Yo'qotilgan imkoniyatlar" />
-          <MetricRow
-            title="Konversiya"
-            value={formatPercent(m.conversionRate, 1)}
-            subtitle={`Yangi lidlar: ${m.newLeadsInRange ?? 0} -> Sotuvlar: ${salesCount}`}
-            badge={getConversionBadge(m.conversionRate)}
-          />
-        </SectionPanel>
+      </aside>
       </div>
-
-      {/* Financial KPIs */}
-      <section className="space-y-3">
-        <h2 className="flex items-center gap-2 section-title">
-          <IconWallet className="h-[18px] w-[18px] text-gray-400" stroke={1.6} />
-          Moliyaviy ko'rsatkichlar
-        </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            title="Qarz yig'ish darajasi"
-            value={formatPercent(m.debtCollectionRate, 1)}
-            subtitle={`${formatSomRounded(m.totalPaidAmount)} / ${formatSomRounded(m.totalAgreementAmount)}`}
-            badge={getDebtCollectionBadge(m.debtCollectionRate)}
-            icon={IconWallet}
-          />
-          <MetricCard
-            title="Qaytarish darajasi"
-            value={formatPercent(m.refundRate, 1)}
-            subtitle={`${m.refundCount ?? 0} ta qaytarish / ${salesCount} sotuv`}
-            badge={getRefundBadge(m.refundRate)}
-            icon={IconPercentage}
-          />
-          <MetricCard
-            title="To'lov muddati"
-            value={formatPercent(m.deadlineAdherenceRate, 1)}
-            subtitle={`${m.deadlineMet ?? 0} / ${m.deadlineTotal ?? 0} o'z vaqtida`}
-            badge={getDeadlineBadge(m.deadlineAdherenceRate)}
-            icon={IconCalendarTime}
-          />
-          <MetricCard
-            title="Yangi vs Qayta mijozlar"
-            value={`${m.newCustomers ?? 0} / ${m.repeatCustomers ?? 0}`}
-            subtitle={`Yangi mijoz: ${formatPercent(m.newCustomerRate, 1)}`}
-            icon={IconUserSearch}
-          />
-        </div>
-      </section>
     </div>
   );
 }
