@@ -4,8 +4,8 @@ import { telegramBotConnectSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
 import { asObjectOrEmpty } from '../../../lib/object';
-import { parseTelegramDailyReportCourseIds , resolveTelegramBotToken } from '../../../lib/telegram';
-import { getPublicApiBaseUrl, telegramRecipientStorageErrorMessage } from '../../../services/integration-settings/connection';
+import { parseTelegramDailyReportCourseIds, resolveTelegramBotToken } from '../../../lib/telegram';
+import { getPublicApiBaseUrl, telegramRecipientStorageErrorMessage, upsertActiveIntegration } from '../../../services/integration-settings/connection';
 import { telegramService } from '../../../services/integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../../../services/integrations/telegram-groups';
 import { importLegacyTelegramRecipients, listTelegramRecipients } from '../../../services/integrations/telegram-recipient-store';
@@ -47,15 +47,11 @@ export const telegramIntegrationProcedures = {
       const existingDailyReportCourseIds = parseTelegramDailyReportCourseIds(existing?.config);
 
       const validatedAt = new Date();
-      let integration = await ctx.db.integration.upsert({
-        where: {
-          tenantId_type: {
-            tenantId: ctx.tenantId,
-            type: 'telegram',
-          },
-        },
-        update: {
-          status: 'active',
+      let integration = await upsertActiveIntegration({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        type: 'telegram',
+        data: {
           tokensEncrypted: encryptIntegrationTokens({ botToken: input.botToken }),
           config: {
             botId: String(verification.bot.id),
@@ -72,26 +68,7 @@ export const telegramIntegrationProcedures = {
           },
           lastSyncAt: validatedAt,
         },
-        create: {
-          tenantId: ctx.tenantId,
-          type: 'telegram',
-          status: 'active',
-          tokensEncrypted: encryptIntegrationTokens({ botToken: input.botToken }),
-          config: {
-            botId: String(verification.bot.id),
-            botUsername: verification.bot.username || null,
-            botName: verification.bot.first_name || null,
-            webhookUrl,
-            webhookSecret,
-            telegramReportRecipients: existingRecipients,
-            reportRecipientChatIds: existingRecipients
-              .filter((recipient) => recipient.started && recipient.selectedForReports)
-              .map((recipient) => recipient.chatId),
-            telegramDailyReportCourseIds: existingDailyReportCourseIds,
-            lastValidatedAt: validatedAt.toISOString(),
-          },
-          lastSyncAt: validatedAt,
-        },
+        clearError: false,
       });
 
       await importLegacyTelegramRecipients({

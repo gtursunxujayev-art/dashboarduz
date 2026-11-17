@@ -1,10 +1,11 @@
 import type { DbClient } from '@dashboarduz/db';
 
 import { type AmoCRMLead, type AmoCRMLeadPipeline } from '../integrations/amocrm';
-import { fetchSnapshotEvents } from '../integrations/amocrm-activity-snapshot-read';
+import { fetchSnapshotEvents, getAmoReference } from '../integrations/amocrm-activity-snapshot-read';
 import { fetchSnapshotLeads } from '../integrations/amocrm-lead-snapshot-read';
+import type { TenantAmoCRMContext } from '../integrations/amocrm-live';
 
-import { asString, parseAmoDate } from './metrics';
+import { asString, LOST_STATUS_ID, parseAmoDate, WON_STATUS_ID } from './metrics';
 
 export async function computeLeadResponseTimes(params: {
   tenantId: string;
@@ -110,7 +111,7 @@ export async function computeLeadResponseTimes(params: {
 
     result.set(managerId, {
       avgResponseSeconds: Math.round(avg),
-      medianResponseSeconds: Math.round(median as number),
+      medianResponseSeconds: Math.round(median),
       respondedCount,
       totalCount,
     });
@@ -202,4 +203,31 @@ export async function fetchLeadsByStatusFilters(
     },
     db,
   );
+}
+
+/**
+ * amoCRM users and pipelines for the sellers screens, the pipelines the tenant selected, and the status
+ * filters for leads still in progress (every status except won and lost).
+ */
+export async function loadSellerPipelineContext(
+  tenantId: string,
+  amoContext: TenantAmoCRMContext,
+  db: DbClient,
+) {
+  const [amocrmUsers, pipelinesResponse] = await Promise.all([
+    getAmoReference(tenantId, 'users', amoContext, db),
+    getAmoReference(tenantId, 'pipelines', amoContext, db),
+  ]);
+  const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
+  const selectedPipelineIds = getSelectedPipelines(amoContext.selectedPipelineIds, pipelines);
+  const activeStatusFilters = buildStatusFilters(
+    selectedPipelineIds,
+    pipelines,
+    pipelines
+      .flatMap((pipeline) => (Array.isArray(pipeline._embedded?.statuses) ? pipeline._embedded.statuses : []))
+      .map((status) => asString(status.id))
+      .filter((statusId): statusId is string => Boolean(statusId) && statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID),
+  );
+
+  return { amocrmUsers, pipelines, selectedPipelineIds, activeStatusFilters };
 }

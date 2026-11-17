@@ -18,6 +18,34 @@ export function parseDateKey(value: string, fieldName: string): string {
   return normalized;
 }
 
+/** A `gte`/`lte` filter on `YYYY-MM-DD` day keys from optional bounds, or `undefined` when neither is set. */
+export function parseDateKeyFilter(input?: { dateFrom?: string; dateTo?: string }): { gte?: string; lte?: string } | undefined {
+  if (!input?.dateFrom && !input?.dateTo) {
+    return undefined;
+  }
+
+  return {
+    gte: input.dateFrom ? parseDateKey(input.dateFrom, 'dateFrom') : undefined,
+    lte: input.dateTo ? parseDateKey(input.dateTo, 'dateTo') : undefined,
+  };
+}
+
+/** Paging and the user a list is limited to: privileged roles may pick one (or all), others see only themselves. */
+export function resolveAttendanceListScope(
+  user: { userId: string; roles: string[] },
+  input?: { page?: number; limit?: number; userId?: string },
+) {
+  const page = input?.page || 1;
+  const limit = input?.limit || 50;
+
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+    scopedUserId: canReadAllUsers(user.roles) ? (input?.userId || undefined) : user.userId,
+  };
+}
+
 export function parseDateTime(value: string, fieldName: string): Date {
   const parsed = new Date(String(value || '').trim());
 

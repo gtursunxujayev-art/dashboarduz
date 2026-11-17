@@ -8,11 +8,10 @@ import { resolveTelegramBotTokenForTenant } from '../../../lib/telegram';
 import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
-import { getAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { telegramService } from '../../../services/integrations/telegram';
-import { buildStatusFilters, fetchLeadsByStatusFilters, getSelectedPipelines } from '../../../services/sellers/leads';
-import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerUserIdsMap, LOST_STATUS_ID, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
+import { fetchLeadsByStatusFilters, loadSellerPipelineContext } from '../../../services/sellers/leads';
+import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerUserIdsMap, summarizeSellerIncomeMetrics, toManagerRole } from '../../../services/sellers/metrics';
 import { buildSellerReportPdf, type SellerReportPayload } from '../../../services/sellers/report-pdf';
 import { protectedProcedure } from '../../trpc';
 
@@ -72,21 +71,7 @@ export const sellerReportProcedures = {
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
 
-      const [amocrmUsers, pipelinesResponse] = await Promise.all([
-        getAmoReference(ctx.tenantId, 'users', amoContext, ctx.db),
-        getAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db),
-      ]);
-      const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
-      const selectedPipelineIds = getSelectedPipelines(amoContext.selectedPipelineIds, pipelines);
-
-      const activeStatusFilters = buildStatusFilters(
-        selectedPipelineIds,
-        pipelines,
-        pipelines
-          .flatMap((pipeline) => (Array.isArray(pipeline._embedded?.statuses) ? pipeline._embedded.statuses : []))
-          .map((status) => asString(status.id))
-          .filter((statusId): statusId is string => Boolean(statusId) && statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID),
-      );
+      const { amocrmUsers, selectedPipelineIds, activeStatusFilters } = await loadSellerPipelineContext(ctx.tenantId, amoContext, ctx.db);
 
       const sellerUser = amocrmUsers.find((user) => asString(user.id) === input.id);
 

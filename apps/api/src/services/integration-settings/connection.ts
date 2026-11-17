@@ -1,3 +1,5 @@
+import type { DbClient } from '@dashboarduz/db';
+import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 export function normalizeBaseUrl(url?: string): string | null {
@@ -112,4 +114,36 @@ export async function fetchAmoCRMAccountByToken(accessToken: string, baseUrl: st
     domain?: string;
     subdomain?: string;
   }>;
+}
+
+/**
+ * Connects (or reconnects) a tenant integration: creates it, or updates it, as `active` with the given
+ * tokens/config. `clearError` also clears the stored error message on update.
+ */
+export async function upsertActiveIntegration(params: {
+  db: DbClient;
+  tenantId: string;
+  type: string;
+  data: Omit<Prisma.IntegrationUncheckedCreateInput, 'tenantId' | 'type' | 'status'>;
+  clearError: boolean;
+}) {
+  return params.db.integration.upsert({
+    where: {
+      tenantId_type: {
+        tenantId: params.tenantId,
+        type: params.type,
+      },
+    },
+    update: {
+      status: 'active',
+      ...params.data,
+      ...(params.clearError ? { errorMessage: null } : {}),
+    },
+    create: {
+      tenantId: params.tenantId,
+      type: params.type,
+      status: 'active',
+      ...params.data,
+    },
+  });
 }

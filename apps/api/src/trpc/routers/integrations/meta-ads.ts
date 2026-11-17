@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { asObjectOrEmpty } from '../../../lib/object';
+import { upsertActiveIntegration } from '../../../services/integration-settings/connection';
 import { normalizeMetaAdAccountId, syncMetaAdInsightsForTenant, validateMetaAdAccount } from '../../../services/integrations/meta-ads';
 import { encryptIntegrationTokens } from '../../../services/security/encryption';
 import { adminProcedure } from '../../trpc';
@@ -20,34 +21,11 @@ export const metaAdsIntegrationProcedures = {
       }
 
       const validatedAt = new Date();
-      const integration = await ctx.db.integration.upsert({
-        where: {
-          tenantId_type: {
-            tenantId: ctx.tenantId,
-            type: 'meta_ads',
-          },
-        },
-        update: {
-          status: 'active',
-          tokensEncrypted: encryptIntegrationTokens({ accessToken }),
-          config: {
-            adAccountId,
-            accountId: String(account.id),
-            accountName: account.name || null,
-            accountStatus: account.account_status ?? null,
-            currency: account.currency || null,
-            pixelId: input.pixelId?.trim() || null,
-            connectionMode: 'system_user_token',
-            connectedAt: validatedAt.toISOString(),
-            lastValidatedAt: validatedAt.toISOString(),
-          },
-          lastSyncAt: validatedAt,
-          errorMessage: null,
-        },
-        create: {
-          tenantId: ctx.tenantId,
-          type: 'meta_ads',
-          status: 'active',
+      const integration = await upsertActiveIntegration({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        type: 'meta_ads',
+        data: {
           tokensEncrypted: encryptIntegrationTokens({ accessToken }),
           config: {
             adAccountId,
@@ -62,6 +40,7 @@ export const metaAdsIntegrationProcedures = {
           },
           lastSyncAt: validatedAt,
         },
+        clearError: true,
       });
 
       await ctx.db.auditLog.create({

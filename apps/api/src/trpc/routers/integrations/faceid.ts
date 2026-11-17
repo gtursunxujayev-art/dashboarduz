@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { asObjectOrEmpty } from '../../../lib/object';
 import { hashFaceIdWebhookToken } from '../../../services/attendance/faceid';
-import { getPublicApiBaseUrl } from '../../../services/integration-settings/connection';
+import { getPublicApiBaseUrl, upsertActiveIntegration } from '../../../services/integration-settings/connection';
 import { buildFaceIdWebhookToken, normalizeBranchWhitelist, normalizeUnmatchedUserPolicy, requireFaceIdIntegration, saveFaceIdConfig } from '../../../services/integration-settings/faceid';
 import { encryptIntegrationTokens } from '../../../services/security/encryption';
 import { adminProcedure } from '../../trpc';
@@ -20,31 +20,11 @@ export const faceIdIntegrationProcedures = {
       const validatedAt = new Date();
       const webhookUrl = `${getPublicApiBaseUrl()}/webhooks/faceid`;
 
-      const integration = await ctx.db.integration.upsert({
-        where: {
-          tenantId_type: {
-            tenantId: ctx.tenantId,
-            type: 'faceid_attendance',
-          },
-        },
-        update: {
-          status: 'active',
-          tokensEncrypted: encryptIntegrationTokens({ webhookToken }),
-          config: {
-            enabled: true,
-            webhookUrl,
-            webhookTokenHash,
-            branchWhitelist,
-            unmatchedUserPolicy,
-            lastValidatedAt: validatedAt.toISOString(),
-          },
-          lastSyncAt: validatedAt,
-          errorMessage: null,
-        },
-        create: {
-          tenantId: ctx.tenantId,
-          type: 'faceid_attendance',
-          status: 'active',
+      const integration = await upsertActiveIntegration({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        type: 'faceid_attendance',
+        data: {
           tokensEncrypted: encryptIntegrationTokens({ webhookToken }),
           config: {
             enabled: true,
@@ -56,6 +36,7 @@ export const faceIdIntegrationProcedures = {
           },
           lastSyncAt: validatedAt,
         },
+        clearError: true,
       });
 
       await ctx.db.auditLog.create({
@@ -116,7 +97,7 @@ export const faceIdIntegrationProcedures = {
 
       return {
         success: true,
-        branchWhitelist: nextConfig.branchWhitelist as string[],
+        branchWhitelist: nextConfig.branchWhitelist,
         unmatchedUserPolicy: nextConfig.unmatchedUserPolicy as 'store' | 'ignore',
       };
     }),

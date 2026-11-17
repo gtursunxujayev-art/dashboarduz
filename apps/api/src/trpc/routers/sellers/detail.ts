@@ -7,10 +7,9 @@ import { resolveDateRange } from '../../../lib/dates';
 import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
-import { getAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
 import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
-import { buildStatusFilters, computeLeadResponseTimes, fetchLeadsByStatusFilters, getSelectedPipelines } from '../../../services/sellers/leads';
+import { buildStatusFilters, computeLeadResponseTimes, fetchLeadsByStatusFilters, loadSellerPipelineContext } from '../../../services/sellers/leads';
 import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerUserIdsMap, LOST_STATUS_ID, parseAmoDate, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
 import { protectedProcedure } from '../../trpc';
 
@@ -42,21 +41,7 @@ export const sellerDetailProcedures = {
         });
       }
 
-      const [amocrmUsers, pipelinesResponse] = await Promise.all([
-        getAmoReference(ctx.tenantId, 'users', amoContext, ctx.db),
-        getAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db),
-      ]);
-      const pipelines = Array.isArray(pipelinesResponse._embedded?.pipelines) ? pipelinesResponse._embedded.pipelines : [];
-      const selectedPipelineIds = getSelectedPipelines(amoContext.selectedPipelineIds, pipelines);
-
-      const activeStatusFilters = buildStatusFilters(
-        selectedPipelineIds,
-        pipelines,
-        pipelines
-          .flatMap((pipeline) => (Array.isArray(pipeline._embedded?.statuses) ? pipeline._embedded.statuses : []))
-          .map((status) => asString(status.id))
-          .filter((statusId): statusId is string => Boolean(statusId) && statusId !== WON_STATUS_ID && statusId !== LOST_STATUS_ID),
-      );
+      const { amocrmUsers, pipelines, selectedPipelineIds, activeStatusFilters } = await loadSellerPipelineContext(ctx.tenantId, amoContext, ctx.db);
       const wonStatusFilters = buildStatusFilters(selectedPipelineIds, pipelines, [WON_STATUS_ID]);
       const lostStatusFilters = buildStatusFilters(selectedPipelineIds, pipelines, [LOST_STATUS_ID]);
 

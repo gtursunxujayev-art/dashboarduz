@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { ATTENDANCE_REPORT_MAX_CALENDAR_DAYS, buildAttendancePeriodReport, countAttendanceReportCalendarDays, enumerateAttendanceReportWorkdays, isAttendanceReportCalendarRangeOverLimit, isAttendanceReportDetailRowLimitExceeded, parseAttendanceReportDateKey, resolveAttendanceReportScopedUserId } from '../../../services/attendance/report';
-import { canReadAllUsers, parseDateKey, readFaceMatchMeta } from '../../../services/attendance/router-helpers';
+import { parseDateKeyFilter, readFaceMatchMeta, resolveAttendanceListScope } from '../../../services/attendance/router-helpers';
 import { managerProcedure, protectedProcedure } from '../../trpc';
 
 export const attendanceRecordProcedures = {
@@ -20,19 +20,9 @@ export const attendanceRecordProcedures = {
       }).optional(),
     )
     .query(async ({ ctx, input }) => {
-      const page = input?.page || 1;
-      const limit = input?.limit || 50;
-      const skip = (page - 1) * limit;
-      const canReadAll = canReadAllUsers(ctx.user.roles);
-      const scopedUserId = canReadAll ? (input?.userId || undefined) : ctx.user.userId;
+      const { page, limit, skip, scopedUserId } = resolveAttendanceListScope(ctx.user, input);
 
-      const dateFilter =
-        input?.dateFrom || input?.dateTo
-          ? {
-              gte: input?.dateFrom ? parseDateKey(input.dateFrom, 'dateFrom') : undefined,
-              lte: input?.dateTo ? parseDateKey(input.dateTo, 'dateTo') : undefined,
-            }
-          : undefined;
+      const dateFilter = parseDateKeyFilter(input);
 
       const query = String(input?.query || '').trim();
       const where = {
@@ -112,19 +102,9 @@ export const attendanceRecordProcedures = {
       }).optional(),
     )
     .query(async ({ ctx, input }) => {
-      const page = input?.page || 1;
-      const limit = input?.limit || 50;
-      const skip = (page - 1) * limit;
-      const canReadAll = canReadAllUsers(ctx.user.roles);
-      const scopedUserId = canReadAll ? (input?.userId || undefined) : ctx.user.userId;
+      const { page, limit, skip, scopedUserId } = resolveAttendanceListScope(ctx.user, input);
 
-      const dateFilter =
-        input?.dateFrom || input?.dateTo
-          ? {
-              gte: input?.dateFrom ? parseDateKey(input.dateFrom, 'dateFrom') : undefined,
-              lte: input?.dateTo ? parseDateKey(input.dateTo, 'dateTo') : undefined,
-            }
-          : undefined;
+      const dateFilter = parseDateKeyFilter(input);
 
       const query = String(input?.query || '').trim();
       const where = {
@@ -304,13 +284,7 @@ export const attendanceRecordProcedures = {
     )
     .query(async ({ ctx, input }) => {
       const limit = input?.limit || 100;
-      const dateFilter =
-        input?.dateFrom || input?.dateTo
-          ? {
-              gte: input?.dateFrom ? parseDateKey(input.dateFrom, 'dateFrom') : undefined,
-              lte: input?.dateTo ? parseDateKey(input.dateTo, 'dateTo') : undefined,
-            }
-          : undefined;
+      const dateFilter = parseDateKeyFilter(input);
 
       const [summaryAnomalies, unmatchedEvents] = await Promise.all([
         ctx.db.attendanceDaySummary.findMany({

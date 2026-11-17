@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { logger } from '../../../lib/logger';
-import { amoFailureHelp, amoFailureMessage, detectAmoFailureReason, fetchAmoCRMAccountByToken, normalizeBaseUrl } from '../../../services/integration-settings/connection';
+import { amoFailureHelp, amoFailureMessage, detectAmoFailureReason, fetchAmoCRMAccountByToken, normalizeBaseUrl, upsertActiveIntegration } from '../../../services/integration-settings/connection';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoReference, refreshAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
 import { refreshTenantLeadSnapshot } from '../../../services/integrations/amocrm-lead-snapshot';
@@ -43,39 +43,11 @@ export const amocrmIntegrationProcedures = {
       }
 
       const validatedAt = new Date();
-      const integration = await ctx.db.integration.upsert({
-        where: {
-          tenantId_type: {
-            tenantId: ctx.tenantId,
-            type: 'amocrm',
-          },
-        },
-        update: {
-          status: 'active',
-          tokensEncrypted: encryptIntegrationTokens({
-            access_token: input.longLivedToken.trim(),
-            token_type: 'Bearer',
-            source: 'long_lived_token',
-          }),
-          refreshToken: null,
-          expiresAt: null,
-          config: {
-            account_id: accountId,
-            account_name: accountInfo.name || null,
-            domain: accountInfo.domain || null,
-            subdomain: accountInfo.subdomain || null,
-            base_url: resolvedBaseUrl,
-            connectionMode: 'long_lived_token',
-            connectedAt: validatedAt.toISOString(),
-            lastValidatedAt: validatedAt.toISOString(),
-          },
-          lastSyncAt: validatedAt,
-          errorMessage: null,
-        },
-        create: {
-          tenantId: ctx.tenantId,
-          type: 'amocrm',
-          status: 'active',
+      const integration = await upsertActiveIntegration({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        type: 'amocrm',
+        data: {
           tokensEncrypted: encryptIntegrationTokens({
             access_token: input.longLivedToken.trim(),
             token_type: 'Bearer',
@@ -95,6 +67,7 @@ export const amocrmIntegrationProcedures = {
           },
           lastSyncAt: validatedAt,
         },
+        clearError: true,
       });
 
       await ctx.db.auditLog.create({

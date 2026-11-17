@@ -19,6 +19,23 @@ export function isTelegramMappingConflictError(error: unknown): boolean {
   );
 }
 
+/**
+ * Runs a user write; a clash on the Telegram mapping becomes CONFLICT with an Uzbek message, other errors pass.
+ */
+export async function withTelegramMappingConflict<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    if (isTelegramMappingConflictError(error)) {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: "Tanlangan Telegram foydalanuvchisi allaqachon boshqa akkauntga biriktirilgan.",
+      });
+    }
+    throw error;
+  }
+}
+
 export function validateNormalizedPhoneOrThrow(rawPhone: string | undefined): string | null {
   const normalized = normalizeDigits(rawPhone) || null;
 

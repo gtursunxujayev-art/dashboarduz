@@ -194,9 +194,6 @@
     "@typescript-eslint/no-unsafe-member-access": 1,
     "import/order": 1
   },
-  "src/services/sellers/leads.ts": {
-    "@typescript-eslint/no-unnecessary-type-assertion": 1
-  },
   "src/services/sellers/list-cache.ts": {
     "@typescript-eslint/no-explicit-any": 1
   },
@@ -285,9 +282,6 @@
     "@typescript-eslint/no-explicit-any": 5,
     "@typescript-eslint/no-unsafe-member-access": 3
   },
-  "src/trpc/routers/integrations/faceid.ts": {
-    "@typescript-eslint/no-unnecessary-type-assertion": 1
-  },
   "src/trpc/routers/integrations/general.ts": {
     "@typescript-eslint/require-await": 1
   },
@@ -327,13 +321,12 @@
     "import/order": 3
   },
   "src/trpc/routers/users/access.ts": {
-    "@typescript-eslint/no-explicit-any": 2,
-    "@typescript-eslint/no-unnecessary-type-assertion": 3,
+    "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-assignment": 1,
     "@typescript-eslint/no-unsafe-member-access": 2
   },
   "src/trpc/routers/users/accounts.ts": {
-    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-assignment": 3,
     "@typescript-eslint/no-unsafe-member-access": 5
   },

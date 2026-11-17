@@ -1,10 +1,9 @@
 import { systemPrisma } from '@dashboarduz/db';
-import type { UserRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { hashPassword } from '../../../services/auth/password';
-import { generatePassword, isTelegramMappingConflictError, rolesNeedManagerMapping } from '../../../services/users/accounts';
+import { generatePassword, withTelegramMappingConflict, rolesNeedManagerMapping } from '../../../services/users/accounts';
 import { managerProcedure } from '../../trpc';
 
 import { roleSchema } from './accounts';
@@ -36,7 +35,7 @@ export const userAccessProcedures = {
 
       let previousAmoResponsibleUserId: string | null = null;
 
-      if (rolesNeedManagerMapping(input.roles as UserRole[])) {
+      if (rolesNeedManagerMapping(input.roles)) {
         const mappingSource = await ctx.db.user.findFirst({
           where: {
             id: input.userId,
@@ -51,55 +50,31 @@ export const userAccessProcedures = {
       }
 
       const updateData: any = {
-        roles: input.roles as UserRole[],
+        roles: input.roles,
       };
 
-      if (rolesNeedManagerMapping(input.roles as UserRole[])) {
+      if (rolesNeedManagerMapping(input.roles)) {
         updateData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || previousAmoResponsibleUserId || null;
       }
       updateData.telegramId = input.telegramChatId || null;
 
-      let updated: {
-        id: string;
-        username: string | null;
-        name: string | null;
-        email: string | null;
-        phone: string | null;
-        roles: string[];
-        amocrmResponsibleUserId: string | null;
-        telegramId: string | null;
-        isActive: boolean;
-        lastLoginAt: Date | null;
-        createdAt: Date;
-      };
-
-      try {
-        updated = await ctx.db.user.update({
-          where: { id: user.id },
-          data: updateData,
-          select: {
-            id: true,
-            username: true,
-            name: true,
-            email: true,
-            phone: true,
-            roles: true,
-            amocrmResponsibleUserId: true,
-            telegramId: true,
-            isActive: true,
-            lastLoginAt: true,
-            createdAt: true,
-          },
-        });
-      } catch (error: any) {
-        if (isTelegramMappingConflictError(error)) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: "Tanlangan Telegram foydalanuvchisi allaqachon boshqa akkauntga biriktirilgan.",
-          });
-        }
-        throw error;
-      }
+      const updated = await withTelegramMappingConflict(() => ctx.db.user.update({
+        where: { id: user.id },
+        data: updateData,
+        select: {
+          id: true,
+          username: true,
+          name: true,
+          email: true,
+          phone: true,
+          roles: true,
+          amocrmResponsibleUserId: true,
+          telegramId: true,
+          isActive: true,
+          lastLoginAt: true,
+          createdAt: true,
+        },
+      }));
 
       await ctx.db.auditLog.create({
         data: {

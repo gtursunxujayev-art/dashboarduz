@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { hashPassword } from '../../../services/auth/password';
-import { generatePassword, generateUniqueLogin, isTelegramMappingConflictError, validateNormalizedPhoneOrThrow } from '../../../services/users/accounts';
+import { generatePassword, generateUniqueLogin, withTelegramMappingConflict, validateNormalizedPhoneOrThrow } from '../../../services/users/accounts';
 import { adminProcedure, managerProcedure } from '../../trpc';
 
 export const roleSchema = z.enum(USER_ROLES);
@@ -66,27 +66,15 @@ export const userAccountProcedures = {
       }
       createData.telegramId = input.telegramChatId || null;
 
-      let created: { id: string; username: string | null; name: string | null; roles: string[] };
-
-      try {
-        created = await ctx.db.user.create({
-          data: createData,
-          select: {
-            id: true,
-            username: true,
-            name: true,
-            roles: true,
-          },
-        });
-      } catch (error: any) {
-        if (isTelegramMappingConflictError(error)) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: "Tanlangan Telegram foydalanuvchisi allaqachon boshqa akkauntga biriktirilgan.",
-          });
-        }
-        throw error;
-      }
+      const created = await withTelegramMappingConflict(() => ctx.db.user.create({
+        data: createData,
+        select: {
+          id: true,
+          username: true,
+          name: true,
+          roles: true,
+        },
+      }));
 
       await ctx.db.auditLog.create({
         data: {

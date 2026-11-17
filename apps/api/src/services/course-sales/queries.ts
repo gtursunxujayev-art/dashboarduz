@@ -3,8 +3,11 @@
  * Each procedure differs only in the filter it passes in; the queries and the arithmetic live here.
  */
 import type { DbClient } from '@dashboarduz/db';
+import { dateRangeInput, isAgentOnly, reportRangeSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
 
+import { resolveDateRange } from '../../lib/dates';
 import { buildActiveSaleChainMetrics, INCOME_LIFECYCLE_ACTIVE, type SaleChainSaleRow } from '../income-chain';
 
 import { buildTechnicalSaleIdSetByAgreement, findSaleIdsBySubTariff } from './helpers';
@@ -165,4 +168,33 @@ export function echoReportRange<R extends string>(input: { range: R; dateFrom?: 
     dateFrom: input.range === 'custom' ? input.dateFrom || null : null,
     dateTo: input.range === 'custom' ? input.dateTo || null : null,
   };
+}
+
+/** Input of the by-course procedures (summary, course detail): one course, an optional tariff/sub-tariff and a range. */
+export const courseScopeInput = z.object({
+  courseId: z.string().uuid(),
+  tariffId: z.string().uuid().optional(),
+  subTariffId: z.string().uuid().optional(),
+  range: reportRangeSchema,
+  ...dateRangeInput.shape,
+});
+
+type CourseScopeContext = { db: DbClient; tenantId: string; user: { userId: string; roles: string[] } };
+
+/**
+ * What every by-course procedure starts with: the resolved range, the agent the data is limited to (agents
+ * see only their own sales) and the sale filters for the course, tariff and sub-tariff.
+ */
+export async function resolveCourseScope(ctx: CourseScopeContext, input: z.infer<typeof courseScopeInput>, now: Date) {
+  const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
+  const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
+  const scopedFilters = await buildCourseSaleFilters({
+    db: ctx.db,
+    tenantId: ctx.tenantId,
+    courseId: input.courseId,
+    tariffId: input.tariffId,
+    subTariffId: input.subTariffId,
+  });
+
+  return { rangeStart, rangeEnd, scopedManagerUserId, scopedFilters };
 }
