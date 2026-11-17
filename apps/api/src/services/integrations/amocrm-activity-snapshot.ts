@@ -202,6 +202,24 @@ export function splitRunBudget(total: number): { tasks: PageBudget; events: Page
 }
 
 /** Stores every item of one window. Returns false when the page budget ran out before the end. */
+/** One page of tasks from amoCRM (with page retries), stored in the snapshot; `last` when no page follows. */
+async function pullTaskPage(
+  tenantId: string,
+  context: TenantAmoCRMContext,
+  filters: Omit<NonNullable<Parameters<typeof amocrmService.fetchTasks>[1]>, 'limit' | 'timeoutMs'> & { page: number },
+): Promise<{ count: number; last: boolean }> {
+  const response = await withPageRetry(() => amocrmService.fetchTasks(context.accessToken, {
+    ...filters,
+    limit: TASK_PAGE_SIZE,
+    timeoutMs: PAGE_TIMEOUT_MS,
+  }, context.baseUrl));
+  const tasks = Array.isArray(response._embedded?.tasks) ? response._embedded.tasks : [];
+
+  await storeTasks(tasks.map((task) => taskToRow(tenantId, task)).filter((row): row is Prisma.AmocrmTaskCreateManyInput => row !== null));
+
+  return { count: tasks.length, last: !response._links?.next?.href || tasks.length < TASK_PAGE_SIZE };
+}
+
 async function pullWindow(
   kind: StreamKind,
   tenantId: string,
@@ -216,18 +234,14 @@ async function pullWindow(
     budget.remaining -= 1;
 
     if (kind === 'tasks') {
-      const response = await withPageRetry(() => amocrmService.fetchTasks(context.accessToken, {
+      const taskPage = await pullTaskPage(tenantId, context, {
         page,
-        limit: TASK_PAGE_SIZE,
         updatedAtFrom: new Date(window.from),
         updatedAtTo: new Date(window.to),
-        timeoutMs: PAGE_TIMEOUT_MS,
-      }, context.baseUrl));
-      const tasks = Array.isArray(response._embedded?.tasks) ? response._embedded.tasks : [];
+      });
 
-      await storeTasks(tasks.map((task) => taskToRow(tenantId, task)).filter((row): row is Prisma.AmocrmTaskCreateManyInput => row !== null));
-      stored += tasks.length;
-      if (!response._links?.next?.href || tasks.length < TASK_PAGE_SIZE) return { done: true, stored };
+      stored += taskPage.count;
+      if (taskPage.last) return { done: true, stored };
     } else {
       const response = await withPageRetry(() => amocrmService.fetchEvents(context.accessToken, {
         page,
@@ -312,17 +326,13 @@ async function pullOpenTasks(tenantId: string, context: TenantAmoCRMContext, bud
   for (let page = 1; ; page += 1) {
     if (budget.remaining <= 0) return { done: false, stored };
     budget.remaining -= 1;
-    const response = await withPageRetry(() => amocrmService.fetchTasks(context.accessToken, {
+    const taskPage = await pullTaskPage(tenantId, context, {
       page,
-      limit: TASK_PAGE_SIZE,
       completed: false,
-      timeoutMs: PAGE_TIMEOUT_MS,
-    }, context.baseUrl));
-    const tasks = Array.isArray(response._embedded?.tasks) ? response._embedded.tasks : [];
+    });
 
-    await storeTasks(tasks.map((task) => taskToRow(tenantId, task)).filter((row): row is Prisma.AmocrmTaskCreateManyInput => row !== null));
-    stored += tasks.length;
-    if (!response._links?.next?.href || tasks.length < TASK_PAGE_SIZE) return { done: true, stored };
+    stored += taskPage.count;
+    if (taskPage.last) return { done: true, stored };
   }
 }
 
