@@ -1,4 +1,4 @@
-import { AGENT_ROLES } from '@dashboarduz/shared';
+import { AGENT_ROLES, dateKeyRangeInput, dateRangeInput } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -12,8 +12,7 @@ export const attendanceRecordProcedures = {
       z.object({
         page: z.number().int().min(1).default(1).optional(),
         limit: z.number().int().min(1).max(200).default(50).optional(),
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
         userId: z.string().uuid().optional(),
         action: z.enum(['IN', 'OUT']).optional(),
         query: z.string().trim().optional(),
@@ -106,8 +105,7 @@ export const attendanceRecordProcedures = {
       z.object({
         page: z.number().int().min(1).default(1).optional(),
         limit: z.number().int().min(1).max(200).default(50).optional(),
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
         userId: z.string().uuid().optional(),
         query: z.string().trim().optional(),
         anomaliesOnly: z.boolean().optional(),
@@ -191,8 +189,7 @@ export const attendanceRecordProcedures = {
   exportReport: protectedProcedure
     .input(
       z.object({
-        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        ...dateKeyRangeInput.shape,
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -301,8 +298,7 @@ export const attendanceRecordProcedures = {
   listAnomalies: managerProcedure
     .input(
       z.object({
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
         limit: z.number().int().min(1).max(500).default(100).optional(),
       }).optional(),
     )

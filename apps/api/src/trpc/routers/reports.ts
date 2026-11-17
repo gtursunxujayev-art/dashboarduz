@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { adjustmentStatusSchema, adjustmentTypeSchema, isAgentOnly } from '@dashboarduz/shared';
+import { adjustmentStatusSchema, adjustmentTypeSchema, dateRangeInput, isAgentOnly } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -20,8 +20,7 @@ const REPORT_ROW_LIMIT = 20_000;
 const CHAIN_LIFECYCLES_ALL = ['active', 'pending_refund', 'refunded'];
 
 const reportFiltersSchema = z.object({
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
+  ...dateRangeInput.shape,
   managerUserId: z.string().optional(),
   courseId: z.string().optional(),
   tariffId: z.string().optional(),

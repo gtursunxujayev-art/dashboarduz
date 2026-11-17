@@ -1,14 +1,4 @@
-import { DATE_RANGE_MESSAGES_EN, type ParseCustomDateOptions } from '../../lib/dates';
 import type { ResolveTelegramBotTokenOptions } from '../../lib/telegram';
-
-export const CUSTOM_DATE_OPTIONS: ParseCustomDateOptions = {
-  trimInput: true,
-  messages: {
-    ...DATE_RANGE_MESSAGES_EN,
-    invalidFormat: (input) => `Invalid date format: ${input}`,
-    invalidDate: (input) => `Invalid date: ${input}`,
-  },
-};
 
 export const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
   requireActiveIntegration: false,

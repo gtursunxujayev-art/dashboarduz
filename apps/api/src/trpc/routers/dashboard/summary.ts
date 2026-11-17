@@ -1,4 +1,4 @@
-import { AGENT_ROLES, isTashkiliyOnly, reportRangeSchema } from '@dashboarduz/shared';
+import { AGENT_ROLES, dateRangeInput, isTashkiliyOnly, reportRangeSchema } from '@dashboarduz/shared';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { withTimeout } from '../../../lib/async';
@@ -25,8 +25,7 @@ export const summaryProcedures = {
       z.object({
         range: reportRangeSchema,
         pipelineIds: z.array(z.string()).optional(),
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
         refreshKey: z.number().int().nonnegative().optional(),
       }),
     )

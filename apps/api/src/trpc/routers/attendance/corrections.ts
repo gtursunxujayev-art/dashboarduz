@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { toTashkentDateKey } from '@dashboarduz/shared';
+import { dateKeyRangeInput, toTashkentDateKey } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -284,8 +284,7 @@ export const attendanceCorrectionProcedures = {
   recomputeRange: adminProcedure
     .input(
       z.object({
-        dateFrom: z.string(),
-        dateTo: z.string(),
+        ...dateKeyRangeInput.shape,
         userId: z.string().uuid().optional(),
       }),
     )

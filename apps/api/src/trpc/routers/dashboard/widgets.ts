@@ -1,4 +1,4 @@
-import { reportRangeSchema } from '@dashboarduz/shared';
+import { dateRangeInput, reportRangeSchema } from '@dashboarduz/shared';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
@@ -17,8 +17,7 @@ export const widgetProcedures = {
     .input(
       z.object({
         range: reportRangeSchema,
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
         widgets: z
           .array(
             z.object({

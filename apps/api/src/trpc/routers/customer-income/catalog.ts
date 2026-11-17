@@ -22,7 +22,7 @@ export const catalogProcedures = {
       if (startDate && endDate && endDate.getTime() < startDate.getTime()) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'Course end date must be same or later than start date.',
+          message: "Kurs tugash sanasi boshlanish sanasidan oldin bo'lishi mumkin emas.",
         });
       }
 
@@ -199,7 +199,7 @@ export const catalogProcedures = {
       ) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'Course end date must be same or later than start date.',
+          message: "Kurs tugash sanasi boshlanish sanasidan oldin bo'lishi mumkin emas.",
         });
       }
       if (typeof input.isActive === 'boolean') {

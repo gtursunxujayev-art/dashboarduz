@@ -1,4 +1,4 @@
-import { sellerRangeSchema } from '@dashboarduz/shared';
+import { dateRangeInput, sellerRangeSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -22,8 +22,7 @@ export const sellerListProcedures = {
     .input(
       z.object({
         range: sellerRangeSchema.default('last30days').optional(),
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
       }).optional(),
     )
     .query(async ({ ctx, input }) => {

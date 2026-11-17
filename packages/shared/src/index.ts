@@ -6,3 +6,4 @@ export * from './schemas/integrations';
 export * from './schemas/leads';
 export * from './schemas/customer-income';
 export * from './schemas/enums';
+export * from './schemas/date-range';

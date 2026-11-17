@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, funnelGroupSchema, reportRangeSchema, isTashkiliyOnly } from '@dashboarduz/shared';
+import { AGENT_ROLES, dateRangeInput, funnelGroupSchema, isTashkiliyOnly, reportRangeSchema } from '@dashboarduz/shared';
 // Tahlil → Voronka: per-manager funnel (leads, calls, sales, plan) and lost-revenue analysis.
 import type { Prisma } from '@prisma/client';
 
@@ -428,8 +428,7 @@ export const funnelRouter = router({
     .input(
       z.object({
         range: reportRangeSchema,
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
         group: funnelGroupSchema.default('all'),
         pipelineId: z.string().min(1).nullable().optional(),
         taklifStage: stageRefSchema.nullable().optional(),

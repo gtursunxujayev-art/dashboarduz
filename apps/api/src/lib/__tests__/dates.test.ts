@@ -6,7 +6,7 @@ import {
   toTashkentDateKey,
 } from '@dashboarduz/shared';
 
-import { DATE_RANGE_MESSAGES_EN, getRangeStart, parseCustomDate, resolveDateRange, type DateRangeMessages } from '../dates';
+import { DATE_RANGE_MESSAGES, getRangeStart, parseCustomDate, resolveDateRange } from '../dates';
 
 describe('shared Tashkent date maths', () => {
   it('shifts by five hours and back', () => {
@@ -42,38 +42,24 @@ describe('getRangeStart', () => {
 });
 
 describe('parseCustomDate', () => {
-  it('rejects padded input unless trimInput is set (customer-income)', () => {
-    expect(() => parseCustomDate(' 2024-03-15 ', false)).toThrow('Custom date must be in YYYY-MM-DD format.');
-    expect(parseCustomDate(' 2024-03-15 ', true, { trimInput: true }).toISOString()).toBe('2024-03-15T18:59:59.999Z');
+  it('trims typed dates everywhere', () => {
+    expect(parseCustomDate(' 2024-03-15 ', true).toISOString()).toBe('2024-03-15T18:59:59.999Z');
   });
 
-  it('uses the given messages', () => {
-    const messages: DateRangeMessages = {
-      ...DATE_RANGE_MESSAGES_EN,
-      invalidFormat: (input) => `Invalid date format: ${input}`,
-      invalidDate: (input) => `Invalid date: ${input}`,
-    };
-
-    expect(() => parseCustomDate('15.03.2024', false, { messages })).toThrow('Invalid date format: 15.03.2024');
-    expect(() => parseCustomDate('2024-13-45', false, { messages })).toThrow('Invalid date: 2024-13-45');
-    expect(() => parseCustomDate('2024-13-45', false)).toThrow('Invalid custom date: 2024-13-45');
+  it('reports bad dates in Uzbek', () => {
+    expect(() => parseCustomDate('15.03.2024', false)).toThrow("Sana formati YYYY-MM-DD bo'lishi kerak.");
+    expect(() => parseCustomDate('2024-13-45', false)).toThrow("Noto'g'ri sana: 2024-13-45");
   });
 });
 
-describe('resolveDateRange messages (course-sales passes Uzbek ones)', () => {
-  const uz: DateRangeMessages = {
-    invalidFormat: () => "Sana formati YYYY-MM-DD bo'lishi kerak.",
-    invalidDate: (input) => `Noto'g'ri sana: ${input}`,
-    missingBounds: "Ixtiyoriy davr uchun 'dan' va 'gacha' sanalari majburiy.",
-    endBeforeStart: "'gacha' sanasi 'dan' sanasidan oldin bo'lishi mumkin emas.",
-  };
+describe('resolveDateRange', () => {
   const now = new Date('2024-03-15T10:00:00.000Z');
 
-  it('reports missing and reversed bounds in the caller language', () => {
-    expect(() => resolveDateRange('custom', now, undefined, '2024-03-01', uz)).toThrow(uz.missingBounds);
-    expect(() => resolveDateRange('custom', now, '2024-03-02', '2024-03-01', uz)).toThrow(uz.endBeforeStart);
-    expect(() => resolveDateRange('custom', now, 'x', '2024-03-01', uz)).toThrow("Sana formati YYYY-MM-DD bo'lishi kerak.");
-    expect(() => resolveDateRange('custom', now, '2024-03-02', '2024-03-01')).toThrow(DATE_RANGE_MESSAGES_EN.endBeforeStart);
+  it('reports missing and reversed bounds in Uzbek', () => {
+    expect(() => resolveDateRange('custom', now, undefined, '2024-03-01')).toThrow(DATE_RANGE_MESSAGES.missingBounds);
+    expect(() => resolveDateRange('custom', now, '  ', '2024-03-01')).toThrow(DATE_RANGE_MESSAGES.missingBounds);
+    expect(() => resolveDateRange('custom', now, '2024-03-02', '2024-03-01')).toThrow(DATE_RANGE_MESSAGES.endBeforeStart);
+    expect(() => resolveDateRange('custom', now, 'x', '2024-03-01')).toThrow("Sana formati YYYY-MM-DD bo'lishi kerak.");
   });
 
   it('returns preset ranges ending now', () => {

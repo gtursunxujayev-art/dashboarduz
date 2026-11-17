@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { isAgentOnly, isTashkiliyOnly, reportRangeSchema, type UserRole } from '@dashboarduz/shared';
+import { dateRangeInput, isAgentOnly, isTashkiliyOnly, reportRangeSchema, type UserRole } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { resolveDateRange } from '../../lib/dates';
@@ -15,8 +15,7 @@ import { loadSalarySettingsAndAgents } from './salary-settings';
 
 export const bonusIncomeDetailsInputSchema = z.object({
   range: reportRangeSchema.default('month'),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
+  ...dateRangeInput.shape,
   courseId: z.string().uuid().optional(),
   managerUserId: z.string().uuid().optional(),
 });

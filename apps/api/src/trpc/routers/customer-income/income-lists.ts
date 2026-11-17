@@ -1,8 +1,8 @@
+import { dateKeyRangeInput } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { parseCustomDate } from '../../../lib/dates';
-import { CUSTOM_DATE_OPTIONS } from '../../../services/customer-income/constants';
 import { getIncomeLifecycleLabel, resolveManagerLabel } from '../../../services/customer-income/labels';
 import { shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
 import { extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
@@ -147,13 +147,12 @@ export const incomeListProcedures = {
   exportIncomesByDateRange: adminProcedure
     .input(
       z.object({
-        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        ...dateKeyRangeInput.shape,
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const rangeStart = parseCustomDate(input.dateFrom, false, CUSTOM_DATE_OPTIONS);
-      const rangeEnd = parseCustomDate(input.dateTo, true, CUSTOM_DATE_OPTIONS);
+      const rangeStart = parseCustomDate(input.dateFrom, false);
+      const rangeEnd = parseCustomDate(input.dateTo, true);
 
       if (rangeEnd < rangeStart) {
         throw new TRPCError({

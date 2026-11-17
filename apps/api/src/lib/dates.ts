@@ -2,7 +2,7 @@
  * Report date ranges in Tashkent time (GMT+5) for tRPC procedures.
  * The calendar maths itself lives in `@dashboarduz/shared` (tashkent-date).
  */
-import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
+import { DATE_KEY_FORMAT_MESSAGE, DATE_KEY_PATTERN, TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
 /** Preset ranges the routers accept. `custom` (and anything unknown) falls back to the month start. */
@@ -33,40 +33,26 @@ export function getRangeStart(range: ReportRange, now: Date): Date {
   return new Date(Date.UTC(year, month, 1) - TASHKENT_OFFSET_MS);
 }
 
-/** User-facing errors of {@link parseCustomDate} and {@link resolveDateRange}; routers differ in language. */
-export type DateRangeMessages = {
-  invalidFormat: (input: string) => string;
-  invalidDate: (input: string) => string;
-  missingBounds: string;
-  endBeforeStart: string;
-};
+/** User-facing errors of {@link parseCustomDate} and {@link resolveDateRange}; every router reports them in Uzbek. */
+export const DATE_RANGE_MESSAGES = {
+  invalidFormat: DATE_KEY_FORMAT_MESSAGE,
+  invalidDate: (input: string) => `Noto'g'ri sana: ${input}`,
+  missingBounds: "Ixtiyoriy davr uchun 'dan' va 'gacha' sanalari majburiy.",
+  endBeforeStart: "'gacha' sanasi 'dan' sanasidan oldin bo'lishi mumkin emas.",
+} as const;
 
-export const DATE_RANGE_MESSAGES_EN: DateRangeMessages = {
-  invalidFormat: () => 'Custom date must be in YYYY-MM-DD format.',
-  invalidDate: (input) => `Invalid custom date: ${input}`,
-  missingBounds: 'Both dateFrom and dateTo are required when range is custom.',
-  endBeforeStart: 'dateTo must be greater than or equal to dateFrom.',
-};
+/** A typed `YYYY-MM-DD` Tashkent day (surrounding spaces ignored) as its first (or, with `endOfDay`, last) millisecond. Throws BAD_REQUEST. */
+export function parseCustomDate(input: string, endOfDay: boolean): Date {
+  const value = String(input || '').trim();
 
-export type ParseCustomDateOptions = {
-  messages?: DateRangeMessages;
-  /** Trim the input before validating it (customer-income). Others reject surrounding spaces. */
-  trimInput?: boolean;
-};
-
-/** A `YYYY-MM-DD` Tashkent day as its first (or, with `endOfDay`, last) millisecond. Throws BAD_REQUEST. */
-export function parseCustomDate(input: string, endOfDay: boolean, options: ParseCustomDateOptions = {}): Date {
-  const messages = options.messages ?? DATE_RANGE_MESSAGES_EN;
-  const value = options.trimInput ? String(input || '').trim() : input;
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: messages.invalidFormat(input) });
+  if (!DATE_KEY_PATTERN.test(value)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: DATE_RANGE_MESSAGES.invalidFormat });
   }
 
   const parsed = new Date(`${value}${endOfDay ? 'T23:59:59.999' : 'T00:00:00.000'}+05:00`);
 
   if (Number.isNaN(parsed.getTime())) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: messages.invalidDate(input) });
+    throw new TRPCError({ code: 'BAD_REQUEST', message: DATE_RANGE_MESSAGES.invalidDate(value) });
   }
 
   return parsed;
@@ -78,7 +64,6 @@ export function resolveDateRange(
   now: Date,
   dateFrom?: string,
   dateTo?: string,
-  messages: DateRangeMessages = DATE_RANGE_MESSAGES_EN,
 ): { rangeStart: Date; rangeEnd: Date } {
   if (range !== 'custom') {
     return {
@@ -87,15 +72,15 @@ export function resolveDateRange(
     };
   }
 
-  if (!dateFrom || !dateTo) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: messages.missingBounds });
+  if (!dateFrom?.trim() || !dateTo?.trim()) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: DATE_RANGE_MESSAGES.missingBounds });
   }
 
-  const rangeStart = parseCustomDate(dateFrom, false, { messages });
-  const rangeEnd = parseCustomDate(dateTo, true, { messages });
+  const rangeStart = parseCustomDate(dateFrom, false);
+  const rangeEnd = parseCustomDate(dateTo, true);
 
   if (rangeEnd < rangeStart) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: messages.endBeforeStart });
+    throw new TRPCError({ code: 'BAD_REQUEST', message: DATE_RANGE_MESSAGES.endBeforeStart });
   }
 
   return { rangeStart, rangeEnd };

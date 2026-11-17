@@ -1,10 +1,9 @@
-import { isAgentOnly, reportRangeSchema } from '@dashboarduz/shared';
+import { dateRangeInput, isAgentOnly, reportRangeSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { resolveDateRange } from '../../../lib/dates';
 import { ACTIVE_TARIFFS_WITH_SUB_TARIFFS_SELECT, describeCourse } from '../../../services/course-sales/catalog';
-import { COURSE_SALES_DATE_MESSAGES } from '../../../services/course-sales/helpers';
 import { activeSalesWhere, buildCourseSaleFilters, echoReportRange, loadSalePaymentTotals, splitTechnicalSales } from '../../../services/course-sales/queries';
 import { extractSaleSubTariffId } from '../../../services/income-chain';
 import { resolveSaleAgreementAmount } from '../../../services/income-facts';
@@ -18,13 +17,12 @@ export const courseSalesSummaryProcedures = {
         tariffId: z.string().uuid().optional(),
         subTariffId: z.string().uuid().optional(),
         range: reportRangeSchema,
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
       }),
     )
     .query(async ({ ctx, input }) => {
       const now = new Date();
-      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo, COURSE_SALES_DATE_MESSAGES);
+      const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
       const scopedFilters = await buildCourseSaleFilters({
         db: ctx.db,

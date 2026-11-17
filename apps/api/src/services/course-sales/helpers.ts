@@ -1,16 +1,8 @@
 import type { DbClient } from '@dashboarduz/db';
 
-import type { DateRangeMessages } from '../../lib/dates';
 import { extractSaleSubTariffId } from '../income-chain';
 import { resolveSaleSubTariffId } from '../income-facts';
 import { resolveEffectiveAgreementAmount } from '../technical-income';
-
-export const COURSE_SALES_DATE_MESSAGES: DateRangeMessages = {
-  invalidFormat: () => "Sana formati YYYY-MM-DD bo'lishi kerak.",
-  invalidDate: (input) => `Noto'g'ri sana: ${input}`,
-  missingBounds: "Ixtiyoriy davr uchun 'dan' va 'gacha' sanalari majburiy.",
-  endBeforeStart: "'gacha' sanasi 'dan' sanasidan oldin bo'lishi mumkin emas.",
-};
 
 export async function findSaleIdsBySubTariff(
   tenantId: string,

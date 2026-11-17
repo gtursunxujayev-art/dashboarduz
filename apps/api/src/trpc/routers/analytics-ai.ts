@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { aiFocusSchema , reportRangeSchema , toTashkentDateKey } from '@dashboarduz/shared';
+import { aiFocusSchema, dateRangeInput, reportRangeSchema, toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -62,8 +62,7 @@ Return JSON with:
 
 const analyticsAiInputSchema = z.object({
   range: reportRangeSchema,
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
+  ...dateRangeInput.shape,
   focus: aiFocusSchema.default('sales'),
 });
 

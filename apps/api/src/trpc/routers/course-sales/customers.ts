@@ -1,9 +1,8 @@
-import { isAgentOnly, reportRangeSchema } from '@dashboarduz/shared';
+import { dateRangeInput, isAgentOnly, reportRangeSchema } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { resolveDateRange } from '../../../lib/dates';
 import { listCourseSaleCustomers } from '../../../services/course-sales/customer-list';
-import { COURSE_SALES_DATE_MESSAGES } from '../../../services/course-sales/helpers';
 import { buildCourseSaleFilters } from '../../../services/course-sales/queries';
 import { protectedProcedure } from '../../trpc';
 
@@ -15,15 +14,14 @@ export const courseSalesCustomerProcedures = {
         tariffId: z.string().uuid().optional(),
         subTariffId: z.string().uuid().optional(),
         range: reportRangeSchema.default('month'),
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
         query: z.string().trim().max(120).optional(),
         page: z.number().int().min(1).default(1),
         limit: z.number().int().min(1).max(200).default(50),
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { rangeStart, rangeEnd } = resolveDateRange(input.range, new Date(), input.dateFrom, input.dateTo, COURSE_SALES_DATE_MESSAGES);
+      const { rangeStart, rangeEnd } = resolveDateRange(input.range, new Date(), input.dateFrom, input.dateTo);
       const filters = await buildCourseSaleFilters({
         db: ctx.db,
         tenantId: ctx.tenantId,

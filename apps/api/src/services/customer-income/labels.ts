@@ -1,6 +1,7 @@
 import type { DbClient } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
 
+import { DATE_RANGE_MESSAGES } from '../../lib/dates';
 import { INCOME_LIFECYCLE_ACTIVE } from '../income-chain';
 
 import { INCOME_LIFECYCLE_PENDING_REFUND, INCOME_LIFECYCLE_REFUNDED } from './constants';
@@ -33,7 +34,7 @@ export function parseDateInput(input: string): Date {
     : new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid date: ${input}` });
+    throw new TRPCError({ code: 'BAD_REQUEST', message: DATE_RANGE_MESSAGES.invalidDate(value) });
   }
 
   return date;

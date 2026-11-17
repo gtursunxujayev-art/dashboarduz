@@ -1,3 +1,4 @@
+import { dateKeyRangeInput } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -126,7 +127,7 @@ export const incomeProblemsRouter = router({
     }),
 
   compare: adminProcedure
-    .input(z.object({ dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), search: z.string().trim().max(120).optional(), status: compareStatusSchema.optional() }))
+    .input(z.object({ ...dateKeyRangeInput.shape, search: z.string().trim().max(120).optional(), status: compareStatusSchema.optional() }))
     .query(async ({ ctx, input }) => {
       const snapshot = await getActiveSnapshot(ctx.tenantId, ctx.db);
 
@@ -156,7 +157,7 @@ export const incomeProblemsRouter = router({
     }),
 
   customerDrilldown: adminProcedure
-    .input(z.object({ dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), dbGroupKeys: z.array(z.string()).max(20), financeGroupKeys: z.array(z.string()).max(20) }))
+    .input(z.object({ ...dateKeyRangeInput.shape, dbGroupKeys: z.array(z.string()).max(20), financeGroupKeys: z.array(z.string()).max(20) }))
     .query(async ({ ctx, input }) => {
       const snapshot = await getActiveSnapshot(ctx.tenantId, ctx.db);
 

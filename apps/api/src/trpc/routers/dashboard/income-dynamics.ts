@@ -1,4 +1,4 @@
-import { DAY_MS, fromTashkentLocalParts, reportRangeSchema, shiftToTashkent } from '@dashboarduz/shared';
+import { dateRangeInput, DAY_MS, fromTashkentLocalParts, reportRangeSchema, shiftToTashkent } from '@dashboarduz/shared';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
@@ -122,8 +122,7 @@ export const incomeDynamicsProcedures = {
   incomeDynamics: protectedProcedure
     .input(z.object({
       range: reportRangeSchema,
-      dateFrom: z.string().optional(),
-      dateTo: z.string().optional(),
+      ...dateRangeInput.shape,
     }))
     .query(async ({ ctx, input }) => {
       const now = new Date();

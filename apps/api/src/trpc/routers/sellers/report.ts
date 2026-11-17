@@ -1,4 +1,4 @@
-import { sellerRangeSchema } from '@dashboarduz/shared';
+import { dateRangeInput, sellerRangeSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -22,8 +22,7 @@ export const sellerReportProcedures = {
       z.object({
         id: z.string().min(1),
         range: sellerRangeSchema.default('last30days'),
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
       }),
     )
     .mutation(async ({ input, ctx }) => {

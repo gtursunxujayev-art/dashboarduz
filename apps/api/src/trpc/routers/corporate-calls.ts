@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, hasAgentRole, toTashkentDateKey } from '@dashboarduz/shared';
+import { AGENT_ROLES, dateRangeInput, hasAgentRole, toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -269,8 +269,7 @@ export const corporateCallsRouter = router({
   list: protectedProcedure
     .input(z.object({
       managerUserId: z.string().uuid().optional(),
-      dateFrom: z.string().optional(),
-      dateTo: z.string().optional(),
+      ...dateRangeInput.shape,
       limit: z.number().int().positive().max(200).default(60),
     }).optional())
     .query(async ({ ctx, input }) => {

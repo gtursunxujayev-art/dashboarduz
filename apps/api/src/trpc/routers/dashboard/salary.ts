@@ -1,4 +1,4 @@
-import { isAgentOnly, normalizeSubTariffName, reportRangeSchema, TASHKENT_OFFSET_MS, toTashkentDateKey } from '@dashboarduz/shared';
+import { dateRangeInput, isAgentOnly, normalizeSubTariffName, reportRangeSchema, TASHKENT_OFFSET_MS, toTashkentDateKey } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { resolveDateRange } from '../../../lib/dates';
@@ -24,8 +24,7 @@ const salarySummary = protectedProcedure
     .input(
       z.object({
         range: reportRangeSchema.default('month').optional(),
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
         managerUserId: z.string().uuid().optional(),
         prorateFixedSalary: z.boolean().optional(),
       }).optional(),

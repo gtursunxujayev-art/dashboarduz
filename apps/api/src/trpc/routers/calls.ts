@@ -1,4 +1,4 @@
-import { reportRangeSchema, AGENT_ROLES, hasAgentRole, PRIVILEGED_ROLES } from '@dashboarduz/shared';
+import { AGENT_ROLES, dateRangeInput, hasAgentRole, PRIVILEGED_ROLES, reportRangeSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -161,8 +161,7 @@ export const callsRouter = router({
     .input(
       z.object({
         range: reportRangeSchema.default('today'),
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
       }),
     )
     .query(async ({ input, ctx }) => {

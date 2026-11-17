@@ -1,4 +1,4 @@
-import { AGENT_ROLES, fromTashkentLocalParts, isTashkiliyOnly, reportRangeSchema, shiftToTashkent } from '@dashboarduz/shared';
+import { AGENT_ROLES, dateRangeInput, fromTashkentLocalParts, isTashkiliyOnly, reportRangeSchema, shiftToTashkent } from '@dashboarduz/shared';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
@@ -14,8 +14,7 @@ export const financeSummaryProcedures = {
     .input(
       z.object({
         range: reportRangeSchema,
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        ...dateRangeInput.shape,
         courseId: z.string().uuid().optional(),
         managerUserId: z.string().uuid().optional(),
       }),
