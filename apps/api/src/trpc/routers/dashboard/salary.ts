@@ -9,15 +9,15 @@ import { buildRequiredWorkdaysByMonth, calculateProratedFixedSalary, getDayOfWee
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
-
-/** KPI metrics whose values come from amoCRM tasks and events. */
-const AMO_ACTIVITY_KPI_METRICS = ['followUpCount', 'followUpDonePercent', 'stageChangeCount'] as const;
-import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
+import { getAmoLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { computePlanProgressByAgent } from '../../../services/plan-bonus';
 
 import { bonusIncomeDetails, exportBonusIncomeDetails } from './bonus-income-details';
 import { createZeroBreakdown, extractSalarySettings, getCurrentMonthRange, KPI_METRIC_KEYS, type KpiMetricKey, type PlanBonusPeriodMode, protectedProcedure, type SalaryBreakdown, TRPCError } from './helpers';
+
+/** KPI metrics whose values come from amoCRM tasks and events. */
+const AMO_ACTIVITY_KPI_METRICS = ['followUpCount', 'followUpDonePercent', 'stageChangeCount'] as const;
 
 const salarySummary = protectedProcedure
     .input(
@@ -302,13 +302,14 @@ const salarySummary = protectedProcedure
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       const [newLeads, calls, activityByManager, allIncomes] = await Promise.all([
         amoContext && amoManagerIds.length > 0
-          ? fetchSnapshotLeads(
+          ? getAmoLeads(
               ctx.tenantId,
               {
                 responsibleUserIds: amoManagerIds,
                 createdAtFrom: rangeStart,
                 createdAtTo: rangeEnd,
               },
+              amoContext,
               ctx.db,
             )
           : Promise.resolve([]),
@@ -461,10 +462,10 @@ const salarySummary = protectedProcedure
           avgDailyTalkTime: Math.round(dailyTalkTime),
           debtCollectPercent: Number(debtCollectionRate.toFixed(2)),
           avgLeadResponseTime: 0,
-          callCount: callCount,
-          followUpCount: followUpCount,
+          callCount,
+          followUpCount,
           followUpDonePercent: Number(followUpDonePercent.toFixed(2)),
-          stageChangeCount: stageChangeCount,
+          stageChangeCount,
         };
 
         const kpiBreakdown = {} as Record<KpiMetricKey, KpiBreakdownEntry>;

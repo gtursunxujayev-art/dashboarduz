@@ -99,6 +99,7 @@ export const sellerReportProcedures = {
         fetchLeadsByStatusFilters(
           ctx.tenantId,
           ctx.db,
+          amoContext,
           selectedPipelineIds,
           activeStatusFilters,
           [input.id],

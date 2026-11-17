@@ -6,7 +6,8 @@
  * Tasks and events are pulled in time windows (tasks by `updated_at`, events by `created_at`): a
  * window is stored completely before the cursor moves past it, so a run that stops early (page
  * budget, error) resumes at the first unfinished window without gaps. A new tenant is backfilled
- * from BACKFILL_DAYS ago over several runs.
+ * from BACKFILL_DAYS ago over several runs. Items older than the window are pruned each run;
+ * a range that starts earlier is read from amoCRM live (see amocrm-snapshot-window.ts).
  */
 import { randomUUID } from 'crypto';
 
@@ -23,11 +24,12 @@ import { getRedisClient } from '../queue/redis-client';
 import { amocrmService, type AmoCRMEvent, type AmoCRMTask } from './amocrm';
 import { refreshAmoReference, type AmoReferenceKind } from './amocrm-activity-snapshot-read';
 import { getTenantAmoCRMContext, type TenantAmoCRMContext } from './amocrm-live';
+import { SNAPSHOT_WINDOW_DAYS, snapshotCutoff } from './amocrm-snapshot-window';
 
 export const ACTIVITY_SNAPSHOT_CONFIG_KEY = 'activity_snapshot';
 
 /** How far back a new tenant is filled (covers a year-to-date salary range in January too). */
-export const BACKFILL_DAYS = 400;
+export const BACKFILL_DAYS = SNAPSHOT_WINDOW_DAYS;
 const SCHEDULER_TICK_MS = 5 * 60 * 1000;
 /** Window size while catching up; the last window always ends "now". */
 const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -80,6 +82,8 @@ export type StreamState = {
   /** Unix ms up to which every item is stored. */
   cursor: number | null;
   backfillComplete: boolean;
+  /** Tasks only: every open task (any age, for overdue counts) has been pulled once. */
+  openTasksLoaded?: boolean;
 };
 
 export type ActivitySnapshotState = {
@@ -94,7 +98,11 @@ function readStream(value: unknown): StreamState {
   const raw = asObject(value) || {};
   const cursor = toNumberOrNull(raw.cursor);
 
-  return { cursor: cursor !== null && cursor > 0 ? cursor : null, backfillComplete: raw.backfillComplete === true };
+  return {
+    cursor: cursor !== null && cursor > 0 ? cursor : null,
+    backfillComplete: raw.backfillComplete === true,
+    ...(raw.openTasksLoaded === true ? { openTasksLoaded: true } : {}),
+  };
 }
 
 function isoOrNull(value: unknown): string | null {
@@ -115,7 +123,9 @@ export function readActivitySnapshotState(config: unknown): ActivitySnapshotStat
 
 /** The time windows still to pull for a stream, oldest first. */
 export function planWindows(state: StreamState, now: number): Array<{ from: number; to: number }> {
-  const start = state.cursor !== null ? state.cursor - CURSOR_OVERLAP_MS : now - BACKFILL_DAYS * 24 * 60 * 60 * 1000;
+  const windowStart = now - BACKFILL_DAYS * 24 * 60 * 60 * 1000;
+  // Never before the window: a cursor left far back (an older, longer backfill) jumps forward.
+  const start = Math.max(state.cursor !== null ? state.cursor - CURSOR_OVERLAP_MS : windowStart, windowStart);
   const windows: Array<{ from: number; to: number }> = [];
 
   for (let from = start; from < now; from += WINDOW_MS) {
@@ -271,7 +281,7 @@ async function pullStream(
     cursor = window.to;
   }
 
-  return { state: { cursor, backfillComplete: state.backfillComplete || caughtUp }, stored };
+  return { state: { ...state, cursor, backfillComplete: state.backfillComplete || caughtUp }, stored };
 }
 
 const REFERENCE_KINDS: AmoReferenceKind[] = ['users', 'pipelines', 'lead_custom_fields'];
@@ -298,6 +308,41 @@ async function saveState(integrationId: string, state: ActivitySnapshotState): P
   });
 }
 
+/**
+ * Pulls every open task once, whatever its age: overdue counts need tasks whose deadline is long
+ * past. Afterwards the `updated_at` windows keep them current. Restarts next run if the page budget
+ * runs out (rows are upserted, so nothing is duplicated).
+ */
+async function pullOpenTasks(tenantId: string, context: TenantAmoCRMContext, budget: PageBudget): Promise<{ done: boolean; stored: number }> {
+  let stored = 0;
+
+  for (let page = 1; ; page += 1) {
+    if (budget.remaining <= 0) return { done: false, stored };
+    budget.remaining -= 1;
+    const response = await withPageRetry(() => amocrmService.fetchTasks(context.accessToken, {
+      page,
+      limit: TASK_PAGE_SIZE,
+      completed: false,
+      timeoutMs: PAGE_TIMEOUT_MS,
+    }, context.baseUrl));
+    const tasks = Array.isArray(response._embedded?.tasks) ? response._embedded.tasks : [];
+
+    await storeTasks(tasks.map((task) => taskToRow(tenantId, task)).filter((row): row is Prisma.AmocrmTaskCreateManyInput => row !== null));
+    stored += tasks.length;
+    if (!response._links?.next?.href || tasks.length < TASK_PAGE_SIZE) return { done: true, stored };
+  }
+}
+
+/** Drops events and finished tasks from before the window; open tasks stay whatever their age. */
+export async function pruneActivityBeforeWindow(tenantId: string, cutoff: Date): Promise<{ events: number; tasks: number }> {
+  const [events, tasks] = await Promise.all([
+    systemPrisma.amocrmEvent.deleteMany({ where: { tenantId, externalCreatedAt: { lt: cutoff } } }),
+    systemPrisma.amocrmTask.deleteMany({ where: { tenantId, isCompleted: true, completeTill: { lt: cutoff } } }),
+  ]);
+
+  return { events: events.count, tasks: tasks.count };
+}
+
 export type ActivitySnapshotRunResult = { tasks: number; events: number; caughtUp: boolean };
 
 /** One pass for a tenant: reference data when due, then new tasks and events. */
@@ -316,21 +361,32 @@ export async function pullTenantActivitySnapshot(tenantId: string, now = new Dat
       next = { ...next, referenceRefreshedAt: now.toISOString() };
     }
     const { tasks: taskBudget, events: eventBudget } = splitRunBudget(MAX_PAGES_PER_RUN);
-    const tasks = await pullStream('tasks', tenantId, context, state.tasks, now.getTime(), taskBudget);
+    let taskState = state.tasks;
+
+    if (!taskState.openTasksLoaded) {
+      const open = await pullOpenTasks(tenantId, context, taskBudget);
+
+      tasksStored += open.stored;
+      if (open.done) taskState = { ...taskState, openTasksLoaded: true };
+      next = { ...next, tasks: taskState };
+    }
+    const tasks = await pullStream('tasks', tenantId, context, taskState, now.getTime(), taskBudget);
 
     next = { ...next, tasks: tasks.state };
-    tasksStored = tasks.stored;
+    tasksStored += tasks.stored;
     // Events get their share plus whatever tasks did not need this run.
     eventBudget.remaining += taskBudget.remaining;
     const events = await pullStream('events', tenantId, context, state.events, now.getTime(), eventBudget);
 
     next = { ...next, events: events.state };
     eventsStored = events.stored;
+    const pruned = await pruneActivityBeforeWindow(tenantId, snapshotCutoff(now));
+
     next = { ...next, lastRunAt: now.toISOString(), lastError: null };
     await saveState(context.integrationId, next);
-    const caughtUp = next.tasks.cursor === now.getTime() && next.events.cursor === now.getTime();
+    const caughtUp = Boolean(next.tasks.openTasksLoaded) && next.tasks.cursor === now.getTime() && next.events.cursor === now.getTime();
 
-    logger.info({ tenantId, tasks: tasksStored, events: eventsStored, caughtUp }, 'amoCRM activity snapshot refreshed');
+    logger.info({ tenantId, tasks: tasksStored, events: eventsStored, prunedEvents: pruned.events, prunedTasks: pruned.tasks, caughtUp }, 'amoCRM activity snapshot refreshed');
 
     return { tasks: tasksStored, events: eventsStored, caughtUp };
   } catch (error) {

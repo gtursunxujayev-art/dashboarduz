@@ -18,6 +18,7 @@ import {
   type AmoCRMTask,
   type AmoCRMUser,
 } from './amocrm';
+import { isRangeInSnapshot } from './amocrm-snapshot-window';
 
 export type AmoReferenceKind = 'users' | 'pipelines' | 'lead_custom_fields';
 
@@ -153,7 +154,7 @@ export async function storeAmoReference(tenantId: string, kind: AmoReferenceKind
   });
 }
 
-type AmoAccess = { accessToken: string; baseUrl?: string };
+export type AmoAccess = { accessToken: string; baseUrl?: string };
 
 const LIVE_LOADERS: { [K in AmoReferenceKind]: (access: AmoAccess) => Promise<AmoReferencePayload[K]> } = {
   users: (access) => amocrmService.fetchAllUsers(access.accessToken, { limit: 250 }, access.baseUrl),
@@ -197,4 +198,80 @@ export async function refreshAmoReference<K extends AmoReferenceKind>(
   await storeAmoReference(tenantId, kind, live);
 
   return live;
+}
+
+export type ActivityReadiness = { tasks: boolean; openTasks: boolean; events: boolean };
+
+/** Which activity streams have finished their first fill (see amocrm-activity-snapshot.ts state). */
+export function readActivityReadiness(config: unknown): ActivityReadiness {
+  const state = asObject(asObject(config)?.activity_snapshot) || {};
+  const tasks = asObject(state.tasks) || {};
+  const events = asObject(state.events) || {};
+
+  return {
+    tasks: tasks.backfillComplete === true && tasks.openTasksLoaded === true,
+    openTasks: tasks.openTasksLoaded === true,
+    events: events.backfillComplete === true,
+  };
+}
+
+async function getActivityReadiness(tenantId: string, db: DbClient): Promise<ActivityReadiness> {
+  const integration = await db.integration.findUnique({
+    where: { tenantId_type: { tenantId, type: 'amocrm' } },
+    select: { config: true },
+  });
+
+  return readActivityReadiness(integration?.config);
+}
+
+/** Whether a task query can be answered from the snapshot (open tasks of any age, finished ones in the window). */
+export function taskQueryUsesSnapshot(query: SnapshotTaskQuery, readiness: ActivityReadiness, now: Date = new Date()): boolean {
+  if (query.completed === false && !query.dateFrom) return readiness.openTasks;
+
+  return isRangeInSnapshot(query.dateFrom, readiness.tasks, now);
+}
+
+/** Tasks: from the snapshot inside its window, otherwise from amoCRM. */
+export async function getAmoTasks(
+  tenantId: string,
+  query: SnapshotTaskQuery,
+  access: AmoAccess,
+  db: DbClient = systemPrisma,
+): Promise<AmoCRMTask[]> {
+  if (taskQueryUsesSnapshot(query, await getActivityReadiness(tenantId, db))) {
+    return fetchSnapshotTasks(tenantId, query, db);
+  }
+
+  return amocrmService.fetchAllTasks(access.accessToken, {
+    responsibleUserIds: query.responsibleUserIds ?? undefined,
+    completed: query.completed,
+    dateFrom: query.dateFrom,
+    dateTo: query.dateTo,
+    entityType: query.entityType,
+    limit: 250,
+    maxPages: 80,
+  }, access.baseUrl);
+}
+
+/** Lead events: from the snapshot inside its window, otherwise from amoCRM. */
+export async function getAmoEvents(
+  tenantId: string,
+  query: SnapshotEventQuery,
+  access: AmoAccess,
+  db: DbClient = systemPrisma,
+): Promise<AmoCRMEvent[]> {
+  const readiness = await getActivityReadiness(tenantId, db);
+
+  if (isRangeInSnapshot(query.dateFrom, readiness.events)) {
+    return fetchSnapshotEvents(tenantId, query, db);
+  }
+
+  return amocrmService.fetchAllEvents(access.accessToken, {
+    dateFrom: query.dateFrom,
+    dateTo: query.dateTo,
+    userIds: query.userIds ?? undefined,
+    entityType: query.entityType,
+    limit: 250,
+    maxPages: 120,
+  }, access.baseUrl);
 }

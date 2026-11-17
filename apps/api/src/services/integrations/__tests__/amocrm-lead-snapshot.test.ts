@@ -11,6 +11,10 @@ function mockMatches(row: LeadRow, where: Where): boolean {
   if (where.tenantId && row.tenantId !== where.tenantId) return false;
   if (where.amocrmId?.not === null && row.amocrmId === null) return false;
   if (where.updatedAt?.lt && !(row.updatedAt < where.updatedAt.lt)) return false;
+  // Like SQL, a missing date never matches a date comparison.
+  if (where.externalCreatedAt?.gte && !(row.externalCreatedAt && row.externalCreatedAt >= where.externalCreatedAt.gte)) return false;
+  if (where.externalCreatedAt?.lt && !(row.externalCreatedAt && row.externalCreatedAt < where.externalCreatedAt.lt)) return false;
+  if (where.status?.in && !where.status.in.includes(row.status)) return false;
 
   return true;
 }
@@ -80,11 +84,16 @@ jest.mock('../amocrm-live', () => ({
   },
 }));
 jest.mock('../../queue/redis-client', () => ({ getRedisClient: () => mockRedis }));
+// Pipeline 7 has one open stage (100) besides amoCRM's fixed won (142) and lost (143).
+jest.mock('../amocrm-activity-snapshot-read', () => ({
+  getAmoReference: async () => ({ _embedded: { pipelines: [{ id: 7, _embedded: { statuses: [{ id: 100 }, { id: 142 }, { id: 143 }] } }] } }),
+}));
 
 // eslint-disable-next-line import/first
 import {
   isLeadSnapshotDue,
   needsFullSync,
+  pruneLeadsBeforeWindow,
   readLeadSnapshotState,
   refreshDueLeadSnapshots,
   refreshTenantLeadSnapshot,
@@ -112,8 +121,8 @@ function seedIntegration(tenantId: string, snapshot?: Record<string, unknown>) {
   });
 }
 
-function seedLead(tenantId: string, amocrmId: string, updatedAt = new Date('2026-01-01T00:00:00Z')) {
-  mockLeads.set(`${tenantId}:${amocrmId}`, { tenantId, amocrmId, title: `Old ${amocrmId}`, updatedAt });
+function seedLead(tenantId: string, amocrmId: string, updatedAt = new Date('2026-01-01T00:00:00Z'), extra: Record<string, unknown> = {}) {
+  mockLeads.set(`${tenantId}:${amocrmId}`, { tenantId, amocrmId, title: `Old ${amocrmId}`, updatedAt, ...extra });
 }
 
 function savedState(tenantId: string) {
@@ -125,6 +134,7 @@ beforeEach(() => {
   mockIntegrations.clear();
   jest.clearAllMocks();
   mockFetchLeads.mockReset();
+  mockFetchLeads.mockResolvedValue(page([], false));
   mockRedis.set.mockResolvedValue('OK');
   mockRedis.get.mockResolvedValue(null);
   mockRedis.del.mockResolvedValue(1);
@@ -165,8 +175,10 @@ describe('lead snapshot state', () => {
 describe('refreshTenantLeadSnapshot', () => {
   it('does a full pull on the first run, pages through amoCRM and drops leads amoCRM no longer has', async () => {
     seedIntegration('t1');
-    seedLead('t1', '999'); // deleted in amoCRM
-    seedLead('t2', '999'); // another tenant: untouched
+    const recent = new Date(NOW.getTime() - 24 * HOUR);
+
+    seedLead('t1', '999', undefined, { externalCreatedAt: recent }); // in the window, deleted in amoCRM
+    seedLead('t2', '999', undefined, { externalCreatedAt: recent }); // another tenant: untouched
     const firstPage = Array.from({ length: 250 }, (_, index) => lead(index + 1, 1_000 + index));
 
     mockFetchLeads
@@ -176,9 +188,15 @@ describe('refreshTenantLeadSnapshot', () => {
     const outcome = await refreshTenantLeadSnapshot('t1', { now: NOW });
 
     expect(outcome).toMatchObject({ status: 'refreshed', result: { mode: 'full', fetched: 251, removed: 1, complete: true, leadCount: 251 } });
-    expect(mockFetchLeads).toHaveBeenCalledTimes(2);
-    expect(mockFetchLeads.mock.calls[0]![2]).toMatchObject({ page: 1, limit: 250, with: 'contacts', updatedAtFrom: undefined, order: { field: 'id', direction: 'asc' } });
+    // Two passes: leads created in the window, then every open lead.
+    expect(mockFetchLeads).toHaveBeenCalledTimes(3);
+    expect(mockFetchLeads.mock.calls[0]![2]).toMatchObject({
+      page: 1, limit: 250, with: 'contacts', updatedAtFrom: undefined,
+      createdAtFrom: new Date(NOW.getTime() - 62 * 24 * HOUR),
+      order: { field: 'id', direction: 'asc' },
+    });
     expect(mockFetchLeads.mock.calls[1]![2]).toMatchObject({ page: 2 });
+    expect(mockFetchLeads.mock.calls[2]![2]).toMatchObject({ page: 1, statusFilters: [{ pipelineId: '7', statusId: '100' }] });
     expect(mockLeads.has('t1:999')).toBe(false);
     expect(mockLeads.has('t2:999')).toBe(true);
     expect(mockLeads.get('t1:251')).toMatchObject({ title: 'Lead 251', status: '100', pipelineId: '7', responsibleUserId: '501', source: 'amocrm' });
@@ -201,7 +219,8 @@ describe('refreshTenantLeadSnapshot', () => {
       updatedAtFrom: new Date((2_000 - 60) * 1000),
       order: { field: 'updated_at', direction: 'asc' },
     });
-    expect(mockDb.lead.deleteMany).not.toHaveBeenCalled();
+    // No full-pull sweep; the window prune runs but finds nothing old and closed.
+    expect(mockLeads.has('t1:1')).toBe(true);
     expect(mockLeads.get('t1:2')).toMatchObject({ title: 'Renamed' });
     expect(savedState('t1')).toMatchObject({ cursor: 2_500 });
   });
@@ -293,6 +312,38 @@ describe('refreshDueLeadSnapshots', () => {
     expect(refreshed).toEqual(['stale']);
     expect(savedState('failing').lastError).toBe('boom');
     expect(savedState('fresh').lastError).toBeNull();
+  });
+});
+
+describe('62-day window', () => {
+  it('skips closed leads created before the window but keeps old open ones', async () => {
+    seedIntegration('t1', { cursor: 2_000, lastFullSyncAt: new Date(NOW.getTime() - HOUR).toISOString() });
+    mockFetchLeads.mockResolvedValueOnce(page([
+      lead(10, 2_100, { status_id: 142 }), // won, created in 1970: not stored
+      lead(11, 2_200), // open, old: stored
+      lead(12, Math.floor(NOW.getTime() / 1000), { status_id: 143 }), // lost but recent: stored
+    ], false));
+
+    await refreshTenantLeadSnapshot('t1', { now: NOW });
+
+    expect(mockLeads.has('t1:10')).toBe(false);
+    expect(mockLeads.has('t1:11')).toBe(true);
+    expect(mockLeads.has('t1:12')).toBe(true);
+  });
+
+  it('prunes old closed leads and keeps open and recent ones', async () => {
+    seedIntegration('t1');
+    const old = new Date(NOW.getTime() - 100 * 24 * HOUR);
+
+    seedLead('t1', 'old-won', undefined, { externalCreatedAt: old, status: '142' });
+    seedLead('t1', 'old-open', undefined, { externalCreatedAt: old, status: '100' });
+    seedLead('t1', 'new-won', undefined, { externalCreatedAt: new Date(NOW.getTime() - HOUR), status: '142' });
+
+    const removed = await pruneLeadsBeforeWindow('t1', new Date(NOW.getTime() - 62 * 24 * HOUR));
+
+    expect(removed).toBe(1);
+    expect([...mockLeads.keys()].sort()).toEqual(['t1:new-won', 't1:old-open']);
+    expect(mockDb.lead.deleteMany).toHaveBeenLastCalledWith({ where: expect.objectContaining({ calls: { none: {} } }) });
   });
 });
 

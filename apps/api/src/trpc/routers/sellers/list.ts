@@ -11,7 +11,7 @@ import { getCorporateCallDurationByManager } from '../../../services/corporate-c
 import { type AmoCRMLead } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics, summarizeAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 import { getAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
-import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
+import { getAmoLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { computeLeadResponseTimes, getSelectedPipelines } from '../../../services/sellers/leads';
 import { buildSellersListCacheKey, SELLERS_ACTIVITY_CACHE_TTL_MS, SELLERS_LIST_CACHE_TTL_MS, sellersListCache } from '../../../services/sellers/list-cache';
@@ -137,12 +137,13 @@ export const sellerListProcedures = {
 
     const leadsFetchStartedMs = Date.now();
     const activeLeadsPromise = (async () => {
-      const allPipelineLeads = await fetchSnapshotLeads(
+      const allPipelineLeads = await getAmoLeads(
         ctx.tenantId,
         {
           pipelineIds: selectedPipelineIds,
           responsibleUserIds: managerIdList,
         },
+        amoContext,
         ctx.db,
       );
 
@@ -153,7 +154,7 @@ export const sellerListProcedures = {
       });
     })();
 
-    const newLeadsInRangePromise = fetchSnapshotLeads(
+    const newLeadsInRangePromise = getAmoLeads(
       ctx.tenantId,
       {
         pipelineIds: selectedPipelineIds,
@@ -161,6 +162,7 @@ export const sellerListProcedures = {
         createdAtFrom: rangeStart,
         createdAtTo: rangeEnd,
       },
+      amoContext,
       ctx.db,
     );
 
@@ -208,6 +210,7 @@ export const sellerListProcedures = {
     // Start lead response time computation in parallel (doesn't block other work)
     const leadResponseTimePromise = computeLeadResponseTimes({
       tenantId: ctx.tenantId,
+      access: amoContext,
       db: ctx.db,
       managerIds: managerIdList,
       newLeads: newLeadsInRange,

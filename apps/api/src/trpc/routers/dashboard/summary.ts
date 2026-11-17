@@ -7,14 +7,15 @@ import { logger } from '../../../lib/logger';
 import { asObject } from '../../../lib/object';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
 import { buildCacheKey, getOrSet, invalidateCache } from '../../../services/cache';
-import type { AmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 import { getCallsProvider } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { createSummarySourceStatus, runSummarySourceWithRetry } from '../../../services/dashboard/summary-sources';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
+import type { AmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+import { getAmoLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 
-import { asStringArray, buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, extractUtelManagerKey, fetchSnapshotLeads, getAmoCRMActivityMetricsWithin, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, normalizeTextToken, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, TRPCError, z } from './helpers';
+import { asStringArray, buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, extractUtelManagerKey, getAmoCRMActivityMetricsWithin, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, normalizeTextToken, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, TRPCError, z } from './helpers';
 
 /** How long the dashboard summary waits for amoCRM activity before answering without it. */
 const SUMMARY_ACTIVITY_WAIT_MS = 3_000;
@@ -128,8 +129,9 @@ export const summaryProcedures = {
           reasonFallback: 'amo_fetch_failed',
           fallback: [] as any[],
           run: async () => {
+            // Snapshot inside its window (instant); a range starting earlier is read from amoCRM.
             const fetched = await withTimeout(
-              fetchSnapshotLeads(
+              getAmoLeads(
                 ctx.tenantId,
                 {
                   pipelineIds: selectedPipelineIds,
@@ -137,9 +139,10 @@ export const summaryProcedures = {
                   createdAtFrom: rangeStart,
                   createdAtTo: rangeEnd,
                 },
+                amoContext,
                 ctx.db,
               ),
-              3000,
+              30_000,
               'amo_leads_timeout',
             );
 

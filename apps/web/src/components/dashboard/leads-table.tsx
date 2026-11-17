@@ -58,6 +58,12 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
         ) : null}
       </div>
 
+      {leadsQuery.data?.source === 'snapshot' && (
+        <p className="border-b border-gray-100 px-3 py-2 text-xs text-gray-500 sm:px-4" data-testid="leads-snapshot-note">
+          Oxirgi {leadsQuery.data.snapshotWindowDays} kunlik va hali yopilmagan lidlar ko&apos;rsatilmoqda. Eskiroq lidni qidiruv orqali toping.
+        </p>
+      )}
+
       <div className="px-2 sm:px-3">
         {/* Table */}
         <div className="overflow-x-auto">
