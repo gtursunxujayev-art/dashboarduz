@@ -14,26 +14,24 @@ export const formOptionsProcedures = {
     const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
     const includeInactiveManagers = canSelectInactiveManagerForIncome(ctx.user.roles);
 
+    const findManagers = () => ctx.db.user.findMany({
+      where: {
+        tenantId: ctx.tenantId,
+        ...(includeInactiveManagers ? {} : { isActive: true }),
+        ...(scopedManagerUserId ? { id: scopedManagerUserId } : {}),
+      },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        roles: true,
+        isActive: true,
+      },
+    });
+
     const [managersInitial, customers, outstandingDebts] = await Promise.all([
-      ctx.db.user.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          ...(includeInactiveManagers ? {} : { isActive: true }),
-          ...(scopedManagerUserId
-            ? {
-                id: scopedManagerUserId,
-              }
-            : {}),
-        },
-        orderBy: { name: 'asc' },
-        select: {
-          id: true,
-          name: true,
-          username: true,
-          roles: true,
-          isActive: true,
-        },
-      }),
+      findManagers(),
       ctx.db.customer.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -96,25 +94,7 @@ export const formOptionsProcedures = {
     let managers = managersInitial;
 
     if ((managersInitial as Array<unknown>).length === 0) {
-      managers = await ctx.db.user.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          ...(includeInactiveManagers ? {} : { isActive: true }),
-          ...(scopedManagerUserId
-            ? {
-                id: scopedManagerUserId,
-              }
-            : {}),
-        },
-        orderBy: { name: 'asc' },
-        select: {
-          id: true,
-          name: true,
-          username: true,
-          roles: true,
-          isActive: true,
-        },
-      });
+      managers = await findManagers();
     }
 
     let courses: Array<{

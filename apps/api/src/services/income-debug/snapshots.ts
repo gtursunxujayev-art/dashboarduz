@@ -2,7 +2,7 @@ import type { DbClient } from '@dashboarduz/db';
 import { normalizeDigits } from '@dashboarduz/shared';
 
 import { type MatchTextOptions, normalizeMatchText } from '../../lib/text';
-import { evaluateSaleChainConsistency, getSaleAgreementAmount } from '../income-chain';
+import { loadSaleChainConsistency } from '../income-chain';
 import type { FinanceSnapshotRow } from '../income-problems/finance-snapshot';
 
 const NAME_MATCH: MatchTextOptions = { collapseWhitespace: true, unifyApostrophes: true };
@@ -36,33 +36,7 @@ export async function getSaleChainConsistencySnapshot(params: {
     return null;
   }
 
-  const chainRows = await db.income.findMany({
-    where: {
-      tenantId: params.tenantId,
-      lifecycleStatus: 'active',
-      OR: [
-        { id: sale.id },
-        { relatedDebtIncomeId: sale.id },
-      ],
-    },
-    select: {
-      id: true,
-      type: true,
-      relatedDebtIncomeId: true,
-      paymentAmount: true,
-      entryDate: true,
-      createdAt: true,
-      debtAmount: true,
-      remainingDebtAmount: true,
-    },
-  });
-
-  const agreementAmount = getSaleAgreementAmount(sale);
-  const consistency = evaluateSaleChainConsistency({
-    saleId: sale.id,
-    agreementAmount,
-    chainRows,
-  });
+  const { agreementAmount, chainRows, consistency } = await loadSaleChainConsistency(db, params.tenantId, sale);
 
   return {
     saleId: sale.id,

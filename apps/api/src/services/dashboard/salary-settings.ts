@@ -70,6 +70,22 @@ export const KPI_METRIC_KEYS = [
 
 export type KpiMetricKey = (typeof KPI_METRIC_KEYS)[number];
 
+/** KPI metrics used when a tenant has not chosen any. */
+export const DEFAULT_SELECTED_KPI_METRICS: KpiMetricKey[] = ['conversion', 'avgDailyTalkTime', 'debtCollectPercent', 'followUpCount'];
+
+/** The known KPI metric keys in a stored `selectedMetrics` list, trimmed and unique (anything else is ignored). */
+export function parseSelectedKpiMetrics(raw: unknown): KpiMetricKey[] {
+  const values = Array.isArray(raw) ? raw : [];
+
+  return Array.from(
+    new Set(
+      values
+        .map((item) => String(item || '').trim())
+        .filter((item): item is KpiMetricKey => KPI_METRIC_KEYS.includes(item as KpiMetricKey)),
+    ),
+  );
+}
+
 export type KpiSettings = {
   enabled: boolean;
   monthlyBudget: number;
@@ -343,17 +359,8 @@ export function extractSalarySettings(settings: unknown): SalarySettingsSnapshot
       half: toFiniteNumber(obj?.half, 0),
     };
   };
-  const rawSelectedMetrics = Array.isArray(rawKpi?.selectedMetrics)
-    ? rawKpi.selectedMetrics
-    : [];
-  const selectedMetrics = Array.from(
-    new Set(
-      rawSelectedMetrics
-        .map((item) => String(item || '').trim())
-        .filter((item): item is KpiMetricKey => KPI_METRIC_KEYS.includes(item as KpiMetricKey)),
-    ),
-  );
-  const fallbackSelectedMetrics: KpiMetricKey[] = ['conversion', 'avgDailyTalkTime', 'debtCollectPercent', 'followUpCount'];
+  const selectedMetrics = parseSelectedKpiMetrics(rawKpi?.selectedMetrics);
+  const fallbackSelectedMetrics = DEFAULT_SELECTED_KPI_METRICS;
   const thresholds = KPI_METRIC_KEYS.reduce((acc, metric) => {
     const rawThreshold = (() => {
       if (metric === 'conversion') return rawKpiThresholds?.conversion ?? rawKpiThresholds?.conversionRate;

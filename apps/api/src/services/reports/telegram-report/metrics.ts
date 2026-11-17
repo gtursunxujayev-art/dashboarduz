@@ -37,6 +37,27 @@ function buildLeadWhere(
   return baseWhere;
 }
 
+type ManagerLeadCounts = { leads: number; qualified: number; nonQualified: number };
+
+/** Adds one lead (and whether it is qualified / non-qualified) to its responsible manager's counters. */
+function countManagerLead(
+  counts: Map<string, ManagerLeadCounts>,
+  responsibleUserId: string,
+  isQualified: boolean,
+  isNonQualified: boolean,
+): void {
+  const current = counts.get(responsibleUserId) || { leads: 0, qualified: 0, nonQualified: 0 };
+
+  current.leads += 1;
+  if (isQualified) {
+    current.qualified += 1;
+  }
+  if (isNonQualified) {
+    current.nonQualified += 1;
+  }
+  counts.set(responsibleUserId, current);
+}
+
 export async function collectMetrics(params: {
   tenantId: string;
   tenantSettings: unknown;
@@ -277,16 +298,7 @@ export async function collectMetrics(params: {
           continue;
         }
 
-        const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0, nonQualified: 0 };
-
-        current.leads += 1;
-        if (isQualified) {
-          current.qualified += 1;
-        }
-        if (isNonQualified) {
-          current.nonQualified += 1;
-        }
-        managerLeadsByAmoId.set(responsibleUserId, current);
+        countManagerLead(managerLeadsByAmoId, responsibleUserId, isQualified, isNonQualified);
       }
     } catch (error: any) {
       usedLiveAmoLeads = false;
@@ -344,16 +356,7 @@ export async function collectMetrics(params: {
       if (!responsibleUserId) {
         continue;
       }
-      const current = managerLeadsByAmoId.get(responsibleUserId) || { leads: 0, qualified: 0, nonQualified: 0 };
-
-      current.leads += 1;
-      if (isQualified) {
-        current.qualified += 1;
-      }
-      if (isNonQualified) {
-        current.nonQualified += 1;
-      }
-      managerLeadsByAmoId.set(responsibleUserId, current);
+      countManagerLead(managerLeadsByAmoId, responsibleUserId, isQualified, isNonQualified);
     }
   }
 

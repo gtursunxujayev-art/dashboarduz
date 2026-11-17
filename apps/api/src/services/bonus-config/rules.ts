@@ -1,5 +1,6 @@
 import { normalizePercentage } from '../../lib/number';
 import { asObjectOrEmpty, toFiniteNumber } from '../../lib/object';
+import { DEFAULT_SELECTED_KPI_METRICS, parseSelectedKpiMetrics } from '../dashboard/salary-settings';
 
 import { type AttendancePenaltySettings, BONUS_RULE_MODES, BONUS_TIER_BASES, type BonusTierBasis, type BonusBaseMode, type BonusRuleMode, type BonusRuleTier, type FixedSalaryRow, KPI_METRIC_KEYS, type KpiMetricKey, type KpiSettings, type KpiThreshold, type SalaryBonusRules, type SalaryCategoryBonusRule } from './types';
 
@@ -197,18 +198,9 @@ export function parseKpiSettings(settings: unknown): KpiSettings {
     stageChangeCount: rawThresholds.stageChangeCount,
   };
 
-  const rawSelectedMetrics = Array.isArray(rawKpi.selectedMetrics)
-    ? rawKpi.selectedMetrics
-    : [];
-  const selectedMetrics = Array.from(
-    new Set(
-      rawSelectedMetrics
-        .map((item) => String(item || '').trim())
-        .filter((item): item is KpiMetricKey => KPI_METRIC_KEYS.includes(item as KpiMetricKey)),
-    ),
-  );
+  const selectedMetrics = parseSelectedKpiMetrics(rawKpi.selectedMetrics);
 
-  const fallbackSelectedMetrics: KpiMetricKey[] = ['conversion', 'avgDailyTalkTime', 'debtCollectPercent', 'followUpCount'];
+  const fallbackSelectedMetrics = DEFAULT_SELECTED_KPI_METRICS;
 
   const thresholds = KPI_METRIC_KEYS.reduce((acc, metric) => {
     acc[metric] = parseThreshold(legacyMetricMap[metric]);

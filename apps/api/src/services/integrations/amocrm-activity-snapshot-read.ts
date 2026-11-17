@@ -28,6 +28,27 @@ type AmoReferencePayload = {
   lead_custom_fields: AmoCRMLeadCustomFieldsResponse;
 };
 
+/** Adds the `dateFrom`/`dateTo` bounds on `dateField` and the entity type (singular or plural) to a snapshot query. */
+function applyDateAndEntityFilters<W extends Record<string, unknown>>(
+  where: W,
+  dateField: keyof W & string,
+  query: { dateFrom?: Date; dateTo?: Date; entityType?: string },
+): void {
+  const target = where as Record<string, unknown>;
+
+  if (query.dateFrom || query.dateTo) {
+    target[dateField] = {
+      ...(query.dateFrom ? { gte: query.dateFrom } : {}),
+      ...(query.dateTo ? { lte: query.dateTo } : {}),
+    };
+  }
+  if (query.entityType) {
+    const singular = query.entityType.replace(/s$/, '');
+
+    target.entityType = { in: [singular, `${singular}s`] };
+  }
+}
+
 function unixSeconds(value: Date | null): number | undefined {
   return value ? Math.floor(value.getTime() / 1000) : undefined;
 }
@@ -49,17 +70,7 @@ export function buildSnapshotTaskWhere(tenantId: string, query: SnapshotTaskQuer
 
   if (responsibleUserIds) where.responsibleUserId = { in: responsibleUserIds };
   if (typeof query.completed === 'boolean') where.isCompleted = query.completed;
-  if (query.dateFrom || query.dateTo) {
-    where.completeTill = {
-      ...(query.dateFrom ? { gte: query.dateFrom } : {}),
-      ...(query.dateTo ? { lte: query.dateTo } : {}),
-    };
-  }
-  if (query.entityType) {
-    const singular = query.entityType.replace(/s$/, '');
-
-    where.entityType = { in: [singular, `${singular}s`] };
-  }
+  applyDateAndEntityFilters(where, 'completeTill', query);
 
   return where;
 }
@@ -101,17 +112,7 @@ export function buildSnapshotEventWhere(tenantId: string, query: SnapshotEventQu
   const userIds = cleanIds(query.userIds);
 
   if (userIds) where.createdBy = { in: userIds };
-  if (query.dateFrom || query.dateTo) {
-    where.externalCreatedAt = {
-      ...(query.dateFrom ? { gte: query.dateFrom } : {}),
-      ...(query.dateTo ? { lte: query.dateTo } : {}),
-    };
-  }
-  if (query.entityType) {
-    const singular = query.entityType.replace(/s$/, '');
-
-    where.entityType = { in: [singular, `${singular}s`] };
-  }
+  applyDateAndEntityFilters(where, 'externalCreatedAt', query);
 
   return where;
 }

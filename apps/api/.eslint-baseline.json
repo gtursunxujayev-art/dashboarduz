@@ -52,8 +52,8 @@
     "@typescript-eslint/no-unsafe-return": 1
   },
   "src/services/attendance/faceid.ts": {
-    "@typescript-eslint/no-explicit-any": 2,
-    "@typescript-eslint/no-unsafe-assignment": 2
+    "@typescript-eslint/no-explicit-any": 1,
+    "@typescript-eslint/no-unsafe-assignment": 1
   },
   "src/services/auth/jwt.ts": {
     "import/no-named-as-default-member": 2,

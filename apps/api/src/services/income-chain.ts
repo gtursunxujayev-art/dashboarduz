@@ -234,3 +234,40 @@ export async function buildActiveSaleChainMetrics(params: {
     chainRows,
   });
 }
+
+/** A sale's active chain rows (the sale and its repayments) and whether their debts add up. */
+export async function loadSaleChainConsistency(db: DbClient, tenantId: string, sale: {
+  id: string;
+  coursePriceAmount?: number | null;
+  debtAmount?: number | null;
+  paymentAmount?: number | null;
+}) {
+  const chainRows = await db.income.findMany({
+    where: {
+      tenantId,
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      OR: [
+        { id: sale.id },
+        { relatedDebtIncomeId: sale.id },
+      ],
+    },
+    select: {
+      id: true,
+      type: true,
+      relatedDebtIncomeId: true,
+      paymentAmount: true,
+      entryDate: true,
+      createdAt: true,
+      debtAmount: true,
+      remainingDebtAmount: true,
+    },
+  });
+  const agreementAmount = getSaleAgreementAmount(sale);
+  const consistency = evaluateSaleChainConsistency({
+    saleId: sale.id,
+    agreementAmount,
+    chainRows,
+  });
+
+  return { agreementAmount, chainRows, consistency };
+}

@@ -4,7 +4,7 @@ import { TRPCError } from '@trpc/server';
 
 import { logger } from '../../lib/logger';
 import { reconcileFinalizedBonusMonths } from '../bonus-engine';
-import { evaluateSaleChainConsistency, extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE, SALE_SUB_TARIFF_META_KEY } from '../income-chain';
+import { extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE, loadSaleChainConsistency, SALE_SUB_TARIFF_META_KEY } from '../income-chain';
 
 export function withSaleSubTariffMeta(
   existingMeta: Prisma.JsonValue | null | undefined,
@@ -436,32 +436,7 @@ export async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient,
       return null;
     }
 
-    const chainRows = await tx.income.findMany({
-      where: {
-        tenantId: params.tenantId,
-        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-        OR: [
-          { id: sale.id },
-          { relatedDebtIncomeId: sale.id },
-        ],
-      },
-      select: {
-        id: true,
-        type: true,
-        relatedDebtIncomeId: true,
-        paymentAmount: true,
-        entryDate: true,
-        createdAt: true,
-        debtAmount: true,
-        remainingDebtAmount: true,
-      },
-    });
-    const agreementAmount = getSaleAgreementAmount(sale);
-    const consistency = evaluateSaleChainConsistency({
-      saleId: sale.id,
-      agreementAmount,
-      chainRows,
-    });
+    const { consistency } = await loadSaleChainConsistency(tx, params.tenantId, sale);
 
     return { sale, consistency };
   };
