@@ -22,18 +22,27 @@ const CALL_STATS_CACHE_SECONDS = 15;
 const COURSE_STATS_CACHE_SECONDS = 60;
 const LEADERBOARD_STALE_SECONDS = 120;
 
+const leaderboardGroupInput = z.object({ group: managerGroupSchema.default('online') }).optional();
+
+/** The requested leaderboard group (online by default); FORBIDDEN when the user's roles may not see it. */
+function requireLeaderboardGroup(roles: string[], group: AgentGroup | undefined): AgentGroup {
+  const requestedGroup: AgentGroup = group || 'online';
+
+  if (!canReadLiveLeaderboard(roles, requestedGroup)) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'This leaderboard is not available for the current user role.',
+    });
+  }
+
+  return requestedGroup;
+}
+
 export const liveLeaderboardProcedures = {
   liveLeaderboardPreviousMonthWinner: protectedProcedure
-    .input(z.object({ group: managerGroupSchema.default('online') }).optional())
+    .input(leaderboardGroupInput)
     .query(async ({ ctx, input }) => {
-      const requestedGroup: AgentGroup = input?.group || 'online';
-
-      if (!canReadLiveLeaderboard(ctx.user.roles, requestedGroup)) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'This leaderboard is not available for the current user role.',
-        });
-      }
+      const requestedGroup = requireLeaderboardGroup(ctx.user.roles, input?.group);
 
       const now = new Date();
       const currentMonthStart = getRangeStart('month', now);
@@ -144,16 +153,9 @@ export const liveLeaderboardProcedures = {
   }),
 
   liveLeaderboardCallStats: protectedProcedure
-    .input(z.object({ group: managerGroupSchema.default('online') }).optional())
+    .input(leaderboardGroupInput)
     .query(async ({ ctx, input }) => {
-      const requestedGroup: AgentGroup = input?.group || 'online';
-
-      if (!canReadLiveLeaderboard(ctx.user.roles, requestedGroup)) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'This leaderboard is not available for the current user role.',
-        });
-      }
+      const requestedGroup = requireLeaderboardGroup(ctx.user.roles, input?.group);
 
       return getOrSet(buildCacheKey('liveLeaderboardCallStats', { t: ctx.tenantId, g: requestedGroup }), CALL_STATS_CACHE_SECONDS, async () => {
       const now = new Date();
@@ -226,16 +228,9 @@ export const liveLeaderboardProcedures = {
     }),
 
   liveLeaderboard: protectedProcedure
-    .input(z.object({ group: managerGroupSchema.default('online') }).optional())
+    .input(leaderboardGroupInput)
     .query(async ({ ctx, input }) => {
-      const requestedGroup: AgentGroup = input?.group || 'online';
-
-      if (!canReadLiveLeaderboard(ctx.user.roles, requestedGroup)) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'This leaderboard is not available for the current user role.',
-        });
-      }
+      const requestedGroup = requireLeaderboardGroup(ctx.user.roles, input?.group);
 
     return getOrSet(buildCacheKey('liveLeaderboard', { t: ctx.tenantId, g: requestedGroup }), LEADERBOARD_CACHE_SECONDS, async () => {
     const now = new Date();

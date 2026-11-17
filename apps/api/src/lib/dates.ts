@@ -85,3 +85,12 @@ export function resolveDateRange(
 
   return { rangeStart, rangeEnd };
 }
+
+/** `range`/`dateFrom`/`dateTo` echoed back: the dates only for a custom range. */
+export function echoReportRange<R extends string>(input: { range: R; dateFrom?: string; dateTo?: string }) {
+  return {
+    range: input.range,
+    dateFrom: input.range === 'custom' ? input.dateFrom || null : null,
+    dateTo: input.range === 'custom' ? input.dateTo || null : null,
+  };
+}

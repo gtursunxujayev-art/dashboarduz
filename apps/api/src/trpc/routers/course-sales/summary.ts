@@ -1,7 +1,8 @@
 import { TRPCError } from '@trpc/server';
 
+import { echoReportRange } from '../../../lib/dates';
 import { ACTIVE_TARIFFS_WITH_SUB_TARIFFS_SELECT, describeCourse } from '../../../services/course-sales/catalog';
-import { activeSalesWhere, courseScopeInput, echoReportRange, loadSalePaymentTotals, resolveCourseScope, splitTechnicalSales } from '../../../services/course-sales/queries';
+import { activeSalesWhere, courseScopeInput, loadSalePaymentTotals, resolveCourseScope, splitTechnicalSales } from '../../../services/course-sales/queries';
 import { extractSaleSubTariffId } from '../../../services/income-chain';
 import { resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { protectedProcedure } from '../../trpc';

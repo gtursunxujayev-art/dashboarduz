@@ -1,8 +1,9 @@
 import { normalizeSubTariffName } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
+import { echoReportRange } from '../../../lib/dates';
 import { describeCourse } from '../../../services/course-sales/catalog';
-import { activeSalesWhere, courseScopeInput, echoReportRange, loadSalePaymentTotals, resolveCourseScope, splitTechnicalSales } from '../../../services/course-sales/queries';
+import { activeSalesWhere, courseScopeInput, loadSalePaymentTotals, resolveCourseScope, splitTechnicalSales } from '../../../services/course-sales/queries';
 import { resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 import { buildTariffBreakdown } from '../../../services/tariff-breakdown';
 import { protectedProcedure } from '../../trpc';

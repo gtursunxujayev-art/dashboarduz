@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { getAgentResponsibleScope } from '../../lib/access';
-import { resolveDateRange } from '../../lib/dates';
+import { echoReportRange, resolveDateRange } from '../../lib/dates';
 import { textFromScalar } from '../../lib/object';
 import { AMOCRM_CALL_PROVIDER, countedCallsWhere } from '../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
@@ -288,6 +288,12 @@ export const callsRouter = router({
       ? Number((rows.reduce((sum, row) => sum + row.callsToday, 0) / rows.length).toFixed(1))
       : 0;
 
+    const totals = {
+      totalAgents: rows.length,
+      totalCalls: rows.reduce((sum, row) => sum + row.totalCalls, 0),
+      totalDurationSeconds: rows.reduce((sum, row) => sum + row.totalDurationSeconds, 0),
+    };
+
     if (isAgentOnly) {
       const ownRow = rows.find((row) => row.userId === ctx.user.userId);
       const aboveAverage = ownRow ? ownRow.callsToday >= teamAverageTodayCalls : false;
@@ -295,14 +301,8 @@ export const callsRouter = router({
       return {
         rows: ownRow ? [ownRow] : [],
         teamAverageTodayCalls,
-        totals: {
-          totalAgents: rows.length,
-          totalCalls: rows.reduce((sum, row) => sum + row.totalCalls, 0),
-          totalDurationSeconds: rows.reduce((sum, row) => sum + row.totalDurationSeconds, 0),
-        },
-        range: input.range,
-        dateFrom: input.range === 'custom' ? input.dateFrom || null : null,
-        dateTo: input.range === 'custom' ? input.dateTo || null : null,
+        totals,
+        ...echoReportRange(input),
         rangeStart,
         rangeEnd,
         agentInsight: {
@@ -320,14 +320,8 @@ export const callsRouter = router({
     return {
       rows,
       teamAverageTodayCalls,
-      totals: {
-        totalAgents: rows.length,
-        totalCalls: rows.reduce((sum, row) => sum + row.totalCalls, 0),
-        totalDurationSeconds: rows.reduce((sum, row) => sum + row.totalDurationSeconds, 0),
-      },
-      range: input.range,
-      dateFrom: input.range === 'custom' ? input.dateFrom || null : null,
-      dateTo: input.range === 'custom' ? input.dateTo || null : null,
+      totals,
+      ...echoReportRange(input),
       rangeStart,
       rangeEnd,
       agentInsight: null,

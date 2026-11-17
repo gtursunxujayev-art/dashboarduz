@@ -113,7 +113,6 @@
     "@typescript-eslint/no-unsafe-assignment": 9,
     "@typescript-eslint/no-unsafe-member-access": 16,
     "@typescript-eslint/no-unsafe-return": 3,
-    "import/order": 2,
     "max-lines": 1
   },
   "src/services/integrations/meta-ads.ts": {

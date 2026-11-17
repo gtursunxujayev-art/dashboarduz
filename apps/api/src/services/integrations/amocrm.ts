@@ -1,8 +1,9 @@
 // AmoCRM integration service (token-based mode only)
 
 import crypto from 'crypto';
-import { encryptionService, EncryptionService } from '../security/encryption';
+
 import { logger } from '../../lib/logger';
+import { encryptionService, EncryptionService } from '../security/encryption';
 
 export interface AmoCRMTokens {
   access_token: string;
@@ -168,6 +169,34 @@ export interface AmoCRMEventListResponse {
       href?: string;
     };
   };
+}
+
+/**
+ * GET from the amoCRM API with the bearer token. A non-OK response is logged (`logMessage`, with `logContext`)
+ * and thrown as `<failureMessage>: <status> <statusText>`.
+ */
+async function amoGet(
+  url: string,
+  accessToken: string,
+  logMessage: string,
+  failureMessage: string,
+  logContext: Record<string, unknown> = {},
+): Promise<Response> {
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    logger.error({ error: errorText, status: response.status, ...logContext }, logMessage);
+    throw new Error(`${failureMessage}: ${response.status} ${response.statusText}`);
+  }
+
+  return response;
 }
 
 export class AmoCRMService {
@@ -340,19 +369,7 @@ export class AmoCRMService {
       const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
       const url = `${resolvedBaseUrl}/api/v4/leads${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
 
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        logger.error({ error: errorText, status: response.status }, 'AmoCRM fetch leads error');
-        throw new Error(`Failed to fetch leads from AmoCRM: ${response.status} ${response.statusText}`);
-      }
+      const response = await amoGet(url, accessToken, 'AmoCRM fetch leads error', 'Failed to fetch leads from AmoCRM');
 
       // amoCRM answers an empty result set (or a page past the end) with 204 No Content.
       if (response.status === 204) {
@@ -387,19 +404,7 @@ export class AmoCRMService {
       const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
       const url = `${resolvedBaseUrl}/api/v4/contacts${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
 
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        logger.error({ error: errorText, status: response.status }, 'AmoCRM fetch contacts error');
-        throw new Error(`Failed to fetch contacts from AmoCRM: ${response.status} ${response.statusText}`);
-      }
+      const response = await amoGet(url, accessToken, 'AmoCRM fetch contacts error', 'Failed to fetch contacts from AmoCRM');
 
       const data = await response.json();
 
@@ -468,19 +473,7 @@ export class AmoCRMService {
     }
     const url = `${resolvedBaseUrl}/api/v4/leads/${leadId}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
 
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      logger.error({ error: errorText, status: response.status, leadId }, 'AmoCRM lead fetch by id error');
-      throw new Error(`Failed to fetch AmoCRM lead: ${response.status} ${response.statusText}`);
-    }
+    const response = await amoGet(url, accessToken, 'AmoCRM lead fetch by id error', 'Failed to fetch AmoCRM lead', { leadId });
 
     return (await response.json()) as AmoCRMLead;
   }
@@ -550,19 +543,7 @@ export class AmoCRMService {
 
     const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
     const url = `${resolvedBaseUrl}/api/v4/users${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      logger.error({ error: errorText, status: response.status }, 'AmoCRM users fetch error');
-      throw new Error(`Failed to fetch AmoCRM users: ${response.status} ${response.statusText}`);
-    }
+    const response = await amoGet(url, accessToken, 'AmoCRM users fetch error', 'Failed to fetch AmoCRM users');
 
     return (await response.json()) as AmoCRMUsersResponse;
   }

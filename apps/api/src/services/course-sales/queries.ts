@@ -161,15 +161,6 @@ export async function loadSalePaymentTotals(params: {
   };
 }
 
-/** `range`/`dateFrom`/`dateTo` echoed back: the dates only for a custom range. */
-export function echoReportRange<R extends string>(input: { range: R; dateFrom?: string; dateTo?: string }) {
-  return {
-    range: input.range,
-    dateFrom: input.range === 'custom' ? input.dateFrom || null : null,
-    dateTo: input.range === 'custom' ? input.dateTo || null : null,
-  };
-}
-
 /** Input of the by-course procedures (summary, course detail): one course, an optional tariff/sub-tariff and a range. */
 export const courseScopeInput = z.object({
   courseId: z.string().uuid(),

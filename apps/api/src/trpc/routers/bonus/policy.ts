@@ -12,6 +12,16 @@ import { adminProcedure, protectedProcedure } from '../../trpc';
 
 import { saveBonusPolicyInput, updateBonusRulesInput } from './schemas';
 
+/** Every category's rule run through sanitizeCategoryRule (with its own simple percent as the fallback). */
+function sanitizeBonusRules(rules: SalaryBonusRules): SalaryBonusRules {
+  return {
+    online: sanitizeCategoryRule(rules.online, rules.online.simplePercent),
+    offline: sanitizeCategoryRule(rules.offline, rules.offline.simplePercent),
+    intensive: sanitizeCategoryRule(rules.intensive, rules.intensive.simplePercent),
+    additional_service: sanitizeCategoryRule(rules.additional_service, rules.additional_service.simplePercent),
+  };
+}
+
 export const bonusPolicyProcedures = {
   getSalaryConfig: protectedProcedure.query(async ({ ctx }) => {
     if (!canReadBonusPlans(ctx.user.roles)) {
@@ -111,12 +121,7 @@ export const bonusPolicyProcedures = {
       }
     }
     const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
-    const normalizedRules: SalaryBonusRules = {
-      online: sanitizeCategoryRule(input.bonusRules.online, input.bonusRules.online.simplePercent),
-      offline: sanitizeCategoryRule(input.bonusRules.offline, input.bonusRules.offline.simplePercent),
-      intensive: sanitizeCategoryRule(input.bonusRules.intensive, input.bonusRules.intensive.simplePercent),
-      additional_service: sanitizeCategoryRule(input.bonusRules.additional_service, input.bonusRules.additional_service.simplePercent),
-    };
+    const normalizedRules = sanitizeBonusRules(input.bonusRules);
     const policy = normalizeBonusPolicy({
       schemaVersion: 2,
       bonusMode: input.bonusMode,
@@ -197,15 +202,7 @@ export const bonusPolicyProcedures = {
 
     const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
-    const normalizedRules: SalaryBonusRules = {
-      online: sanitizeCategoryRule(input.bonusRules.online, input.bonusRules.online.simplePercent),
-      offline: sanitizeCategoryRule(input.bonusRules.offline, input.bonusRules.offline.simplePercent),
-      intensive: sanitizeCategoryRule(input.bonusRules.intensive, input.bonusRules.intensive.simplePercent),
-      additional_service: sanitizeCategoryRule(
-        input.bonusRules.additional_service,
-        input.bonusRules.additional_service.simplePercent,
-      ),
-    };
+    const normalizedRules = sanitizeBonusRules(input.bonusRules);
     const compatibilityPercentages = {
       online: normalizedRules.online.mode === 'simple' ? normalizedRules.online.simplePercent : 0,
       offline: normalizedRules.offline.mode === 'simple' ? normalizedRules.offline.simplePercent : 0,

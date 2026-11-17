@@ -1,10 +1,10 @@
 import type { DbClient } from '@dashboarduz/db';
 
+import { echoReportRange } from '../../../lib/dates';
 import { buildCustomerListWhere } from '../customer-list';
 import {
   activeSalesWhere,
   buildCourseSaleFilters,
-  echoReportRange,
   loadSalePaymentTotals,
   sumPaymentsBySale,
 } from '../queries';
