@@ -41,7 +41,11 @@ export default function DashboardSellerTable({
   isRetrying,
 }: Props) {
   const crmUnavailable = crmSourceStatus?.state && crmSourceStatus.state !== 'ok';
+  const crmLoading = Boolean(crmSourceStatus?.reason?.includes('activity_loading'));
   const crmReason = (() => {
+    if (crmLoading) {
+      return "AmoCRM faoliyat ma'lumotlari (vazifalar, izohlar, bosqichlar) fonda yuklanmoqda — bir necha soniyadan so'ng avtomatik ko'rinadi.";
+    }
     if (crmSourceStatus?.state === 'timeout' || crmSourceStatus?.reason?.includes('timeout')) {
       return 'AmoCRM javob berish vaqti tugadi.';
     }
@@ -78,7 +82,11 @@ export default function DashboardSellerTable({
               <div className="flex min-w-0 items-start gap-2.5">
                 <IconAlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" stroke={1.8} />
                 <div className="min-w-0">
-                  <p className="font-semibold">AmoCRM faoliyat ma&apos;lumotlari to&apos;liq yuklanmadi.</p>
+                  <p className="font-semibold">
+                    {crmLoading
+                      ? <>AmoCRM faoliyat ma&apos;lumotlari yuklanmoqda.</>
+                      : <>AmoCRM faoliyat ma&apos;lumotlari to&apos;liq yuklanmadi.</>}
+                  </p>
                   {unmappedSellerNames.length > 0 && (
                     <p className="mt-1">
                       AmoCRM menejeri biriktirilmagan: {unmappedSellerNames.join(', ')}.

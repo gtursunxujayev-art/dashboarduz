@@ -39,4 +39,26 @@ describe('DashboardSellerTable CRM availability', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Qayta urinish' }));
     expect(retry).toHaveBeenCalledTimes(1);
   });
+
+  it('says activity is still loading instead of failed', () => {
+    render(
+      <DashboardSellerTable
+        isLoading={false}
+        sellerPerformance={[]}
+        isTashkiliyOnly={false}
+        range="today"
+        formatAmount={(value) => String(value)}
+        formatDuration={(value) => String(value)}
+        renderMetricValue={(value) => String(value ?? '-')}
+        getPeriodFollowUpLabel={() => 'Bugungi F/U'}
+        crmSourceStatus={{ state: 'partial', reason: 'activity_loading' }}
+        onRetry={jest.fn()}
+        isRetrying={false}
+      />,
+    );
+
+    expect(screen.getByText(/AmoCRM faoliyat ma'lumotlari yuklanmoqda/)).toBeInTheDocument();
+    expect(screen.getByText(/fonda yuklanmoqda/)).toBeInTheDocument();
+    expect(screen.queryByText(/to'liq yuklanmadi/)).toBeNull();
+  });
 });

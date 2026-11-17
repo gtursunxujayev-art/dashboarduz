@@ -29,6 +29,7 @@ export { fetchSnapshotLeadPage, fetchSnapshotLeads } from '../../../services/int
 export {
   createAmoCRMActivityDiagnostics,
   getAmoCRMActivityMetrics,
+  getAmoCRMActivityMetricsWithin,
   summarizeAmoCRMActivityMetrics,
   type AmoCRMActivityDiagnostics,
 } from '../../../services/integrations/amocrm-activity';

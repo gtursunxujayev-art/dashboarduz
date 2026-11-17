@@ -108,7 +108,10 @@ export function useDashboardData() {
       retry: 1,
       staleTime: 60 * 1000,
       refetchOnWindowFocus: false,
-      refetchInterval: 5 * 60 * 1000,
+      // amoCRM activity finishes loading in the background on the server; ask again soon so it shows up.
+      refetchInterval: (data) => (
+        data?.sourceStatus?.activity?.reason?.includes('activity_loading') ? 20 * 1000 : 5 * 60 * 1000
+      ),
     },
   );
   const financeSummaryQuery = trpc.dashboard.financeSummary.useQuery(
