@@ -14,9 +14,16 @@ import { PrismaClient } from '@prisma/client';
  * (roles, grants, FORCE RLS), gives the test roles random passwords and then
  * connects as dashboarduz_app / dashboarduz_system. Never point it at a real
  * database. Skipped otherwise.
+ *
+ * In the "Enforced RLS" CI job the roles already have passwords and the other
+ * integration tests connect with them (TEST_DATABASE_APP_URL /
+ * TEST_DATABASE_SYSTEM_URL); then this test uses those URLs and leaves the
+ * passwords alone.
  */
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
+const presetAppUrl = process.env.TEST_DATABASE_APP_URL?.trim() || '';
+const presetSystemUrl = process.env.TEST_DATABASE_SYSTEM_URL?.trim() || '';
 const describeDb = ownerUrl ? describe : describe.skip;
 
 /** Splits a SQL script into statements, keeping $$-quoted bodies intact. */
@@ -53,6 +60,14 @@ function urlForRole(base: string, role: string, password: string, connectionLimi
   return url.toString();
 }
 
+function withConnectionLimit(base: string, connectionLimit: number): string {
+  const url = new URL(base);
+
+  url.searchParams.set('connection_limit', String(connectionLimit));
+
+  return url.toString();
+}
+
 describeDb('RLS tenant isolation (integration)', () => {
   const tenantA = randomUUID();
   const tenantB = randomUUID();
@@ -73,8 +88,10 @@ describeDb('RLS tenant isolation (integration)', () => {
     for (const statement of splitSqlStatements(script)) {
       await owner.$executeRawUnsafe(statement);
     }
-    await owner.$executeRawUnsafe(`ALTER ROLE dashboarduz_app PASSWORD '${password}'`);
-    await owner.$executeRawUnsafe(`ALTER ROLE dashboarduz_system PASSWORD '${password}'`);
+    if (!presetAppUrl) {
+      await owner.$executeRawUnsafe(`ALTER ROLE dashboarduz_app PASSWORD '${password}'`);
+      await owner.$executeRawUnsafe(`ALTER ROLE dashboarduz_system PASSWORD '${password}'`);
+    }
 
     await owner.tenant.createMany({
       data: [
@@ -96,8 +113,8 @@ describeDb('RLS tenant isolation (integration)', () => {
     });
 
     // A single pooled connection makes any context leak between requests visible.
-    app = new PrismaClient({ datasourceUrl: urlForRole(ownerUrl as string, 'dashboarduz_app', password, 1) });
-    system = new PrismaClient({ datasourceUrl: urlForRole(ownerUrl as string, 'dashboarduz_system', password, 1) });
+    app = new PrismaClient({ datasourceUrl: presetAppUrl ? withConnectionLimit(presetAppUrl, 1) : urlForRole(ownerUrl as string, 'dashboarduz_app', password, 1) });
+    system = new PrismaClient({ datasourceUrl: presetSystemUrl ? withConnectionLimit(presetSystemUrl, 1) : urlForRole(ownerUrl as string, 'dashboarduz_system', password, 1) });
   }, 60_000);
 
   afterAll(async () => {
@@ -169,6 +186,33 @@ describeDb('RLS tenant isolation (integration)', () => {
 
     for (const result of results) {
       expect(result.got).toEqual([result.expected]);
+    }
+  });
+
+  it('hides webhook events without a tenant from every tenant context, but not from the system role', async () => {
+    const unmatched = randomUUID();
+    const ownA = randomUUID();
+
+    await owner.webhookEvent.createMany({
+      data: [
+        { id: unmatched, tenantId: null, source: 'amocrm', eventType: 'rls-test', rawPayload: {}, idempotencyKey: `rls-null-${unmatched}` },
+        { id: ownA, tenantId: tenantA, source: 'amocrm', eventType: 'rls-test', rawPayload: {}, idempotencyKey: `rls-a-${ownA}` },
+      ],
+    });
+    try {
+      const dbA = forTenant(tenantA, userA, { client: app });
+      const seenByA = await dbA.webhookEvent.findMany({ where: { id: { in: [unmatched, ownA] } }, select: { id: true } });
+
+      expect(seenByA.map((row) => row.id)).toEqual([ownA]);
+      await expect(dbA.webhookEvent.create({
+        data: { tenantId: null, source: 'amocrm', eventType: 'rls-test', rawPayload: {}, idempotencyKey: `rls-null-write-${unmatched}` },
+      })).rejects.toThrow(/row-level security/i);
+
+      const seenBySystem = await system.webhookEvent.findMany({ where: { id: { in: [unmatched, ownA] } }, select: { id: true } });
+
+      expect(seenBySystem.map((row) => row.id).sort()).toEqual([unmatched, ownA].sort());
+    } finally {
+      await owner.webhookEvent.deleteMany({ where: { id: { in: [unmatched, ownA] } } });
     }
   });
 

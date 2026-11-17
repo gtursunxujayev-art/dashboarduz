@@ -7,10 +7,17 @@
  * Never point it at a shared or production database: every test creates and deletes its own tenant.
  *
  * Import this module before anything that imports `@dashboarduz/db`, so the Prisma client picks up the test URL.
+ *
+ * Enforced-RLS mode (CI job "Enforced RLS"): after packages/db/scripts/rls-enforce.sql has run on the test
+ * database, set TEST_DATABASE_APP_URL (the restricted dashboarduz_app role) and TEST_DATABASE_SYSTEM_URL (the
+ * dashboarduz_system role) as well. The app then connects exactly as production would with RLS enforced:
+ * request code through the app role, systemPrisma through the system role. Both must name the same test database.
  */
 import { randomUUID } from 'crypto';
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL?.trim() || '';
+const testAppUrl = process.env.TEST_DATABASE_APP_URL?.trim() || '';
+const testSystemUrl = process.env.TEST_DATABASE_SYSTEM_URL?.trim() || '';
 
 function assertSafeTestDatabaseUrl(url: string): void {
   const parsed = new URL(url);
@@ -25,10 +32,21 @@ function assertSafeTestDatabaseUrl(url: string): void {
 
 if (testDatabaseUrl) {
   assertSafeTestDatabaseUrl(testDatabaseUrl);
-  // The Prisma singleton reads DATABASE_URL when it first connects; tests must never reach any other database.
-  process.env.DATABASE_URL = testDatabaseUrl;
-  // systemPrisma prefers DATABASE_SYSTEM_URL; drop it so the unscoped client also uses the test database.
-  delete process.env.DATABASE_SYSTEM_URL;
+  if (Boolean(testAppUrl) !== Boolean(testSystemUrl)) {
+    throw new Error('Set both TEST_DATABASE_APP_URL and TEST_DATABASE_SYSTEM_URL (enforced-RLS mode) or neither.');
+  }
+  if (testAppUrl) {
+    assertSafeTestDatabaseUrl(testAppUrl);
+    assertSafeTestDatabaseUrl(testSystemUrl);
+    // Enforced RLS: tenant-scoped clients use the restricted role, systemPrisma the system role.
+    process.env.DATABASE_URL = testAppUrl;
+    process.env.DATABASE_SYSTEM_URL = testSystemUrl;
+  } else {
+    // The Prisma singleton reads DATABASE_URL when it first connects; tests must never reach any other database.
+    process.env.DATABASE_URL = testDatabaseUrl;
+    // systemPrisma prefers DATABASE_SYSTEM_URL; drop it so the unscoped client also uses the test database.
+    delete process.env.DATABASE_SYSTEM_URL;
+  }
   process.env.JWT_SECRET = process.env.JWT_SECRET || `integration-test-${randomUUID()}`;
   // Keep integration runs away from Redis-backed caching and outbound Telegram calls.
   delete process.env.REDIS_URL;
@@ -36,6 +54,9 @@ if (testDatabaseUrl) {
 }
 
 export const hasTestDatabase = Boolean(testDatabaseUrl);
+
+/** True when the tests run against the restricted app role with RLS enforced. */
+export const rlsEnforced = Boolean(testDatabaseUrl && testAppUrl);
 
 /** `describe` when a test database is configured, otherwise `describe.skip` (so the suite reports as skipped). */
 export const describeWithDatabase: jest.Describe = hasTestDatabase ? describe : describe.skip;

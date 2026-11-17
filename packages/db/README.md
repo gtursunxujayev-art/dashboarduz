@@ -91,6 +91,8 @@ Postgres allows it. Each file's header says exactly what it does to data.
 | `20261116108000_clear_completed_historical_import_rows` | Nulls `incomeRows`/`customerRows` of historical import sessions in status `completed`. | **Deletes the stored raw spreadsheet rows** of completed imports only. |
 | `20261118100000_call_manager_user_id` | Adds `calls.managerUserId` (FK to `users`, ON DELETE SET NULL) and index `(tenantId, managerUserId, startedAt)`; calls are attributed to managers by this column only. | **Backfills `managerUserId`** on existing calls (all providers): from `metadata.manager_user_id` (same tenant), else from `metadata.amocrm_user_id` via the one user mapped to that amoCRM user, else from the old Utel extension rule (100-150) against `users.utelManagerExternalId`. Rows none of these match stay NULL and are not counted. |
 | `20261118110000_drop_utel_extension_mapping` | Drops `users.utelManagerExternalId` and its two indexes; recreates `integrations_type_check` without `voip_utel`. Runs after the backfill above. | **Stored extensions are lost** (the file has a query to copy them first). **Deletes `integrations` rows of type `voip_utel`.** `calls` rows with provider `utel` stay as history. |
+| `20261120100000_contacts_amocrm_id_unique` | Adds `contacts.amocrmId` with a unique key `(tenantId, amocrmId)`; the amoCRM webhook upserts by it. | **Backfills `amocrmId`** from `externalIds.amocrm_id`. **Merges contacts of one tenant that share an amoCRM id**: keeps the most recently updated row, moves `leads.contactId` / `calls.contactId` to it, deletes the others. The unique index build holds a SHARE lock on `contacts` (writes wait; small table). Fails if a duplicate remains. |
+| `20261120110000_webhook_events_null_tenant_system_only` | `webhook_events` rows with NULL tenant are no longer visible to tenant contexts; only `dashboarduz_system` reaches them (its `_system_access` policy from `rls-enforce.sql`). | No data change. Catalog only. No effect until RLS is enforced. |
 
 ## Tests
 
@@ -104,3 +106,9 @@ Postgres allows it. Each file's header says exactly what it does to data.
   context does not leak between sequential or concurrent requests.
   Example: `TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/rls_test npx jest rls-isolation`
   (from `apps/api`).
+- CI job **Integration tests with RLS enforced** (`.github/workflows/ci.yml`, `enforced-rls`) runs
+  `rls-enforce.sql` on a throwaway Postgres, gives the two roles passwords and runs the isolation test and all
+  money / concurrency integration tests with `DATABASE_URL` = `dashboarduz_app` and `DATABASE_SYSTEM_URL` =
+  `dashboarduz_system` (set `TEST_DATABASE_APP_URL` / `TEST_DATABASE_SYSTEM_URL` to do the same locally).
+  `rls-mode.integration.test.ts` fails it if the tests did not really run as those roles with FORCE on, or if
+  any application table lacks RLS. A green job is the evidence that step 5 above is safe.

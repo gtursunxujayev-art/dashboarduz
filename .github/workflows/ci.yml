@@ -128,3 +128,66 @@ jobs:
               fi
             done
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  enforced-rls:
+    name: Integration tests with RLS enforced (restricted roles)
+    # Proves the app works once production runs packages/db/scripts/rls-enforce.sql: the database gets FORCE ROW
+    # LEVEL SECURITY and the two restricted roles, request code connects as dashboarduz_app and systemPrisma as
+    # dashboarduz_system (DATABASE_SYSTEM_URL), exactly as in production after the switch.
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dashboarduz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Job-local throwaway container only; the passwords below exist nowhere else.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dashboarduz_test
+      TEST_DATABASE_APP_URL: postgresql://dashboarduz_app:ci-app-test@localhost:5432/dashboarduz_test
+      TEST_DATABASE_SYSTEM_URL: postgresql://dashboarduz_system:ci-system-test@localhost:5432/dashboarduz_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Migrate the test database (as the owner)
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: npx prisma migrate deploy --schema=packages/db/prisma/schema.prisma
+
+      - name: Enforce RLS (rls-enforce.sql) and give the throwaway roles passwords
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f packages/db/scripts/rls-enforce.sql
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "ALTER ROLE dashboarduz_app PASSWORD 'ci-app-test'" \
+            -c "ALTER ROLE dashboarduz_system PASSWORD 'ci-system-test'"
+
+      - name: Isolation, money and concurrency tests as the restricted roles
+        # rls-mode.integration.test.ts fails the job if the tests did not really run as the restricted roles with
+        # FORCE ROW LEVEL SECURITY, or if any application table has no RLS.
+        working-directory: apps/api
+        run: npx jest --ci --coverage=false src/__tests__/rls-isolation.integration.test.ts src/__tests__/integration
