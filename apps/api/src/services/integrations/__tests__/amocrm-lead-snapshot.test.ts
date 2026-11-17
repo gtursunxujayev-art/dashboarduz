@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await -- the mocks stand in for async Prisma/Redis/amoCRM calls and must return promises */
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 type LeadRow = Record<string, any> & { tenantId: string; amocrmId: string; updatedAt: Date };

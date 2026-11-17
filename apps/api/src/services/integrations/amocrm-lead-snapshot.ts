@@ -14,6 +14,7 @@ import { systemPrisma } from '@dashboarduz/db';
 import type { Prisma } from '@prisma/client';
 
 import { parseAmoTimestamp } from '../../lib/amocrm';
+import { withTimeout } from '../../lib/async';
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
 import { asObject, toNumberOrNull } from '../../lib/object';
@@ -101,7 +102,7 @@ export function isLeadSnapshotDue(state: LeadSnapshotState, now: Date): boolean 
   return true;
 }
 
-function toId(value: unknown): string | null {
+function toAmoId(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   const normalized = String(value).trim();
 
@@ -111,9 +112,9 @@ function toId(value: unknown): string | null {
 export function leadToSnapshotRow(lead: AmoCRMLead) {
   return {
     title: typeof lead.name === 'string' && lead.name.trim() ? lead.name : 'Untitled Lead',
-    status: toId(lead.status_id),
-    pipelineId: toId(lead.pipeline_id),
-    responsibleUserId: toId(lead.responsible_user_id),
+    status: toAmoId(lead.status_id),
+    pipelineId: toAmoId(lead.pipeline_id),
+    responsibleUserId: toAmoId(lead.responsible_user_id),
     metadata: lead as Prisma.InputJsonValue,
     source: 'amocrm',
     externalCreatedAt: parseAmoTimestamp(lead.created_at),
@@ -123,7 +124,7 @@ export function leadToSnapshotRow(lead: AmoCRMLead) {
 
 async function storeLeadPage(tenantId: string, leads: AmoCRMLead[]): Promise<void> {
   const writes = leads.flatMap((lead) => {
-    const amocrmId = toId(lead.id);
+    const amocrmId = toAmoId(lead.id);
 
     if (!amocrmId) return [];
     const row = leadToSnapshotRow(lead);
@@ -252,17 +253,6 @@ function lockKey(tenantId: string): string {
   return `amocrm-lead-snapshot:lock:${tenantId}`;
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('redis_timeout')), ms);
-
-    promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (error) => { clearTimeout(timer); reject(error); },
-    );
-  });
-}
-
 /**
  * Takes the tenant's refresh lock. `true` when this instance holds it, `false` when another one
  * does, and `null` when Redis is unreachable (the refresh then runs with the in-process guard).
@@ -272,6 +262,7 @@ async function acquireLock(tenantId: string, token: string): Promise<boolean | n
     const result = await withTimeout(
       getRedisClient().set(lockKey(tenantId), token, 'EX', LOCK_TTL_SECONDS, 'NX'),
       LOCK_TIMEOUT_MS,
+      'redis_timeout',
     );
 
     return result === 'OK';
@@ -288,8 +279,8 @@ async function releaseLock(tenantId: string, token: string): Promise<void> {
     const key = lockKey(tenantId);
 
     // Only drop the lock if it is still ours (it may have expired and been taken by another run).
-    if (await withTimeout(redis.get(key), LOCK_TIMEOUT_MS) === token) {
-      await withTimeout(redis.del(key), LOCK_TIMEOUT_MS);
+    if (await withTimeout(redis.get(key), LOCK_TIMEOUT_MS, 'redis_timeout') === token) {
+      await withTimeout(redis.del(key), LOCK_TIMEOUT_MS, 'redis_timeout');
     }
   } catch {
     // The lock expires on its own.
@@ -300,7 +291,7 @@ async function releaseLock(tenantId: string, token: string): Promise<void> {
 export async function isLeadSnapshotRefreshRunning(tenantId: string): Promise<boolean> {
   if (runningTenants.has(tenantId)) return true;
   try {
-    return (await withTimeout(getRedisClient().exists(lockKey(tenantId)), LOCK_TIMEOUT_MS)) === 1;
+    return (await withTimeout(getRedisClient().exists(lockKey(tenantId)), LOCK_TIMEOUT_MS, 'redis_timeout')) === 1;
   } catch {
     return false;
   }

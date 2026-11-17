@@ -76,7 +76,7 @@ export function buildSnapshotLeadWhere(tenantId: string, query: SnapshotLeadQuer
   return where;
 }
 
-function toUnixSeconds(value: Date | null): number | undefined {
+function dateToUnixSeconds(value: Date | null): number | undefined {
   return value ? Math.floor(value.getTime() / 1000) : undefined;
 }
 
@@ -94,8 +94,8 @@ export function snapshotRowToLead(row: SnapshotLeadRow): AmoCRMLead {
   if (row.status !== null) lead.status_id = Number(row.status) || row.status;
   if (row.pipelineId !== null) lead.pipeline_id = Number(row.pipelineId) || row.pipelineId;
   if (row.responsibleUserId !== null) lead.responsible_user_id = Number(row.responsibleUserId) || row.responsibleUserId;
-  lead.created_at = toUnixSeconds(row.externalCreatedAt) ?? lead.created_at;
-  lead.updated_at = toUnixSeconds(row.externalUpdatedAt) ?? lead.updated_at;
+  lead.created_at = dateToUnixSeconds(row.externalCreatedAt) ?? lead.created_at;
+  lead.updated_at = dateToUnixSeconds(row.externalUpdatedAt) ?? lead.updated_at;
 
   return lead;
 }

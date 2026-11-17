@@ -34,7 +34,14 @@ const SCOPES = ['apps/api/src', 'apps/web/src', 'packages/shared/src'];
  */
 const ALLOWED = {
   'apps/api/src': {},
-  'apps/web/src': {},
+  'apps/web/src': {
+    barWidth: 'course-sales rows keep a 2% minimum; the analytics charts clamp to 100% with no minimum for zero',
+    CourseCard: 'catalog card (open/close state) vs the selected-courses dashboard card (group + course)',
+    HeroFigure: 'finance cockpit figure (bare) vs income-problems figure (rounded tile); different markup and layout',
+    InlineBar: 'analytics charts bar (2px track-less, helper width) vs calls table bar (1px, 4% minimum)',
+    MiniStat: 'income-problems icon stat vs analytics-charts text-only stat; different props',
+    SettingRow: 'bonus settings row (label + help text) vs settings page row (label + htmlFor, grid layout)',
+  },
   'packages/shared/src': {},
 };
 
