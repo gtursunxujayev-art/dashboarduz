@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { ADJUSTMENT_STATUS_PENDING } from '../../../services/customer-income/constants';
 import { createIncomeEntry } from '../../../services/customer-income/create-income';
 import { isAdminUser, shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
-import { assertSaleChainDebtInvariant, reconcileBonusAfterIncomeChange } from '../../../services/customer-income/sale-chain';
+import { assertSaleChainDebtInvariant, lockSaleChain, reconcileBonusAfterIncomeChange } from '../../../services/customer-income/sale-chain';
 import { adminProcedure, protectedProcedure } from '../../trpc';
 
 export const incomeProcedures = {
@@ -97,6 +97,29 @@ export const incomeProcedures = {
       }
 
       await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
+        // Repeat the checks above under the chain lock: a repayment or request added meanwhile must stop the delete.
+        await lockSaleChain(tx, {
+          tenantId: ctx.tenantId,
+          saleId: income.type === 'repayment' && income.relatedDebtIncomeId ? income.relatedDebtIncomeId : income.id,
+        });
+        const [pendingNow, repaymentsNow] = await Promise.all([
+          tx.incomeAdjustmentRequest.count({
+            where: { tenantId: ctx.tenantId, incomeId: income.id, status: ADJUSTMENT_STATUS_PENDING },
+          }),
+          income.type === 'new_sale'
+            ? tx.income.count({ where: { tenantId: ctx.tenantId, type: 'repayment', relatedDebtIncomeId: income.id } })
+            : Promise.resolve(0),
+        ]);
+
+        if (pendingNow > 0 || repaymentsNow > 0) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: repaymentsNow > 0
+              ? 'This sale has repayments. Delete repayments first.'
+              : 'This income entry has pending adjustment requests. Resolve them first.',
+          });
+        }
+
         await tx.income.delete({
           where: { id: income.id },
         });

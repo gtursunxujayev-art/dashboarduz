@@ -401,9 +401,9 @@
     "import/no-named-as-default-member": 1
   },
   "src/webhooks/shared.ts": {
-    "@typescript-eslint/no-explicit-any": 3,
+    "@typescript-eslint/no-explicit-any": 2,
     "@typescript-eslint/no-unsafe-assignment": 2,
-    "@typescript-eslint/no-unsafe-member-access": 2
+    "@typescript-eslint/no-unsafe-member-access": 1
   },
   "src/webhooks/telegram.ts": {
     "@typescript-eslint/no-explicit-any": 1,

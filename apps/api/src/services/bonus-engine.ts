@@ -2,6 +2,7 @@ import { type DbClient, type Prisma, type TenantPrismaClient } from '@dashboardu
 import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
 import { asObjectOrEmpty } from '../lib/object';
+import { isUniqueViolation } from '../lib/prisma-errors';
 import type { SalaryCategory } from '../trpc/routers/dashboard/helpers';
 
 import { calculateBonusMonth } from './bonus/calculation';
@@ -114,7 +115,27 @@ export async function finalizeBonusMonth(params: { tenantId: string; month: Date
   if (existing) return getBonusMonth({ tenantId: params.tenantId, month, db });
   const calculation = await calculateBonusMonth({ tenantId: params.tenantId, month, db });
 
-  await db.$transaction(async (tx) => {
+  try {
+    await createBonusMonthSnapshot({ tenantId: params.tenantId, month, userId: params.userId, calculation, db });
+  } catch (error: unknown) {
+    // Two finalizes of one month raced: (tenantId, month) is unique, so the other one already froze it. Return
+    // that snapshot instead of failing; it was calculated from the same closed month.
+    if (!isUniqueViolation(error)) throw error;
+  }
+
+  return getBonusMonth({ tenantId: params.tenantId, month, db });
+}
+
+async function createBonusMonthSnapshot(params: {
+  tenantId: string;
+  month: Date;
+  userId: string;
+  calculation: BonusMonthCalculation;
+  db: TenantPrismaClient;
+}): Promise<void> {
+  const { calculation, month } = params;
+
+  await params.db.$transaction(async (tx) => {
     const snapshot = await tx.bonusMonthSnapshot.create({
       data: {
         tenantId: params.tenantId,
@@ -158,8 +179,6 @@ export async function finalizeBonusMonth(params: { tenantId: string; month: Date
       });
     }
   });
-
-  return getBonusMonth({ tenantId: params.tenantId, month, db });
 }
 
 export async function reconcileBonusMonth(params: { tenantId: string; month: Date; actorUserId?: string | null; db: DbClient }): Promise<number> {
@@ -274,8 +293,9 @@ export async function reviewBonusAdjustment(params: {
   const payoutMonth = params.action === 'approve' ? getTashkentMonthStart(new Date()) : null;
 
   return db.$transaction(async (tx) => {
-    const updated = await tx.bonusAdjustment.update({
-      where: { id: adjustment.id },
+    // Conditional on still being pending: of two concurrent reviews only one matches, the other fails here.
+    const claimed = await tx.bonusAdjustment.updateMany({
+      where: { id: adjustment.id, tenantId: params.tenantId, status: 'pending' },
       data: {
         status: params.action === 'approve' ? 'approved' : 'rejected',
         payoutMonth,
@@ -284,6 +304,9 @@ export async function reviewBonusAdjustment(params: {
         reviewedAt: new Date(),
       },
     });
+
+    if (claimed.count === 0) throw new Error('This bonus adjustment has already been reviewed.');
+    const updated = await tx.bonusAdjustment.findUniqueOrThrow({ where: { id: adjustment.id } });
 
     await tx.bonusAdjustmentAudit.create({
       data: {

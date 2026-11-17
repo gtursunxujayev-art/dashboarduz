@@ -244,6 +244,93 @@ export async function normalizeSaleChainChronology(tx: Prisma.TransactionClient,
   };
 }
 
+/**
+ * Locks a sale and every row of its chain (`SELECT ... FOR UPDATE`) until the surrounding transaction ends.
+ *
+ * Every write that reads a chain's debt or status and then changes it calls this first, inside the same
+ * transaction, before reading. Two concurrent writers on one chain then run one after the other, and the second
+ * one reads what the first committed (READ COMMITTED takes a fresh snapshot per statement). Rows are locked in id
+ * order so concurrent lockers of the same chain cannot deadlock. Returns the locked ids (empty: no such sale).
+ */
+export async function lockSaleChain(
+  tx: Prisma.TransactionClient,
+  params: { tenantId: string; saleId: string },
+): Promise<string[]> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM incomes
+    WHERE "tenantId" = ${params.tenantId}
+      AND (id = ${params.saleId} OR "relatedDebtIncomeId" = ${params.saleId})
+    ORDER BY id
+    FOR UPDATE`;
+
+  return rows.map((row) => row.id);
+}
+
+type SaleChainStateRow = {
+  id: string;
+  paymentAmount: number;
+  coursePriceAmount: number | null;
+  debtAmount: number | null;
+  remainingDebtAmount: number;
+  lifecycleStatus: string;
+};
+
+/**
+ * The money fields of every row of a chain, in id order. A write that computes new amounts before its
+ * transaction reads this first and passes it to `lockSaleChainUnchanged` inside the transaction.
+ */
+export async function readSaleChainState(
+  db: DbClient,
+  params: { tenantId: string; saleId: string },
+): Promise<SaleChainStateRow[]> {
+  return db.income.findMany({
+    where: { tenantId: params.tenantId, OR: [{ id: params.saleId }, { relatedDebtIncomeId: params.saleId }] },
+    orderBy: { id: 'asc' },
+    select: {
+      id: true,
+      paymentAmount: true,
+      coursePriceAmount: true,
+      debtAmount: true,
+      remainingDebtAmount: true,
+      lifecycleStatus: true,
+    },
+  });
+}
+
+/**
+ * Locks the chain and fails with CONFLICT if any of its money fields changed since `expected` was read, so a
+ * write computed from that state is never applied on top of a concurrent change. The caller asks the user to retry.
+ */
+export async function lockSaleChainUnchanged(
+  tx: Prisma.TransactionClient,
+  params: { tenantId: string; saleId: string; expected: SaleChainStateRow[] },
+): Promise<void> {
+  await lockSaleChain(tx, params);
+  const current = await readSaleChainState(tx, params);
+
+  if (JSON.stringify(current) !== JSON.stringify(params.expected)) {
+    throw new TRPCError({
+      code: 'CONFLICT',
+      message: "Bu yozuv hozirgina boshqa foydalanuvchi tomonidan o'zgartirildi. Sahifani yangilab, qayta urinib ko'ring.",
+    });
+  }
+}
+
+/** True when `row` still has the money fields recorded for it in `state` (used to check a row read separately). */
+export function rowMatchesSaleChainState(
+  state: SaleChainStateRow[],
+  row: Omit<SaleChainStateRow, 'id'> & { id: string },
+): boolean {
+  const recorded = state.find((entry) => entry.id === row.id);
+
+  return Boolean(recorded)
+    && recorded!.paymentAmount === row.paymentAmount
+    && recorded!.coursePriceAmount === row.coursePriceAmount
+    && recorded!.debtAmount === row.debtAmount
+    && recorded!.remainingDebtAmount === row.remainingDebtAmount
+    && recorded!.lifecycleStatus === row.lifecycleStatus;
+}
+
 export async function reconcileBonusAfterIncomeChange(
   tenantId: string,
   actorUserId: string,

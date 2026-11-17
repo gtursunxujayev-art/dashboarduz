@@ -20,9 +20,7 @@ export function buildWebhookIdempotencyKey(source: string, tenantId: string, pay
   return crypto.createHash('sha256').update(`${source}:${tenantId}:${payload}`).digest('hex');
 }
 
-export function isUniqueViolation(error: any): boolean {
-  return error?.code === 'P2002';
-}
+export { isUniqueViolation } from '../lib/prisma-errors';
 
 export async function enqueueWebhookJob(params: {
   jobName: string;

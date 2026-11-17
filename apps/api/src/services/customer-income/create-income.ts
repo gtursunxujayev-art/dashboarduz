@@ -10,7 +10,7 @@ import { CUSTOMER_NUMBER_REGEX, TELEGRAM_USERNAME_REGEX } from './constants';
 import { parseDateInput } from './labels';
 import { sendOfflineOrIntensivePaymentTelegram } from './payment-notifications';
 import { assertManagerBelongsToTenantWithOptions, canSelectInactiveManagerForIncome } from './roles';
-import { assertSaleChainDebtInvariant, normalizeSaleChainChronology, refreshCustomerProfileFromLatestActiveSale } from './sale-chain';
+import { assertSaleChainDebtInvariant, lockSaleChain, normalizeSaleChainChronology, refreshCustomerProfileFromLatestActiveSale } from './sale-chain';
 
 export async function createIncomeEntry(params: {
   tenantId: string;
@@ -266,37 +266,6 @@ export async function createIncomeEntry(params: {
       });
     }
 
-    const debtSource = await db.income.findFirst({
-      where: {
-        id: debtSourceId,
-        tenantId,
-        type: 'new_sale',
-        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-      },
-      select: {
-        id: true,
-        customerId: true,
-        courseId: true,
-        tariffId: true,
-        entryDate: true,
-        coursePriceAmount: true,
-        debtAmount: true,
-        paymentAmount: true,
-        remainingDebtAmount: true,
-      },
-    });
-
-    if (!debtSource) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected debt source not found.' });
-    }
-
-    if (debtSource.customerId !== customer.id) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Selected debt does not belong to the selected customer.',
-      });
-    }
-
     if (input.paymentAmount <= 0) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -304,30 +273,66 @@ export async function createIncomeEntry(params: {
       });
     }
 
-    const sourceMetrics = await buildActiveSaleChainMetrics({
-      tenantId,
-      sales: [debtSource],
-      db,
-    });
-    const sourceCurrentDebt = sourceMetrics.get(debtSource.id)?.currentDebtAmount ?? debtSource.remainingDebtAmount;
-
-    if (sourceCurrentDebt <= 0) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Selected debt source has no remaining debt.',
-      });
-    }
-
-    if (input.paymentAmount > sourceCurrentDebt) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Repayment amount cannot exceed the selected debt.',
-      });
-    }
-
-    const remainingDebtAmount = Math.max(sourceCurrentDebt - input.paymentAmount, 0);
+    const lockedDebtSourceId = debtSourceId;
 
     createdIncome = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Lock the chain first and read the debt under the lock: two concurrent repayments on one sale then run one
+      // after the other, and the second one sees the first one's payment instead of the same old debt.
+      await lockSaleChain(tx, { tenantId, saleId: lockedDebtSourceId });
+
+      const debtSource = await tx.income.findFirst({
+        where: {
+          id: lockedDebtSourceId,
+          tenantId,
+          type: 'new_sale',
+          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+        },
+        select: {
+          id: true,
+          customerId: true,
+          courseId: true,
+          tariffId: true,
+          entryDate: true,
+          coursePriceAmount: true,
+          debtAmount: true,
+          paymentAmount: true,
+          remainingDebtAmount: true,
+        },
+      });
+
+      if (!debtSource) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Selected debt source not found.' });
+      }
+
+      if (debtSource.customerId !== customer.id) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Selected debt does not belong to the selected customer.',
+        });
+      }
+
+      const sourceMetrics = await buildActiveSaleChainMetrics({
+        tenantId,
+        sales: [debtSource],
+        db: tx,
+      });
+      const sourceCurrentDebt = sourceMetrics.get(debtSource.id)?.currentDebtAmount ?? debtSource.remainingDebtAmount;
+
+      if (sourceCurrentDebt <= 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Selected debt source has no remaining debt.',
+        });
+      }
+
+      if (input.paymentAmount > sourceCurrentDebt) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Repayment amount cannot exceed the selected debt.',
+        });
+      }
+
+      const remainingDebtAmount = Math.max(sourceCurrentDebt - input.paymentAmount, 0);
       const repayment = await tx.income.create({
         data: {
           tenantId,

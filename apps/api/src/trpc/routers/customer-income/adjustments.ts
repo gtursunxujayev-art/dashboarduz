@@ -8,6 +8,7 @@ import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARI
 import { getIncomeLifecycleLabel } from '../../../services/customer-income/labels';
 import { notifyFinanceUsersRefundRequested, sendRefundRequestedTelegram } from '../../../services/customer-income/refund-notifications';
 import { getAdjustmentRoleScope, shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
+import { lockSaleChain } from '../../../services/customer-income/sale-chain';
 import { sendTariffChangeRequestedTelegram } from '../../../services/customer-income/tariff-change-notifications';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { protectedProcedure } from '../../trpc';
@@ -387,19 +388,37 @@ export const adjustmentProcedures = {
         });
       }
 
-      // A refund returns the whole sale chain, so the requested amount is everything paid on it.
-      const refundChainPaidAmount = input.type === ADJUSTMENT_TYPE_REFUND
-        ? ((await ctx.db.income.aggregate({
-            where: {
-              tenantId: ctx.tenantId,
-              lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-              OR: [{ id: sourceIncome.id }, { relatedDebtIncomeId: sourceIncome.id }],
-            },
-            _sum: { paymentAmount: true },
-          }))._sum.paymentAmount ?? sourceIncome.paymentAmount)
-        : null;
-
       const createdRequest = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
+        // The checks above were a fast path. Lock the chain and repeat them on committed data, so two concurrent
+        // requests for one sale cannot both pass and both put it on hold.
+        await lockSaleChain(tx, { tenantId: ctx.tenantId, saleId: sourceIncome.id });
+        const [lockedSource, pendingRequest] = await Promise.all([
+          tx.income.findFirst({ where: { id: sourceIncome.id, tenantId: ctx.tenantId }, select: { lifecycleStatus: true } }),
+          tx.incomeAdjustmentRequest.findFirst({
+            where: { tenantId: ctx.tenantId, incomeId: sourceIncome.id, status: ADJUSTMENT_STATUS_PENDING },
+            select: { id: true },
+          }),
+        ]);
+
+        if (lockedSource?.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Only active income entries can be adjusted.' });
+        }
+        if (pendingRequest) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'A pending request already exists for this income entry.' });
+        }
+
+        // A refund returns the whole sale chain, so the requested amount is everything paid on it.
+        const refundChainPaidAmount = input.type === ADJUSTMENT_TYPE_REFUND
+          ? ((await tx.income.aggregate({
+              where: {
+                tenantId: ctx.tenantId,
+                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+                OR: [{ id: sourceIncome.id }, { relatedDebtIncomeId: sourceIncome.id }],
+              },
+              _sum: { paymentAmount: true },
+            }))._sum.paymentAmount ?? sourceIncome.paymentAmount)
+          : null;
+
         const request: { id: string; type: string; status: string } = await tx.incomeAdjustmentRequest.create({
           data: {
             tenantId: ctx.tenantId,
@@ -438,6 +457,9 @@ export const adjustmentProcedures = {
         }
 
         return request;
+      }, {
+        maxWait: 10_000,
+        timeout: 30_000,
       });
 
       await ctx.db.auditLog.create({

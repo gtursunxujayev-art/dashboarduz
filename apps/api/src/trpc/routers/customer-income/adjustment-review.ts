@@ -6,9 +6,37 @@ import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_APPROVED, ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_STATUS_REJECTED, ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE, INCOME_LIFECYCLE_PENDING_REFUND, INCOME_LIFECYCLE_REFUNDED } from '../../../services/customer-income/constants';
 import { notifyRefundRequesterReviewResult, sendRefundApprovedTelegram } from '../../../services/customer-income/refund-notifications';
 import { canApproveRefundRequest, canApproveTariffChangeRequest } from '../../../services/customer-income/roles';
-import { assertSaleChainDebtInvariant, reconcileBonusAfterIncomeChange } from '../../../services/customer-income/sale-chain';
+import { assertSaleChainDebtInvariant, lockSaleChain, reconcileBonusAfterIncomeChange } from '../../../services/customer-income/sale-chain';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { protectedProcedure } from '../../trpc';
+
+/**
+ * Moves a request out of "pending" with a conditional update, as the first statement of the review transaction.
+ * The status check before the transaction is only a fast path: two concurrent reviews both pass it, but only one
+ * of them can match `status = pending` here. The other one waits for the row lock, then matches nothing and fails,
+ * so a refund or tariff change is never applied twice and an approval cannot race a rejection.
+ */
+async function claimPendingRequest(tx: Prisma.TransactionClient, params: {
+  tenantId: string;
+  requestId: string;
+  status: typeof ADJUSTMENT_STATUS_APPROVED | typeof ADJUSTMENT_STATUS_REJECTED;
+  reviewedByUserId: string;
+  reviewNote: string | undefined;
+}): Promise<void> {
+  const claimed = await tx.incomeAdjustmentRequest.updateMany({
+    where: { id: params.requestId, tenantId: params.tenantId, status: ADJUSTMENT_STATUS_PENDING },
+    data: {
+      status: params.status,
+      reviewedByUserId: params.reviewedByUserId,
+      reviewNote: params.reviewNote?.trim() || null,
+      reviewedAt: new Date(),
+    },
+  });
+
+  if (claimed.count === 0) {
+    throw new TRPCError({ code: 'CONFLICT', message: 'This request has already been reviewed.' });
+  }
+}
 
 export const adjustmentReviewProcedures = {
   approveAdjustmentRequest: protectedProcedure
@@ -65,6 +93,15 @@ export const adjustmentReviewProcedures = {
       }
 
       await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await claimPendingRequest(tx, {
+          tenantId: ctx.tenantId,
+          requestId: request.id,
+          status: ADJUSTMENT_STATUS_APPROVED,
+          reviewedByUserId: ctx.user.userId,
+          reviewNote: input.reviewNote,
+        });
+        await lockSaleChain(tx, { tenantId: ctx.tenantId, saleId: request.incomeId });
+
         if (request.type === ADJUSTMENT_TYPE_REFUND) {
           await tx.income.updateMany({
             where: {
@@ -175,17 +212,6 @@ export const adjustmentReviewProcedures = {
             saleId: request.incomeId,
           });
         }
-
-        await tx.incomeAdjustmentRequest.update({
-          where: { id: request.id },
-          data: {
-            status: ADJUSTMENT_STATUS_APPROVED,
-            reviewedByUserId: ctx.user.userId,
-            reviewNote: input.reviewNote?.trim() || null,
-            reviewedAt: new Date(),
-          },
-          select: { id: true },
-        });
       }, {
         // Tariff change rewrites the whole chain + invariant repair; the 5s default closes it mid-way.
         maxWait: 15000,
@@ -293,6 +319,15 @@ export const adjustmentReviewProcedures = {
       }
 
       await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await claimPendingRequest(tx, {
+          tenantId: ctx.tenantId,
+          requestId: request.id,
+          status: ADJUSTMENT_STATUS_REJECTED,
+          reviewedByUserId: ctx.user.userId,
+          reviewNote: input.reviewNote,
+        });
+        await lockSaleChain(tx, { tenantId: ctx.tenantId, saleId: request.income.id });
+
         // Restore every row of the chain that the refund request put on hold, not just the sale row.
         await tx.income.updateMany({
           where: {
@@ -321,16 +356,6 @@ export const adjustmentReviewProcedures = {
           },
         });
 
-        await tx.incomeAdjustmentRequest.update({
-          where: { id: request.id },
-          data: {
-            status: ADJUSTMENT_STATUS_REJECTED,
-            reviewedByUserId: ctx.user.userId,
-            reviewNote: input.reviewNote?.trim() || null,
-            reviewedAt: new Date(),
-          },
-          select: { id: true },
-        });
       }, {
         // Refund rejection restores the chain and runs invariant repair.
         maxWait: 15000,

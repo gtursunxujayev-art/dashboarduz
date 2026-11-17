@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { ADJUSTMENT_STATUS_PENDING } from '../../../services/customer-income/constants';
 import { parseDateInput } from '../../../services/customer-income/labels';
 import { assertManagerBelongsToTenantWithOptions } from '../../../services/customer-income/roles';
-import { assertSaleChainDebtInvariant, normalizeSaleChainChronology, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
+import { assertSaleChainDebtInvariant, lockSaleChainUnchanged, normalizeSaleChainChronology, readSaleChainState, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, rowMatchesSaleChainState, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
 import { extractSaleSubTariffId, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { adminProcedure } from '../../trpc';
 
@@ -81,6 +81,31 @@ export const incomeUpdateProcedures = {
           message: 'This income entry has pending adjustment requests. Resolve them first.',
         });
       }
+
+      // The new amounts below are computed from rows read now, outside the transaction. Record the chain state
+      // first; each transaction then locks the chain and refuses to write if that state changed meanwhile.
+      const chainSaleId = income.type === 'new_sale' ? income.id : (income.relatedDebtIncomeId ?? income.id);
+      const chainStateBefore = await readSaleChainState(ctx.db, { tenantId: ctx.tenantId, saleId: chainSaleId });
+
+      if (!rowMatchesSaleChainState(chainStateBefore, income)) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: "Bu yozuv hozirgina boshqa foydalanuvchi tomonidan o'zgartirildi. Sahifani yangilab, qayta urinib ko'ring.",
+        });
+      }
+      const lockChainForEdit = async (tx: Prisma.TransactionClient): Promise<void> => {
+        await lockSaleChainUnchanged(tx, { tenantId: ctx.tenantId, saleId: chainSaleId, expected: chainStateBefore });
+        const pendingNow = await tx.incomeAdjustmentRequest.count({
+          where: { tenantId: ctx.tenantId, incomeId: income.id, status: ADJUSTMENT_STATUS_PENDING },
+        });
+
+        if (pendingNow > 0) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'This income entry has pending adjustment requests. Resolve them first.',
+          });
+        }
+      };
 
       const parsedEntryDate = input.entryDate ? parseDateInput(input.entryDate) : null;
 
@@ -230,6 +255,7 @@ export const incomeUpdateProcedures = {
         let chronologyCanonicalSaleId: string | null = null;
 
         const updated = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
+          await lockChainForEdit(tx);
           const updatedSale = await tx.income.update({
             where: { id: income.id },
             data: {
@@ -424,6 +450,7 @@ export const incomeUpdateProcedures = {
       let chronologyCanonicalSaleId: string | null = null;
 
       const updatedRepayment = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await lockChainForEdit(tx);
         await tx.income.update({
           where: { id: sourceIncome.id },
           data: {
