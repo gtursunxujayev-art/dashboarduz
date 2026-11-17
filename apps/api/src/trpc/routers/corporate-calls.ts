@@ -3,10 +3,10 @@ import { AGENT_ROLES, dateRangeInput, hasAgentRole, toTashkentDateKey } from '@d
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { formatDuration } from '../../lib/duration';
 import { logger } from '../../lib/logger';
 import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 import {
-  formatDurationToHms,
   isTodayOrYesterdayInReportTz,
   parseDurationToSeconds,
   parseReportDateInput,
@@ -239,7 +239,7 @@ export const corporateCallsRouter = router({
         tenantId: ctx.tenantId,
         date,
         managerName,
-        duration: formatDurationToHms(entry.durationSeconds),
+        duration: formatDuration(entry.durationSeconds),
         db: ctx.db,
       });
 
@@ -259,7 +259,7 @@ export const corporateCallsRouter = router({
         managerName,
         date,
         durationSeconds: entry.durationSeconds,
-        duration: formatDurationToHms(entry.durationSeconds),
+        duration: formatDuration(entry.durationSeconds),
         createdAt: entry.createdAt,
         updatedAt: entry.updatedAt,
         telegram,
@@ -325,7 +325,7 @@ export const corporateCallsRouter = router({
           managerName: String(row.manager.name || row.manager.username || row.managerUserId),
           date: toTashkentDateKey(row.callDate),
           durationSeconds: row.durationSeconds,
-          duration: formatDurationToHms(row.durationSeconds),
+          duration: formatDuration(row.durationSeconds),
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
         })),

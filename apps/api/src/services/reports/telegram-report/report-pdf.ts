@@ -1,6 +1,8 @@
 import { formatSomAmount, toTashkentDateKey } from '@dashboarduz/shared';
 
-import { formatClockHoursMinutes, formatCompactCurrency, formatDuration, formatLocalDateTime, formatSelectedCourseLine, getBreakdownLayout, groupManagerRows } from './format';
+import { formatDuration } from '../../../lib/duration';
+
+import { formatCompactCurrency, formatLocalDateTime, formatSelectedCourseLine, getBreakdownLayout, groupManagerRows } from './format';
 import { PdfCanvas, type PdfColor } from './pdf-canvas';
 import { type ReportManagerRow, type ReportMetrics } from './types';
 
@@ -251,7 +253,7 @@ export function createStyledReportPdf(params: {
       formatCompactCurrency(row.incomeAmount),
       String(row.callCount),
       String(row.longCallCount),
-      formatClockHoursMinutes(row.callDurationSeconds),
+      formatDuration(row.callDurationSeconds, { withSeconds: false }),
     ];
 
     let currentX = 56;

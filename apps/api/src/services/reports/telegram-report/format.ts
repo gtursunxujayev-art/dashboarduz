@@ -33,23 +33,6 @@ export function formatCompactCurrency(value: number): string {
   return String(rounded);
 }
 
-export function formatDuration(totalSeconds: number): string {
-  const safe = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const seconds = safe % 60;
-
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-export function formatClockHoursMinutes(totalSeconds: number): string {
-  const safe = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-}
-
 export function formatSelectedCourseLine(row: ReportMetrics['selectedCourseRows'][number]): string {
   const tariffs = row.tariffBreakdown.length > 0
     ? row.tariffBreakdown

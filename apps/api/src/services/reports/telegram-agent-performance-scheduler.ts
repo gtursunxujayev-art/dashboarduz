@@ -2,6 +2,7 @@ import { systemPrisma } from '@dashboarduz/db';
 import { AGENT_ROLES, formatSomAmount, fromTashkentLocalParts, shiftToTashkent, TASHKENT_TIMEZONE_LABEL, toTashkentDateKey } from '@dashboarduz/shared';
 
 import { isCompletedTask, isLeadTask, taskResponsibleUserId } from '../../lib/amocrm';
+import { formatDuration } from '../../lib/duration';
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
 import { buildLooseTelegramChatIdCandidates, normalizeTelegramSecret, sendMessageToTelegramChat } from '../../lib/telegram';
@@ -51,15 +52,6 @@ type AgentMetricRow = {
   aboveAverageDuration: boolean;
 };
 
-function formatDurationUz(totalSeconds: number): string {
-  const safe = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const seconds = safe % 60;
-
-  return `${hours} soat ${minutes} daqiqa ${seconds} soniya`;
-}
-
 function resolveNoonWindow(nowUtc: Date): NoonWindow | null {
   const nowLocal = shiftToTashkent(nowUtc);
   const year = nowLocal.getUTCFullYear();
@@ -85,7 +77,7 @@ function buildAgentMessage(row: AgentMetricRow): string {
   return [
     `Bugungi tushum - ${formatSomAmount(row.incomeToday)}`,
     `Qo'ng'iroqlar soni - ${row.callsCount}`,
-    `Qo'ng'iroqlar davomiyligi - ${formatDurationUz(row.callDurationSeconds)}`,
+    `Qo'ng'iroqlar davomiyligi - ${formatDuration(row.callDurationSeconds)}`,
     `Bajarilgan topshiriqlar - ${row.followUpsDone}`,
     '',
     `Bugun qo'ng'iroqlar bo'yicha ${row.rankByDuration}-o'rindasiz`,

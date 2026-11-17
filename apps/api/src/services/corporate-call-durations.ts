@@ -47,15 +47,6 @@ export function parseDurationToSeconds(input: string): number {
   return Math.max(0, hours * 3600 + minutes * 60 + seconds);
 }
 
-export function formatDurationToHms(totalSeconds: number): string {
-  const safe = Math.max(0, Math.floor(totalSeconds || 0));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const seconds = safe % 60;
-
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
 export function isTodayOrYesterdayInReportTz(targetDate: Date, now = new Date()): boolean {
   const target = toTashkentDateKey(targetDate);
   const todayStart = getReportDayStart(now);
