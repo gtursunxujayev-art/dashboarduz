@@ -73,21 +73,10 @@
   "src/services/bonus-engine.ts": {
     "@typescript-eslint/no-unused-vars": 1
   },
-  "src/services/customer-income/bulk-import-parsing.ts": {
-    "@typescript-eslint/no-unused-vars": 2
-  },
-  "src/services/customer-income/bulk-import-rows.ts": {
-    "@typescript-eslint/no-unused-vars": 1
-  },
   "src/services/customer-income/create-income.ts": {
     "@typescript-eslint/no-explicit-any": 2,
     "@typescript-eslint/no-unnecessary-type-assertion": 1,
     "@typescript-eslint/no-unsafe-member-access": 2
-  },
-  "src/services/customer-income/historical-import.ts": {
-    "@typescript-eslint/no-explicit-any": 1,
-    "@typescript-eslint/no-unsafe-assignment": 1,
-    "@typescript-eslint/no-unused-vars": 11
   },
   "src/services/customer-income/payment-notifications.ts": {
     "@typescript-eslint/no-explicit-any": 1,
@@ -308,10 +297,6 @@
     "@typescript-eslint/no-explicit-any": 2,
     "@typescript-eslint/no-unsafe-member-access": 2,
     "@typescript-eslint/no-unused-vars": 1
-  },
-  "src/trpc/routers/customer-income/historical-import.ts": {
-    "@typescript-eslint/no-explicit-any": 3,
-    "@typescript-eslint/require-await": 6
   },
   "src/trpc/routers/dashboard/index.ts": {
     "import/order": 7

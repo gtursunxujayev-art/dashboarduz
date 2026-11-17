@@ -1,12 +1,11 @@
 import type { TenantPrismaClient } from '@dashboarduz/db';
-import { normalizeDigits, sanitizeTelegramUsername } from '@dashboarduz/shared';
+import { type CreateIncomeInput, normalizeDigits, sanitizeTelegramUsername } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 import { logger } from '../../lib/logger';
 import { buildActiveSaleChainMetrics, INCOME_LIFECYCLE_ACTIVE, SALE_SUB_TARIFF_META_KEY } from '../income-chain';
 
-import type { CreateIncomeInput } from './bulk-import-parsing';
 import { CUSTOMER_NUMBER_REGEX, TELEGRAM_USERNAME_REGEX } from './constants';
 import { parseDateInput } from './labels';
 import { sendOfflineOrIntensivePaymentTelegram } from './payment-notifications';

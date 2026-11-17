@@ -563,6 +563,8 @@ model Income {
   @@map("incomes")
 }
 
+// The historical income import feature code was removed (it had been disabled). The model and the
+// customers/incomes historicalImportSessionId columns stay because existing rows reference them.
 model HistoricalImportSession {
   id                 String   @id @default(uuid())
   tenantId           String

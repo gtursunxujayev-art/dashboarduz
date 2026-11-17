@@ -7,7 +7,6 @@ import { customerCourseProcedures } from './customer-courses';
 import { customerListProcedures } from './customer-list';
 import { customerProcedures } from './customers';
 import { formOptionsProcedures } from './form-options';
-import { historicalImportProcedures } from './historical-import';
 import { incomeProcedures } from './income';
 import { incomeListProcedures } from './income-lists';
 import { incomeUpdateProcedures } from './income-update';
@@ -18,7 +17,6 @@ export const customerIncomeRouter = router({
   ...catalogProcedures,
   ...incomeProcedures,
   ...incomeUpdateProcedures,
-  ...historicalImportProcedures,
   ...incomeListProcedures,
   ...paymentHistoryProcedures,
   ...adjustmentProcedures,
