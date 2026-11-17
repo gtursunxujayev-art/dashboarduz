@@ -194,6 +194,26 @@ describeWithDatabase('money paths (Postgres integration)', () => {
     );
   });
 
+  it('returns the refund card number only to Admin and Finance', async () => {
+    const { tenant, admin, agent, saleId } = await sale('refund-card');
+    const finance = await createCaller({ tenantId: tenant.tenantId, userId: tenant.adminUserId, roles: ['Finance'] });
+
+    await agent.customerIncome.createAdjustmentRequest({
+      type: 'refund',
+      incomeId: saleId,
+      reason: 'Card visibility',
+      refundCardNumber: '8600123412341234',
+    });
+
+    const cardsSeenBy = async (caller: Caller) => (await caller.customerIncome.listAdjustmentRequests())
+      .filter((request) => request.income.id === saleId)
+      .map((request) => request.refundCardNumber);
+
+    expect(await cardsSeenBy(admin)).toEqual(['8600123412341234']);
+    expect(await cardsSeenBy(finance)).toEqual(['8600123412341234']);
+    expect(await cardsSeenBy(agent)).toEqual([null]);
+  });
+
   it('moves a sale to a new tariff and agreement after approval, keeping payments', async () => {
     const { tenant, admin, agent, saleId, customerNumber, saleDate, courseId } = await sale('tariff-change');
     const prisma = loadPrisma();

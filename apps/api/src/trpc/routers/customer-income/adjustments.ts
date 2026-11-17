@@ -7,7 +7,7 @@ import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE, INCOME_LIFECYCLE_PENDING_REFUND, REFUND_CARD_NUMBER_REGEX } from '../../../services/customer-income/constants';
 import { getIncomeLifecycleLabel } from '../../../services/customer-income/labels';
 import { notifyFinanceUsersRefundRequested, sendRefundRequestedTelegram } from '../../../services/customer-income/refund-notifications';
-import { getAdjustmentRoleScope, shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
+import { canViewRefundCardNumber, getAdjustmentRoleScope, shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
 import { lockSaleChain } from '../../../services/customer-income/sale-chain';
 import { sendTariffChangeRequestedTelegram } from '../../../services/customer-income/tariff-change-notifications';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
@@ -156,8 +156,12 @@ export const adjustmentProcedures = {
         newTariffSubTariffNamesByTariffId.set(tariffId, bucket);
       }
 
+      const showRefundCardNumber = canViewRefundCardNumber(ctx.user.roles);
+
       return requests.map((request) => ({
         ...request,
+        // The card number is stored as entered; only Admin and Finance get it back.
+        ...(showRefundCardNumber ? {} : { refundCardNumber: null }),
         income: {
           ...request.income,
           lifecycleStatus: getIncomeLifecycleLabel(request.income.lifecycleStatus),

@@ -48,6 +48,13 @@ export function canApproveRefundRequest(roles: string[]): boolean {
   return roles.some((role) => APPROVER_ROLES_REFUND.has(role));
 }
 
+const REFUND_CARD_NUMBER_VIEWER_ROLES = new Set(['Admin', 'Finance']);
+
+/** Only Admin and Finance may see the stored refund card number in API responses (it is kept as entered). */
+export function canViewRefundCardNumber(roles: string[]): boolean {
+  return roles.some((role) => REFUND_CARD_NUMBER_VIEWER_ROLES.has(role));
+}
+
 export function canApproveTariffChangeRequest(roles: string[]): boolean {
   return roles.some((role) => APPROVER_ROLES_TARIFF_CHANGE.has(role));
 }

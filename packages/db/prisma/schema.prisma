@@ -519,6 +519,11 @@ model SubTariff {
   @@map("sub_tariffs")
 }
 
+// MONEY UNITS: every money column in this schema (incomes, income_adjustment_requests, bonus_* amounts,
+// customer/course prices, ...) is an Int holding whole so'm, with no fractional part. Postgres integer tops out at
+// 2,147,483,647, so a single stored value is limited to about 2.1 billion so'm; a larger value fails on write
+// (it is not silently truncated). Sums are computed in application code / BIGINT aggregates, not stored. Moving a
+// column to BigInt or Decimal is a deliberate, separate migration.
 model Income {
   id                 String   @id @default(uuid())
   tenantId           String
