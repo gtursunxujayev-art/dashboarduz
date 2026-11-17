@@ -1,4 +1,4 @@
-import { type ManagerGroup, shiftToTashkent, TASHKENT_TIMEZONE_LABEL } from '@dashboarduz/shared';
+import { COURSE_CATEGORY_LABELS, type ManagerGroup, shiftToTashkent, TASHKENT_TIMEZONE_LABEL } from '@dashboarduz/shared';
 
 import { humanizeKey } from '../../integrations/amocrm-live';
 
@@ -130,8 +130,8 @@ export function groupManagerRows(rows: ReportManagerRow[]): Array<{
   rows: ReportManagerRow[];
 }> {
   const groups: Array<{ group: ManagerGroup; label: string }> = [
-    { group: 'online', label: 'Online agentlar' },
-    { group: 'offline', label: 'Offline agentlar' },
+    { group: 'online', label: `${COURSE_CATEGORY_LABELS.online} agentlar` },
+    { group: 'offline', label: `${COURSE_CATEGORY_LABELS.offline} agentlar` },
   ];
 
   return groups

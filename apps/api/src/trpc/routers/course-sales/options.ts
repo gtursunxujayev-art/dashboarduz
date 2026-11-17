@@ -1,8 +1,7 @@
-import { courseTypeCategorySchema } from '@dashboarduz/shared';
+import { courseCategoryLabel, courseTypeCategorySchema } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { describeCourse, loadActiveCourseCatalog } from '../../../services/course-sales/catalog';
-import { buildCategoryLabel } from '../../../services/course-sales/helpers';
 import { protectedProcedure } from '../../trpc';
 
 export const courseSalesOptionProcedures = {
@@ -24,7 +23,7 @@ export const courseSalesOptionProcedures = {
 
       return {
         category: input.category,
-        categoryLabel: buildCategoryLabel(input.category),
+        categoryLabel: courseCategoryLabel(input.category),
         courses: courses.map((course) => ({ ...course, ...describeCourse(course) })),
       };
     }),

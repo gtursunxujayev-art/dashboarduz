@@ -1,3 +1,4 @@
+import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../../integrations/telegram-groups';
 import {
   aggregateTelegramGroupSummaries,
   formatTelegramGroupSummary,
@@ -5,7 +6,6 @@ import {
   resolveDueTelegramGroupSummaryCutoffs,
   type SummaryIncomeRow,
 } from '../telegram-group-summary-scheduler';
-import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../../integrations/telegram-groups';
 
 function row(overrides: Partial<SummaryIncomeRow> = {}): SummaryIncomeRow {
   return {
@@ -114,7 +114,7 @@ describe('Telegram group summaries', () => {
       coaching: { salesCount: 1, income: 700_000 },
       intensive: { salesCount: 1, income: 550_000 },
     })).toBe([
-      '📊 Bugun — Offline',
+      '📊 Bugun — Oflayn',
       '🆕 Yangi sotuvlar: 2',
       "💰 Umumiy tushum: 1 250 000 so'm",
       "💳 Yangi tushum: 1 000 000 so'm",

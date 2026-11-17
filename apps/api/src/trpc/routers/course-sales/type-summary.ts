@@ -1,7 +1,6 @@
-import { courseTypeCategorySchema, isAgentOnly } from '@dashboarduz/shared';
+import { courseCategoryLabel, courseTypeCategorySchema, isAgentOnly } from '@dashboarduz/shared';
 import { z } from 'zod';
 
-import { buildCategoryLabel } from '../../../services/course-sales/helpers';
 import { activeSalesWhere, buildCourseSaleFilters, findCategoryCourseIds, splitTechnicalSales } from '../../../services/course-sales/queries';
 import { resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 import { buildTariffBreakdown, type TariffBreakdownRow } from '../../../services/tariff-breakdown';
@@ -24,7 +23,7 @@ export const courseSalesTypeSummaryProcedures = {
       if (categoryCourseIds.length === 0) {
         return {
           category: input.category,
-          categoryLabel: buildCategoryLabel(input.category),
+          categoryLabel: courseCategoryLabel(input.category),
           selectedCourseId: input.courseId || null,
           selectedTariffId: input.tariffId || null,
           selectedSubTariffId: input.subTariffId || null,
@@ -246,7 +245,7 @@ export const courseSalesTypeSummaryProcedures = {
 
       return {
         category: input.category,
-        categoryLabel: buildCategoryLabel(input.category),
+        categoryLabel: courseCategoryLabel(input.category),
         selectedCourseId: input.courseId || null,
         selectedTariffId: input.tariffId || null,
         selectedSubTariffId: input.subTariffId || null,

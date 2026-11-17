@@ -102,10 +102,3 @@ export function canReadBonusPlans(roles: string[]): boolean {
   return roles.some((role) => BONUS_READ_ROLES.has(role));
 }
 
-export function getCategoryLabel(category: BonusRuleCategory): string {
-  if (category === 'online') return 'Online';
-  if (category === 'offline') return 'Offline';
-  if (category === 'intensive') return 'Intensiv';
-
-  return "Qo'shimcha xizmat";
-}

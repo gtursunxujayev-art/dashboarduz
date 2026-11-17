@@ -1,4 +1,4 @@
-import { formatSomAmount, toTashkentDateKey } from '@dashboarduz/shared';
+import { COURSE_CATEGORY_LABELS, formatSomAmount, toTashkentDateKey } from '@dashboarduz/shared';
 
 import { formatDuration } from '../../../lib/duration';
 
@@ -70,8 +70,8 @@ export function createStyledReportPdf(params: {
   };
 
   drawStandardCard(0, 0, 'Kelishuv summasi', formatSomAmount(params.metrics.agreementTotal));
-  drawStandardCard(0, 2, 'Online kelishuv summasi', formatSomAmount(params.metrics.onlineAgreementTotal));
-  drawStandardCard(1, 0, 'Offline kelishuv summasi', formatSomAmount(params.metrics.offlineAgreementTotal));
+  drawStandardCard(0, 2, `${COURSE_CATEGORY_LABELS.online} kelishuv summasi`, formatSomAmount(params.metrics.onlineAgreementTotal));
+  drawStandardCard(1, 0, `${COURSE_CATEGORY_LABELS.offline} kelishuv summasi`, formatSomAmount(params.metrics.offlineAgreementTotal));
   drawStandardCard(1, 2, 'Sifatli lidlar', `${params.metrics.qualifiedLeads} (${params.metrics.qualifiedShare.toFixed(1)}%)`);
 
   // Tushum card with new-sale vs debt-repayment split.
@@ -145,7 +145,7 @@ export function createStyledReportPdf(params: {
     },
     {
       left: `Konversiya: ${params.metrics.conversionPercent.toFixed(2)}%`,
-      right: `Online/Offline/Intensiv sotuvlar: ${params.metrics.onlineSalesCount}/${params.metrics.offlineSalesCount}/${params.metrics.intensiveSalesCount}`,
+      right: `Onlayn/Oflayn/Intensiv sotuvlar: ${params.metrics.onlineSalesCount}/${params.metrics.offlineSalesCount}/${params.metrics.intensiveSalesCount}`,
       rightSize: 8.7,
     },
   ];

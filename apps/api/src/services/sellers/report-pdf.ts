@@ -1,4 +1,4 @@
-import { formatSomAmount } from '@dashboarduz/shared';
+import { COURSE_CATEGORY_LABELS, formatSomAmount } from '@dashboarduz/shared';
 
 import type { buildMetrics, SellerSalesMetrics } from './metrics';
 
@@ -29,8 +29,8 @@ export function buildSellerReportPdf(params: SellerReportPayload): Buffer {
     `Income amount: ${formatSomAmount(params.metrics.incomeAmount)}`,
     `Average sales: ${params.metrics.averageSalesCount.toFixed(2)}`,
     '',
-    `Online: ${params.metrics.onlineSalesCount} | Agreement ${formatSomAmount(params.metrics.onlineSalesAgreementAmount)} | Income ${formatSomAmount(params.metrics.onlineSalesIncomeAmount)}`,
-    `Offline: ${params.metrics.offlineSalesCount} | Agreement ${formatSomAmount(params.metrics.offlineSalesAgreementAmount)} | Income ${formatSomAmount(params.metrics.offlineSalesIncomeAmount)}`,
+    `${COURSE_CATEGORY_LABELS.online}: ${params.metrics.onlineSalesCount} | Agreement ${formatSomAmount(params.metrics.onlineSalesAgreementAmount)} | Income ${formatSomAmount(params.metrics.onlineSalesIncomeAmount)}`,
+    `${COURSE_CATEGORY_LABELS.offline}: ${params.metrics.offlineSalesCount} | Agreement ${formatSomAmount(params.metrics.offlineSalesAgreementAmount)} | Income ${formatSomAmount(params.metrics.offlineSalesIncomeAmount)}`,
     `Intensive: ${params.metrics.intensiveSalesCount} | Agreement ${formatSomAmount(params.metrics.intensiveSalesAgreementAmount)} | Income ${formatSomAmount(params.metrics.intensiveSalesIncomeAmount)}`,
     '',
     `Calls: ${params.metrics.totalCalls}`,

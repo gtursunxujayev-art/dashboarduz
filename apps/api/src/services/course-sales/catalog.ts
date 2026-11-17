@@ -1,6 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-
-import { buildCategoryLabel } from './helpers';
+import { courseCategoryLabel } from '@dashboarduz/shared';
 
 /** Active tariffs of a course with their active sub-tariffs, by name. */
 export const ACTIVE_TARIFFS_WITH_SUB_TARIFFS_SELECT = {
@@ -38,7 +37,7 @@ export function describeCourse(course: { id: string; name: string; category: str
     id: course.id,
     name: course.name,
     category: String(course.category || '').trim().toLowerCase(),
-    categoryLabel: buildCategoryLabel(String(course.category || '')),
+    categoryLabel: courseCategoryLabel(course.category),
   };
 }
 

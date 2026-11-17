@@ -1,5 +1,5 @@
 import { type DbClient, systemPrisma } from '@dashboarduz/db';
-import { formatSomAmount, fromTashkentLocalParts, type ManagerGroup, shiftToTashkent } from '@dashboarduz/shared';
+import { courseCategoryLabel, formatSomAmount, fromTashkentLocalParts, type ManagerGroup, shiftToTashkent } from '@dashboarduz/shared';
 
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
@@ -91,7 +91,7 @@ export function resolveDueTelegramGroupSummaryCutoffs(now: Date): Array<'18:00' 
 }
 
 export function formatTelegramGroupSummary(group: TelegramGroupSummaryGroup, metrics: TelegramGroupSummaryMetrics): string {
-  const label = group === 'online' ? 'Online' : 'Offline';
+  const label = courseCategoryLabel(group);
   const lines = [
     `📊 Bugun — ${label}`,
     `🆕 Yangi sotuvlar: ${metrics.newSalesCount}`,

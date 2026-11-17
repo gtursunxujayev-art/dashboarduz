@@ -119,7 +119,7 @@ describe('Telegram report manager grouping', () => {
     expect(groupManagerRows(rows)).toEqual([
       {
         group: 'online',
-        label: 'Online agentlar',
+        label: 'Onlayn agentlar',
         rows: [rows[1], rows[2], rows[0]],
       },
     ]);
@@ -156,7 +156,7 @@ describe('Telegram report compact layout', () => {
     expect(text).toContain('Yangi sotuvlar: 4');
     expect(text).toContain('Suhbat davomiyligi: 13:35:00');
     expect(text).toContain('Konversiya: 2.16%');
-    expect(text).toContain('Online/Offline/Intensiv sotuvlar: 0/0/4');
+    expect(text).toContain('Onlayn/Oflayn/Intensiv sotuvlar: 0/0/4');
     expect(text.join('\n')).not.toContain('Konversiya (sotuv -> lid)');
   });
 
@@ -180,8 +180,8 @@ describe('Telegram report compact layout', () => {
 
     expect(pageCount).toBeGreaterThan(1);
     expect(text).toContain("Menejerlar bo'yicha sotuvlar (davomi)");
-    expect(text).toContain('Online agentlar');
-    expect(text).toContain('Offline agentlar');
+    expect(text).toContain('Onlayn agentlar');
+    expect(text).toContain('Oflayn agentlar');
     for (const row of [...onlineRows, ...offlineRows]) {
       expect(text.filter((run) => run === row.name)).toHaveLength(1);
     }

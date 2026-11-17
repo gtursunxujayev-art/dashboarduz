@@ -2,6 +2,8 @@ import {
   adjustmentStatusSchema,
   adjustmentTypeSchema,
   COURSE_CATEGORIES,
+  COURSE_CATEGORY_LABELS,
+  courseCategoryLabel,
   courseCategorySchema,
   courseTypeCategorySchema,
   createCourseSchema,
@@ -35,5 +37,17 @@ describe('shared input enums', () => {
     expect(debtFilterSchema.options).toEqual(['all', 'with_debt', 'without_debt']);
     expect(managerGroupSchema.options).toEqual(['online', 'offline']);
     expect(funnelGroupSchema.options).toEqual(['all', 'online', 'offline']);
+  });
+});
+
+describe('courseCategoryLabel (one set of category labels in API output)', () => {
+  it('uses Onlayn/Oflayn and the Uzbek names', () => {
+    expect(courseCategoryLabel('online')).toBe('Onlayn');
+    expect(courseCategoryLabel(' Offline ')).toBe('Oflayn');
+    expect(courseCategoryLabel('intensive')).toBe('Intensiv');
+    expect(courseCategoryLabel('additional_service')).toBe("Qo'shimcha xizmat");
+    expect(courseCategoryLabel('vip')).toBe("Noma'lum");
+    expect(courseCategoryLabel(null)).toBe("Noma'lum");
+    expect(COURSE_CATEGORY_LABELS.offline).toBe('Oflayn');
   });
 });

@@ -156,9 +156,6 @@
     "@typescript-eslint/no-unsafe-assignment": 1,
     "@typescript-eslint/no-unsafe-member-access": 1
   },
-  "src/services/reports/__tests__/telegram-group-summary-scheduler.test.ts": {
-    "import/order": 1
-  },
   "src/services/reports/telegram-agent-performance-scheduler.ts": {
     "@typescript-eslint/no-explicit-any": 4,
     "@typescript-eslint/no-unsafe-member-access": 5

@@ -24,17 +24,6 @@ export async function findSaleIdsBySubTariff(
   return candidates.filter((sale) => resolveSaleSubTariffId(sale) === subTariffId).map((sale) => sale.id);
 }
 
-export function buildCategoryLabel(category: string): string {
-  const key = String(category || '').trim().toLowerCase();
-
-  if (key === 'online') return 'Online';
-  if (key === 'offline') return 'Offline';
-  if (key === 'intensive') return 'Intensiv';
-  if (key === 'additional_service') return "Qo'shimcha xizmat";
-
-  return "Noma'lum";
-}
-
 type CustomerCourseEntry = {
   saleIncomeId: string;
   courseId: string | null;

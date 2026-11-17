@@ -19,6 +19,21 @@ export const COURSE_CATEGORIES = ['online', 'offline', 'intensive', 'additional_
 export const courseCategorySchema = z.enum(COURSE_CATEGORIES);
 export type CourseCategory = z.infer<typeof courseCategorySchema>;
 
+/** How the API names each course category in responses, reports and messages. */
+export const COURSE_CATEGORY_LABELS: Record<CourseCategory, string> = {
+  online: 'Onlayn',
+  offline: 'Oflayn',
+  intensive: 'Intensiv',
+  additional_service: "Qo'shimcha xizmat",
+};
+
+/** The label of a (case-insensitive, trimmed) category; `Noma'lum` for anything else. */
+export function courseCategoryLabel(category: string | null | undefined): string {
+  const key = String(category || '').trim().toLowerCase();
+
+  return (COURSE_CATEGORY_LABELS as Record<string, string>)[key] ?? "Noma'lum";
+}
+
 /** Course categories that course-sales reports group by (additional services excluded). */
 export const COURSE_TYPE_CATEGORIES = ['online', 'offline', 'intensive'] as const;
 export const courseTypeCategorySchema = z.enum(COURSE_TYPE_CATEGORIES);

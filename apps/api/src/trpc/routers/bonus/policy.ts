@@ -1,3 +1,4 @@
+import { courseCategoryLabel } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -5,7 +6,7 @@ import { normalizePercentage } from '../../../lib/number';
 import { asObjectOrEmpty } from '../../../lib/object';
 import { loadTenantSettings, saveTenantSettings, withSalarySettings } from '../../../lib/tenant-settings';
 import { parseAttendancePenaltySettings, parseBonusRules, parseFixedSalaries, parseKpiSettings, sanitizeCategoryRule, validateTierRules } from '../../../services/bonus-config/rules';
-import { BONUS_RULE_CATEGORIES, type BonusRuleCategory, canReadBonusPlans, getCategoryLabel, type SalaryBonusRules } from '../../../services/bonus-config/types';
+import { BONUS_RULE_CATEGORIES, type BonusRuleCategory, canReadBonusPlans, type SalaryBonusRules } from '../../../services/bonus-config/types';
 import { buildLegacyBonusPolicy, getTashkentMonthKey, getTashkentMonthStart, normalizeBonusPolicy, resolveEffectiveBonusPolicy } from '../../../services/bonus-engine';
 import { adminProcedure, protectedProcedure } from '../../trpc';
 
@@ -82,7 +83,7 @@ export const bonusPolicyProcedures = {
       const validationError = validateTierRules(tiers);
 
       if (validationError) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: `${getCategoryLabel(category)}: ${validationError}` });
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `${courseCategoryLabel(category)}: ${validationError}` });
       }
     }
     for (const [courseId, override] of Object.entries(input.courseOverrides)) {
@@ -188,7 +189,7 @@ export const bonusPolicyProcedures = {
         if (validationError) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
-            message: `${getCategoryLabel(category)}: ${validationError}`,
+            message: `${courseCategoryLabel(category)}: ${validationError}`,
           });
         }
       }
