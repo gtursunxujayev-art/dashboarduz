@@ -11,7 +11,7 @@ import { amocrmService } from '../../integrations/amocrm';
 import { extractLeadValue, getTenantAmoCRMContext } from '../../integrations/amocrm-live';
 
 import { classifyManagerGroup, compareManagerRows, isLostLeadStatus } from './format';
-import type { ReportManagerRow, ReportMetrics } from './types';
+import { LONG_CALL_MIN_SECONDS, type ReportManagerRow, type ReportMetrics } from './types';
 
 function buildLeadWhere(
   tenantId: string,
@@ -164,6 +164,10 @@ export async function collectMetrics(params: {
             lifecycleStatus: 'active',
             type: 'new_sale',
             courseId: { in: selectedCourseIds },
+            entryDate: {
+              gte: params.periodStart,
+              lte: params.periodEnd,
+            },
           },
           select: {
             id: true,
@@ -453,6 +457,7 @@ export async function collectMetrics(params: {
 
   const extensionValues = Array.from(managerByExtension.keys());
   const managerCallDurationByUserId = new Map<string, number>();
+  const managerCallCountByUserId = new Map<string, { calls: number; longCalls: number }>();
   const corporateDurationByUserId = await getCorporateCallDurationByManager({
     tenantId: params.tenantId,
     managerUserIds: users.map((user) => user.id),
@@ -496,23 +501,25 @@ export async function collectMetrics(params: {
       if (!managerUserId) {
         continue;
       }
+      const callDuration = Math.max(0, Number(call.duration || 0));
       const currentDuration = managerCallDurationByUserId.get(managerUserId) || 0;
 
-      managerCallDurationByUserId.set(managerUserId, currentDuration + Math.max(0, Number(call.duration || 0)));
+      managerCallDurationByUserId.set(managerUserId, currentDuration + callDuration);
+
+      const counts = managerCallCountByUserId.get(managerUserId) || { calls: 0, longCalls: 0 };
+
+      counts.calls += 1;
+      if (callDuration >= LONG_CALL_MIN_SECONDS) {
+        counts.longCalls += 1;
+      }
+      managerCallCountByUserId.set(managerUserId, counts);
     }
   }
 
-  const managerRowsByUserId = new Map<string, {
-    userId: string;
-    group: ManagerGroup | null;
-    name: string;
-    leads: number;
-    qualified: number;
-    nonQualified: number;
-    sales: number;
-    agreementAmount: number;
-    incomeAmount: number;
-  }>();
+  const emptyManagerRow = (userId: string, group: ManagerGroup | null, name: string) => ({
+    userId, group, name, leads: 0, qualified: 0, nonQualified: 0, sales: 0, agreementAmount: 0, incomeAmount: 0,
+  });
+  const managerRowsByUserId = new Map<string, ReturnType<typeof emptyManagerRow>>();
 
   for (const [amoId, leadStats] of managerLeadsByAmoId.entries()) {
     const mappedUser = usersByAmoId.get(amoId);
@@ -520,17 +527,7 @@ export async function collectMetrics(params: {
     if (!mappedUser) {
       continue;
     }
-    const existing = managerRowsByUserId.get(mappedUser.id) || {
-      userId: mappedUser.id,
-      group: mappedUser.group,
-      name: mappedUser.name,
-      leads: 0,
-      qualified: 0,
-      nonQualified: 0,
-      sales: 0,
-      agreementAmount: 0,
-      incomeAmount: 0,
-    };
+    const existing = managerRowsByUserId.get(mappedUser.id) || emptyManagerRow(mappedUser.id, mappedUser.group, mappedUser.name);
 
     existing.leads += leadStats.leads;
     existing.qualified += leadStats.qualified;
@@ -540,23 +537,22 @@ export async function collectMetrics(params: {
 
   for (const [userId, salesStats] of managerSalesByUserId.entries()) {
     const mappedUser = usersById.get(userId);
-    const name = mappedUser?.name || userId;
-    const existing = managerRowsByUserId.get(userId) || {
-      userId,
-      group: mappedUser?.group || null,
-      name,
-      leads: 0,
-      qualified: 0,
-      nonQualified: 0,
-      sales: 0,
-      agreementAmount: 0,
-      incomeAmount: 0,
-    };
+    const existing = managerRowsByUserId.get(userId) || emptyManagerRow(userId, mappedUser?.group || null, mappedUser?.name || userId);
 
     existing.sales += salesStats.sales;
     existing.agreementAmount += salesStats.agreementAmount;
     existing.incomeAmount += salesStats.incomeAmount;
     managerRowsByUserId.set(userId, existing);
+  }
+
+  // Managers who only made calls (no leads or sales) still get a row.
+  for (const userId of managerCallCountByUserId.keys()) {
+    const mappedUser = usersById.get(userId);
+
+    if (!mappedUser || managerRowsByUserId.has(userId)) {
+      continue;
+    }
+    managerRowsByUserId.set(userId, emptyManagerRow(userId, mappedUser.group, mappedUser.name));
   }
 
   const nonQualifiedLeads = Array.from(reasonMap.values()).reduce((sum, value) => sum + value, 0);
@@ -586,10 +582,12 @@ export async function collectMetrics(params: {
       agreementAmount: row.agreementAmount,
       incomeAmount: row.incomeAmount,
       callDurationSeconds: (managerCallDurationByUserId.get(row.userId) || 0) + (corporateDurationByUserId.get(row.userId) || 0),
+      callCount: managerCallCountByUserId.get(row.userId)?.calls || 0,
+      longCallCount: managerCallCountByUserId.get(row.userId)?.longCalls || 0,
     }))
     .filter((row): row is ReportManagerRow => (
       row.group !== null
-      && (row.leads > 0 || row.sales > 0 || row.agreementAmount > 0 || row.incomeAmount > 0)
+      && (row.leads > 0 || row.sales > 0 || row.agreementAmount > 0 || row.incomeAmount > 0 || row.callCount > 0)
     ))
     .sort(compareManagerRows);
 

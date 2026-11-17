@@ -1,7 +1,7 @@
 import { normalizePercentage } from '../../lib/number';
 import { asObjectOrEmpty, toFiniteNumber } from '../../lib/object';
 
-import { type AttendancePenaltySettings, BONUS_RULE_MODES, type BonusBaseMode, type BonusRuleMode, type BonusRuleTier, type FixedSalaryRow, KPI_METRIC_KEYS, type KpiMetricKey, type KpiSettings, type KpiThreshold, type SalaryBonusRules, type SalaryCategoryBonusRule } from './types';
+import { type AttendancePenaltySettings, BONUS_RULE_MODES, BONUS_TIER_BASES, type BonusTierBasis, type BonusBaseMode, type BonusRuleMode, type BonusRuleTier, type FixedSalaryRow, KPI_METRIC_KEYS, type KpiMetricKey, type KpiSettings, type KpiThreshold, type SalaryBonusRules, type SalaryCategoryBonusRule } from './types';
 
 function normalizeTier(raw: unknown): BonusRuleTier | null {
   const row = asObjectOrEmpty(raw);
@@ -66,9 +66,10 @@ export function validateTierRules(tiers: BonusRuleTier[]): string | null {
   return null;
 }
 
-function createSimpleRule(percent: unknown): SalaryCategoryBonusRule {
+function createSimpleRule(percent: unknown, tierBasis: BonusTierBasis): SalaryCategoryBonusRule {
   return {
     mode: 'simple',
+    tierBasis,
     simplePercent: normalizePercentage(percent),
     tiers: [],
   };
@@ -80,6 +81,9 @@ export function sanitizeCategoryRule(rawRule: unknown, fallbackPercent: unknown)
     ? (row.mode as BonusRuleMode)
     : 'simple';
   const simplePercent = normalizePercentage(row.simplePercent ?? fallbackPercent);
+  const tierBasis: BonusTierBasis = BONUS_TIER_BASES.includes(row.tierBasis as BonusTierBasis)
+    ? (row.tierBasis as BonusTierBasis)
+    : 'sales_count';
   const rawTiers = Array.isArray(row.tiers) ? row.tiers : [];
   const tiers = rawTiers
     .map((tier) => normalizeTier(tier))
@@ -92,13 +96,14 @@ export function sanitizeCategoryRule(rawRule: unknown, fallbackPercent: unknown)
     if (!validationError) {
       return {
         mode: 'tiered',
+        tierBasis,
         simplePercent,
         tiers,
       };
     }
   }
 
-  return createSimpleRule(simplePercent);
+  return createSimpleRule(simplePercent, tierBasis);
 }
 
 export function parseFixedSalaries(settings: unknown): FixedSalaryRow[] {

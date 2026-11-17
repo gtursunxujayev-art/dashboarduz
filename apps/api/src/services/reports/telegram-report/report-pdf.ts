@@ -35,9 +35,13 @@ export function createStyledReportPdf(params: {
   };
 
   c.rect(16, 24, 547, 62, { fill: dark });
-  c.text(28, 44, params.tenantName, { font: 'F2', size: size(20), color: white });
-  c.text(52, 270, params.title, { font: 'F1', size: size(12), color: [0.76, 0.82, 0.92] });
-  c.text(28, 360, `Sana: ${headerDateRange}`, { size: size(10), color: [0.76, 0.82, 0.92] });
+  c.text(26, 44, params.tenantName, {
+    font: 'F2',
+    size: c.fitSize(params.tenantName, contentWidth, { size: size(20), minSize: 14, font: 'F2' }),
+    color: white,
+    maxWidth: contentWidth,
+  });
+  c.text(56, 44, params.title, { font: 'F1', size: size(12), color: [0.76, 0.82, 0.92], maxWidth: contentWidth });
   c.text(92, 44, `Davr: ${toTashkentDateKey(params.periodStart)} - ${toTashkentDateKey(params.periodEnd)}`, { size: size(10), color: textDark });
   c.text(106, 44, `Tayyorlangan: ${formatLocalDateTime(params.generatedAt)}`, { size: size(10), color: textDark });
   drawFooter();
@@ -47,14 +51,20 @@ export function createStyledReportPdf(params: {
   const cardRowStep = cardHeight + 14;
   const cardLeft = (col: number) => 44 + col * 172;
   const cardRowTop = (row: number) => cardTop + row * cardRowStep;
+  const cardTextWidth = 140;
 
   const drawStandardCard = (row: number, col: number, title: string, value: string) => {
     const top = cardRowTop(row);
     const left = cardLeft(col);
 
     c.rect(top, left, 160, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
-    c.text(top + 10, left + 10, title, { size: size(9), color: [0.4, 0.46, 0.56] });
-    c.text(top + 27, left + 10, value, { font: 'F2', size: size(14), color: accent });
+    c.text(top + 10, left + 10, title, { size: size(9), color: [0.4, 0.46, 0.56], maxWidth: cardTextWidth });
+    c.text(top + 27, left + 10, value, {
+      font: 'F2',
+      size: c.fitSize(value, cardTextWidth, { size: size(14), minSize: 9, font: 'F2' }),
+      color: accent,
+      maxWidth: cardTextWidth,
+    });
   };
 
   drawStandardCard(0, 0, 'Kelishuv summasi', formatAmount(params.metrics.agreementTotal, CURRENCY_FORMAT));
@@ -67,15 +77,25 @@ export function createStyledReportPdf(params: {
   const incomeLeft = cardLeft(1);
 
   c.rect(incomeTop, incomeLeft, 160, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
-  c.text(incomeTop + 9, incomeLeft + 10, 'Tushum', { size: size(9), color: [0.4, 0.46, 0.56] });
-  c.text(incomeTop + 22, incomeLeft + 10, formatAmount(params.metrics.incomeTotal, CURRENCY_FORMAT), { font: 'F2', size: size(14), color: accent });
-  c.text(incomeTop + 36, incomeLeft + 10, `Yangi sotuv: ${formatAmount(params.metrics.newSalesIncomeTotal, CURRENCY_FORMAT)}`, {
-    size: size(8),
-    color: textDark,
+  // Label 6-14, amount 15-27, split lines 30-37.5 and 41-48.5: no overlap within the 54-point card.
+  const incomeValue = formatAmount(params.metrics.incomeTotal, CURRENCY_FORMAT);
+
+  c.text(incomeTop + 6, incomeLeft + 10, 'Tushum', { size: size(8), color: [0.4, 0.46, 0.56] });
+  c.text(incomeTop + 15, incomeLeft + 10, incomeValue, {
+    font: 'F2',
+    size: c.fitSize(incomeValue, cardTextWidth, { size: size(12), minSize: 9, font: 'F2' }),
+    color: accent,
+    maxWidth: cardTextWidth,
   });
-  c.text(incomeTop + 46, incomeLeft + 10, `Qarz to'lovi: ${formatAmount(params.metrics.debtRepaymentIncomeTotal, CURRENCY_FORMAT)}`, {
-    size: size(8),
+  c.text(incomeTop + 30, incomeLeft + 10, `Yangi sotuv: ${formatAmount(params.metrics.newSalesIncomeTotal, CURRENCY_FORMAT)}`, {
+    size: size(7.5),
     color: textDark,
+    maxWidth: cardTextWidth,
+  });
+  c.text(incomeTop + 41, incomeLeft + 10, `Qarz to'lovi: ${formatAmount(params.metrics.debtRepaymentIncomeTotal, CURRENCY_FORMAT)}`, {
+    size: size(7.5),
+    color: textDark,
+    maxWidth: cardTextWidth,
   });
 
   // Split half cards in the middle slot of row 2 (by width).
@@ -131,8 +151,8 @@ export function createStyledReportPdf(params: {
   for (const [index, row] of summaryRows.entries()) {
     const rowTop = summaryTop + 10 + index * 20;
 
-    c.text(rowTop, 54, row.left, { font: 'F2', size: size(11.5), color: textDark });
-    c.text(rowTop, 300, row.right, { size: size(row.rightSize), color: textDark });
+    c.text(rowTop, 54, row.left, { font: 'F2', size: size(11.5), color: textDark, maxWidth: 236 });
+    c.text(rowTop, 300, row.right, { size: size(row.rightSize), color: textDark, maxWidth: 237 });
   }
 
   const breakdownRowHeight = 14;
@@ -153,10 +173,10 @@ export function createStyledReportPdf(params: {
       const right = layout.right[row];
 
       if (typeof left === 'string') {
-        c.text(y, breakdownColLeftA, left, { size: size(9), color: textDark });
+        c.text(y, breakdownColLeftA, left, { size: size(9), color: textDark, maxWidth: breakdownColLeftB - breakdownColLeftA - 10 });
       }
       if (typeof right === 'string') {
-        c.text(y, breakdownColLeftB, right, { size: size(9), color: textDark });
+        c.text(y, breakdownColLeftB, right, { size: size(9), color: textDark, maxWidth: contentLeft + contentWidth - breakdownColLeftB - 10 });
       }
     }
 
@@ -177,22 +197,25 @@ export function createStyledReportPdf(params: {
     const courseContentTop = cursor + 28;
 
     selectedCourseRows.slice(0, 3).forEach((row, index) => {
-      c.text(courseContentTop + index * 14, 54, formatSelectedCourseLine(row), { size: size(8.3), color: textDark });
+      c.text(courseContentTop + index * 14, 54, formatSelectedCourseLine(row), { size: size(8.3), color: textDark, maxWidth: contentWidth - 20 });
     });
     cursor = courseContentTop + Math.min(3, selectedCourseRows.length) * 14 + 8;
   }
 
   const columns = [
-    { key: 'name', title: 'Menejer', width: 74 },
-    { key: 'leads', title: 'Lid', width: 34 },
-    { key: 'qualified', title: 'Sifatli', width: 43 },
-    { key: 'nonQualified', title: 'Sifatsiz', width: 43 },
-    { key: 'sales', title: 'Sotuv', width: 38 },
-    { key: 'conversion', title: 'Konv.', width: 48 },
-    { key: 'agreementAmount', title: 'Kelishuv', width: 62 },
-    { key: 'incomeAmount', title: 'Tushum', width: 58 },
-    { key: 'duration', title: 'Suhbat soat', width: 65 },
+    { key: 'name', title: 'Menejer', width: 82 },
+    { key: 'leads', title: 'Lid', width: 24 },
+    { key: 'qualified', title: 'Sifatli', width: 34 },
+    { key: 'nonQualified', title: 'Sifatsiz', width: 40 },
+    { key: 'sales', title: 'Sotuv', width: 32 },
+    { key: 'conversion', title: 'Konv.', width: 36 },
+    { key: 'agreementAmount', title: 'Kelishuv', width: 44 },
+    { key: 'incomeAmount', title: 'Tushum', width: 42 },
+    { key: 'calls', title: "Qo'ng'iroq", width: 48 },
+    { key: 'longCalls', title: '4+ daq', width: 36 },
+    { key: 'duration', title: 'Suhbat soat', width: 58 },
   ] as const;
+  const cellTextWidth = (width: number) => width - 4;
   const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
 
   const drawManagerColumnHeader = (top: number) => {
@@ -200,7 +223,12 @@ export function createStyledReportPdf(params: {
     let x = 56;
 
     for (const column of columns) {
-      c.text(top + 5, x, column.title, { font: 'F2', size: size(7.4), color: textDark });
+      c.text(top + 5, x, column.title, {
+        font: 'F2',
+        size: c.fitSize(column.title, cellTextWidth(column.width), { size: size(7.4), minSize: 6, font: 'F2' }),
+        color: textDark,
+        maxWidth: cellTextWidth(column.width),
+      });
       x += column.width;
     }
   };
@@ -221,13 +249,15 @@ export function createStyledReportPdf(params: {
       `${row.conversion.toFixed(1)}%`,
       formatCompactCurrency(row.agreementAmount),
       formatCompactCurrency(row.incomeAmount),
+      String(row.callCount),
+      String(row.longCallCount),
       formatClockHoursMinutes(row.callDurationSeconds),
     ];
 
     let currentX = 56;
 
     for (const [colIndex, column] of columns.entries()) {
-      c.text(top + 4, currentX, values[colIndex] || '-', { size: size(7.2), color: textDark });
+      c.text(top + 4, currentX, values[colIndex] || '-', { size: size(7.2), color: textDark, maxWidth: cellTextWidth(column.width) });
       currentX += column.width;
     }
   };
@@ -235,10 +265,11 @@ export function createStyledReportPdf(params: {
   const drawContinuationPage = (): number => {
     c.addPage();
     c.rect(24, contentLeft, contentWidth, 50, { fill: dark });
-    c.text(34, 54, params.tenantName, { font: 'F2', size: size(15), color: white });
+    c.text(34, 54, params.tenantName, { font: 'F2', size: size(15), color: white, maxWidth: contentWidth - 20 });
     c.text(53, 54, `${params.title} | ${headerDateRange}`, {
       size: size(8.5),
       color: [0.76, 0.82, 0.92],
+      maxWidth: contentWidth - 20,
     });
     c.rect(86, contentLeft, contentWidth, 22, { fill: dark });
     c.text(90, 54, "Menejerlar bo'yicha sotuvlar (davomi)", { font: 'F2', size: size(12), color: white });

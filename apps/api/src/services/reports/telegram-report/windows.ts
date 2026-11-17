@@ -11,8 +11,8 @@ export function resolveReportWindows(nowUtc: Date): ReportWindow[] {
 
   const windows: ReportWindow[] = [];
 
-  // Daily report for yesterday at 08:00 local.
-  const dailyDispatchAt = fromTashkentLocalParts(year, month, day, 8, 0, 0, 0);
+  // Daily report for yesterday at 10:00 local.
+  const dailyDispatchAt = fromTashkentLocalParts(year, month, day, 10, 0, 0, 0);
 
   if (nowUtc >= dailyDispatchAt) {
     const todayStart = fromTashkentLocalParts(year, month, day, 0, 0, 0, 0);

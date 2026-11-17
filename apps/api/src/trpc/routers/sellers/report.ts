@@ -97,14 +97,13 @@ export const sellerReportProcedures = {
 
       const [activeLeads, extensionsByManager, mappedUsers] = await Promise.all([
         fetchLeadsByStatusFilters(
-          amoContext.accessToken,
-          amoContext.baseUrl,
+          ctx.tenantId,
+          ctx.db,
           selectedPipelineIds,
           activeStatusFilters,
           [input.id],
           rangeStart,
           rangeEnd,
-          false,
         ),
         getManagerExtensionsMap(ctx.tenantId, [input.id], ctx.db),
         ctx.db.user.findMany({

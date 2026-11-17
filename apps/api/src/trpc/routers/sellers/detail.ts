@@ -8,6 +8,7 @@ import { getCallsProvider } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { buildStatusFilters, computeLeadResponseTimes, fetchLeadsByStatusFilters, getSelectedPipelines } from '../../../services/sellers/leads';
 import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerExtensionsMap, LOST_STATUS_ID, parseAmoDate, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
@@ -62,18 +63,17 @@ export const sellerDetailProcedures = {
 
       const [activeLeads, wonLeads, lostLeads] = await Promise.all([
         fetchLeadsByStatusFilters(
-          amoContext.accessToken,
-          amoContext.baseUrl,
+          ctx.tenantId,
+          ctx.db,
           selectedPipelineIds,
           activeStatusFilters,
           [input.id],
           rangeStart,
           rangeEnd,
-          true,
         ),
         fetchLeadsByStatusFilters(
-          amoContext.accessToken,
-          amoContext.baseUrl,
+          ctx.tenantId,
+          ctx.db,
           selectedPipelineIds,
           wonStatusFilters,
           [input.id],
@@ -81,8 +81,8 @@ export const sellerDetailProcedures = {
           rangeEnd,
         ),
         fetchLeadsByStatusFilters(
-          amoContext.accessToken,
-          amoContext.baseUrl,
+          ctx.tenantId,
+          ctx.db,
           selectedPipelineIds,
           lostStatusFilters,
           [input.id],
@@ -256,17 +256,15 @@ export const sellerDetailProcedures = {
           rangeEnd,
           db: ctx.db,
         }),
-        amocrmService.fetchAllLeads(
-          amoContext.accessToken,
+        fetchSnapshotLeads(
+          ctx.tenantId,
           {
             pipelineIds: selectedPipelineIds,
             responsibleUserIds: [input.id],
             createdAtFrom: rangeStart,
             createdAtTo: rangeEnd,
-            limit: 250,
-            maxPages: 20,
           },
-          amoContext.baseUrl,
+          ctx.db,
         ),
         getAmoCRMActivityMetrics({
           tenantId: ctx.tenantId,

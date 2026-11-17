@@ -13,7 +13,7 @@ import { createSummarySourceStatus, runSummarySourceWithRetry } from '../../../s
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 
-import { amocrmService, asStringArray, buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, extractUtelManagerKey, getAmoCRMActivityMetrics, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, normalizeTextToken, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, TRPCError, z } from './helpers';
+import { asStringArray, buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, extractUtelManagerKey, fetchSnapshotLeads, getAmoCRMActivityMetrics, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, normalizeTextToken, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, TRPCError, z } from './helpers';
 
 export const summaryProcedures = {
   summary: protectedProcedure
@@ -125,16 +125,15 @@ export const summaryProcedures = {
           fallback: [] as any[],
           run: async () => {
             const fetched = await withTimeout(
-              amocrmService.fetchAllLeads(
-                amoContext.accessToken,
+              fetchSnapshotLeads(
+                ctx.tenantId,
                 {
                   pipelineIds: selectedPipelineIds,
                   responsibleUserIds: scope.isScoped ? [scope.responsibleUserId as string] : undefined,
                   createdAtFrom: rangeStart,
                   createdAtTo: rangeEnd,
-                  limit: 250,
                 },
-                amoContext.baseUrl,
+                ctx.db,
               ),
               3000,
               'amo_leads_timeout',

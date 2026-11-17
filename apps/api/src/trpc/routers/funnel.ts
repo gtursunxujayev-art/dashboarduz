@@ -43,6 +43,7 @@ import {
 
 import {
   amocrmService,
+  fetchSnapshotLeadPage,
   getTenantAmoCRMContext,
   protectedProcedure,
   router,
@@ -307,19 +308,17 @@ async function buildFunnelBase(params: {
     const pipelineIds = params.pipelineId ? [params.pipelineId] : amoContext.selectedPipelineIds;
     const fetchPageOnce = async (page: number) => {
       const response = await withTimeout(
-        amocrmService.fetchLeads(
-          amoContext.accessToken,
-          '',
+        fetchSnapshotLeadPage(
+          tenantId,
           {
             page,
             limit: LEADS_PAGE_SIZE,
-            with: 'contacts',
             pipelineIds: pipelineIds || undefined,
             responsibleUserIds: responsibleIds,
             createdAtFrom: rangeStart,
             createdAtTo: rangeEnd,
           },
-          amoContext.baseUrl,
+          db,
         ),
         LEADS_PAGE_TIMEOUT_MS,
         'amo_leads_timeout',

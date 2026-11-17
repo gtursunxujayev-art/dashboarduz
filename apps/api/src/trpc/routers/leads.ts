@@ -7,6 +7,7 @@ import { getAgentResponsibleScope } from '../../lib/access';
 import { parseAmoTimestampOrNow } from '../../lib/amocrm';
 import { asObject } from '../../lib/object';
 import { amocrmService, type AmoCRMLead } from '../../services/integrations/amocrm';
+import { fetchSnapshotLeadById, fetchSnapshotLeadPage } from '../../services/integrations/amocrm-lead-snapshot-read';
 import {
   extractLeadValue,
   getTenantAmoCRMContext,
@@ -120,20 +121,18 @@ export const leadsRouter = router({
 
       const [pipelines, response] = await Promise.all([
         amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl),
-        amocrmService.fetchLeads(
-          amoContext.accessToken,
-          '',
+        fetchSnapshotLeadPage(
+          ctx.tenantId,
           {
             page: input.page,
             limit: Math.min(input.limit, 100),
-            with: 'contacts',
             query: input.search || undefined,
             pipelineIds: input.pipelineIds && input.pipelineIds.length > 0
               ? input.pipelineIds
               : (amoContext.selectedPipelineIds || undefined),
             responsibleUserIds: scope.isScoped && scope.responsibleUserId ? [scope.responsibleUserId] : undefined,
           },
-          amoContext.baseUrl,
+          ctx.db,
         ),
       ]);
 
@@ -171,15 +170,17 @@ export const leadsRouter = router({
         });
       }
 
-      const [pipelines, lead] = await Promise.all([
+      const [pipelines, snapshotLead] = await Promise.all([
         amocrmService.fetchPipelines(amoContext.accessToken, amoContext.baseUrl),
-        amocrmService.fetchLeadById(
-          amoContext.accessToken,
-          input.id,
-          { with: 'contacts' },
-          amoContext.baseUrl,
-        ),
+        fetchSnapshotLeadById(ctx.tenantId, input.id, ctx.db),
       ]);
+      // A lead created since the last snapshot refresh is not stored yet; read that one live.
+      const lead = snapshotLead ?? await amocrmService.fetchLeadById(
+        amoContext.accessToken,
+        input.id,
+        { with: 'contacts' },
+        amoContext.baseUrl,
+      );
 
       if (scope.isScoped) {
         const responsibleUserId = lead.responsible_user_id !== null && lead.responsible_user_id !== undefined

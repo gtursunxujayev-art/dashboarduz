@@ -6,6 +6,7 @@ import express from 'express';
 import { logger } from './lib/logger';
 import { applyObservabilityMiddleware } from './middleware/observability';
 import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from './services/integrations/amocrm-call-sync';
+import { startAmoLeadSnapshotScheduler, stopAmoLeadSnapshotScheduler } from './services/integrations/amocrm-lead-snapshot';
 import { telegramService } from './services/integrations/telegram';
 import { parseTelegramGroupIds } from './services/integrations/telegram-groups';
 import { initSentry } from './services/observability';
@@ -60,6 +61,7 @@ if (schedulerEnabledInApi) {
   startTelegramAgentPerformanceScheduler();
   startTelegramGroupSummaryScheduler();
   startAmoCallsSyncScheduler();
+  startAmoLeadSnapshotScheduler();
   logger.info({
     mode: 'api',
     env: process.env.NODE_ENV || 'unknown',
@@ -426,6 +428,7 @@ function stopSchedulersInApi(): void {
   stopTelegramAgentPerformanceScheduler();
   stopTelegramGroupSummaryScheduler();
   stopAmoCallsSyncScheduler();
+  stopAmoLeadSnapshotScheduler();
   stopTelegramReportScheduler();
 }
 

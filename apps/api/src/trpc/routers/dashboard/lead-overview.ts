@@ -3,9 +3,9 @@ import { getRangeStart } from '../../../lib/dates';
 import { asObject } from '../../../lib/object';
 
 import {
-  amocrmService,
   asStringArray,
   extractLeadValue,
+  fetchSnapshotLeads,
   getTenantAmoCRMContext,
   isMappedValue,
   protectedProcedure,
@@ -128,15 +128,14 @@ export const leadOverviewProcedures = {
 
     try {
       // Deliberately omit pipelineIds: these fixed overview cards cover all pipelines.
-      const leads = await amocrmService.fetchAllLeads(
-        amoContext.accessToken,
+      const leads = await fetchSnapshotLeads(
+        ctx.tenantId,
         {
           responsibleUserIds: scope.isScoped ? [scope.responsibleUserId as string] : undefined,
           createdAtFrom: fetchStart,
           createdAtTo: now,
-          limit: 250,
         },
-        amoContext.baseUrl,
+        ctx.db,
       );
 
       const { daily, weekly, monthly } = calculateLeadPeriods({

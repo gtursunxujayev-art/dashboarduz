@@ -298,6 +298,8 @@ export class AmoCRMService {
     responsibleUserIds?: string[];
     createdAtFrom?: Date;
     createdAtTo?: Date;
+    updatedAtFrom?: Date;
+    order?: { field: 'id' | 'created_at' | 'updated_at'; direction: 'asc' | 'desc' };
   }, baseUrl?: string) {
     try {
       const queryParams = new URLSearchParams();
@@ -327,6 +329,12 @@ export class AmoCRMService {
       }
       if (params?.createdAtTo) {
         queryParams.set('filter[created_at][to]', Math.floor(params.createdAtTo.getTime() / 1000).toString());
+      }
+      if (params?.updatedAtFrom) {
+        queryParams.set('filter[updated_at][from]', Math.floor(params.updatedAtFrom.getTime() / 1000).toString());
+      }
+      if (params?.order) {
+        queryParams.set(`order[${params.order.field}]`, params.order.direction);
       }
 
       const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);

@@ -6,8 +6,10 @@ import {
   getBreakdownLayout,
   groupManagerRows,
 } from '../telegram-report/format';
+import { extractPdfText, PdfCanvas } from '../telegram-report/pdf-canvas';
 import { createStyledReportPdf } from '../telegram-report/report-pdf';
 import type { ReportManagerRow, ReportMetrics } from '../telegram-report/types';
+import { resolveReportWindows } from '../telegram-report/windows';
 
 function createManagerRow(
   name: string,
@@ -25,6 +27,8 @@ function createManagerRow(
     agreementAmount: 0,
     incomeAmount: 0,
     callDurationSeconds: 0,
+    callCount: 0,
+    longCallCount: 0,
     ...overrides,
   };
 }
@@ -58,16 +62,33 @@ function createMetrics(overrides: Partial<ReportMetrics> = {}): ReportMetrics {
   };
 }
 
-function createPdf(metrics: ReportMetrics): string {
+function createPdfBuffer(metrics: ReportMetrics, tenantName = 'Najot Nur'): Buffer {
   return createStyledReportPdf({
-    tenantName: 'Najot Nur',
+    tenantName,
     title: 'Kunlik hisobot (Kecha)',
     periodStart: new Date('2026-07-23T19:00:00.000Z'),
     periodEnd: new Date('2026-07-24T18:59:59.999Z'),
     generatedAt: new Date('2026-07-25T03:00:00.000Z'),
     metrics,
-  }).toString('latin1');
+  });
 }
+
+function createPdf(metrics: ReportMetrics): string {
+  return createPdfBuffer(metrics).toString('latin1');
+}
+
+describe('Telegram report schedule', () => {
+  const dailyWindows = (iso: string) => resolveReportWindows(new Date(iso)).filter((window) => window.kind === 'daily');
+
+  it('sends the daily report for yesterday from 10:00 Tashkent time', () => {
+    expect(dailyWindows('2026-11-17T04:59:59.000Z')).toEqual([]); // 09:59:59 Tashkent
+    const [daily] = dailyWindows('2026-11-17T05:00:00.000Z'); // 10:00 Tashkent
+
+    expect(daily?.periodKey).toBe('2026-11-16');
+    expect(daily?.periodStart.toISOString()).toBe('2026-11-15T19:00:00.000Z');
+    expect(daily?.periodEnd.toISOString()).toBe('2026-11-16T18:59:59.999Z');
+  });
+});
 
 describe('Telegram report manager grouping', () => {
   it('classifies explicit agent roles and gives OnlineAgent precedence', () => {
@@ -76,9 +97,13 @@ describe('Telegram report manager grouping', () => {
     expect(classifyManagerGroup(['OfflineAgent', 'OnlineAgent'])).toBe('online');
   });
 
+  it('lists team leaders with the offline managers', () => {
+    expect(classifyManagerGroup(['TeamLeader'])).toBe('offline');
+    expect(classifyManagerGroup(['TeamLeader', 'OnlineAgent'])).toBe('online');
+  });
+
   it('excludes generic and non-agent roles', () => {
     expect(classifyManagerGroup(['Agent'])).toBeNull();
-    expect(classifyManagerGroup(['TeamLeader'])).toBeNull();
     expect(classifyManagerGroup(['Manager'])).toBeNull();
     expect(classifyManagerGroup([])).toBeNull();
   });
@@ -120,18 +145,19 @@ describe('Telegram report compact layout', () => {
 
   it('renders seven 54-point KPI cards and the paired summary labels', () => {
     const pdf = createPdf(createMetrics());
+    const text = extractPdfText(createPdfBuffer(createMetrics()));
     const cardRectangles = pdf
       .split('\n')
       .filter((line) => / (160|78) 54 re$/.test(line));
 
     expect(cardRectangles).toHaveLength(7);
-    expect(pdf).toContain('(Sifatsiz lidlar: 14) Tj');
-    expect(pdf).toContain("(Qo'ng'iroqlar: 848) Tj");
-    expect(pdf).toContain('(Yangi sotuvlar: 4) Tj');
-    expect(pdf).toContain('(Suhbat davomiyligi: 13:35:00) Tj');
-    expect(pdf).toContain('(Konversiya: 2.16%) Tj');
-    expect(pdf).toContain('(Online/Offline/Intensiv sotuvlar: 0/0/4) Tj');
-    expect(pdf).not.toContain('Konversiya \\(sotuv -> lid\\)');
+    expect(text).toContain('Sifatsiz lidlar: 14');
+    expect(text).toContain("Qo'ng'iroqlar: 848");
+    expect(text).toContain('Yangi sotuvlar: 4');
+    expect(text).toContain('Suhbat davomiyligi: 13:35:00');
+    expect(text).toContain('Konversiya: 2.16%');
+    expect(text).toContain('Online/Offline/Intensiv sotuvlar: 0/0/4');
+    expect(text.join('\n')).not.toContain('Konversiya (sotuv -> lid)');
   });
 
   it('paginates manager groups without dropping or duplicating rows', () => {
@@ -147,15 +173,64 @@ describe('Telegram report compact layout', () => {
         sales: 30 - index,
       })
     ));
-    const pdf = createPdf(createMetrics({ managerRows: [...onlineRows, ...offlineRows] }));
+    const buffer = createPdfBuffer(createMetrics({ managerRows: [...onlineRows, ...offlineRows] }));
+    const pdf = buffer.toString('latin1');
+    const text = extractPdfText(buffer);
     const pageCount = Number(pdf.match(/\/Type \/Pages .*\/Count (\d+)/)?.[1] || 0);
 
     expect(pageCount).toBeGreaterThan(1);
-    expect(pdf).toContain("Menejerlar bo'yicha sotuvlar \\(davomi\\)");
-    expect(pdf).toContain('(Online agentlar) Tj');
-    expect(pdf).toContain('(Offline agentlar) Tj');
+    expect(text).toContain("Menejerlar bo'yicha sotuvlar (davomi)");
+    expect(text).toContain('Online agentlar');
+    expect(text).toContain('Offline agentlar');
     for (const row of [...onlineRows, ...offlineRows]) {
-      expect(pdf.split(`(${row.name}) Tj`)).toHaveLength(2);
+      expect(text.filter((run) => run === row.name)).toHaveLength(1);
     }
+  });
+
+  it('shows per-manager call counts and 4+ minute calls', () => {
+    const text = extractPdfText(createPdfBuffer(createMetrics({
+      managerRows: [createManagerRow('Sabina', 'offline', { callCount: 57, longCallCount: 9, callDurationSeconds: 3420 })],
+    })));
+    const nameIndex = text.indexOf('Sabina');
+
+    expect(text).toContain("Qo'ng'iroq");
+    expect(text).toContain('4+ daq');
+    expect(text.slice(nameIndex, nameIndex + 12)).toEqual(expect.arrayContaining(['57', '9', '00:57']));
+  });
+});
+
+describe('Telegram report text rendering', () => {
+  it('keeps Cyrillic and Uzbek apostrophe letters instead of replacing them with "?"', () => {
+    const text = extractPdfText(createPdfBuffer(createMetrics({
+      managerRows: [createManagerRow('Абдуллаев Шерзод', 'online'), createManagerRow('Gʻulom Oʻgʻiloy', 'online')],
+      sourceBreakdown: [{ label: 'Сайт', value: 3 }],
+    }), 'Najot Taʼlim'));
+
+    expect(text).toContain('Najot Taʼlim');
+    expect(text).toContain('Абдуллаев Шерзод');
+    expect(text).toContain('Gʻulom Oʻgʻiloy');
+    expect(text.join('\n')).not.toMatch(/\?{2,}/);
+  });
+
+  it('embeds the font and stays a well-formed PDF', () => {
+    const pdf = createPdf(createMetrics());
+
+    expect(pdf.startsWith('%PDF-1.4')).toBe(true);
+    expect(pdf).toContain('/FontFile2');
+    expect(pdf).toContain('/Encoding /Identity-H');
+    expect(pdf).toContain('/ToUnicode');
+    const startXref = Number(pdf.match(/startxref\n(\d+)\n%%EOF$/)?.[1]);
+
+    expect(pdf.slice(startXref, startXref + 4)).toBe('xref');
+  });
+
+  it('shortens text that does not fit its column', () => {
+    const canvas = new PdfCanvas();
+    const longName = 'Gʻulomova Oʻgiloy Baxtiyorovna Abdullayevna';
+    const fitted = canvas.fit(longName, 76, { size: 7.2 });
+
+    expect(fitted.endsWith('…')).toBe(true);
+    expect(canvas.measure(fitted, { size: 7.2 })).toBeLessThanOrEqual(76);
+    expect(canvas.fit('Sabina', 76, { size: 7.2 })).toBe('Sabina');
   });
 });

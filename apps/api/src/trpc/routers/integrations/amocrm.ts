@@ -7,6 +7,7 @@ import { AMOCRM_CALL_PROVIDER, CALLS_SOURCE_CONFIG_KEY, invalidateCallsProvider,
 import { amoFailureHelp, amoFailureMessage, detectAmoFailureReason, fetchAmoCRMAccountByToken, normalizeBaseUrl } from '../../../services/integration-settings/connection';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { CALL_NOTE_ENTITY_TYPES, readCallsSyncState, triggerTenantAmoCallsSync } from '../../../services/integrations/amocrm-call-sync';
+import { refreshTenantLeadSnapshot } from '../../../services/integrations/amocrm-lead-snapshot';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { encryptIntegrationTokens } from '../../../services/security/encryption';
 import { adminProcedure } from '../../trpc';
@@ -107,6 +108,8 @@ export const amocrmIntegrationProcedures = {
           metadata: { type: 'amocrm', mode: 'long_lived_token' },
         },
       });
+      // Build the lead snapshot now instead of waiting for the hourly refresh.
+      void refreshTenantLeadSnapshot(ctx.tenantId, { forceFull: true }).catch(() => undefined);
 
       return {
         integration,

@@ -7,7 +7,7 @@ import {
   extractLeadValue,
   getSystemLeadFieldOptions,
   getTenantAmoCRMContext,
-  amocrmService,
+  fetchSnapshotLeadPage,
   adminProcedure,
   protectedProcedure,
   collectCatalogFieldOptions,
@@ -77,15 +77,14 @@ export const settingsProcedures = {
       const maxPages = 40;
 
       while (page <= maxPages) {
-        const response = await amocrmService.fetchLeads(
-          amoContext.accessToken,
-          '',
+        const response = await fetchSnapshotLeadPage(
+          ctx.tenantId,
           {
             page,
             limit: 250,
             pipelineIds: selectedPipelineIds || undefined,
           },
-          amoContext.baseUrl,
+          ctx.db,
         );
 
         const leads = Array.isArray(response._embedded?.leads) ? response._embedded.leads : [];

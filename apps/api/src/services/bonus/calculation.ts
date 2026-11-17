@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { type DbClient, systemPrisma } from '@dashboarduz/db';
 
-import { resolveBonusPercent, type SalaryCategory } from '../../trpc/routers/dashboard/helpers';
+import { resolveBonusPercent, type SalaryCategory, usedTierFallback } from '../../trpc/routers/dashboard/helpers';
 import { buildTechnicalSaleIdSet } from '../technical-income';
 
 import { resolveFullyPaidClosure } from './closures';
@@ -61,13 +61,27 @@ function buildLines(items: BonusCalculationItem[]): BonusCalculationLine[] {
   return [...lines.values()].sort((left, right) => left.groupKey.localeCompare(right.groupKey));
 }
 
+/**
+ * The policy as the digests saw it before rules had a tier basis: the default sales-count basis is left out, so a
+ * policy nobody changed keeps the digest its finalized snapshots were stored with.
+ */
+function digestPolicy(policy: BonusPolicy): unknown {
+  const bonusRules = Object.fromEntries(Object.entries(policy.bonusRules).map(([category, rule]) => {
+    const { tierBasis, ...rest } = rule;
+
+    return [category, tierBasis === 'sales_count' ? rest : rule];
+  }));
+
+  return { ...policy, bonusRules };
+}
+
 function legacyDigestRows(rows: IncomeRow[], policy: BonusPolicy): string {
   const payload = rows.map((row) => [
     row.id, row.type, row.relatedDebtIncomeId, row.managerUserId, row.courseId,
     row.coursePriceAmount, row.paymentAmount, row.entryDate.toISOString(),
   ]).sort((left, right) => String(left[0]).localeCompare(String(right[0])));
 
-  return createHash('sha256').update(JSON.stringify({ policy, payload })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ policy: digestPolicy(policy), payload })).digest('hex');
 }
 
 // Every input the calculation reads must be in the digest, otherwise reconcile never notices the change.
@@ -78,7 +92,7 @@ function digestRows(rows: IncomeRow[], policy: BonusPolicy): string {
     row.course?.category ?? null, row.course?.name ?? null,
   ]).sort((left, right) => String(left[0]).localeCompare(String(right[0])));
 
-  return createHash('sha256').update(JSON.stringify({ v: 2, policy, payload })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ v: 2, policy: digestPolicy(policy), payload })).digest('hex');
 }
 
 export async function calculateBonusMonth(params: {
@@ -128,6 +142,7 @@ export async function calculateBonusMonth(params: {
 
   const closures: Array<{ sale: IncomeRow; closing: IncomeRow; agreementAmount: number; category: SalaryCategory }> = [];
   const closedCounts = new Map<string, number>();
+  const closedAgreementAmounts = new Map<string, number>();
 
   for (const [saleId, chain] of chainBySaleId) {
     const sale = saleById.get(saleId)!;
@@ -142,7 +157,13 @@ export async function calculateBonusMonth(params: {
     const legacyKey = `${resolvedClosure.closing.managerUserId}:${category}`;
 
     closedCounts.set(legacyKey, (closedCounts.get(legacyKey) || 0) + 1);
+    closedAgreementAmounts.set(legacyKey, (closedAgreementAmounts.get(legacyKey) || 0) + resolvedClosure.agreementAmount);
   }
+  // A category rule tiers on the agent's month in that category: closures counted, or their agreement amounts summed.
+  const progressFor = (agentUserId: string, category: SalaryCategory) => ({
+    closedCount: closedCounts.get(`${agentUserId}:${category}`) || 0,
+    closedAgreementAmount: closedAgreementAmounts.get(`${agentUserId}:${category}`) || 0,
+  });
 
   const teamAmountByCourse = new Map<string, number>();
 
@@ -166,9 +187,9 @@ export async function calculateBonusMonth(params: {
       const category = getCategory(sale);
 
       if (!category) continue;
-      const closedCount = closedCounts.get(`${row.managerUserId}:${category}`) || 0;
+      const progress = progressFor(row.managerUserId, category);
       const rule = resolved.policy.bonusRules[category];
-      const appliedPercent = resolveBonusPercent(rule, closedCount);
+      const appliedPercent = resolveBonusPercent(rule, progress);
       const baseAmount = amount(row.paymentAmount);
 
       items.push({
@@ -186,8 +207,9 @@ export async function calculateBonusMonth(params: {
         bonusAmount: Math.round(baseAmount * appliedPercent / 100),
         agreementAmount: amount(sale.coursePriceAmount ?? sale.debtAmount) || baseAmount,
         closingIncomeId: row.id,
-        closedCount,
-        usedFallback: rule.mode === 'tiered' && !rule.tiers.some((tier) => closedCount >= tier.minSales && (tier.maxSales === null || closedCount <= tier.maxSales)),
+        closedCount: progress.closedCount,
+        closedAgreementAmount: progress.closedAgreementAmount,
+        usedFallback: usedTierFallback(rule, progress),
       });
     }
   }
@@ -217,6 +239,7 @@ export async function calculateBonusMonth(params: {
         agreementAmount: closure.agreementAmount,
         closingIncomeId: closure.closing.id,
         closedCount: closures.filter((candidate) => candidate.sale.courseId === courseId).length,
+        closedAgreementAmount: teamAmountByCourse.get(courseId!) || 0,
         usedFallback: result.usedFallback,
       };
       const key = `${item.agentUserId}:${courseId}`;
@@ -228,8 +251,8 @@ export async function calculateBonusMonth(params: {
     }
     if (resolved.policy.bonusMode !== 'on_debt_closed' || !eligibleAgentIds.has(closure.closing.managerUserId)) continue;
     const rule = resolved.policy.bonusRules[closure.category];
-    const closedCount = closedCounts.get(`${closure.closing.managerUserId}:${closure.category}`) || 0;
-    const appliedPercent = resolveBonusPercent(rule, closedCount);
+    const progress = progressFor(closure.closing.managerUserId, closure.category);
+    const appliedPercent = resolveBonusPercent(rule, progress);
 
     items.push({
       sourceKey: `legacy-close:${closure.closing.id}`,
@@ -246,8 +269,9 @@ export async function calculateBonusMonth(params: {
       bonusAmount: Math.round(closure.agreementAmount * appliedPercent / 100),
       agreementAmount: closure.agreementAmount,
       closingIncomeId: closure.closing.id,
-      closedCount,
-      usedFallback: rule.mode === 'tiered' && !rule.tiers.some((tier) => closedCount >= tier.minSales && (tier.maxSales === null || closedCount <= tier.maxSales)),
+      closedCount: progress.closedCount,
+      closedAgreementAmount: progress.closedAgreementAmount,
+      usedFallback: usedTierFallback(rule, progress),
     });
   }
   for (const group of courseOverrideGroups.values()) {

@@ -16,6 +16,11 @@ import { createStyledReportPdf } from './report-pdf';
 import type { ReportWindow, TelegramIntegrationWithTenant } from './types';
 
 const LOCK_TTL_SECONDS = 60 * 60 * 24 * 14; // 14 days
+
+/** After a failed send, the next attempt waits this long instead of the 30-second scheduler tick. */
+export const RETRY_DELAY_SECONDS = 15 * 60;
+/** Attempts per report window before giving up until the next window. */
+export const MAX_SEND_ATTEMPTS = 5;
 const MIN_DAILY_REPORT_PREP_MS = 10_000;
 
 const MIN_WEEKLY_REPORT_PREP_MS = 20_000;
@@ -26,6 +31,11 @@ export async function sendWindowToIntegration(
   integration: TelegramIntegrationWithTenant,
   window: ReportWindow,
   nowUtc: Date,
+  delivery: {
+    /** Chats that already received this report (a retry skips them). */
+    alreadyDelivered?: ReadonlySet<string>;
+    onDelivered?: (chatId: string) => Promise<void>;
+  } = {},
 ): Promise<{ recipientCount: number; fileName: string }> {
   const reportStartedAt = Date.now();
   const recipients = (await listTelegramRecipients({
@@ -78,12 +88,29 @@ export async function sendWindowToIntegration(
     throw new Error('Telegram bot token is missing');
   }
 
+  // One recipient failing (e.g. they blocked the bot) must not stop the others.
+  const failures: string[] = [];
+  let deliveredCount = 0;
+
   for (const recipient of recipients) {
-    await telegramService.sendDocument(tokens.botToken, recipient.chatId, pdfBuffer, fileName, caption);
+    if (delivery.alreadyDelivered?.has(recipient.chatId)) {
+      continue;
+    }
+    try {
+      await telegramService.sendDocument(tokens.botToken, recipient.chatId, pdfBuffer, fileName, caption);
+      deliveredCount += 1;
+      await delivery.onDelivered?.(recipient.chatId);
+    } catch (error) {
+      failures.push(`${recipient.chatId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Report not delivered to ${failures.length} of ${recipients.length} recipients (${failures.join('; ')})`);
   }
 
   return {
-    recipientCount: recipients.length,
+    recipientCount: deliveredCount,
     fileName,
   };
 }
@@ -132,8 +159,18 @@ export async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promis
       continue;
     }
 
+    const deliveredKey = `${lockKey}:delivered`;
+    const attemptsKey = `${lockKey}:attempts`;
+
     try {
-      const sent = await sendWindowToIntegration(integration, window, nowUtc);
+      const alreadyDelivered = new Set(await redis.smembers(deliveredKey));
+      const sent = await sendWindowToIntegration(integration, window, nowUtc, {
+        alreadyDelivered,
+        onDelivered: async (chatId) => {
+          await redis.sadd(deliveredKey, chatId);
+          await redis.expire(deliveredKey, LOCK_TTL_SECONDS);
+        },
+      });
 
       await systemPrisma.auditLog.create({
         data: {
@@ -157,7 +194,14 @@ export async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promis
         recipients: sent.recipientCount,
       }, 'Scheduled Telegram report sent');
     } catch (error: any) {
-      await redis.del(lockKey);
+      // Keep the lock but shorten it, so the next attempt comes after RETRY_DELAY_SECONDS rather than on the
+      // next 30-second tick. After MAX_SEND_ATTEMPTS the full lock stays and this window is given up.
+      const attempts = await redis.incr(attemptsKey);
+
+      await redis.expire(attemptsKey, LOCK_TTL_SECONDS);
+      if (attempts < MAX_SEND_ATTEMPTS) {
+        await redis.expire(lockKey, RETRY_DELAY_SECONDS);
+      }
       await systemPrisma.auditLog.create({
         data: {
           tenantId: integration.tenantId,
@@ -169,6 +213,8 @@ export async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promis
             periodStart: window.periodStart.toISOString(),
             periodEnd: window.periodEnd.toISOString(),
             error: error?.message || 'Unknown error',
+            attempt: attempts,
+            willRetry: attempts < MAX_SEND_ATTEMPTS,
           },
         },
       });
@@ -176,6 +222,7 @@ export async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promis
       reportError('Scheduled Telegram report failed', {
         tenantId: integration.tenantId,
         schedule: window.kind,
+        attempt: attempts,
         error: error?.message || 'Unknown error',
       });
     }

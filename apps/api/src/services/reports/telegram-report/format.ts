@@ -126,7 +126,8 @@ export function classifyManagerGroup(roles: readonly string[] | null | undefined
   if (roles?.includes('OnlineAgent')) {
     return 'online';
   }
-  if (roles?.includes('OfflineAgent')) {
+  // Team leaders are listed with the offline managers.
+  if (roles?.includes('OfflineAgent') || roles?.includes('TeamLeader')) {
     return 'offline';
   }
 

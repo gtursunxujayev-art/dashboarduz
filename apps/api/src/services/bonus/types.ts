@@ -37,6 +37,8 @@ export type BonusCalculationItem = {
   agreementAmount: number;
   closingIncomeId: string;
   closedCount: number;
+  /** The agreement total the tier measured (agent's category closures, or the course team amount for overrides). */
+  closedAgreementAmount: number;
   usedFallback: boolean;
 };
 

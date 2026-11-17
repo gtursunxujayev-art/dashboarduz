@@ -62,6 +62,7 @@ async function getBonusMonth(params: { tenantId: string; month: Date; preferSnap
             agreementAmount: amount(metadata.agreementAmount),
             closingIncomeId: typeof metadata.closingIncomeId === 'string' ? metadata.closingIncomeId : item.sourceIncomeId,
             closedCount: amount(metadata.closedCount),
+            closedAgreementAmount: amount(metadata.closedAgreementAmount),
             usedFallback: metadata.usedFallback === true,
           };
         }),
@@ -150,6 +151,7 @@ export async function finalizeBonusMonth(params: { tenantId: string; month: Date
             agreementAmount: item.agreementAmount,
             closingIncomeId: item.closingIncomeId,
             closedCount: item.closedCount,
+            closedAgreementAmount: item.closedAgreementAmount,
             usedFallback: item.usedFallback,
           },
         })),

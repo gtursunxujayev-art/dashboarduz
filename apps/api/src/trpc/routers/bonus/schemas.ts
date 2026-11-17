@@ -1,7 +1,7 @@
 import { penaltyTargetSchema } from '@dashboarduz/shared';
 import { z } from 'zod';
 
-import { BONUS_BASE_MODES, BONUS_PLAN_CATEGORIES, BONUS_PLAN_PERIODS, BONUS_RULE_MODES, KPI_METRIC_KEYS } from '../../../services/bonus-config/types';
+import { BONUS_BASE_MODES, BONUS_PLAN_CATEGORIES, BONUS_PLAN_PERIODS, BONUS_RULE_MODES, BONUS_TIER_BASES, KPI_METRIC_KEYS } from '../../../services/bonus-config/types';
 
 export const createPlanInput = z.object({
   name: z.string().min(1).max(120),
@@ -38,6 +38,7 @@ const bonusTierInput = z.object({
 
 const categoryBonusRuleInput = z.object({
   mode: z.enum(BONUS_RULE_MODES),
+  tierBasis: z.enum(BONUS_TIER_BASES).default('sales_count'),
   simplePercent: z.number().min(0).max(100),
   tiers: z.array(bonusTierInput).default([]),
 });

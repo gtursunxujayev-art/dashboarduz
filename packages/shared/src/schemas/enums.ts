@@ -24,9 +24,13 @@ export const COURSE_TYPE_CATEGORIES = ['online', 'offline', 'intensive'] as cons
 export const courseTypeCategorySchema = z.enum(COURSE_TYPE_CATEGORIES);
 export type CourseTypeCategory = z.infer<typeof courseTypeCategorySchema>;
 
-/** Salary bonus rule: one percentage, or tiers by number of closed sales. */
+/** Salary bonus rule: one percentage, or tiers by closed sales count or closed agreement amount. */
 export const SALARY_RULE_MODES = ['simple', 'tiered'] as const;
 export type SalaryRuleMode = (typeof SALARY_RULE_MODES)[number];
+
+/** What a tiered salary rule's min/max measure: the agent's closed sales count, or their closed agreement total (UZS). */
+export const SALARY_TIER_BASES = ['sales_count', 'agreement_amount'] as const;
+export type SalaryTierBasis = (typeof SALARY_TIER_BASES)[number];
 
 /** When a salary bonus is earned: on each income, or when the sale's debt is closed. */
 export const SALARY_BONUS_MODES = ['on_income', 'on_debt_closed'] as const;

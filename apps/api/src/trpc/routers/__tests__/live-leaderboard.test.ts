@@ -176,6 +176,7 @@ describe('live leaderboard numbers', () => {
 
     policy.bonusRules.offline = {
       mode: 'tiered',
+      tierBasis: 'sales_count',
       simplePercent: 5,
       tiers: [
         { minSales: 1, maxSales: 3, percent: 2 },
@@ -189,7 +190,7 @@ describe('live leaderboard numbers', () => {
       sourceKey: id, sourceIncomeId: id, sourceSaleId: id, agentUserId: 'm', courseId: 'c', courseName: null,
       category: 'offline', calculationMode: 'legacy_debt_closed', eventDate: new Date('2026-11-05T05:00:00Z'),
       baseAmount: 10_000_000, appliedPercent: 2, bonusAmount: 200_000, agreementAmount: 10_000_000,
-      closingIncomeId: id, closedCount: 2, usedFallback: false,
+      closingIncomeId: id, closedCount: 2, closedAgreementAmount: 20_000_000, usedFallback: false,
     });
     const openSales = Array.from({ length: 6 }, () => ({
       managerUserId: 'm', courseId: 'c', category: 'offline' as const, agreement: 10_000_000, remaining: 8_000_000,
