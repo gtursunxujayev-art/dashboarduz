@@ -10,7 +10,7 @@ import { loadSalarySettingsAndAgents } from '../../../services/dashboard/salary-
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
-import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
+import { getAmoLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { computePlanProgressByAgent } from '../../../services/plan-bonus';
 
@@ -264,13 +264,14 @@ const salarySummary = protectedProcedure
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       const [newLeads, calls, activityByManager, allIncomes] = await Promise.all([
         amoContext && amoManagerIds.length > 0
-          ? fetchSnapshotLeads(
+          ? getAmoLeads(
               ctx.tenantId,
               {
                 responsibleUserIds: amoManagerIds,
                 createdAtFrom: rangeStart,
                 createdAtTo: rangeEnd,
               },
+              amoContext,
               ctx.db,
             )
           : Promise.resolve([]),

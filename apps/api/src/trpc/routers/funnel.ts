@@ -37,9 +37,9 @@ import {
   resolveSaleAgreementAmount,
 } from '../../services/income-facts';
 import { getAmoReference } from '../../services/integrations/amocrm-activity-snapshot-read';
+import { getAmoLeadPage } from '../../services/integrations/amocrm-lead-snapshot-read';
 
 import {
-  fetchSnapshotLeadPage,
   getTenantAmoCRMContext,
   protectedProcedure,
   router,
@@ -258,7 +258,7 @@ async function buildFunnelBase(params: {
     const pipelineIds = params.pipelineId ? [params.pipelineId] : amoContext.selectedPipelineIds;
     const fetchPageOnce = async (page: number) => {
       const response = await withTimeout(
-        fetchSnapshotLeadPage(
+        getAmoLeadPage(
           tenantId,
           {
             page,
@@ -268,6 +268,7 @@ async function buildFunnelBase(params: {
             createdAtFrom: rangeStart,
             createdAtTo: rangeEnd,
           },
+          amoContext,
           db,
         ),
         LEADS_PAGE_TIMEOUT_MS,

@@ -9,8 +9,11 @@ import type { Prisma } from '@prisma/client';
 import { cleanIds } from '../../lib/amocrm';
 import { asObject } from '../../lib/object';
 
-import type { AmoCRMLead, AmoCRMLeadListResponse } from './amocrm';
+import { amocrmService, type AmoCRMLead, type AmoCRMLeadListResponse } from './amocrm';
+import type { AmoAccess } from './amocrm-activity-snapshot-read';
+import { readLeadSnapshotState } from './amocrm-lead-snapshot';
 import { dedupeByAmoId } from './amocrm-lead-store';
+import { isRangeInSnapshot } from './amocrm-snapshot-window';
 
 export type SnapshotLeadQuery = {
   pipelineIds?: string[] | null;
@@ -184,4 +187,70 @@ export async function fetchSnapshotLeadById(
   });
 
   return row ? snapshotRowToLead(row) : null;
+}
+
+/** The lead snapshot answers once its first full pull (window + open leads) has finished. */
+export async function isLeadSnapshotReady(tenantId: string, db: DbClient): Promise<boolean> {
+  const integration = await db.integration.findUnique({
+    where: { tenantId_type: { tenantId, type: 'amocrm' } },
+    select: { config: true },
+  });
+
+  return Boolean(readLeadSnapshotState(integration?.config).lastFullSyncAt);
+}
+
+/**
+ * Whether a lead query can be answered from the snapshot. It holds leads created in the last
+ * SNAPSHOT_WINDOW_DAYS plus every open lead, so a query with no start date (current stages) is
+ * served too. Free-text search and ranges starting earlier go to amoCRM.
+ */
+export function leadQueryUsesSnapshot(query: SnapshotLeadQuery, ready: boolean, now: Date = new Date()): boolean {
+  if (!ready || normalizeQuery(query.query)) return false;
+  if (!query.createdAtFrom) return true;
+
+  return isRangeInSnapshot(query.createdAtFrom, ready, now);
+}
+
+function liveLeadFilters(query: SnapshotLeadQuery) {
+  return {
+    pipelineIds: query.pipelineIds ?? undefined,
+    statusFilters: query.statusFilters ?? undefined,
+    responsibleUserIds: query.responsibleUserIds ?? undefined,
+    query: query.query,
+    createdAtFrom: query.createdAtFrom,
+    createdAtTo: query.createdAtTo,
+  };
+}
+
+/** Matching leads: from the snapshot inside its window, otherwise from amoCRM. */
+export async function getAmoLeads(
+  tenantId: string,
+  query: SnapshotLeadQuery,
+  access: AmoAccess,
+  db: DbClient,
+): Promise<AmoCRMLead[]> {
+  if (leadQueryUsesSnapshot(query, await isLeadSnapshotReady(tenantId, db))) {
+    return fetchSnapshotLeads(tenantId, query, db);
+  }
+
+  return amocrmService.fetchAllLeads(access.accessToken, { ...liveLeadFilters(query), limit: 250 }, access.baseUrl);
+}
+
+/** One page of leads in amoCRM's list shape: snapshot inside its window, otherwise amoCRM. */
+export async function getAmoLeadPage(
+  tenantId: string,
+  params: SnapshotLeadQuery & { page?: number; limit?: number },
+  access: AmoAccess,
+  db: DbClient,
+): Promise<AmoCRMLeadListResponse & { source: 'snapshot' | 'amocrm' }> {
+  if (leadQueryUsesSnapshot(params, await isLeadSnapshotReady(tenantId, db))) {
+    return { ...(await fetchSnapshotLeadPage(tenantId, params, db)), source: 'snapshot' };
+  }
+  const response = await amocrmService.fetchLeads(access.accessToken, '', {
+    ...liveLeadFilters(params),
+    page: params.page,
+    limit: params.limit,
+  }, access.baseUrl);
+
+  return { ...response, source: 'amocrm' };
 }

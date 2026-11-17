@@ -13,8 +13,9 @@ import { createSummarySourceStatus, runSummarySourceWithRetry } from '../../../s
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import type { AmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+import { getAmoLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 
-import { buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, fetchSnapshotLeads, getAmoCRMActivityMetricsWithin, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, z } from './helpers';
+import { buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, getAmoCRMActivityMetricsWithin, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, z } from './helpers';
 
 /** How long the dashboard summary waits for amoCRM activity before answering without it. */
 const SUMMARY_ACTIVITY_WAIT_MS = 3_000;
@@ -114,8 +115,9 @@ export const summaryProcedures = {
           reasonFallback: 'amo_fetch_failed',
           fallback: [] as any[],
           run: async () => {
+            // Snapshot inside its window (instant); a range starting earlier is read from amoCRM.
             const fetched = await withTimeout(
-              fetchSnapshotLeads(
+              getAmoLeads(
                 ctx.tenantId,
                 {
                   pipelineIds: selectedPipelineIds,
@@ -123,9 +125,10 @@ export const summaryProcedures = {
                   createdAtFrom: rangeStart,
                   createdAtTo: rangeEnd,
                 },
+                amoContext,
                 ctx.db,
               ),
-              3000,
+              30_000,
               'amo_leads_timeout',
             );
 

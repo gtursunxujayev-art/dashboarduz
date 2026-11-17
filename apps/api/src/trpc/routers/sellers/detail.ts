@@ -7,7 +7,7 @@ import { resolveDateRange } from '../../../lib/dates';
 import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
-import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
+import { getAmoLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { buildStatusFilters, computeLeadResponseTimes, fetchLeadsByStatusFilters, loadSellerPipelineContext } from '../../../services/sellers/leads';
 import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerUserIdsMap, LOST_STATUS_ID, parseAmoDate, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
@@ -49,6 +49,7 @@ export const sellerDetailProcedures = {
         fetchLeadsByStatusFilters(
           ctx.tenantId,
           ctx.db,
+          amoContext,
           selectedPipelineIds,
           activeStatusFilters,
           [input.id],
@@ -58,6 +59,7 @@ export const sellerDetailProcedures = {
         fetchLeadsByStatusFilters(
           ctx.tenantId,
           ctx.db,
+          amoContext,
           selectedPipelineIds,
           wonStatusFilters,
           [input.id],
@@ -67,6 +69,7 @@ export const sellerDetailProcedures = {
         fetchLeadsByStatusFilters(
           ctx.tenantId,
           ctx.db,
+          amoContext,
           selectedPipelineIds,
           lostStatusFilters,
           [input.id],
@@ -230,7 +233,7 @@ export const sellerDetailProcedures = {
           rangeEnd,
           db: ctx.db,
         }),
-        fetchSnapshotLeads(
+        getAmoLeads(
           ctx.tenantId,
           {
             pipelineIds: selectedPipelineIds,
@@ -238,6 +241,7 @@ export const sellerDetailProcedures = {
             createdAtFrom: rangeStart,
             createdAtTo: rangeEnd,
           },
+          amoContext,
           ctx.db,
         ),
         getAmoCRMActivityMetrics({
@@ -254,6 +258,7 @@ export const sellerDetailProcedures = {
       // Start lead response time (runs while we build metrics below)
       const detailLeadResponsePromise = computeLeadResponseTimes({
         tenantId: ctx.tenantId,
+        access: amoContext,
         db: ctx.db,
         managerIds: [input.id],
         newLeads: newLeadsForManager,

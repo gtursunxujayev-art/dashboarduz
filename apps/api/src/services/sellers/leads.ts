@@ -1,14 +1,15 @@
 import type { DbClient } from '@dashboarduz/db';
 
 import { type AmoCRMLead, type AmoCRMLeadPipeline } from '../integrations/amocrm';
-import { fetchSnapshotEvents, getAmoReference } from '../integrations/amocrm-activity-snapshot-read';
-import { fetchSnapshotLeads } from '../integrations/amocrm-lead-snapshot-read';
+import { getAmoEvents, getAmoReference, type AmoAccess } from '../integrations/amocrm-activity-snapshot-read';
+import { getAmoLeads } from '../integrations/amocrm-lead-snapshot-read';
 import type { TenantAmoCRMContext } from '../integrations/amocrm-live';
 
 import { asString, LOST_STATUS_ID, parseAmoDate, WON_STATUS_ID } from './metrics';
 
 export async function computeLeadResponseTimes(params: {
   tenantId: string;
+  access: AmoAccess;
   db: DbClient;
   managerIds: string[];
   newLeads: AmoCRMLead[];
@@ -25,7 +26,7 @@ export async function computeLeadResponseTimes(params: {
   let events: Array<Record<string, unknown>> = [];
 
   try {
-    events = await fetchSnapshotEvents(
+    events = await getAmoEvents(
       params.tenantId,
       {
         dateFrom: params.rangeStart,
@@ -33,6 +34,7 @@ export async function computeLeadResponseTimes(params: {
         userIds: params.managerIds,
         entityType: 'lead',
       },
+      params.access,
       params.db,
     );
   } catch {
@@ -182,6 +184,7 @@ export function buildStatusFilters(
 export async function fetchLeadsByStatusFilters(
   tenantId: string,
   db: DbClient,
+  access: AmoAccess,
   pipelineIds: string[],
   statusFilters: Array<{ pipelineId: string; statusId: string }>,
   responsibleUserIds: string[],
@@ -192,7 +195,7 @@ export async function fetchLeadsByStatusFilters(
     return [];
   }
 
-  return fetchSnapshotLeads(
+  return getAmoLeads(
     tenantId,
     {
       pipelineIds,
@@ -201,6 +204,7 @@ export async function fetchLeadsByStatusFilters(
       createdAtFrom: rangeStart,
       createdAtTo: rangeEnd,
     },
+    access,
     db,
   );
 }

@@ -6,7 +6,7 @@ import { roundPositivePercentage } from '../../../lib/number';
 import { AMOCRM_CALL_PROVIDER, countedCallsWhere } from '../../calls-source';
 import { getCorporateCallDurationByManager, getCorporateCallDurationTotal } from '../../corporate-call-durations';
 import { buildTechnicalSaleIdSet, classifyIncomeCategory, excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../income-facts';
-import { fetchSnapshotLeads } from '../../integrations/amocrm-lead-snapshot-read';
+import { getAmoLeads } from '../../integrations/amocrm-lead-snapshot-read';
 import { extractLeadValue, getTenantAmoCRMContext } from '../../integrations/amocrm-live';
 
 import { classifyManagerGroup, compareManagerRows, isLostLeadStatus } from './format';
@@ -263,11 +263,11 @@ export async function collectMetrics(params: {
   }
   if (amoContext) {
     try {
-      const liveLeads = await fetchSnapshotLeads(params.tenantId, {
+      const liveLeads = await getAmoLeads(params.tenantId, {
         pipelineIds: params.selectedPipelineIds.length > 0 ? params.selectedPipelineIds : undefined,
         createdAtFrom: params.periodStart,
         createdAtTo: params.periodEnd,
-      }, db);
+      }, amoContext, db);
 
       usedLiveAmoLeads = true;
       newLeads = liveLeads.length;

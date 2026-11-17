@@ -5,7 +5,7 @@ import { isCompletedTask, isLeadTask, taskResponsibleUserId, toStringId } from '
 import { logger } from '../../lib/logger';
 
 import { type AmoCRMEvent, type AmoCRMTask } from './amocrm';
-import { fetchSnapshotEvents, fetchSnapshotTasks } from './amocrm-activity-snapshot-read';
+import { getAmoEvents, getAmoTasks } from './amocrm-activity-snapshot-read';
 
 export type AmoCRMActivityMetrics = {
   followUpCount: number;
@@ -350,13 +350,13 @@ async function fetchTasksWithFallback(
   onFailure: (reason: string) => void,
 ): Promise<AmoCRMTask[]> {
   try {
-    return await fetchSnapshotTasks(params.tenantId, {
+    return await getAmoTasks(params.tenantId, {
       responsibleUserIds: managerIds,
       completed: filters.completed ?? filters.completedOnly,
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
       entityType: 'leads',
-    }, params.db);
+    }, params, params.db);
   } catch (error: unknown) {
     logger.warn({ tenantId: params.tenantId, error: errorMessage(error) }, `AmoCRM activity: failed to read ${label} from the snapshot`);
     onFailure(failureReason(error));
@@ -371,12 +371,12 @@ async function fetchEventsWithFallback(
   onFailure: (reason: string) => void,
 ): Promise<AmoCRMEvent[]> {
   try {
-    return await fetchSnapshotEvents(params.tenantId, {
+    return await getAmoEvents(params.tenantId, {
       dateFrom: params.rangeStart,
       dateTo: params.rangeEnd,
       userIds: managerIds,
       entityType: 'lead',
-    }, params.db);
+    }, params, params.db);
   } catch (error: unknown) {
     logger.warn({ tenantId: params.tenantId, error: errorMessage(error) }, 'AmoCRM activity: failed to read events from the snapshot');
     onFailure(failureReason(error));

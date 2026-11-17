@@ -8,11 +8,12 @@ import { parseAmoTimestamp } from '../../lib/amocrm';
 import { asObject } from '../../lib/object';
 import { amocrmService, type AmoCRMLead } from '../../services/integrations/amocrm';
 import { getAmoReference } from '../../services/integrations/amocrm-activity-snapshot-read';
-import { fetchSnapshotLeadById, fetchSnapshotLeadPage } from '../../services/integrations/amocrm-lead-snapshot-read';
+import { fetchSnapshotLeadById, getAmoLeadPage } from '../../services/integrations/amocrm-lead-snapshot-read';
 import {
   extractLeadValue,
   getTenantAmoCRMContext,
 } from '../../services/integrations/amocrm-live';
+import { SNAPSHOT_WINDOW_DAYS } from '../../services/integrations/amocrm-snapshot-window';
 import { router, protectedProcedure } from '../trpc';
 
 function getPrimaryContact(lead: AmoCRMLead): { name: string | null; phone: string | null; email: string | null } | null {
@@ -122,7 +123,8 @@ export const leadsRouter = router({
 
       const [pipelines, response] = await Promise.all([
         getAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db),
-        fetchSnapshotLeadPage(
+        // Snapshot (last 62 days plus every open lead) without search; a search asks amoCRM.
+        getAmoLeadPage(
           ctx.tenantId,
           {
             page: input.page,
@@ -133,6 +135,7 @@ export const leadsRouter = router({
               : (amoContext.selectedPipelineIds || undefined),
             responsibleUserIds: scope.isScoped && scope.responsibleUserId ? [scope.responsibleUserId] : undefined,
           },
+          amoContext,
           ctx.db,
         ),
       ]);
@@ -150,6 +153,9 @@ export const leadsRouter = router({
           total: undefined,
           hasMore: Boolean(response._links?.next?.href),
         },
+        /** 'snapshot': recent and open leads only (older ones are found by searching). */
+        source: response.source,
+        snapshotWindowDays: SNAPSHOT_WINDOW_DAYS,
       };
     }),
 

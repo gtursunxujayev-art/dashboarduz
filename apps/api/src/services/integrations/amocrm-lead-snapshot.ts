@@ -20,9 +20,11 @@ import { logger } from '../../lib/logger';
 import { asObject, toNumberOrNull } from '../../lib/object';
 import { getRedisClient } from '../queue/redis-client';
 
-import { amocrmService, type AmoCRMLead } from './amocrm';
+import { amocrmService, type AmoCRMLead, type AmoCRMLeadPipelinesResponse } from './amocrm';
+import { getAmoReference } from './amocrm-activity-snapshot-read';
 import { writeLeadsByAmoId } from './amocrm-lead-store';
 import { getTenantAmoCRMContext } from './amocrm-live';
+import { snapshotCutoff } from './amocrm-snapshot-window';
 
 export const LEAD_SNAPSHOT_CONFIG_KEY = 'lead_snapshot';
 // Incremental pulls are cheap (only leads changed since the last one), so keep "today" figures fresh.
@@ -104,6 +106,31 @@ export function isLeadSnapshotDue(state: LeadSnapshotState, now: Date): boolean 
   return true;
 }
 
+/** amoCRM's fixed "won" and "lost" statuses. */
+export const CLOSED_STATUS_IDS = ['142', '143'] as const;
+
+function isClosedStatus(status: string | null): boolean {
+  return status !== null && (CLOSED_STATUS_IDS as readonly string[]).includes(status);
+}
+
+/** Every non-closed stage of every pipeline, as amoCRM status filters. */
+export function openStatusFilters(pipelines: AmoCRMLeadPipelinesResponse): Array<{ pipelineId: string; statusId: string }> {
+  const filters: Array<{ pipelineId: string; statusId: string }> = [];
+
+  for (const pipeline of pipelines._embedded?.pipelines ?? []) {
+    const pipelineId = toAmoId(pipeline.id);
+
+    if (!pipelineId) continue;
+    for (const status of pipeline._embedded?.statuses ?? []) {
+      const statusId = toAmoId(status.id);
+
+      if (statusId && !isClosedStatus(statusId)) filters.push({ pipelineId, statusId });
+    }
+  }
+
+  return filters;
+}
+
 export function leadToSnapshotRow(lead: AmoCRMLead) {
   return {
     title: typeof lead.name === 'string' && lead.name.trim() ? lead.name : 'Untitled Lead',
@@ -117,12 +144,15 @@ export function leadToSnapshotRow(lead: AmoCRMLead) {
   };
 }
 
-async function storeLeadPage(tenantId: string, leads: AmoCRMLead[]): Promise<void> {
+async function storeLeadPage(tenantId: string, leads: AmoCRMLead[], cutoff: Date): Promise<void> {
   const writes = leads.flatMap((lead) => {
     const amocrmId = toAmoId(lead.id);
 
     if (!amocrmId) return [];
     const row = leadToSnapshotRow(lead);
+
+    // The snapshot keeps the window plus every open lead; an older closed lead is read live.
+    if (row.externalCreatedAt && row.externalCreatedAt < cutoff && isClosedStatus(row.status)) return [];
 
     // Setting updatedAt marks the row as seen by this pull (the full-pull sweep relies on it).
     return [{ amocrmId, update: { ...row, updatedAt: new Date() }, create: row }];
@@ -146,6 +176,25 @@ async function saveLeadSnapshotState(integrationId: string, patch: Partial<LeadS
 }
 
 /**
+ * Drops closed (won/lost) snapshot leads created before the window. A lead a call still points to is kept: the
+ * calls page and dashboard attribute calls through `call.lead`, and deleting would unlink it.
+ */
+export async function pruneLeadsBeforeWindow(tenantId: string, cutoff: Date): Promise<number> {
+  const result = await systemPrisma.lead.deleteMany({
+    where: {
+      tenantId,
+      amocrmId: { not: null },
+      externalCreatedAt: { lt: cutoff },
+      // Open leads stay whatever their age; only won/lost ones leave.
+      status: { in: [...CLOSED_STATUS_IDS] },
+      calls: { none: {} },
+    },
+  });
+
+  return result.count;
+}
+
+/**
  * Pulls leads from amoCRM into the tenant's snapshot. Callers go through
  * `refreshTenantLeadSnapshot`, which holds the tenant lock.
  */
@@ -165,44 +214,62 @@ export async function pullTenantLeadSnapshot(
     : undefined;
   // Rows this pull touches get a newer updatedAt; the full-pull sweep removes the rest.
   const sweepBefore = new Date();
+  const cutoff = snapshotCutoff(now);
   let cursor = state.cursor;
   let fetched = 0;
   let complete = false;
 
   try {
-    for (let page = 1; page <= MAX_PAGES_PER_RUN; page += 1) {
-      const response = await amocrmService.fetchLeads(
-        amoContext.accessToken,
-        '',
-        {
-          page,
-          limit: PAGE_SIZE,
-          with: 'contacts',
-          updatedAtFrom: updatedFrom,
-          // Paging by id keeps a full pull stable; by updated_at lets an incremental pull resume.
-          order: full ? { field: 'id', direction: 'asc' } : { field: 'updated_at', direction: 'asc' },
-        },
-        amoContext.baseUrl,
-      );
-      const leads = Array.isArray(response._embedded?.leads) ? response._embedded.leads : [];
+    let budget = MAX_PAGES_PER_RUN;
+    // One paging pass; returns whether it reached the last page within the run's page budget.
+    const pullPass = async (filters: { createdAtFrom?: Date; statusFilters?: Array<{ pipelineId: string; statusId: string }> }) => {
+      for (let page = 1; budget > 0; page += 1) {
+        budget -= 1;
+        const response = await amocrmService.fetchLeads(
+          amoContext.accessToken,
+          '',
+          {
+            page,
+            limit: PAGE_SIZE,
+            with: 'contacts',
+            updatedAtFrom: updatedFrom,
+            ...filters,
+            // Paging by id keeps a full pull stable; by updated_at lets an incremental pull resume.
+            order: full ? { field: 'id', direction: 'asc' } : { field: 'updated_at', direction: 'asc' },
+          },
+          amoContext.baseUrl,
+        );
+        const leads = Array.isArray(response._embedded?.leads) ? response._embedded.leads : [];
 
-      await storeLeadPage(tenantId, leads);
-      fetched += leads.length;
-      for (const lead of leads) {
-        const updatedAt = toNumberOrNull(lead.updated_at);
+        await storeLeadPage(tenantId, leads, cutoff);
+        fetched += leads.length;
+        for (const lead of leads) {
+          const updatedAt = toNumberOrNull(lead.updated_at);
 
-        if (updatedAt !== null && (cursor === null || updatedAt > cursor)) cursor = updatedAt;
+          if (updatedAt !== null && (cursor === null || updatedAt > cursor)) cursor = updatedAt;
+        }
+        if (!response._links?.next?.href || leads.length < PAGE_SIZE) return true;
       }
-      if (!response._links?.next?.href || leads.length < PAGE_SIZE) {
-        complete = true;
-        break;
-      }
+
+      return false;
+    };
+
+    if (full) {
+      // The window, then every lead still open whatever its age (Sotuvchilar counts current stages).
+      const openStatuses = openStatusFilters(await getAmoReference(tenantId, 'pipelines', amoContext, systemPrisma));
+      const windowDone = await pullPass({ createdAtFrom: cutoff });
+      const openDone = openStatuses.length ? await pullPass({ statusFilters: openStatuses }) : true;
+
+      complete = windowDone && openDone;
+    } else {
+      complete = await pullPass({});
     }
 
     let removed = 0;
 
     if (full && complete) {
-      const where = { tenantId, amocrmId: { not: null }, updatedAt: { lt: sweepBefore } };
+      // Only inside the window: older rows are left to the prune below.
+      const where = { tenantId, amocrmId: { not: null }, updatedAt: { lt: sweepBefore }, externalCreatedAt: { gte: cutoff } };
 
       // An empty answer for a tenant that had leads is more likely a wrong account than a wipe.
       if (fetched > 0 || (await systemPrisma.lead.count({ where })) === 0) {
@@ -212,6 +279,7 @@ export async function pullTenantLeadSnapshot(
       }
     }
 
+    const pruned = await pruneLeadsBeforeWindow(tenantId, cutoff);
     const leadCount = await systemPrisma.lead.count({ where: { tenantId, amocrmId: { not: null } } });
     const refreshedAt = new Date().toISOString();
 
@@ -223,7 +291,7 @@ export async function pullTenantLeadSnapshot(
       leadCount,
       ...(full && complete ? { lastFullSyncAt: refreshedAt } : {}),
     });
-    logger.info({ tenantId, mode: full ? 'full' : 'incremental', fetched, removed, complete, leadCount }, 'amoCRM lead snapshot refreshed');
+    logger.info({ tenantId, mode: full ? 'full' : 'incremental', fetched, removed, pruned, complete, leadCount }, 'amoCRM lead snapshot refreshed');
 
     return { mode: full ? 'full' : 'incremental', fetched, removed, complete, leadCount, refreshedAt };
   } catch (error) {

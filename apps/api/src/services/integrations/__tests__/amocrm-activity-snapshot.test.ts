@@ -4,7 +4,7 @@ jest.mock('@dashboarduz/db', () => ({ systemPrisma: {} }));
 jest.mock('../../queue/redis-client', () => ({ getRedisClient: () => ({}) }));
 
 /* eslint-disable import/first -- the mocks above must be registered before these imports */
-import { BACKFILL_DAYS, eventToRow, planWindows, readActivitySnapshotState, taskToRow, withPageRetry } from '../amocrm-activity-snapshot';
+import { BACKFILL_DAYS, eventToRow, planWindows, readActivitySnapshotState, splitRunBudget, taskToRow, TASK_PAGES_PER_RUN, withPageRetry } from '../amocrm-activity-snapshot';
 import { buildSnapshotEventWhere, buildSnapshotTaskWhere } from '../amocrm-activity-snapshot-read';
 /* eslint-enable import/first */
 
@@ -115,5 +115,12 @@ describe('page retry', () => {
     expect(bad).toHaveBeenCalledTimes(1);
     await expect(withPageRetry(slow, noWait)).rejects.toThrow('timeout');
     expect(slow).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('run budget', () => {
+  it('reserves pages for tasks and gives events the rest', () => {
+    expect(splitRunBudget(400)).toEqual({ tasks: { remaining: TASK_PAGES_PER_RUN }, events: { remaining: 400 - TASK_PAGES_PER_RUN } });
+    expect(splitRunBudget(50)).toEqual({ tasks: { remaining: 50 }, events: { remaining: 0 } });
   });
 });
