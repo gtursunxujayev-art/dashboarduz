@@ -38,20 +38,17 @@ async function claimPendingRequest(tx: Prisma.TransactionClient, params: {
   }
 }
 
+const reviewAdjustmentInput = z.object({
+  requestId: z.string().uuid(),
+  reviewNote: z.string().max(500).optional(),
+});
+
 export const adjustmentReviewProcedures = {
   approveAdjustmentRequest: protectedProcedure
-    .input(
-      z.object({
-        requestId: z.string().uuid(),
-        reviewNote: z.string().max(500).optional(),
-      }),
-    )
+    .input(reviewAdjustmentInput)
     .mutation(async ({ ctx, input }) => {
       const request = await ctx.db.incomeAdjustmentRequest.findFirst({
-        where: {
-          id: input.requestId,
-          tenantId: ctx.tenantId,
-        },
+        where: { id: input.requestId, tenantId: ctx.tenantId },
         select: {
           id: true,
           type: true,
@@ -269,18 +266,10 @@ export const adjustmentReviewProcedures = {
       return { success: true };
     }),
   rejectAdjustmentRequest: protectedProcedure
-    .input(
-      z.object({
-        requestId: z.string().uuid(),
-        reviewNote: z.string().max(500).optional(),
-      }),
-    )
+    .input(reviewAdjustmentInput)
     .mutation(async ({ ctx, input }) => {
       const request = await ctx.db.incomeAdjustmentRequest.findFirst({
-        where: {
-          id: input.requestId,
-          tenantId: ctx.tenantId,
-        },
+        where: { id: input.requestId, tenantId: ctx.tenantId },
         select: {
           id: true,
           type: true,

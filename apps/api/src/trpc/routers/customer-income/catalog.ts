@@ -7,6 +7,26 @@ import { COURSE_CATEGORY_VALUES } from '../../../services/customer-income/consta
 import { parseDateInput } from '../../../services/customer-income/labels';
 import { managerProcedure, protectedProcedure } from '../../trpc';
 
+/** `{ name, isActive }` to update from a rename/activate input (`isFaol` is the older name of `isActive`). */
+function buildNameActiveUpdate(input: { name?: string; isActive?: boolean; isFaol?: boolean }): { name?: string; isActive?: boolean } {
+  const data: { name?: string; isActive?: boolean } = {};
+
+  if (typeof input.name === 'string') {
+    data.name = input.name.trim();
+  }
+  if (typeof input.isActive === 'boolean') {
+    data.isActive = input.isActive;
+  } else if (typeof input.isFaol === 'boolean') {
+    data.isActive = input.isFaol;
+  }
+
+  if (!Object.keys(data).length) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
+  }
+
+  return data;
+}
+
 export const catalogProcedures = {
   createCourse: managerProcedure
     .input(createCourseSchema)
@@ -242,20 +262,7 @@ export const catalogProcedures = {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Tariff not found.' });
       }
 
-      const data: { name?: string; isActive?: boolean } = {};
-
-      if (typeof input.name === 'string') {
-        data.name = input.name.trim();
-      }
-      if (typeof input.isActive === 'boolean') {
-        data.isActive = input.isActive;
-      } else if (typeof input.isFaol === 'boolean') {
-        data.isActive = input.isFaol;
-      }
-
-      if (!Object.keys(data).length) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
-      }
+      const data = buildNameActiveUpdate(input);
 
       return ctx.db.tariff.update({
         where: { id: input.tariffId },
@@ -284,20 +291,7 @@ export const catalogProcedures = {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Sub-tariff not found.' });
       }
 
-      const data: { name?: string; isActive?: boolean } = {};
-
-      if (typeof input.name === 'string') {
-        data.name = input.name.trim();
-      }
-      if (typeof input.isActive === 'boolean') {
-        data.isActive = input.isActive;
-      } else if (typeof input.isFaol === 'boolean') {
-        data.isActive = input.isFaol;
-      }
-
-      if (!Object.keys(data).length) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No fields to update.' });
-      }
+      const data = buildNameActiveUpdate(input);
 
       return ctx.db.subTariff.update({
         where: { id: input.subTariffId },

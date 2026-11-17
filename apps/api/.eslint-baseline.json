@@ -250,10 +250,10 @@
     "@typescript-eslint/no-unsafe-member-access": 3
   },
   "src/trpc/routers/customer-income/adjustments.ts": {
-    "@typescript-eslint/no-explicit-any": 4,
+    "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-argument": 4,
     "@typescript-eslint/no-unsafe-assignment": 4,
-    "@typescript-eslint/no-unsafe-member-access": 22,
+    "@typescript-eslint/no-unsafe-member-access": 19,
     "@typescript-eslint/no-unsafe-return": 4
   },
   "src/trpc/routers/customer-income/customer-courses.ts": {

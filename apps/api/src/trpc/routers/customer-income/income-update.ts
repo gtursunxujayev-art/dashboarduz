@@ -21,6 +21,24 @@ const updateIncomeSchema = z.object({
   coursePriceAmount: z.number().int().min(0).optional(),
 });
 
+/**
+ * Puts a sale chain back in date order. When that changed which row is the sale, re-reads `rowId` and
+ * re-checks the debts of the new canonical sale (in that order, inside `tx`).
+ */
+async function normalizeChainOrder(tx: Prisma.TransactionClient, tenantId: string, saleId: string, rowId: string) {
+  const normalized = await normalizeSaleChainChronology(tx, { tenantId, saleId });
+
+  if (!normalized.didReorder) {
+    return { normalized, refreshedIncome: null };
+  }
+
+  const refreshedIncome = await tx.income.findUnique({ where: { id: rowId } });
+
+  await assertSaleChainDebtInvariant(tx, { tenantId, saleId: normalized.canonicalSaleId });
+
+  return { normalized, refreshedIncome };
+}
+
 export const incomeUpdateProcedures = {
   updateIncome: adminProcedure
     .input(updateIncomeSchema)
@@ -301,22 +319,11 @@ export const incomeUpdateProcedures = {
           });
 
           if (linkedRepayments.length > 0) {
-            const normalized = await normalizeSaleChainChronology(tx, {
-              tenantId: ctx.tenantId,
-              saleId: income.id,
-            });
+            const { normalized, refreshedIncome } = await normalizeChainOrder(tx, ctx.tenantId, income.id, income.id);
 
             if (normalized.didReorder) {
               chronologyReordered = true;
               chronologyCanonicalSaleId = normalized.canonicalSaleId;
-              const refreshedIncome = await tx.income.findUnique({
-                where: { id: income.id },
-              });
-
-              await assertSaleChainDebtInvariant(tx, {
-                tenantId: ctx.tenantId,
-                saleId: normalized.canonicalSaleId,
-              });
 
               return refreshedIncome ?? updatedSale;
             }
@@ -470,22 +477,11 @@ export const incomeUpdateProcedures = {
           },
         });
 
-        const normalized = await normalizeSaleChainChronology(tx, {
-          tenantId: ctx.tenantId,
-          saleId: sourceIncome.id,
-        });
+        const { normalized, refreshedIncome } = await normalizeChainOrder(tx, ctx.tenantId, sourceIncome.id, income.id);
 
         if (normalized.didReorder) {
           chronologyReordered = true;
           chronologyCanonicalSaleId = normalized.canonicalSaleId;
-          const refreshedIncome = await tx.income.findUnique({
-            where: { id: income.id },
-          });
-
-          await assertSaleChainDebtInvariant(tx, {
-            tenantId: ctx.tenantId,
-            saleId: normalized.canonicalSaleId,
-          });
 
           return refreshedIncome ?? updatedRow;
         }

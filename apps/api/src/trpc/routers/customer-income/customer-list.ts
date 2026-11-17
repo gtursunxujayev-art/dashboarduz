@@ -2,7 +2,7 @@ import { debtFilterSchema, isAgentOnly } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
-import { fetchCourseOptionsSafe, fetchCoursesWithTariffsSafe } from '../../../services/customer-income/catalog';
+import { fetchCourseOptionsSafe, fetchCoursesWithTariffsSafe, toCourseOptions } from '../../../services/customer-income/catalog';
 import { buildActiveSaleChainMetrics, extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE, type SaleChainSaleRow } from '../../../services/income-chain';
 import { protectedProcedure } from '../../trpc';
 
@@ -105,28 +105,7 @@ export const customerListProcedures = {
             withoutDebtCustomers: 0,
           },
           courseOptions,
-          catalogOptions: (catalogCourses as Array<{
-            id: string;
-            name: string;
-            tariffs: Array<{
-              id: string;
-              name: string;
-              subTariffs: Array<{ id: string; name: string; isActive: boolean }>;
-            }>;
-          }>).map((course) => ({
-            id: course.id,
-            name: course.name,
-            tariffs: course.tariffs.map((tariff) => ({
-              id: tariff.id,
-              name: tariff.name,
-              subTariffs: Array.isArray(tariff.subTariffs)
-                ? tariff.subTariffs.filter((subTariff) => subTariff.isActive).map((subTariff) => ({
-                    id: subTariff.id,
-                    name: subTariff.name,
-                  }))
-                : [],
-            })),
-          })),
+          catalogOptions: toCourseOptions(catalogCourses, { activeSubTariffsOnly: true }),
         };
       }
 
@@ -497,28 +476,7 @@ export const customerListProcedures = {
           }, 0),
         },
         courseOptions,
-        catalogOptions: (catalogCourses as Array<{
-          id: string;
-          name: string;
-          tariffs: Array<{
-            id: string;
-            name: string;
-            subTariffs: Array<{ id: string; name: string; isActive: boolean }>;
-          }>;
-        }>).map((course) => ({
-          id: course.id,
-          name: course.name,
-          tariffs: course.tariffs.map((tariff) => ({
-            id: tariff.id,
-            name: tariff.name,
-            subTariffs: Array.isArray(tariff.subTariffs)
-              ? tariff.subTariffs.filter((subTariff) => subTariff.isActive).map((subTariff) => ({
-                  id: subTariff.id,
-                  name: subTariff.name,
-                }))
-              : [],
-          })),
-        })),
+        catalogOptions: toCourseOptions(catalogCourses, { activeSubTariffsOnly: true }),
       };
     }),
 };

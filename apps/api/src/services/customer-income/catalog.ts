@@ -133,3 +133,32 @@ export async function fetchCourseOptionsSafe(tenantId: string, db: DbClient): Pr
     category: normalizeCourseCategoryValue(course.category),
   }));
 }
+
+/**
+ * Courses as picker options: `{ id, name, category, tariffs: [{ id, name, subTariffs: [{ id, name }] }] }`.
+ * With `activeSubTariffsOnly`, inactive sub-tariffs are left out.
+ */
+export function toCourseOptions(
+  courses: Array<{
+    id: string;
+    name: string;
+    category: string;
+    tariffs: Array<{ id: string; name: string; subTariffs?: Array<{ id: string; name: string; isActive?: boolean }> }>;
+  }>,
+  options: { activeSubTariffsOnly: boolean },
+) {
+  return courses.map((course) => ({
+    id: course.id,
+    name: course.name,
+    category: course.category,
+    tariffs: course.tariffs.map((tariff) => ({
+      id: tariff.id,
+      name: tariff.name,
+      subTariffs: Array.isArray(tariff.subTariffs)
+        ? tariff.subTariffs
+          .filter((subTariff) => !options.activeSubTariffsOnly || subTariff.isActive)
+          .map((subTariff) => ({ id: subTariff.id, name: subTariff.name }))
+        : [],
+    })),
+  }));
+}

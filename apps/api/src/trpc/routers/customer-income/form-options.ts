@@ -2,7 +2,7 @@ import { customerSearchSchema } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { logger } from '../../../lib/logger';
-import { fetchCoursesWithTariffsSafe } from '../../../services/customer-income/catalog';
+import { fetchCoursesWithTariffsSafe, toCourseOptions } from '../../../services/customer-income/catalog';
 import { fetchLatestResponsibleManagerByCustomer } from '../../../services/customer-income/labels';
 import { canSelectInactiveManagerForIncome, hasSalesManagerRole, shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
 import { buildActiveSaleChainMetrics, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE, type SaleChainSaleRow } from '../../../services/income-chain';
@@ -193,27 +193,7 @@ export const formOptionsProcedures = {
           responsibleManagerLabel: responsibleManager?.managerLabel ?? null,
         };
       }),
-      courses: (courses as Array<{
-        id: string;
-        name: string;
-        category: string;
-        tariffs: Array<{
-          id: string;
-          name: string;
-          subTariffs: Array<{ id: string; name: string }>;
-        }>;
-      }>).map((course) => ({
-        id: course.id,
-        name: course.name,
-        category: course.category,
-        tariffs: course.tariffs.map((tariff) => ({
-          id: tariff.id,
-          name: tariff.name,
-          subTariffs: Array.isArray(tariff.subTariffs)
-            ? tariff.subTariffs.map((subTariff) => ({ id: subTariff.id, name: subTariff.name }))
-            : [],
-        })),
-      })),
+      courses: toCourseOptions(courses, { activeSubTariffsOnly: false }),
       outstandingDebts: (outstandingDebts as Array<{
         id: string;
         entryDate: Date;

@@ -1,3 +1,4 @@
+import type { DbClient } from '@dashboarduz/db';
 import { adjustmentStatusSchema, adjustmentTypeSchema } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
@@ -12,6 +13,25 @@ import { lockSaleChain } from '../../../services/customer-income/sale-chain';
 import { sendTariffChangeRequestedTelegram } from '../../../services/customer-income/tariff-change-notifications';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { protectedProcedure } from '../../trpc';
+
+type AdjustmentNotifyParams = { tenantId: string; requestId: string; requestedByUserId: string; db: DbClient };
+
+/** Sends a Telegram notification about a new request; a failure is logged and never fails the request. */
+async function notifyNonBlocking(
+  notify: (params: AdjustmentNotifyParams) => Promise<unknown>,
+  params: AdjustmentNotifyParams,
+  failureLogMessage: string,
+): Promise<void> {
+  try {
+    await notify(params);
+  } catch (error) {
+    logger.error({
+      tenantId: params.tenantId,
+      requestId: params.requestId,
+      error: String((error as Error)?.message || error),
+    }, failureLogMessage);
+  }
+}
 
 export const adjustmentProcedures = {
   listAdjustmentRequests: protectedProcedure
@@ -480,51 +500,19 @@ export const adjustmentProcedures = {
         },
       });
 
-      if (input.type === ADJUSTMENT_TYPE_REFUND) {
-        try {
-          await sendRefundRequestedTelegram({
-            tenantId: ctx.tenantId,
-            requestId: createdRequest.id,
-            requestedByUserId: ctx.user.userId,
-            db: ctx.db,
-          });
-        } catch (error) {
-          logger.error({
-            tenantId: ctx.tenantId,
-            requestId: createdRequest.id,
-            error: String((error as any)?.message || error),
-          }, '[Income][Telegram] Refund request notification failed (non-blocking)');
-        }
+      const notifyParams = {
+        tenantId: ctx.tenantId,
+        requestId: createdRequest.id,
+        requestedByUserId: ctx.user.userId,
+        db: ctx.db,
+      };
 
-        try {
-          await notifyFinanceUsersRefundRequested({
-            tenantId: ctx.tenantId,
-            requestId: createdRequest.id,
-            requestedByUserId: ctx.user.userId,
-            db: ctx.db,
-          });
-        } catch (error) {
-          logger.error({
-            tenantId: ctx.tenantId,
-            requestId: createdRequest.id,
-            error: String((error as any)?.message || error),
-          }, '[Income][Telegram] Finance direct notification for refund request failed (non-blocking)');
-        }
+      if (input.type === ADJUSTMENT_TYPE_REFUND) {
+        await notifyNonBlocking(sendRefundRequestedTelegram, notifyParams, '[Income][Telegram] Refund request notification failed (non-blocking)');
+
+        await notifyNonBlocking(notifyFinanceUsersRefundRequested, notifyParams, '[Income][Telegram] Finance direct notification for refund request failed (non-blocking)');
       } else if (input.type === ADJUSTMENT_TYPE_TARIFF_CHANGE) {
-        try {
-          await sendTariffChangeRequestedTelegram({
-            tenantId: ctx.tenantId,
-            requestId: createdRequest.id,
-            requestedByUserId: ctx.user.userId,
-            db: ctx.db,
-          });
-        } catch (error) {
-          logger.error({
-            tenantId: ctx.tenantId,
-            requestId: createdRequest.id,
-            error: String((error as any)?.message || error),
-          }, '[Income][Telegram] Tariff-change request notification failed (non-blocking)');
-        }
+        await notifyNonBlocking(sendTariffChangeRequestedTelegram, notifyParams, '[Income][Telegram] Tariff-change request notification failed (non-blocking)');
       }
 
       return createdRequest;

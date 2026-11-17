@@ -1,3 +1,4 @@
+import type { DbClient } from '@dashboarduz/db';
 import { formatSomAmount } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
@@ -9,6 +10,17 @@ import { notifyFinanceUsersRefundRequested, sendRefundRequestedTelegram } from '
 import { assertSaleChainDebtInvariant, lockSaleChainUnchanged, normalizeSaleChainChronology, readSaleChainState, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
 import { extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { adminProcedure } from '../../trpc';
+
+/** The sale chain as read before a change; CONFLICT when the sale is no longer active. */
+async function readActiveSaleChainState(db: DbClient, tenantId: string, saleId: string) {
+  const chainState = await readSaleChainState(db, { tenantId, saleId });
+
+  if (chainState.find((row) => row.id === saleId)?.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
+    throw new TRPCError({ code: 'CONFLICT', message: "Bu kurs hozirgina o'zgartirildi. Sahifani yangilab, qayta urinib ko'ring." });
+  }
+
+  return chainState;
+}
 
 export const customerCourseProcedures = {
   deleteCustomerCourse: adminProcedure
@@ -47,11 +59,7 @@ export const customerCourseProcedures = {
 
       // Amounts and checks below are computed from rows read now; the transaction locks the chain and refuses to
       // write if any of them changed meanwhile (a concurrent repayment, refund request or edit).
-      const chainStateBefore = await readSaleChainState(ctx.db, { tenantId: ctx.tenantId, saleId: saleIncome.id });
-
-      if (chainStateBefore.find((row) => row.id === saleIncome.id)?.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
-        throw new TRPCError({ code: 'CONFLICT', message: "Bu kurs hozirgina o'zgartirildi. Sahifani yangilab, qayta urinib ko'ring." });
-      }
+      const chainStateBefore = await readActiveSaleChainState(ctx.db, ctx.tenantId, saleIncome.id);
       const saleChain = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -486,11 +494,7 @@ export const customerCourseProcedures = {
 
       // Amounts and checks below are computed from rows read now; the transaction locks the chain and refuses to
       // write if any of them changed meanwhile (a concurrent repayment, refund request or edit).
-      const chainStateBefore = await readSaleChainState(ctx.db, { tenantId: ctx.tenantId, saleId: saleIncome.id });
-
-      if (chainStateBefore.find((row) => row.id === saleIncome.id)?.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
-        throw new TRPCError({ code: 'CONFLICT', message: "Bu kurs hozirgina o'zgartirildi. Sahifani yangilab, qayta urinib ko'ring." });
-      }
+      const chainStateBefore = await readActiveSaleChainState(ctx.db, ctx.tenantId, saleIncome.id);
       const saleChain = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,

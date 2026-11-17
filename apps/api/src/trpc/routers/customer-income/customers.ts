@@ -3,10 +3,33 @@ import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { fetchCoursesWithTariffsSafe } from '../../../services/customer-income/catalog';
+import { fetchCoursesWithTariffsSafe, toCourseOptions } from '../../../services/customer-income/catalog';
 import { CUSTOMER_NUMBER_REGEX, TELEGRAM_USERNAME_REGEX } from '../../../services/customer-income/constants';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { adminProcedure } from '../../trpc';
+
+/** A typed customer number (digits only, after normalising) and name (non-empty), trimmed; BAD_REQUEST otherwise. */
+function normalizeCustomerIdentity(rawCustomerNumber: string, rawName: string): { customerNumber: string; name: string } {
+  const customerNumber = normalizeDigits(rawCustomerNumber.trim());
+
+  if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Customer number must contain only digits.',
+    });
+  }
+
+  const name = rawName.trim();
+
+  if (!name) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Customer name is required.',
+    });
+  }
+
+  return { customerNumber, name };
+}
 
 export const customerProcedures = {
   customerEditorOptions: adminProcedure.query(async ({ ctx }) => {
@@ -16,30 +39,7 @@ export const customerProcedures = {
       db: ctx.db,
     });
 
-    return (courses as Array<{
-      id: string;
-      name: string;
-      category: string;
-      tariffs: Array<{
-        id: string;
-        name: string;
-        subTariffs: Array<{ id: string; name: string; isActive: boolean }>;
-      }>;
-    }>).map((course) => ({
-      id: course.id,
-      name: course.name,
-      category: course.category,
-      tariffs: course.tariffs.map((tariff) => ({
-        id: tariff.id,
-        name: tariff.name,
-        subTariffs: Array.isArray(tariff.subTariffs)
-          ? tariff.subTariffs.filter((subTariff) => subTariff.isActive).map((subTariff) => ({
-              id: subTariff.id,
-              name: subTariff.name,
-            }))
-          : [],
-      })),
-    }));
+    return toCourseOptions(courses, { activeSubTariffsOnly: true });
   }),
   createCustomerOnly: adminProcedure
     .input(
@@ -53,23 +53,7 @@ export const customerProcedures = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const customerNumber = normalizeDigits(input.customerNumber.trim());
-
-      if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Customer number must contain only digits.',
-        });
-      }
-
-      const name = input.name.trim();
-
-      if (!name) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Customer name is required.',
-        });
-      }
+      const { customerNumber, name } = normalizeCustomerIdentity(input.customerNumber, input.name);
 
       const normalizedTelegramUsername = input.telegramUsername
         ? sanitizeTelegramUsername(input.telegramUsername.trim())
@@ -189,23 +173,7 @@ export const customerProcedures = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const customerNumber = normalizeDigits(input.customerNumber.trim());
-
-      if (!customerNumber || !CUSTOMER_NUMBER_REGEX.test(customerNumber)) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Customer number must contain only digits.',
-        });
-      }
-
-      const name = input.name.trim();
-
-      if (!name) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Customer name is required.',
-        });
-      }
+      const { customerNumber, name } = normalizeCustomerIdentity(input.customerNumber, input.name);
 
       const current = await ctx.db.customer.findFirst({
         where: {
