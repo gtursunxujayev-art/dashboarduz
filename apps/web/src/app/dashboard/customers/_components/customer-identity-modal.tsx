@@ -1,5 +1,6 @@
 'use client';
 
+import { IconId } from '@tabler/icons-react';
 import { normalizeDigits } from '@dashboarduz/shared';
 import type { CustomersPageModel } from './use-customers-page';
 
@@ -9,44 +10,51 @@ export function CustomerIdentityModal({ vm }: { vm: CustomersPageModel }) {
   return (
     <>
       {isAdmin && isIdentityModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white shadow-xl dark:bg-slate-900">
-            <div className="border-b border-gray-100 px-6 py-4 dark:border-slate-700">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Mijoz ma&apos;lumotini o&apos;zgartirish</h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-                Bu o&apos;zgarish Tushum, Mijozlar va Kurslar sotuvi bo&apos;limlarida ham aks etadi.
-              </p>
+        <div className="modal-backdrop">
+          <div className="modal-panel max-w-[480px]">
+            <div className="modal-header">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <IconId className="h-5 w-5" stroke={1.6} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="modal-title">Mijoz ma&apos;lumotini o&apos;zgartirish</h2>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-4 px-6 py-5">
+            <div className="modal-body">
+              <p className="alert alert-info">
+                Bu o&apos;zgarish Tushum, Mijozlar va Kurslar sotuvi bo&apos;limlarida ham aks etadi.
+              </p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mijoz raqami</label>
+                <label className="field-label">Mijoz raqami</label>
                 <input
                   value={identityCustomerNumber}
                   onChange={(event) => setIdentityCustomerNumber(normalizeDigits(event.target.value))}
                   placeholder="Faqat raqam"
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  className="field tabular"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mijoz ismi</label>
+                <label className="field-label">Mijoz ismi</label>
                 <input
                   value={identityCustomerName}
                   onChange={(event) => setIdentityCustomerName(event.target.value)}
                   placeholder="Ism familya"
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  className="field"
                 />
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-gray-100 px-6 py-4 dark:border-slate-700">
+            <div className="modal-footer">
               <button
                 type="button"
                 onClick={() => {
                   setIsIdentityModalOpen(false);
                   resetIdentityModal();
                 }}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="btn btn-secondary"
               >
                 Bekor qilish
               </button>
@@ -54,7 +62,7 @@ export function CustomerIdentityModal({ vm }: { vm: CustomersPageModel }) {
                 type="button"
                 onClick={handleUpdateCustomerIdentity}
                 disabled={updateCustomerIdentityMutation.isLoading}
-                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="btn btn-primary"
               >
                 {updateCustomerIdentityMutation.isLoading ? 'Saqlanmoqda...' : 'Saqlash'}
               </button>

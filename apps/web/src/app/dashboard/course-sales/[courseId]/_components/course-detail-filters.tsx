@@ -1,47 +1,35 @@
 'use client';
 
-import type { ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
+import {
+  FilterToolbar,
+  PeriodControls,
+  TOOLBAR_FIELD,
+} from '@/components/dashboard/course-sales/course-sales-kit';
 import type { CourseDetailPageModel } from './use-course-detail-page';
 
+/** Pill toolbar for the detail page: period on the left, tariff / sub-tariff on the right. */
 export function CourseDetailFilters({ vm }: { vm: CourseDetailPageModel }) {
   const { dateFrom, dateTo, range, setDateFrom, setDateTo, setRange, setSubTariffId, setTariffId, subTariffId, subTariffOptions, tariffId, tariffOptions } = vm;
 
   return (
-    <div className="rounded-lg bg-white p-5 shadow">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_180px_1fr_1fr]">
-        <select
-          value={range}
-          onChange={(event) => setRange(event.target.value as DashboardRange)}
-          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
-        >
-          <option value="today">Bugun</option>
-          <option value="week">Hafta</option>
-          <option value="month">Oy</option>
-          <option value="custom">Ixtiyoriy</option>
-        </select>
+    <FilterToolbar>
+      <PeriodControls
+        range={range}
+        setRange={setRange}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        setDateFrom={setDateFrom}
+        setDateTo={setDateTo}
+      />
 
-        <input
-          type="date"
-          value={dateFrom}
-          disabled={range !== 'custom'}
-          onChange={(event) => setDateFrom(event.target.value)}
-          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:bg-gray-100"
-        />
-        <input
-          type="date"
-          value={dateTo}
-          disabled={range !== 'custom'}
-          onChange={(event) => setDateTo(event.target.value)}
-          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:bg-gray-100"
-        />
-
+      <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:ml-auto xl:flex xl:w-auto xl:flex-none">
         <select
           value={tariffId}
           onChange={(event) => {
             setTariffId(event.target.value);
             setSubTariffId('');
           }}
-          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+          className={`${TOOLBAR_FIELD} xl:w-48`}
         >
           <option value="">Barcha tariflar</option>
           {tariffOptions.map((tariff: any) => (
@@ -54,7 +42,7 @@ export function CourseDetailFilters({ vm }: { vm: CourseDetailPageModel }) {
         <select
           value={subTariffId}
           onChange={(event) => setSubTariffId(event.target.value)}
-          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+          className={`${TOOLBAR_FIELD} xl:w-48`}
         >
           <option value="">Barcha subtariflar</option>
           {subTariffOptions.map((subTariff: any) => (
@@ -64,6 +52,6 @@ export function CourseDetailFilters({ vm }: { vm: CourseDetailPageModel }) {
           ))}
         </select>
       </div>
-    </div>
+    </FilterToolbar>
   );
 }

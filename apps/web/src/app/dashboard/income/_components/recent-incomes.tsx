@@ -1,30 +1,49 @@
 'use client';
 
+import { IconChevronDown, IconHistory, IconPencil, IconSearch, IconTrash, IconX } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { EmptyState } from '@/components/ui/empty-state';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { formatAmountDigits } from '@/lib/format';
 import { getDisplayedRemainingDebtForIncomeRow } from './income-helpers';
 import type { IncomePageModel } from './use-income-page';
+
+/** Kit badge tone for an income lifecycle status (label still comes from the page model). */
+function lifecycleBadgeTone(status: string): string {
+  if (status === 'pending_refund') return 'badge-amber';
+  if (status === 'refunded') return 'badge-red';
+  return 'badge-green';
+}
 
 export function RecentIncomes({ vm }: { vm: IncomePageModel }) {
   const { deletingIncomeId, formatIncomeType, getLifecycleStatusBadge, handleDeleteIncome, incomesQuery, isAdmin, openEditIncome, recentLimit, recentSearchQuery, setRecentLimit, setRecentSearchQuery } = vm;
 
   return (
-    <div className="rounded-lg bg-white shadow dark:bg-slate-900">
-      <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
-        <h2 className="text-lg font-medium text-gray-900 dark:text-slate-100">So'nggi tushumlar</h2>
-      </div>
-
-      <div className="p-6">
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <input
-            value={recentSearchQuery}
-            onChange={(event) => {
-              setRecentSearchQuery(event.target.value);
-              setRecentLimit(10);
-            }}
-            placeholder="Mijoz raqami yoki ismi bo'yicha qidirish"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400"
-          />
+    <section className="panel overflow-hidden">
+      <div className="flex flex-col gap-4 border-b border-gray-100 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+            <IconHistory className="h-[18px] w-[18px]" stroke={1.6} />
+          </span>
+          <h2 className="section-title">So'nggi tushumlar</h2>
+          {incomesQuery.data?.length ? (
+            <span className="badge badge-neutral tabular">{incomesQuery.data.length}</span>
+          ) : null}
+        </div>
+        <div className="flex w-full items-center gap-2 lg:w-auto">
+          <div className="relative min-w-0 flex-1 lg:w-80 lg:flex-none">
+            <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+            <input
+              value={recentSearchQuery}
+              onChange={(event) => {
+                setRecentSearchQuery(event.target.value);
+                setRecentLimit(10);
+              }}
+              placeholder="Mijoz raqami yoki ismi bo'yicha qidirish"
+              aria-label="Mijoz raqami yoki ismi bo'yicha qidirish"
+              className="field rounded-full pl-10"
+            />
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -32,107 +51,126 @@ export function RecentIncomes({ vm }: { vm: IncomePageModel }) {
               setRecentLimit(10);
             }}
             disabled={!recentSearchQuery}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            className="btn btn-ghost"
           >
+            <IconX className="h-4 w-4" stroke={1.8} />
             Tozalash
           </button>
         </div>
+      </div>
 
+      <div className="px-1 pb-2 sm:px-2">
         {incomesQuery.isLoading ? (
-          <LoadingBlock message="Tushumlar yuklanmoqda..." />
+          <LoadingBlock message="Tushumlar yuklanmoqda..." className="m-4" />
         ) : incomesQuery.data?.length ? (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
-                <thead className="bg-gray-50 dark:bg-slate-800">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Sana</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Turi</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Mijoz</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Menedjer</th>
-                  <th className="w-16 min-w-[64px] px-2 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Kiritgan</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Kurs/Tarif</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Holat</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">To'lov</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Qoldiq qarz</th>
-                  {isAdmin && (
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-slate-400">Amal</th>
-                  )}
-                </tr>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="text-left">Sana</th>
+                    <th className="text-left">Turi</th>
+                    <th className="text-left">Mijoz</th>
+                    <th className="text-left">Menedjer</th>
+                    <th className="w-16 min-w-[64px] text-left">Kiritgan</th>
+                    <th className="text-left">Kurs/Tarif</th>
+                    <th className="text-left">Holat</th>
+                    <th className="text-right">To'lov</th>
+                    <th className="text-right">Qoldiq qarz</th>
+                    {isAdmin && (
+                      <th className="text-right">Amal</th>
+                    )}
+                  </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
-                  {incomesQuery.data.map((income) => (
-                    <tr key={income.id}>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
-                        {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
-                        {formatIncomeType(income.type)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
-                        {income.customer?.customerNumber} - {income.customer?.name}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
-                        {income.manager?.name || income.manager?.username || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-2 py-3 text-[10px] leading-tight text-gray-500 dark:text-slate-400">
-                        {income.createdByLabel || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
-                        {[income.course?.name, income.tariff?.name].filter(Boolean).join(' / ') || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
-                        <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getLifecycleStatusBadge(income.lifecycleStatus).className}`}>
-                          {getLifecycleStatusBadge(income.lifecycleStatus).label}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{formatAmountDigits(income.paymentAmount)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-slate-300">
-                        {formatAmountDigits(getDisplayedRemainingDebtForIncomeRow(income))}
-                      </td>
-                      {isAdmin && (
-                        <td className="whitespace-nowrap px-4 py-3 text-sm">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => openEditIncome(income)}
-                              className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/40"
-                            >
-                              Tahrirlash
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteIncome(income.id)}
-                              disabled={deletingIncomeId === income.id}
-                              className="rounded-md border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/40"
-                            >
-                              {deletingIncomeId === income.id ? "O'chirilmoqda..." : "O'chirish"}
-                            </button>
+                <tbody>
+                  {incomesQuery.data.map((income) => {
+                    const lifecycleBadge = getLifecycleStatusBadge(income.lifecycleStatus);
+                    const remainingDebt = getDisplayedRemainingDebtForIncomeRow(income);
+                    return (
+                      <tr key={income.id}>
+                        <td className="tabular whitespace-nowrap text-gray-600">
+                          {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
+                        </td>
+                        <td className="whitespace-nowrap">
+                          <span className={`badge ${income.type === 'repayment' ? 'badge-neutral' : 'badge-blue'}`}>
+                            {formatIncomeType(income.type)}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap">
+                          <div className="flex items-center gap-3">
+                            <UserAvatar name={income.customer?.name || String(income.customer?.customerNumber || '?')} size="sm" />
+                            <span className="font-medium text-gray-900">
+                              {income.customer?.customerNumber} - {income.customer?.name}
+                            </span>
                           </div>
                         </td>
-                      )}
-                    </tr>
-                  ))}
+                        <td className="whitespace-nowrap text-gray-700">
+                          {income.manager?.name || income.manager?.username || '-'}
+                        </td>
+                        <td className="whitespace-nowrap text-[11px] leading-tight text-gray-500">
+                          {income.createdByLabel || '-'}
+                        </td>
+                        <td className="whitespace-nowrap text-gray-700">
+                          {[income.course?.name, income.tariff?.name].filter(Boolean).join(' / ') || '-'}
+                        </td>
+                        <td className="whitespace-nowrap">
+                          <span className={`badge ${lifecycleBadgeTone(income.lifecycleStatus)}`}>
+                            {lifecycleBadge.label}
+                          </span>
+                        </td>
+                        <td className="tabular whitespace-nowrap text-right font-medium text-gray-900">
+                          {formatAmountDigits(income.paymentAmount)}
+                        </td>
+                        <td className={`tabular whitespace-nowrap text-right ${remainingDebt > 0 ? 'font-medium text-amber-700' : 'text-gray-500'}`}>
+                          {formatAmountDigits(remainingDebt)}
+                        </td>
+                        {isAdmin && (
+                          <td className="whitespace-nowrap text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEditIncome(income)}
+                                className="btn btn-soft btn-sm"
+                              >
+                                <IconPencil className="h-3.5 w-3.5" stroke={1.8} />
+                                Tahrirlash
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteIncome(income.id)}
+                                disabled={deletingIncomeId === income.id}
+                                className="btn btn-danger-soft btn-sm"
+                              >
+                                <IconTrash className="h-3.5 w-3.5" stroke={1.8} />
+                                {deletingIncomeId === income.id ? "O'chirilmoqda..." : "O'chirish"}
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
             {incomesQuery.data.length >= recentLimit && recentLimit < 200 && (
-              <div className="flex justify-center">
+              <div className="flex justify-center border-t border-gray-100 pb-2 pt-4">
                 <button
                   type="button"
                   onClick={() => setRecentLimit((prev) => Math.min(prev + 20, 200))}
-                  className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  className="btn btn-secondary btn-sm"
                 >
+                  <IconChevronDown className="h-4 w-4" stroke={1.8} />
                   Yana yuklash (+20)
                 </button>
               </div>
             )}
           </div>
         ) : (
-          <p className="text-sm text-gray-600 dark:text-slate-300">Hozircha tushum yozuvlari yo'q.</p>
+          <EmptyState title="Hozircha tushum yozuvlari yo'q." className="m-4" />
         )}
       </div>
-    </div>
+    </section>
   );
 }

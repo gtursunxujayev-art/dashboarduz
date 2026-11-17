@@ -1,4 +1,4 @@
-import { COURSE_CATEGORIES, PLAN_BONUS_PERIOD_MODES, type PlanBonusPeriodMode, SALARY_RULE_MODES, type SalaryBonusMode, type SalaryRuleMode } from '@dashboarduz/shared';
+import { COURSE_CATEGORIES, PLAN_BONUS_PERIOD_MODES, type PlanBonusPeriodMode, SALARY_RULE_MODES, SALARY_TIER_BASES, type SalaryBonusMode, type SalaryRuleMode, type SalaryTierBasis } from '@dashboarduz/shared';
 
 import { normalizePercentage } from '../../lib/number';
 import { asObject, toFiniteNumber } from '../../lib/object';
@@ -12,6 +12,10 @@ export type SalaryCategory = (typeof SALARY_CATEGORIES)[number];
 
 export type SalaryBreakdown = Record<SalaryCategory, number>;
 
+/**
+ * One tier of a tiered rule. `minSales`/`maxSales` are the tier bounds in the rule's `tierBasis` unit: a closed sales
+ * count, or a closed agreement total in UZS. The keys keep their historical names so stored rules still load.
+ */
 export type SalaryRuleTier = {
   minSales: number;
   maxSales: number | null;
@@ -20,6 +24,8 @@ export type SalaryRuleTier = {
 
 export type SalaryCategoryBonusRule = {
   mode: SalaryRuleMode;
+  /** Rules saved before the basis existed tier on the closed sales count. */
+  tierBasis: SalaryTierBasis;
   simplePercent: number;
   tiers: SalaryRuleTier[];
 };
@@ -100,9 +106,14 @@ export function createZeroBreakdown(): SalaryBreakdown {
   };
 }
 
-export function createSimpleBonusRule(percent: unknown): SalaryCategoryBonusRule {
+export function normalizeTierBasis(value: unknown): SalaryTierBasis {
+  return SALARY_TIER_BASES.includes(value as SalaryTierBasis) ? (value as SalaryTierBasis) : 'sales_count';
+}
+
+export function createSimpleBonusRule(percent: unknown, tierBasis: SalaryTierBasis = 'sales_count'): SalaryCategoryBonusRule {
   return {
     mode: 'simple',
+    tierBasis,
     simplePercent: normalizePercentage(percent),
     tiers: [],
   };
@@ -174,6 +185,7 @@ export function normalizeCategoryBonusRule(raw: unknown, fallbackPercent: unknow
     ? (row.mode as SalaryRuleMode)
     : 'simple';
   const simplePercent = normalizePercentage(row.simplePercent ?? fallbackPercent);
+  const tierBasis = normalizeTierBasis(row.tierBasis);
   const tiers = (Array.isArray(row.tiers) ? row.tiers : [])
     .map((item) => normalizeSalaryTier(item))
     .filter((item): item is SalaryRuleTier => Boolean(item))
@@ -182,31 +194,44 @@ export function normalizeCategoryBonusRule(raw: unknown, fallbackPercent: unknow
   if (mode === 'tiered' && isValidTierSequence(tiers)) {
     return {
       mode: 'tiered',
+      tierBasis,
       simplePercent,
       tiers,
     };
   }
 
-  return createSimpleBonusRule(simplePercent);
+  return createSimpleBonusRule(simplePercent, tierBasis);
 }
 
-export function resolveBonusPercent(rule: SalaryCategoryBonusRule, closedSalesCount: number): number {
-  if (rule.mode === 'simple') {
-    return normalizePercentage(rule.simplePercent);
-  }
-  if (!rule.tiers.length) {
-    return normalizePercentage(rule.simplePercent);
-  }
-  for (const tier of rule.tiers) {
-    const withinMin = closedSalesCount >= tier.minSales;
-    const withinMax = tier.maxSales === null || closedSalesCount <= tier.maxSales;
+/** What an agent has closed in a category this month; a tiered rule reads one of the two, per its `tierBasis`. */
+export type TierProgress = {
+  closedCount: number;
+  closedAgreementAmount: number;
+};
 
-    if (withinMin && withinMax) {
-      return normalizePercentage(tier.percent);
-    }
-  }
+export function getTierMeasure(rule: SalaryCategoryBonusRule, progress: TierProgress): number {
+  return rule.tierBasis === 'agreement_amount' ? progress.closedAgreementAmount : progress.closedCount;
+}
 
-  return normalizePercentage(rule.simplePercent);
+/** The tier the progress falls in, or null when the rule is simple or no tier matches (the simple percent applies). */
+export function findMatchingTier(rule: SalaryCategoryBonusRule, progress: TierProgress): SalaryRuleTier | null {
+  if (rule.mode !== 'tiered') {
+    return null;
+  }
+  const measure = getTierMeasure(rule, progress);
+
+  return rule.tiers.find((tier) => measure >= tier.minSales && (tier.maxSales === null || measure <= tier.maxSales)) ?? null;
+}
+
+export function resolveBonusPercent(rule: SalaryCategoryBonusRule, progress: TierProgress): number {
+  const tier = findMatchingTier(rule, progress);
+
+  return normalizePercentage(tier ? tier.percent : rule.simplePercent);
+}
+
+/** True when a tiered rule had no matching tier and fell back to its simple percent. */
+export function usedTierFallback(rule: SalaryCategoryBonusRule, progress: TierProgress): boolean {
+  return rule.mode === 'tiered' && !findMatchingTier(rule, progress);
 }
 
 export function toPositiveInteger(value: unknown): number {

@@ -6,6 +6,7 @@ import { layoutProcedures } from './layout';
 import { widgetProcedures } from './widgets';
 import { settingsProcedures } from './settings';
 import { liveLeaderboardProcedures } from './live-leaderboard';
+import { incomeDynamicsProcedures } from './income-dynamics';
 import { incomeOverviewProcedures } from './income-overview';
 import { leadOverviewProcedures } from './lead-overview';
 
@@ -18,5 +19,6 @@ export const dashboardRouter = router({
   ...settingsProcedures,
   ...liveLeaderboardProcedures,
   ...incomeOverviewProcedures,
+  ...incomeDynamicsProcedures,
   ...leadOverviewProcedures,
 });

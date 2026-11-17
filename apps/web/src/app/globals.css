@@ -2,88 +2,453 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens. Values are space-separated RGB channels so Tailwind can apply
+ * opacity modifiers (bg-gray-100/60). The gray-* scale inverts in dark mode;
+ * see tailwind.config.ts for how the scales are wired.
+ */
 :root {
-  --background: #f3f4f6;
-  --foreground: #111827;
-  --surface: #ffffff;
-  --surface-muted: #f9fafb;
-  --border: #e5e7eb;
-  --text-muted: #6b7280;
-  --text-soft: #374151;
+  color-scheme: light;
+
+  --background: 240 242 245;
+  --foreground: 19 23 28;
+  --surface: 255 255 255;
+  --field: 255 255 255;
+
+  --gray-50: 246 247 249;
+  --gray-100: 238 240 243;
+  --gray-200: 223 227 232;
+  --gray-300: 199 205 213;
+  --gray-400: 149 158 169;
+  --gray-500: 104 114 128;
+  --gray-600: 74 83 96;
+  --gray-700: 54 62 73;
+  --gray-800: 32 38 46;
+  --gray-900: 19 23 28;
+  --gray-950: 10 13 16;
+
+  --shadow-sm: 0 1px 2px rgb(19 23 28 / 0.05);
+  --shadow: 0 0 0 1px rgb(19 23 28 / 0.05), 0 1px 2px rgb(19 23 28 / 0.04), 0 4px 12px -6px rgb(19 23 28 / 0.08);
+  --shadow-md: 0 0 0 1px rgb(19 23 28 / 0.05), 0 6px 14px -4px rgb(19 23 28 / 0.1);
+  --shadow-lg: 0 0 0 1px rgb(19 23 28 / 0.05), 0 14px 28px -10px rgb(19 23 28 / 0.18);
+  --shadow-xl: 0 0 0 1px rgb(19 23 28 / 0.06), 0 28px 56px -18px rgb(19 23 28 / 0.28);
 }
 
+.dark,
 [data-theme='dark'] {
-  --background: #030712;
-  --foreground: #f3f4f6;
-  --surface: #111827;
-  --surface-muted: #1f2937;
-  --border: #374151;
-  --text-muted: #9ca3af;
-  --text-soft: #d1d5db;
+  color-scheme: dark;
+
+  --background: 10 13 16;
+  --foreground: 238 240 243;
+  --surface: 19 23 28;
+  --field: 25 30 37;
+
+  --gray-50: 25 30 37;
+  --gray-100: 32 38 46;
+  --gray-200: 42 49 59;
+  --gray-300: 58 67 79;
+  --gray-400: 104 114 128;
+  --gray-500: 140 149 161;
+  --gray-600: 172 180 190;
+  --gray-700: 199 205 213;
+  --gray-800: 223 227 232;
+  --gray-900: 240 242 245;
+  --gray-950: 246 247 249;
+
+  --shadow-sm: 0 0 0 1px rgb(255 255 255 / 0.04);
+  --shadow: 0 0 0 1px rgb(255 255 255 / 0.06);
+  --shadow-md: 0 0 0 1px rgb(255 255 255 / 0.07), 0 6px 16px -4px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 0 0 1px rgb(255 255 255 / 0.08), 0 16px 32px -8px rgb(0 0 0 / 0.6);
+  --shadow-xl: 0 0 0 1px rgb(255 255 255 / 0.08), 0 28px 56px -16px rgb(0 0 0 / 0.7);
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    color: rgb(var(--foreground));
+    background: rgb(var(--background));
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.014em;
+  }
+
+  /* Numbers line up in every table without each page asking for it. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  th {
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  tbody tr {
+    transition: background-color 120ms ease-out;
+  }
+
+  tbody tr:hover {
+    background-color: rgb(var(--gray-50));
+  }
+
+  input,
+  select,
+  textarea {
+    background-color: rgb(var(--field));
+    color: inherit;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(var(--gray-400));
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: #2248e2;
+  }
+
+  select option {
+    background-color: rgb(var(--surface));
+    color: rgb(var(--foreground));
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  :focus-visible {
+    outline: 2px solid #3964f3;
+    outline-offset: 2px;
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline-offset: 0;
+  }
+
+  ::selection {
+    background: rgb(57 100 243 / 0.22);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--gray-300)) transparent;
+  }
+
+  /*
+   * bg-white means "surface". These sit in the base layer on purpose: an explicit
+   * dark: utility on the same element still wins.
+   */
+  .dark .bg-white,
+  .dark .hover\:bg-white:hover {
+    background-color: rgb(var(--surface));
+  }
 }
 
-.dark .bg-white {
-  background-color: var(--surface) !important;
+@layer components {
+  /* Surface panel: the one card treatment used by new screens. */
+  .panel {
+    border-radius: 20px;
+    background-color: rgb(var(--surface));
+    box-shadow: var(--shadow);
+  }
+
+  .section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: rgb(var(--gray-900));
+  }
+
+  /* Panel header row: title (and count/description) left, actions right. */
+  .panel-header {
+    @apply flex flex-wrap items-center justify-between gap-3 px-5 pt-5 sm:px-6 sm:pt-6;
+  }
+
+  .panel-body {
+    @apply p-5 sm:p-6;
+  }
+
+  .panel-inset {
+    @apply rounded-[16px] bg-gray-50 p-4;
+  }
+
+  /* Buttons. Combine `btn` with one tone and optionally `btn-sm`. */
+  .btn {
+    @apply inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-full px-[18px] text-sm font-medium active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
+  }
+
+  .btn-sm {
+    @apply h-8 gap-1.5 rounded-full px-3.5 text-[13px];
+  }
+
+  .btn-icon {
+    @apply w-10 px-0;
+  }
+
+  .btn-primary {
+    @apply bg-blue-600 text-white shadow-[0_6px_16px_-6px_rgb(34_72_226/0.6)] hover:bg-blue-700;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-gray-800 shadow hover:bg-gray-50;
+  }
+
+  .btn-soft {
+    @apply bg-blue-50 text-blue-700 hover:bg-blue-100;
+  }
+
+  .btn-ghost {
+    @apply text-gray-600 hover:bg-gray-100 hover:text-gray-900;
+  }
+
+  .btn-success {
+    @apply bg-emerald-600 text-white shadow-sm hover:bg-emerald-700;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 text-white shadow-sm hover:bg-red-700;
+  }
+
+  .btn-danger-soft {
+    @apply bg-red-50 text-red-700 hover:bg-red-100;
+  }
+
+  .btn-warning-soft {
+    @apply bg-amber-50 text-amber-800 hover:bg-amber-100;
+  }
+
+  /* Form fields: inputs, selects and textareas share one shape. */
+  .field {
+    @apply h-10 w-full rounded-[12px] border border-gray-200 px-3.5 text-sm text-gray-900 hover:border-gray-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 read-only:bg-gray-50;
+    background-color: rgb(var(--field));
+  }
+
+  textarea.field {
+    @apply h-auto py-2.5 leading-relaxed;
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-[13px] font-medium text-gray-600;
+  }
+
+  .field-help {
+    @apply mt-1.5 text-xs text-gray-500;
+  }
+
+  .field-error {
+    @apply mt-1.5 text-xs text-red-600;
+  }
+
+  .checkbox {
+    @apply h-4 w-4 rounded border-gray-300;
+  }
+
+  /* Inline messages. */
+  .alert {
+    @apply rounded-[14px] border px-4 py-3 text-sm;
+  }
+
+  .alert-error {
+    @apply border-red-200 bg-red-50 text-red-700;
+  }
+
+  .alert-success {
+    @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+  }
+
+  .alert-warning {
+    @apply border-amber-200 bg-amber-50 text-amber-800;
+  }
+
+  .alert-info {
+    @apply border-blue-200 bg-blue-50 text-blue-700;
+  }
+
+  /* Status pills. */
+  .badge {
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-neutral {
+    @apply bg-gray-100 text-gray-700;
+  }
+
+  .badge-blue {
+    @apply bg-blue-50 text-blue-700;
+  }
+
+  .badge-green {
+    @apply bg-emerald-50 text-emerald-700;
+  }
+
+  .badge-amber {
+    @apply bg-amber-50 text-amber-800;
+  }
+
+  .badge-red {
+    @apply bg-red-50 text-red-700;
+  }
+
+  /* Data tables: put `data-table` on <table>, wrap it in `overflow-x-auto`. */
+  .data-table {
+    @apply w-full border-separate border-spacing-0 text-sm;
+  }
+
+  .data-table thead th {
+    @apply h-11 whitespace-nowrap border-b border-gray-200 px-4 text-left text-[11px] font-medium uppercase tracking-[0.06em] text-gray-500;
+  }
+
+  .data-table tbody td {
+    @apply border-b border-gray-100 px-4 py-3.5 align-middle text-gray-700;
+  }
+
+  .data-table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .data-table tfoot td {
+    @apply border-t border-gray-200 px-4 py-3 font-semibold text-gray-900;
+  }
+
+  /* Segmented control (tabs, range presets). */
+  .segmented {
+    @apply inline-flex gap-1 rounded-full bg-white p-1 shadow;
+  }
+
+  .segmented-item {
+    @apply h-8 whitespace-nowrap rounded-full px-4 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 active:scale-[0.98];
+  }
+
+  .segmented-item-active {
+    @apply bg-blue-600 text-white shadow-sm hover:bg-blue-600 hover:text-white;
+  }
+
+  /*
+   * Dialogs open as a sheet sliding in from the right edge (full width on phones).
+   * Add `modal-backdrop-center` to the backdrop for a small centred confirmation dialog instead.
+   */
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 flex animate-fade-in items-stretch justify-end bg-slate-950/50 backdrop-blur-[2px] sm:p-3;
+  }
+
+  .modal-panel {
+    @apply flex h-full max-h-[100dvh] w-full animate-slide-in-right flex-col overflow-y-auto bg-white shadow-xl sm:rounded-[24px];
+  }
+
+  .modal-backdrop-center {
+    @apply items-center justify-center p-4;
+  }
+
+  .modal-backdrop-center .modal-panel {
+    @apply h-auto max-h-[92dvh] animate-rise-in rounded-[24px];
+  }
+
+  .modal-header {
+    @apply sticky top-0 z-10 border-b border-gray-100 bg-white px-6 pb-4 pt-6;
+  }
+
+  .modal-title {
+    @apply text-lg font-semibold tracking-tight text-gray-900;
+  }
+
+  .modal-description {
+    @apply mt-1 text-sm text-gray-500;
+  }
+
+  .modal-body {
+    @apply flex-1 space-y-4 px-6 py-5;
+  }
+
+  .modal-footer {
+    @apply sticky bottom-0 mt-auto flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 bg-white px-6 py-4;
+  }
+
+  /* Tabs that switch a page between views: an underlined row under the page header. */
+  .tabs {
+    @apply flex gap-6 overflow-x-auto border-b border-gray-200;
+  }
+
+  .tab {
+    @apply -mb-px inline-flex h-11 items-center gap-2 whitespace-nowrap border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-900;
+  }
+
+  .tab-active {
+    @apply border-blue-600 text-gray-900;
+  }
+
+  /* Small uppercase caption above a group of fields or a number. */
+  .caption {
+    @apply text-[11px] font-medium uppercase tracking-[0.08em] text-gray-500;
+  }
 }
 
-.dark .bg-gray-50,
-.dark .bg-gray-100 {
-  background-color: var(--surface-muted) !important;
+/* Recharts follows the theme. */
+.recharts-cartesian-axis-tick-value,
+.recharts-label {
+  fill: rgb(var(--gray-500));
 }
 
-.dark .text-gray-900,
-.dark .text-gray-800 {
-  color: var(--foreground) !important;
+.recharts-legend-item-text {
+  color: rgb(var(--gray-600)) !important;
 }
 
-.dark .text-gray-700,
-.dark .text-gray-600 {
-  color: var(--text-soft) !important;
+.recharts-cartesian-grid line {
+  stroke: rgb(var(--gray-200));
 }
 
-.dark .text-gray-500,
-.dark .text-gray-400 {
-  color: var(--text-muted) !important;
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis-tick-line {
+  stroke: rgb(var(--gray-300));
 }
 
-.dark .border-gray-100,
-.dark .border-gray-200,
-.dark .border-gray-300,
-.dark .divide-gray-100,
-.dark .divide-gray-200 {
-  border-color: var(--border) !important;
+.recharts-default-tooltip {
+  border: 0 !important;
+  border-radius: 10px;
+  background-color: rgb(var(--surface)) !important;
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
 }
 
-.dark .hover\:bg-gray-50:hover {
-  background-color: #1f2937 !important;
+.recharts-tooltip-label {
+  color: rgb(var(--gray-900));
+  font-weight: 500;
 }
 
-.dark input,
-.dark select,
-.dark textarea {
-  background-color: var(--surface-muted);
-  color: var(--foreground);
-  border-color: var(--border);
-}
-
-.dark input::placeholder,
-.dark textarea::placeholder {
-  color: var(--text-muted);
-}
-
-.dark select option {
-  background-color: #111827;
-  color: #f3f4f6;
+.recharts-tooltip-cursor {
+  fill: rgb(var(--gray-100));
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

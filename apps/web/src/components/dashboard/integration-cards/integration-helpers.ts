@@ -85,13 +85,13 @@ export const integrationCatalog: Array<{
 export function statusBadge(status: string) {
   switch (status) {
     case 'active':
-      return 'text-green-700 bg-green-100';
+      return 'badge-green';
     case 'pending':
-      return 'text-amber-700 bg-amber-100';
+      return 'badge-amber';
     case 'error':
-      return 'text-red-700 bg-red-100';
+      return 'badge-red';
     default:
-      return 'text-gray-700 bg-gray-100';
+      return 'badge-neutral';
   }
 }
 

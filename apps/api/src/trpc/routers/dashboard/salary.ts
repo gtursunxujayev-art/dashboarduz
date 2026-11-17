@@ -8,8 +8,8 @@ import { countedCallsWhere } from '../../../services/calls-source';
 import { buildRequiredWorkdaysByMonth, calculateProratedFixedSalary, getDayOfWeekFromLocalDateKey, type KpiBreakdownEntry, scoreKpi } from '../../../services/dashboard/salary-helpers';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
-import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { computePlanProgressByAgent } from '../../../services/plan-bonus';
 
@@ -283,16 +283,14 @@ const salarySummary = protectedProcedure
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       const [newLeads, calls, activityByManager, allIncomes] = await Promise.all([
         amoContext && amoManagerIds.length > 0
-          ? amocrmService.fetchAllLeads(
-              amoContext.accessToken,
+          ? fetchSnapshotLeads(
+              ctx.tenantId,
               {
                 responsibleUserIds: amoManagerIds,
                 createdAtFrom: rangeStart,
                 createdAtTo: rangeEnd,
-                limit: 250,
-                maxPages: 20,
               },
-              amoContext.baseUrl,
+              ctx.db,
             )
           : Promise.resolve([]),
         activeAgentIds.length > 0

@@ -23,13 +23,13 @@ export default function DashboardMetricCards({ cards, columns }: Props) {
       {cards.map((card) => (
         <div
           key={card.id}
-          className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+          className="panel p-5"
         >
-          <p className="text-sm text-gray-500">{card.title}</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{card.value}</p>
-          <p className="mt-2 text-sm text-gray-600">{card.subtitle}</p>
+          <p className="text-[13px] font-medium text-gray-500">{card.title}</p>
+          <p className="tabular mt-3 text-[26px] font-semibold leading-none tracking-tight text-gray-900">{card.value}</p>
+          <p className="mt-3 text-[13px] leading-snug text-gray-500">{card.subtitle}</p>
           {card.extra ? (
-            <p className="mt-1 text-sm font-medium text-gray-700">{card.extra}</p>
+            <p className="mt-1 text-[13px] font-medium leading-snug text-gray-700">{card.extra}</p>
           ) : null}
         </div>
       ))}

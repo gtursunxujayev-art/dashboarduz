@@ -9,6 +9,7 @@ import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { type AmoCRMLead, amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics, summarizeAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { computeLeadResponseTimes, getSelectedPipelines } from '../../../services/sellers/leads';
 import { buildSellersListCacheKey, SELLERS_ACTIVITY_CACHE_TTL_MS, SELLERS_LIST_CACHE_TTL_MS, sellersListCache } from '../../../services/sellers/list-cache';
@@ -134,15 +135,13 @@ export const sellerListProcedures = {
 
     const leadsFetchStartedMs = Date.now();
     const activeLeadsPromise = (async () => {
-      const allPipelineLeads = await amocrmService.fetchAllLeads(
-        amoContext.accessToken,
+      const allPipelineLeads = await fetchSnapshotLeads(
+        ctx.tenantId,
         {
           pipelineIds: selectedPipelineIds,
           responsibleUserIds: managerIdList,
-          limit: 250,
-          maxPages: 20,
         },
-        amoContext.baseUrl,
+        ctx.db,
       );
 
       return allPipelineLeads.filter((lead) => {
@@ -152,17 +151,15 @@ export const sellerListProcedures = {
       });
     })();
 
-    const newLeadsInRangePromise = amocrmService.fetchAllLeads(
-      amoContext.accessToken,
+    const newLeadsInRangePromise = fetchSnapshotLeads(
+      ctx.tenantId,
       {
         pipelineIds: selectedPipelineIds,
         responsibleUserIds: managerIdList,
         createdAtFrom: rangeStart,
         createdAtTo: rangeEnd,
-        limit: 250,
-        maxPages: 20,
       },
-      amoContext.baseUrl,
+      ctx.db,
     );
 
     const activityFetchStartedMs = Date.now();

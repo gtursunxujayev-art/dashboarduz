@@ -1,243 +1,272 @@
 'use client';
 
+import { IconAlertCircle, IconChecks, IconCircleCheck, IconDownload, IconPencil, IconPlus, IconSearch, IconUsers, IconX } from '@tabler/icons-react';
 import type { DebtFilter } from '@dashboarduz/shared';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatTile } from '@/components/ui/stat-tile';
+import { sharePercent } from '@/components/ui/split-bar';
 import type { CustomersPageModel } from './use-customers-page';
+
+const DEBT_FILTERS: Array<{ value: DebtFilter; label: string }> = [
+  { value: 'all', label: 'Barcha qarz holatlari' },
+  { value: 'with_debt', label: 'Qarzdorlar' },
+  { value: 'without_debt', label: 'Qarzsizlar' },
+];
+
+/** Toolbar selects are pills; they keep the `field` colours and focus ring. */
+const TOOLBAR_SELECT = 'field h-10 w-full rounded-full pl-4 pr-9 sm:w-auto sm:min-w-[11rem]';
 
 export function CustomersFilters({ vm }: { vm: CustomersPageModel }) {
   const { applySearch, bulkCourseId, bulkSubTariffId, bulkSubTariffOptions, bulkTariffId, bulkTariffOptions, clearSearch, courseId, courseOptions, customers, customersQuery, debtFilter, deleteCustomersMutation, editMode, editorCourses, filterSubTariffOptions, filterTariffOptions, handleBulkAssign, handleBulkDelete, handleDownloadFilteredCustomers, isAdmin, pageError, pageSuccess, resetAddModal, searchInput, selectedCount, setBulkCourseId, setBulkSubTariffId, setBulkTariffId, setCourseId, setDebtFilter, setEditMode, setIsAddModalOpen, setPageError, setPageSuccess, setSearchInput, setSubTariffId, setTariffId, subTariffId, tariffId, totalCustomersCount, updateCustomersCourseAssignmentMutation, withDebtCount, withoutDebtCount } = vm;
 
+  const hasTotal = Number(totalCustomersCount) > 0;
+
   return (
-    <div className="rounded-lg bg-white shadow dark:bg-slate-900">
-        <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-slate-100">Mijozlar</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-            Kurs va qarzdorlik bo&apos;yicha filtrlangan mijozlar ro&apos;yxati.
-          </p>
+    <>
+      <PageHeader
+        title="Mijozlar"
+        description={<>Kurs va qarzdorlik bo&apos;yicha filtrlangan mijozlar ro&apos;yxati.</>}
+        actions={(
+          <>
+            <button
+              type="button"
+              onClick={handleDownloadFilteredCustomers}
+              disabled={customersQuery.isLoading || customers.length === 0}
+              className="btn btn-secondary"
+            >
+              <IconDownload className="h-4 w-4" stroke={1.8} />
+              Filtrlangan ro&apos;yxatni yuklab olish
+            </button>
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPageError(null);
+                    setPageSuccess(null);
+                    setEditMode((prev) => !prev);
+                  }}
+                  aria-pressed={editMode}
+                  className={`btn ${editMode ? 'btn-warning-soft' : 'btn-secondary'}`}
+                >
+                  {editMode ? <IconX className="h-4 w-4" stroke={1.8} /> : <IconPencil className="h-4 w-4" stroke={1.8} />}
+                  {editMode ? 'Tahrirlashni yopish' : "O'zgartirish"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPageError(null);
+                    setPageSuccess(null);
+                    resetAddModal();
+                    setIsAddModalOpen(true);
+                  }}
+                  className="btn btn-primary"
+                >
+                  <IconPlus className="h-4 w-4" stroke={2} />
+                  Qo&apos;shish
+                </button>
+              </>
+            )}
+          </>
+        )}
+      />
+
+      {pageError && <p className="alert alert-error">{pageError}</p>}
+      {pageSuccess && <p className="alert alert-success">{pageSuccess}</p>}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatTile label="Jami mijozlar" value={totalCustomersCount} icon={IconUsers} tone="blue" />
+        <StatTile
+          label="Qarzdor mijozlar"
+          value={withDebtCount}
+          icon={IconAlertCircle}
+          tone="amber"
+          hint={hasTotal ? <span className="tabular">{sharePercent(withDebtCount, totalCustomersCount)}</span> : undefined}
+        />
+        <StatTile
+          label="Qarzsiz mijozlar"
+          value={withoutDebtCount}
+          icon={IconCircleCheck}
+          tone="green"
+          hint={hasTotal ? <span className="tabular">{sharePercent(withoutDebtCount, totalCustomersCount)}</span> : undefined}
+        />
+      </div>
+
+      {/* One pill toolbar: search, course filters, debt status. */}
+      <div className="panel flex flex-col gap-2.5 p-2.5 xl:flex-row xl:items-center">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            applySearch();
+          }}
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-nowrap"
+        >
+          <div className="relative min-w-0 flex-1 basis-full sm:basis-auto">
+            <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+            <input
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Raqam yoki ism bo'yicha qidirish"
+              aria-label="Raqam yoki ism bo'yicha qidirish"
+              className="field rounded-full pl-10"
+            />
+          </div>
+          <button type="submit" className="btn btn-primary">
+            Qidirish
+          </button>
+          <button type="button" onClick={clearSearch} className="btn btn-ghost">
+            Tozalash
+          </button>
+        </form>
+
+        <div className="flex min-w-0 flex-wrap items-center gap-2 xl:flex-nowrap">
+          <select
+            value={courseId}
+            onChange={(event) => setCourseId(event.target.value)}
+            aria-label="Kurs"
+            className={TOOLBAR_SELECT}
+          >
+            <option value="">Barcha kurslar</option>
+            {courseOptions.map((course: any) => (
+              <option key={course.id} value={course.id}>
+                {course.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={tariffId}
+            onChange={(event) => setTariffId(event.target.value)}
+            disabled={!courseId}
+            aria-label="Tarif"
+            className={TOOLBAR_SELECT}
+          >
+            <option value="">Barcha tariflar</option>
+            {filterTariffOptions.map((tariff: any) => (
+              <option key={tariff.id} value={tariff.id}>
+                {tariff.name}
+              </option>
+            ))}
+          </select>
+
+          {filterSubTariffOptions.length > 0 && (
+            <select
+              value={subTariffId}
+              onChange={(event) => setSubTariffId(event.target.value)}
+              disabled={!tariffId}
+              aria-label="Subtarif"
+              className={TOOLBAR_SELECT}
+            >
+              <option value="">Barcha subtariflar</option>
+              {filterSubTariffOptions.map((subTariff: any) => (
+                <option key={subTariff.id} value={subTariff.id}>
+                  {subTariff.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <div className="max-w-full overflow-x-auto">
+            <div role="group" aria-label="Qarz holati" className="segmented bg-gray-50 shadow-none">
+              {DEBT_FILTERS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setDebtFilter(option.value)}
+                  aria-pressed={debtFilter === option.value}
+                  className={`segmented-item ${debtFilter === option.value ? 'segmented-item-active' : ''}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+      </div>
 
-        <div className="space-y-4 p-6">
-          {pageError && (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
-              {pageError}
-            </p>
-          )}
-          {pageSuccess && (
-            <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-300">
-              {pageSuccess}
-            </p>
-          )}
+      {isAdmin && editMode && (
+        <div className="panel relative animate-rise-in overflow-hidden p-4 sm:p-5">
+          <span aria-hidden="true" className="absolute inset-y-4 left-0 w-[3px] rounded-r-full bg-blue-600" />
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+            <div className="flex items-center gap-3 lg:w-52 lg:flex-none">
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                <IconChecks className="h-5 w-5" stroke={1.6} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[13px] text-gray-500">Tanlangan mijozlar:</p>
+                <p className="tabular text-xl font-semibold leading-tight text-gray-900">
+                  <strong>{selectedCount}</strong>
+                </p>
+              </div>
+            </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                applySearch();
-              }}
-              className="flex gap-2 md:col-span-2"
-            >
-              <input
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Raqam yoki ism bo'yicha qidirish"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              />
-              <button
-                type="submit"
-                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                Qidirish
-              </button>
-              <button
-                type="button"
-                onClick={clearSearch}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                Tozalash
-              </button>
-            </form>
-
-            <select
-              value={courseId}
-              onChange={(event) => setCourseId(event.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            >
-              <option value="">Barcha kurslar</option>
-              {courseOptions.map((course: any) => (
-                <option key={course.id} value={course.id}>
-                  {course.name}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={tariffId}
-              onChange={(event) => setTariffId(event.target.value)}
-              disabled={!courseId}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
-            >
-              <option value="">Barcha tariflar</option>
-              {filterTariffOptions.map((tariff: any) => (
-                <option key={tariff.id} value={tariff.id}>
-                  {tariff.name}
-                </option>
-              ))}
-            </select>
-
-            {filterSubTariffOptions.length > 0 && (
+            <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 md:grid-cols-3">
               <select
-                value={subTariffId}
-                onChange={(event) => setSubTariffId(event.target.value)}
-                disabled={!tariffId}
-                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                value={bulkCourseId}
+                onChange={(event) => setBulkCourseId(event.target.value)}
+                aria-label="Kurs"
+                className="field rounded-full pl-4"
               >
-                <option value="">Barcha subtariflar</option>
-                {filterSubTariffOptions.map((subTariff: any) => (
+                <option value="">Kursni tozalash</option>
+                {editorCourses.map((course: any) => (
+                  <option key={course.id} value={course.id}>
+                    {course.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={bulkTariffId}
+                onChange={(event) => setBulkTariffId(event.target.value)}
+                disabled={!bulkCourseId}
+                aria-label="Tarif"
+                className="field rounded-full pl-4"
+              >
+                <option value="">Tarifni tozalash</option>
+                {bulkTariffOptions.map((tariff: any) => (
+                  <option key={tariff.id} value={tariff.id}>
+                    {tariff.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={bulkSubTariffId}
+                onChange={(event) => setBulkSubTariffId(event.target.value)}
+                disabled={!bulkTariffId || bulkSubTariffOptions.length === 0}
+                aria-label="Subtarif"
+                className="field rounded-full pl-4"
+              >
+                <option value="">Subtarifni tozalash</option>
+                {bulkSubTariffOptions.map((subTariff: any) => (
                   <option key={subTariff.id} value={subTariff.id}>
                     {subTariff.name}
                   </option>
                 ))}
               </select>
-            )}
+            </div>
 
-            <select
-              value={debtFilter}
-              onChange={(event) => setDebtFilter(event.target.value as DebtFilter)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            >
-              <option value="all">Barcha qarz holatlari</option>
-              <option value="with_debt">Qarzdorlar</option>
-              <option value="without_debt">Qarzsizlar</option>
-            </select>
-          </div>
-
-          {isAdmin && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setPageError(null);
-                  setPageSuccess(null);
-                  setEditMode((prev) => !prev);
-                }}
-                className={`rounded-md px-3 py-2 text-sm font-medium ${
-                  editMode
-                    ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
+                onClick={handleBulkAssign}
+                disabled={selectedCount === 0 || updateCustomersCourseAssignmentMutation.isLoading}
+                className="btn btn-primary"
               >
-                {editMode ? 'Tahrirlashni yopish' : "O'zgartirish"}
+                {updateCustomersCourseAssignmentMutation.isLoading ? 'Saqlanmoqda...' : "Kursni o'zgartirish"}
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setPageError(null);
-                  setPageSuccess(null);
-                  resetAddModal();
-                  setIsAddModalOpen(true);
-                }}
-                className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                onClick={handleBulkDelete}
+                disabled={selectedCount === 0 || deleteCustomersMutation.isLoading}
+                className="btn btn-danger-soft"
               >
-                Qo&apos;shish
+                {deleteCustomersMutation.isLoading ? "O'chirilmoqda..." : "Mijozlarni o'chirish"}
               </button>
             </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleDownloadFilteredCustomers}
-              disabled={customersQuery.isLoading || customers.length === 0}
-              className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-700 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-900/40"
-            >
-              Filtrlangan ro&apos;yxatni yuklab olish
-            </button>
           </div>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-              <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Jami mijozlar</p>
-              <p className="text-lg font-semibold text-gray-900 dark:text-slate-100">{totalCustomersCount}</p>
-            </div>
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-              <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Qarzdor mijozlar</p>
-              <p className="text-lg font-semibold text-amber-700 dark:text-amber-300">{withDebtCount}</p>
-            </div>
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-              <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Qarzsiz mijozlar</p>
-              <p className="text-lg font-semibold text-green-700 dark:text-green-300">{withoutDebtCount}</p>
-            </div>
-          </div>
-
-          {isAdmin && editMode && (
-            <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/20">
-              <div className="text-sm text-blue-900 dark:text-blue-200">
-                Tanlangan mijozlar: <strong>{selectedCount}</strong>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                <select
-                  value={bulkCourseId}
-                  onChange={(event) => setBulkCourseId(event.target.value)}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                >
-                  <option value="">Kursni tozalash</option>
-                  {editorCourses.map((course: any) => (
-                    <option key={course.id} value={course.id}>
-                      {course.name}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={bulkTariffId}
-                  onChange={(event) => setBulkTariffId(event.target.value)}
-                  disabled={!bulkCourseId}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
-                >
-                  <option value="">Tarifni tozalash</option>
-                  {bulkTariffOptions.map((tariff: any) => (
-                    <option key={tariff.id} value={tariff.id}>
-                      {tariff.name}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={bulkSubTariffId}
-                  onChange={(event) => setBulkSubTariffId(event.target.value)}
-                  disabled={!bulkTariffId || bulkSubTariffOptions.length === 0}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
-                >
-                  <option value="">Subtarifni tozalash</option>
-                  {bulkSubTariffOptions.map((subTariff: any) => (
-                    <option key={subTariff.id} value={subTariff.id}>
-                      {subTariff.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={handleBulkAssign}
-                  disabled={selectedCount === 0 || updateCustomersCourseAssignmentMutation.isLoading}
-                  className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {updateCustomersCourseAssignmentMutation.isLoading ? 'Saqlanmoqda...' : "Kursni o'zgartirish"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleBulkDelete}
-                  disabled={selectedCount === 0 || deleteCustomersMutation.isLoading}
-                  className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                >
-                  {deleteCustomersMutation.isLoading ? "O'chirilmoqda..." : "Mijozlarni o'chirish"}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
-      </div>
+      )}
+    </>
   );
 }

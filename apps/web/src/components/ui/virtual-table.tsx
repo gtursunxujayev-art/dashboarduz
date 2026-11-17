@@ -33,8 +33,8 @@ export default function VirtualTable<T>({
     return (
       <div className={containerClassName}>
         <table className={tableClassName}>
-          <thead className="bg-gray-50">{headerContent}</thead>
-          <tbody className="divide-y divide-gray-100 bg-white">
+          <thead>{headerContent}</thead>
+          <tbody>
             {rows.map((row, i) => (
               <tr key={getRowKey(row, i)}>{renderRowCells(row, i)}</tr>
             ))}
@@ -80,8 +80,8 @@ function VirtualizedInner<T>({
       style={{ maxHeight: '70vh', overflow: 'auto' }}
     >
       <table className={tableClassName} style={{ tableLayout: 'fixed' }}>
-        <thead className="bg-gray-50 sticky top-0 z-10">{headerContent}</thead>
-        <tbody className="bg-white">
+        <thead>{headerContent}</thead>
+        <tbody>
           <tr style={{ height: `${virtualizer.getTotalSize()}px`, visibility: 'hidden' }}>
             <td />
           </tr>

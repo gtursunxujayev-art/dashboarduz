@@ -4,6 +4,7 @@
 import { logger } from '../lib/logger';
 import { startBonusAutoFinalizeScheduler, stopBonusAutoFinalizeScheduler } from '../services/bonus-auto-finalize';
 import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from '../services/integrations/amocrm-call-sync';
+import { startAmoLeadSnapshotScheduler, stopAmoLeadSnapshotScheduler } from '../services/integrations/amocrm-lead-snapshot';
 import { initSentry , reportError } from '../services/observability';
 import { initializeWorkers } from '../services/queue/queues';
 import { startTelegramAgentPerformanceScheduler, stopTelegramAgentPerformanceScheduler } from '../services/reports/telegram-agent-performance-scheduler';
@@ -22,6 +23,7 @@ function startWorkerService(): void {
   startBonusAutoFinalizeScheduler();
   startWebhookEventRetentionScheduler();
   startAmoCallsSyncScheduler();
+  startAmoLeadSnapshotScheduler();
   logger.info('Worker service started');
 }
 
@@ -43,6 +45,7 @@ process.on('SIGTERM', () => {
   stopBonusAutoFinalizeScheduler();
   stopWebhookEventRetentionScheduler();
   stopAmoCallsSyncScheduler();
+  stopAmoLeadSnapshotScheduler();
   stopTelegramAgentPerformanceScheduler();
   stopTelegramReportScheduler();
   process.exit(0);
@@ -54,6 +57,7 @@ process.on('SIGINT', () => {
   stopBonusAutoFinalizeScheduler();
   stopWebhookEventRetentionScheduler();
   stopAmoCallsSyncScheduler();
+  stopAmoLeadSnapshotScheduler();
   stopTelegramAgentPerformanceScheduler();
   stopTelegramReportScheduler();
   process.exit(0);

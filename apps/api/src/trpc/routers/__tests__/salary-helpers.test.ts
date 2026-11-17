@@ -136,6 +136,27 @@ describe('isValidTierSequence', () => {
 });
 
 describe('normalizeCategoryBonusRule', () => {
+  it('defaults rules saved before the tier basis existed to the sales count', () => {
+    const result = normalizeCategoryBonusRule({
+      mode: 'tiered',
+      simplePercent: 2,
+      tiers: [{ minSales: 1, maxSales: null, percent: 5 }],
+    }, 0);
+
+    expect(result.tierBasis).toBe('sales_count');
+  });
+
+  it('keeps an agreement-amount tier basis', () => {
+    const result = normalizeCategoryBonusRule({
+      mode: 'tiered',
+      tierBasis: 'agreement_amount',
+      simplePercent: 2,
+      tiers: [{ minSales: 10_000_000, maxSales: null, percent: 5 }],
+    }, 0);
+
+    expect(result).toMatchObject({ mode: 'tiered', tierBasis: 'agreement_amount', tiers: [{ minSales: 10_000_000, maxSales: null, percent: 5 }] });
+  });
+
   it('returns simple rule for null input', () => {
     const result = normalizeCategoryBonusRule(null, 10);
 
@@ -169,25 +190,29 @@ describe('normalizeCategoryBonusRule', () => {
 });
 
 describe('resolveBonusPercent', () => {
-  it('returns simplePercent for simple mode', () => {
-    const rule = { mode: 'simple' as const, simplePercent: 12, tiers: [] };
+  const sales = (closedCount: number) => ({ closedCount, closedAgreementAmount: 0 });
 
-    expect(resolveBonusPercent(rule, 5)).toBe(12);
+  it('returns simplePercent for simple mode', () => {
+    const rule = { mode: 'simple' as const, tierBasis: 'sales_count' as const, simplePercent: 12, tiers: [] };
+
+    expect(resolveBonusPercent(rule, sales(5))).toBe(12);
   });
 
   it('uses fallback for tiered mode when no tier matches', () => {
     const rule = {
       mode: 'tiered' as const,
+      tierBasis: 'sales_count' as const,
       simplePercent: 2,
       tiers: [{ minSales: 1, maxSales: null, percent: 10 }],
     };
 
-    expect(resolveBonusPercent(rule, 0)).toBe(2);
+    expect(resolveBonusPercent(rule, sales(0))).toBe(2);
   });
 
   it('matches correct tier', () => {
     const rule = {
       mode: 'tiered' as const,
+      tierBasis: 'sales_count' as const,
       simplePercent: 0,
       tiers: [
         { minSales: 1, maxSales: 5, percent: 5 },
@@ -196,20 +221,38 @@ describe('resolveBonusPercent', () => {
       ],
     };
 
-    expect(resolveBonusPercent(rule, 3)).toBe(5);
-    expect(resolveBonusPercent(rule, 8)).toBe(10);
-    expect(resolveBonusPercent(rule, 20)).toBe(15);
+    expect(resolveBonusPercent(rule, sales(3))).toBe(5);
+    expect(resolveBonusPercent(rule, sales(8))).toBe(10);
+    expect(resolveBonusPercent(rule, sales(20))).toBe(15);
   });
 
   it('treats tier bounds as inclusive', () => {
     const rule = {
       mode: 'tiered' as const,
+      tierBasis: 'sales_count' as const,
       simplePercent: 1,
       tiers: [{ minSales: 1, maxSales: 3, percent: 3 }],
     };
 
-    expect(resolveBonusPercent(rule, 1)).toBe(3);
-    expect(resolveBonusPercent(rule, 3)).toBe(3);
+    expect(resolveBonusPercent(rule, sales(1))).toBe(3);
+    expect(resolveBonusPercent(rule, sales(3))).toBe(3);
+  });
+
+  it('reads the closed agreement amount when the rule tiers on agreement amount', () => {
+    const rule = {
+      mode: 'tiered' as const,
+      tierBasis: 'agreement_amount' as const,
+      simplePercent: 1,
+      tiers: [
+        { minSales: 1, maxSales: 49_999_999, percent: 3 },
+        { minSales: 50_000_000, maxSales: null, percent: 6 },
+      ],
+    };
+
+    // 20 closed sales do not matter: only the agreement total is measured.
+    expect(resolveBonusPercent(rule, { closedCount: 20, closedAgreementAmount: 30_000_000 })).toBe(3);
+    expect(resolveBonusPercent(rule, { closedCount: 1, closedAgreementAmount: 50_000_000 })).toBe(6);
+    expect(resolveBonusPercent(rule, { closedCount: 5, closedAgreementAmount: 0 })).toBe(1);
   });
 });
 

@@ -6,6 +6,8 @@ export const BONUS_RULE_CATEGORIES = ['online', 'offline', 'intensive', 'additio
 
 export const BONUS_RULE_MODES = ['simple', 'tiered'] as const;
 
+export const BONUS_TIER_BASES = ['sales_count', 'agreement_amount'] as const;
+
 export const BONUS_BASE_MODES = ['on_income', 'on_debt_closed'] as const;
 
 export const KPI_METRIC_KEYS = [
@@ -29,6 +31,8 @@ export type BonusRuleCategory = (typeof BONUS_RULE_CATEGORIES)[number];
 
 export type BonusRuleMode = (typeof BONUS_RULE_MODES)[number];
 
+export type BonusTierBasis = (typeof BONUS_TIER_BASES)[number];
+
 export type BonusBaseMode = (typeof BONUS_BASE_MODES)[number];
 
 export type KpiMetricKey = (typeof KPI_METRIC_KEYS)[number];
@@ -41,6 +45,8 @@ export type BonusRuleTier = {
 
 export type SalaryCategoryBonusRule = {
   mode: BonusRuleMode;
+  /** What the tier bounds measure; rules saved before this existed tier on the closed sales count. */
+  tierBasis: BonusTierBasis;
   simplePercent: number;
   tiers: BonusRuleTier[];
 };

@@ -52,6 +52,10 @@ function failureReason(error: unknown): string {
   return 'fetch_failed';
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function copyDiagnostics(target: AmoCRMActivityDiagnostics | undefined, source: AmoCRMActivityDiagnostics) {
   if (!target) return;
   target.completedTasks = { ...source.completedTasks };
@@ -282,25 +286,14 @@ function isStageChangeEvent(event: AmoCRMEvent): boolean {
   return false;
 }
 
-function buildActivityCacheKey(
-  tenantId: string,
-  managerIds: string[],
-  rangeStart: Date,
-  rangeEnd: Date,
-): string {
-  return [
-    tenantId,
-    rangeStart.toISOString(),
-    rangeEnd.toISOString(),
-    managerIds.slice().sort().join(','),
-  ].join('|');
-}
+/** A range ending within this long of "now" is open-ended (today, this week…): its key ignores the exact end. */
+const OPEN_ENDED_RANGE_SLACK_MS = 10 * 60 * 1000;
+/** Partial results (one amoCRM source failed) are reused only briefly. */
+const PARTIAL_CACHE_TTL_MS = 15 * 1000;
+/** How long an expired result may still be shown while a fresh one loads in the background. */
+const STALE_MAX_AGE_MS = 30 * 60 * 1000;
 
-function initializeMetricsMap(managerIds: string[]): Map<string, AmoCRMActivityMetrics> {
-  return new Map(managerIds.map((managerId) => [managerId, createEmptyMetrics()]));
-}
-
-export async function getAmoCRMActivityMetrics(params: {
+type ActivityParams = {
   tenantId: string;
   accessToken: string;
   baseUrl?: string;
@@ -310,160 +303,144 @@ export async function getAmoCRMActivityMetrics(params: {
   rangeKind?: 'today' | 'week' | 'month' | 'custom';
   cacheTtlMs?: number;
   diagnostics?: AmoCRMActivityDiagnostics;
-}): Promise<Map<string, AmoCRMActivityMetrics>> {
-  const managerIds = params.managerIds
-    .map((managerId) => managerId.trim())
-    .filter(Boolean);
+};
 
-  if (!managerIds.length) {
-    return new Map();
+type StoredEntry = CacheEntry & { storedAt: number };
+
+const inFlight = new Map<string, Promise<StoredEntry>>();
+
+/**
+ * Preset ranges end at "now", which moves every millisecond; keying on it meant no request ever
+ * reused another's result. Open-ended ranges share one key and rely on the TTL for freshness.
+ */
+export function buildActivityCacheKey(
+  tenantId: string,
+  managerIds: string[],
+  rangeStart: Date,
+  rangeEnd: Date,
+  now: number = Date.now(),
+): string {
+  const openEnded = Math.abs(now - rangeEnd.getTime()) <= OPEN_ENDED_RANGE_SLACK_MS;
+
+  return [
+    tenantId,
+    rangeStart.toISOString(),
+    openEnded ? 'now' : rangeEnd.toISOString(),
+    managerIds.slice().sort().join(','),
+  ].join('|');
+}
+
+function initializeMetricsMap(managerIds: string[]): Map<string, AmoCRMActivityMetrics> {
+  return new Map(managerIds.map((managerId) => [managerId, createEmptyMetrics()]));
+}
+
+function normalizeManagerIds(managerIds: string[]): string[] {
+  return managerIds.map((managerId) => managerId.trim()).filter(Boolean);
+}
+
+async function fetchTasksWithFallback(
+  params: ActivityParams,
+  managerIds: string[],
+  filters: { completedOnly?: boolean; completed?: boolean; dateFrom?: Date; dateTo?: Date; maxPages: number },
+  label: string,
+  onFailure: (reason: string) => void,
+): Promise<AmoCRMTask[]> {
+  const base = { responsibleUserIds: managerIds, limit: 250, ...filters };
+
+  try {
+    return await amocrmService.fetchAllTasks(params.accessToken, { ...base, entityType: 'leads' }, params.baseUrl);
+  } catch (error: unknown) {
+    try {
+      const tasks = await amocrmService.fetchAllTasks(params.accessToken, base, params.baseUrl);
+
+      logger.warn({ tenantId: params.tenantId, warning: errorMessage(error) }, `AmoCRM activity: ${label} fetched with fallback filter`);
+
+      return tasks;
+    } catch (fallbackError: unknown) {
+      logger.warn({ tenantId: params.tenantId, error: errorMessage(fallbackError) }, `AmoCRM activity: failed to fetch ${label}`);
+      onFailure(failureReason(fallbackError));
+
+      return [];
+    }
   }
+}
 
-  const cacheKey = buildActivityCacheKey(params.tenantId, managerIds, params.rangeStart, params.rangeEnd);
-  const cached = metricsCache.get(cacheKey);
+async function fetchEventsWithFallback(
+  params: ActivityParams,
+  managerIds: string[],
+  onFailure: (reason: string) => void,
+): Promise<AmoCRMEvent[]> {
+  const base = { dateFrom: params.rangeStart, dateTo: params.rangeEnd, userIds: managerIds, limit: 250, maxPages: 120 };
 
-  if (cached && cached.expiresAt > Date.now()) {
-    copyDiagnostics(params.diagnostics, cached.diagnostics);
+  try {
+    return await amocrmService.fetchAllEvents(params.accessToken, { ...base, entityType: 'lead' }, params.baseUrl);
+  } catch (error: unknown) {
+    try {
+      const events = await amocrmService.fetchAllEvents(params.accessToken, base, params.baseUrl);
 
-    return cloneMetricsMap(cached.value);
+      logger.warn({ tenantId: params.tenantId, warning: errorMessage(error) }, 'AmoCRM activity: events fetched with fallback filter');
+
+      return events;
+    } catch (fallbackError: unknown) {
+      logger.warn({ tenantId: params.tenantId, error: errorMessage(fallbackError) }, 'AmoCRM activity: failed to fetch events');
+      onFailure(failureReason(fallbackError));
+
+      return [];
+    }
   }
+}
 
+/** Asks amoCRM for completed tasks, open tasks and lead events (in parallel) and counts them per manager. */
+async function computeActivityMetrics(params: ActivityParams, managerIds: string[]): Promise<CacheEntry> {
+  const startedMs = Date.now();
   const managerIdSet = new Set(managerIds);
   const metricsByManager = initializeMetricsMap(managerIds);
   const diagnostics = createAmoCRMActivityDiagnostics();
-
-  let tasks: AmoCRMTask[] = [];
-
-  try {
-    tasks = await amocrmService.fetchAllTasks(
-      params.accessToken,
-      {
-        responsibleUserIds: managerIds,
-        completedOnly: true,
-        dateFrom: params.rangeStart,
-        dateTo: params.rangeEnd,
-        entityType: 'leads',
-        limit: 250,
-        maxPages: 80,
-      },
-      params.baseUrl,
-    );
-  } catch (error: any) {
-    try {
-      tasks = await amocrmService.fetchAllTasks(
-        params.accessToken,
-        {
-          responsibleUserIds: managerIds,
-          completedOnly: true,
-          dateFrom: params.rangeStart,
-          dateTo: params.rangeEnd,
-          limit: 250,
-          maxPages: 80,
-        },
-        params.baseUrl,
-      );
-      logger.warn({
-        tenantId: params.tenantId,
-        warning: String(error?.message || error),
-      }, 'AmoCRM activity: tasks fetched with fallback filter');
-    } catch (fallbackError: any) {
-      logger.warn({
-        tenantId: params.tenantId,
-        error: String(fallbackError?.message || fallbackError),
-      }, 'AmoCRM activity: failed to fetch tasks');
-      diagnostics.completedTasks = { ok: false, reason: failureReason(fallbackError) };
-      tasks = [];
-    }
-  }
-
-  for (const task of tasks) {
-    if (!isCompletedTask(task) || !isLeadTask(task)) {
-      continue;
-    }
-    const managerId = taskResponsibleUserId(task);
-
-    if (!managerIdSet.has(managerId)) {
-      continue;
-    }
-    if (!isWithinRange(taskActionDate(task), params.rangeStart, params.rangeEnd)) {
-      continue;
-    }
-    const metrics = metricsByManager.get(managerId);
-
-    if (!metrics) {
-      continue;
-    }
-    metrics.followUpCount += 1;
-  }
-
   const { start: todayStart, end: todayEnd } = getTashkentDayBounds(new Date());
   const { start: periodStart, end: periodEnd } = getPeriodFollowUpBounds(
     params.rangeKind,
     params.rangeStart,
     params.rangeEnd,
   );
-  let pendingTasks: AmoCRMTask[] = [];
 
-  try {
-    pendingTasks = await amocrmService.fetchAllTasks(
-      params.accessToken,
-      {
-        responsibleUserIds: managerIds,
-        completed: false,
-        dateTo: todayEnd,
-        entityType: 'leads',
-        limit: 250,
-        maxPages: 30,
-      },
-      params.baseUrl,
-    );
-  } catch (error: any) {
-    try {
-      pendingTasks = await amocrmService.fetchAllTasks(
-        params.accessToken,
-        {
-          responsibleUserIds: managerIds,
-          completed: false,
-          dateTo: todayEnd,
-          limit: 250,
-          maxPages: 30,
-        },
-        params.baseUrl,
-      );
-      logger.warn({
-        tenantId: params.tenantId,
-        warning: String(error?.message || error),
-      }, 'AmoCRM activity: pending tasks fetched with fallback filter');
-    } catch (fallbackError: any) {
-      logger.warn({
-        tenantId: params.tenantId,
-        error: String(fallbackError?.message || fallbackError),
-      }, 'AmoCRM activity: failed to fetch pending tasks');
-      diagnostics.pendingTasks = { ok: false, reason: failureReason(fallbackError) };
-      pendingTasks = [];
-    }
+  const [tasks, pendingTasks, events] = await Promise.all([
+    fetchTasksWithFallback(
+      params,
+      managerIds,
+      { completedOnly: true, dateFrom: params.rangeStart, dateTo: params.rangeEnd, maxPages: 80 },
+      'tasks',
+      (reason) => { diagnostics.completedTasks = { ok: false, reason }; },
+    ),
+    fetchTasksWithFallback(
+      params,
+      managerIds,
+      { completed: false, dateTo: todayEnd, maxPages: 30 },
+      'pending tasks',
+      (reason) => { diagnostics.pendingTasks = { ok: false, reason }; },
+    ),
+    fetchEventsWithFallback(params, managerIds, (reason) => { diagnostics.events = { ok: false, reason }; }),
+  ]);
+
+  for (const task of tasks) {
+    if (!isCompletedTask(task) || !isLeadTask(task)) continue;
+    const managerId = taskResponsibleUserId(task);
+
+    if (!managerIdSet.has(managerId)) continue;
+    if (!isWithinRange(taskActionDate(task), params.rangeStart, params.rangeEnd)) continue;
+    const metrics = metricsByManager.get(managerId);
+
+    if (metrics) metrics.followUpCount += 1;
   }
 
   for (const task of pendingTasks) {
-    if (!isLeadTask(task) || isCompletedTask(task)) {
-      continue;
-    }
+    if (!isLeadTask(task) || isCompletedTask(task)) continue;
     const managerId = taskResponsibleUserId(task);
 
-    if (!managerIdSet.has(managerId)) {
-      continue;
-    }
+    if (!managerIdSet.has(managerId)) continue;
     const dueDate = taskDueDate(task);
-
-    if (!dueDate) {
-      continue;
-    }
     const metrics = metricsByManager.get(managerId);
 
-    if (!metrics) {
-      continue;
-    }
-
+    if (!dueDate || !metrics) continue;
     if (dueDate < todayStart) {
       metrics.overdueFollowUpCount += 1;
       continue;
@@ -473,84 +450,145 @@ export async function getAmoCRMActivityMetrics(params: {
     }
   }
 
-  let events: AmoCRMEvent[] = [];
-
-  try {
-    events = await amocrmService.fetchAllEvents(
-      params.accessToken,
-      {
-        dateFrom: params.rangeStart,
-        dateTo: params.rangeEnd,
-        userIds: managerIds,
-        entityType: 'lead',
-        limit: 250,
-        maxPages: 120,
-      },
-      params.baseUrl,
-    );
-  } catch (error: any) {
-    try {
-      events = await amocrmService.fetchAllEvents(
-        params.accessToken,
-        {
-          dateFrom: params.rangeStart,
-          dateTo: params.rangeEnd,
-          userIds: managerIds,
-          limit: 250,
-          maxPages: 120,
-        },
-        params.baseUrl,
-      );
-      logger.warn({
-        tenantId: params.tenantId,
-        warning: String(error?.message || error),
-      }, 'AmoCRM activity: events fetched with fallback filter');
-    } catch (fallbackError: any) {
-      logger.warn({
-        tenantId: params.tenantId,
-        error: String(fallbackError?.message || fallbackError),
-      }, 'AmoCRM activity: failed to fetch events');
-      diagnostics.events = { ok: false, reason: failureReason(fallbackError) };
-      events = [];
-    }
-  }
-
   for (const event of events) {
     const managerId = eventActorUserId(event);
 
-    if (!managerIdSet.has(managerId)) {
-      continue;
-    }
-    if (!isWithinRange(eventDate(event), params.rangeStart, params.rangeEnd)) {
-      continue;
-    }
+    if (!managerIdSet.has(managerId)) continue;
+    if (!isWithinRange(eventDate(event), params.rangeStart, params.rangeEnd)) continue;
     const metrics = metricsByManager.get(managerId);
 
-    if (!metrics) {
-      continue;
-    }
-
+    if (!metrics) continue;
     if (isNoteEvent(event)) {
       metrics.noteCount += 1;
       continue;
     }
-
     if (isStageChangeEvent(event)) {
       metrics.stageChangeCount += 1;
     }
   }
 
-  if (Object.values(diagnostics).every((source) => source.ok)) {
-    metricsCache.set(cacheKey, {
-      expiresAt: Date.now() + Math.max(5_000, params.cacheTtlMs || CACHE_TTL_MS),
-      value: cloneMetricsMap(metricsByManager),
-      diagnostics,
+  const complete = Object.values(diagnostics).every((source) => source.ok);
+
+  logger.info({
+    tenantId: params.tenantId,
+    managers: managerIds.length,
+    tasks: tasks.length,
+    pendingTasks: pendingTasks.length,
+    events: events.length,
+    complete,
+    ms: Date.now() - startedMs,
+  }, 'AmoCRM activity: metrics computed');
+
+  return {
+    expiresAt: Date.now() + (complete ? Math.max(5_000, params.cacheTtlMs || CACHE_TTL_MS) : PARTIAL_CACHE_TTL_MS),
+    value: metricsByManager,
+    diagnostics,
+  };
+}
+
+function pruneCache(now: number): void {
+  for (const [key, entry] of metricsCache) {
+    if (now - (entry as StoredEntry).storedAt > STALE_MAX_AGE_MS) metricsCache.delete(key);
+  }
+}
+
+/** Starts the amoCRM requests for this key, or joins the ones already running. */
+function startActivityCompute(key: string, params: ActivityParams, managerIds: string[]): Promise<StoredEntry> {
+  const running = inFlight.get(key);
+
+  if (running) return running;
+  const promise = computeActivityMetrics(params, managerIds)
+    .then((entry) => {
+      const stored: StoredEntry = { ...entry, storedAt: Date.now() };
+
+      pruneCache(stored.storedAt);
+      metricsCache.set(key, stored);
+
+      return stored;
+    })
+    .finally(() => {
+      inFlight.delete(key);
     });
+
+  // A caller that stopped waiting must not turn a late failure into an unhandled rejection.
+  promise.catch((error: unknown) => {
+    logger.warn({ tenantId: params.tenantId, error: errorMessage(error) }, 'AmoCRM activity: background compute failed');
+  });
+  inFlight.set(key, promise);
+
+  return promise;
+}
+
+function readEntry(entry: CacheEntry, diagnostics?: AmoCRMActivityDiagnostics): Map<string, AmoCRMActivityMetrics> {
+  copyDiagnostics(diagnostics, entry.diagnostics);
+
+  return cloneMetricsMap(entry.value);
+}
+
+/** Waits for the activity metrics (cached for a minute; concurrent callers share one set of amoCRM requests). */
+export async function getAmoCRMActivityMetrics(params: ActivityParams): Promise<Map<string, AmoCRMActivityMetrics>> {
+  const managerIds = normalizeManagerIds(params.managerIds);
+
+  if (!managerIds.length) return new Map();
+  const key = buildActivityCacheKey(params.tenantId, managerIds, params.rangeStart, params.rangeEnd);
+  const cached = metricsCache.get(key);
+
+  if (cached && cached.expiresAt > Date.now()) return readEntry(cached, params.diagnostics);
+
+  return readEntry(await startActivityCompute(key, params, managerIds), params.diagnostics);
+}
+
+export type ActivityLookup = {
+  metrics: Map<string, AmoCRMActivityMetrics> | null;
+  /** True when amoCRM is still answering in the background; the next request gets the result. */
+  pending: boolean;
+  /** True when an expired result was returned while a fresh one loads. */
+  stale: boolean;
+};
+
+/**
+ * For request paths that must not wait on amoCRM: returns a cached result (refreshing it in the
+ * background when expired), or waits up to `waitMs` for a new one and otherwise lets it finish in
+ * the background.
+ */
+export async function getAmoCRMActivityMetricsWithin(params: ActivityParams, waitMs: number): Promise<ActivityLookup> {
+  const managerIds = normalizeManagerIds(params.managerIds);
+
+  if (!managerIds.length) return { metrics: new Map(), pending: false, stale: false };
+  const key = buildActivityCacheKey(params.tenantId, managerIds, params.rangeStart, params.rangeEnd);
+  const now = Date.now();
+  const cached = metricsCache.get(key) as StoredEntry | undefined;
+
+  if (cached && cached.expiresAt > now) {
+    return { metrics: readEntry(cached, params.diagnostics), pending: false, stale: false };
+  }
+  const compute = startActivityCompute(key, params, managerIds);
+
+  if (cached && now - cached.storedAt <= STALE_MAX_AGE_MS) {
+    return { metrics: readEntry(cached, params.diagnostics), pending: false, stale: true };
+  }
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), waitMs);
+  });
+
+  try {
+    const entry = await Promise.race([compute, timeout]);
+
+    if (entry) return { metrics: readEntry(entry, params.diagnostics), pending: false, stale: false };
+  } catch {
+    // Logged by startActivityCompute; fall through to "pending".
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 
-  copyDiagnostics(params.diagnostics, diagnostics);
+  return { metrics: null, pending: true, stale: false };
+}
 
-  return metricsByManager;
+/** Test hook: forget cached and running computations. */
+export function resetAmoCRMActivityCache(): void {
+  metricsCache.clear();
+  inFlight.clear();
 }
 
 export function summarizeAmoCRMActivityMetrics(

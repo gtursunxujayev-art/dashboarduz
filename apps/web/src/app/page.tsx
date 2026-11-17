@@ -17,10 +17,10 @@ export default function Home() {
   }, [isLoading, router, user]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-background">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto" />
-        <p className="mt-4 text-gray-600">Ish maydoni tayyorlanmoqda...</p>
+        <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+        <p className="mt-3 text-sm text-gray-500">Ish maydoni tayyorlanmoqda...</p>
       </div>
     </div>
   );

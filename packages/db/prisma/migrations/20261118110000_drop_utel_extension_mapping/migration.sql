@@ -1,5 +1,5 @@
 -- Removes the Utel (VoIP) extension mapping and the voip_utel integration type.
--- Must run after 20261117100000_call_manager_user_id, whose backfill reads
+-- Must run after 20261118100000_call_manager_user_id, whose backfill reads
 -- users."utelManagerExternalId" to attribute older calls to managers.
 --
 -- Data change:

@@ -2,7 +2,10 @@ import type { AmountFormatOptions, ManagerGroup } from '@dashboarduz/shared';
 
 export const CURRENCY_FORMAT: AmountFormatOptions = { locale: 'en-US', unit: 'UZS', round: true };
 
-type ReportKind = 'daily' | 'weekly' | 'monthly';
+/** A call of at least this many seconds counts in the per-manager "4+ daq" column. */
+export const LONG_CALL_MIN_SECONDS = 4 * 60;
+
+type ReportKind ='daily' | 'weekly' | 'monthly';
 
 export type ReportWindow = {
   kind: ReportKind;
@@ -25,6 +28,8 @@ export type ReportManagerRow = {
   agreementAmount: number;
   incomeAmount: number;
   callDurationSeconds: number;
+  callCount: number;
+  longCallCount: number;
 };
 
 export type ReportMetrics = {

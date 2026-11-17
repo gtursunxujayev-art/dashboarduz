@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { IconAlertTriangle, IconArrowDown, IconChevronDown, IconRefresh } from '@tabler/icons-react';
 import { HOLE_LABELS, formatCount, type FunnelHole } from '@/app/dashboard/analytics/funnel/funnel-view';
 import { formatSomRounded } from '@/lib/format';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 export type FunnelTableRow = {
   userId: string;
@@ -35,9 +37,12 @@ export type LostRevenueTableRow = {
 
 export type LostRevenueTableTotals = Omit<LostRevenueTableRow, 'userId' | 'name'>;
 
-const thClass = 'whitespace-nowrap px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500';
-const tdClass = 'whitespace-nowrap px-3 py-2 text-sm text-gray-700';
-const totalTdClass = 'whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900';
+const thClass = 'text-left';
+const thNumClass = 'text-right';
+const tdClass = 'whitespace-nowrap';
+const tdNumClass = 'tabular whitespace-nowrap text-right';
+const totalTdClass = 'whitespace-nowrap';
+const totalTdNumClass = 'tabular whitespace-nowrap text-right';
 
 export function FunnelCrmBanner({
   reason,
@@ -65,27 +70,120 @@ export function FunnelCrmBanner({
   })();
   if (!reasonText && unmappedNames.length === 0) return null;
   return (
-    <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          {reasonText && <p className="font-semibold">AmoCRM lid ma&apos;lumotlari to&apos;liq yuklanmadi.</p>}
-          {reasonText && <p className="mt-1">{reasonText}</p>}
-          {unmappedNames.length > 0 && (
-            <p className="mt-1">AmoCRM menejeri biriktirilmagan: {unmappedNames.join(', ')}.</p>
-          )}
+    <div className="alert alert-warning">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <IconAlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" stroke={1.8} aria-hidden="true" />
+          <div className="min-w-0">
+            {reasonText && <p className="font-semibold">AmoCRM lid ma&apos;lumotlari to&apos;liq yuklanmadi.</p>}
+            {reasonText && <p className="mt-1">{reasonText}</p>}
+            {unmappedNames.length > 0 && (
+              <p className="mt-1">AmoCRM menejeri biriktirilmagan: {unmappedNames.join(', ')}.</p>
+            )}
+          </div>
         </div>
         {reasonText && (
           <button
             type="button"
             onClick={onRetry}
             disabled={isRetrying}
-            className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+            className="btn btn-secondary btn-sm flex-shrink-0 self-start"
           >
+            <IconRefresh className={`h-3.5 w-3.5 ${isRetrying ? 'animate-spin' : ''}`} stroke={1.8} aria-hidden="true" />
             {isRetrying ? 'Yuklanmoqda...' : 'Qayta urinish'}
           </button>
         )}
       </div>
     </div>
+  );
+}
+
+function stageShare(part: number, total: number): number {
+  if (!total || total <= 0) return 0;
+  return Math.min(100, Math.max(0, (part / total) * 100));
+}
+
+/**
+ * The team funnel as horizontal stage bars: each stage's count, its width relative to the first
+ * stage, and the conversion from the previous stage. Labels reuse the table's column names.
+ * `compact` fits a dashboard card; `hero` is the large centred funnel of the Voronka page.
+ */
+export function FunnelStageBars({ totals, variant = 'compact' }: { totals: FunnelTableTotals; variant?: 'compact' | 'hero' }) {
+  const stages = [
+    { key: 'assigned', label: 'Biriktirilgan lid', value: totals.assignedLeads },
+    { key: 'ishlangan', label: 'Ishlangan lid', value: totals.ishlanganLeads },
+    { key: 'taklif', label: 'Taklif', value: totals.taklifLeads },
+    { key: 'sales', label: 'Sotuv', value: totals.sales },
+  ];
+  const base = stages[0].value;
+
+  if (variant === 'hero') {
+    return (
+      <ol>
+        {stages.map((stage, index) => {
+          const previous = index > 0 ? stages[index - 1].value : null;
+          const width = base > 0 ? stageShare(stage.value, base) : 0;
+          return (
+            <li key={stage.key}>
+              {previous !== null && (
+                <div className="grid grid-cols-1 py-2 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-8">
+                  <span className="hidden sm:block" aria-hidden="true" />
+                  <div className="flex justify-center">
+                    <span className="tabular inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-[13px] font-semibold text-gray-700">
+                      <IconArrowDown className="h-3.5 w-3.5 text-gray-400" stroke={1.8} aria-hidden="true" />
+                      {previous > 0 ? `${Math.round(stageShare(stage.value, previous))}%` : '-'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-8">
+                <div className="flex items-baseline justify-between gap-3 sm:block">
+                  <p className="text-sm font-medium text-gray-500">{stage.label}</p>
+                  <p className="tabular text-[28px] font-semibold leading-tight tracking-[-0.02em] text-gray-900">{stage.value}</p>
+                </div>
+                <div className="flex h-12 justify-center" aria-hidden="true">
+                  <div
+                    className="h-full origin-center animate-grow-x rounded-full bg-blue-600"
+                    style={{ width: `${Math.max(width, stage.value > 0 ? 3 : 0)}%`, opacity: 1 - index * 0.17 }}
+                  />
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    );
+  }
+
+  return (
+    <ol className="space-y-1">
+      {stages.map((stage, index) => {
+        const previous = index > 0 ? stages[index - 1].value : null;
+        const width = base > 0 ? stageShare(stage.value, base) : 0;
+        return (
+          <li key={stage.key}>
+            {previous !== null && (
+              <div className="flex items-center gap-1.5 py-1 pl-1 text-xs text-gray-500">
+                <IconChevronDown className="h-3.5 w-3.5 text-gray-400" stroke={1.8} aria-hidden="true" />
+                <span className="tabular font-medium text-gray-600">
+                  {previous > 0 ? `${Math.round(stageShare(stage.value, previous))}%` : '-'}
+                </span>
+              </div>
+            )}
+            <div className="grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_auto]">
+              <span className="truncate text-sm font-medium text-gray-700">{stage.label}</span>
+              <div className="h-7 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+                <div
+                  className="h-full origin-left animate-grow-x rounded-full bg-blue-600"
+                  style={{ width: `${Math.max(width, stage.value > 0 ? 2 : 0)}%`, opacity: 1 - index * 0.15 }}
+                />
+              </div>
+              <span className="tabular w-14 text-right text-sm font-semibold text-gray-900">{stage.value}</span>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -127,8 +225,17 @@ function PlanCell({
       onKeyDown={(event) => {
         if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
       }}
-      className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      className="field tabular h-8 w-20 px-2 text-right"
     />
+  );
+}
+
+function NameCell({ name }: { name: string }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <UserAvatar name={name} size="sm" />
+      <span className="font-medium text-gray-900">{name}</span>
+    </div>
   );
 }
 
@@ -147,45 +254,47 @@ export function FunnelTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+      <table className="data-table">
+        <thead>
           <tr>
             <th className={thClass}>Menejer</th>
-            <th className={thClass}>Biriktirilgan lid</th>
-            <th className={thClass}>Ishlangan lid</th>
-            <th className={thClass}>Qo&apos;ng&apos;iroq</th>
-            <th className={thClass}>Taklif</th>
-            <th className={thClass}>Sotuv</th>
-            {showMoney && <th className={thClass}>O&apos;rtacha chek</th>}
-            <th className={thClass}>Reja</th>
+            <th className={thNumClass}>Biriktirilgan lid</th>
+            <th className={thNumClass}>Ishlangan lid</th>
+            <th className={thNumClass}>Qo&apos;ng&apos;iroq</th>
+            <th className={thNumClass}>Taklif</th>
+            <th className={thNumClass}>Sotuv</th>
+            {showMoney && <th className={thNumClass}>O&apos;rtacha chek</th>}
+            <th className={thNumClass}>Reja</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100 bg-white">
+        <tbody>
           {rows.map((row) => (
             <tr key={row.userId}>
-              <td className={`${tdClass} text-gray-900`}>{row.name}</td>
-              <td className={tdClass}>{formatCount(row.assignedLeads)}</td>
-              <td className={tdClass}>{formatCount(row.ishlanganLeads)}</td>
-              <td className={tdClass}>{row.calls}</td>
-              <td className={tdClass}>{formatCount(row.taklifLeads)}</td>
-              <td className={tdClass}>{row.sales}</td>
-              {showMoney && <td className={tdClass}>{formatSomRounded(row.avgCheck)}</td>}
-              <td className={tdClass}>
+              <td className={tdClass}><NameCell name={row.name} /></td>
+              <td className={tdNumClass}>{formatCount(row.assignedLeads)}</td>
+              <td className={tdNumClass}>{formatCount(row.ishlanganLeads)}</td>
+              <td className={tdNumClass}>{row.calls}</td>
+              <td className={tdNumClass}>{formatCount(row.taklifLeads)}</td>
+              <td className={`${tdNumClass} font-medium text-gray-900`}>{row.sales}</td>
+              {showMoney && <td className={tdNumClass}>{formatSomRounded(row.avgCheck)}</td>}
+              <td className={tdNumClass}>
                 <PlanCell userId={row.userId} plan={row.plan} editable={canEditPlans} onPlanChange={onPlanChange} />
               </td>
             </tr>
           ))}
-          <tr className="bg-gray-50" data-testid="funnel-totals">
-            <td className={totalTdClass}>Jami</td>
-            <td className={totalTdClass}>{totals.assignedLeads}</td>
-            <td className={totalTdClass}>{totals.ishlanganLeads}</td>
-            <td className={totalTdClass}>{totals.calls}</td>
-            <td className={totalTdClass}>{totals.taklifLeads}</td>
-            <td className={totalTdClass}>{totals.sales}</td>
-            {showMoney && <td className={totalTdClass}>{formatSomRounded(totals.avgCheck)}</td>}
-            <td className={totalTdClass}>{totals.plan > 0 ? totals.plan : '—'}</td>
-          </tr>
         </tbody>
+        <tfoot>
+          <tr data-testid="funnel-totals">
+            <td className={totalTdClass}>Jami</td>
+            <td className={totalTdNumClass}>{totals.assignedLeads}</td>
+            <td className={totalTdNumClass}>{totals.ishlanganLeads}</td>
+            <td className={totalTdNumClass}>{totals.calls}</td>
+            <td className={totalTdNumClass}>{totals.taklifLeads}</td>
+            <td className={totalTdNumClass}>{totals.sales}</td>
+            {showMoney && <td className={totalTdNumClass}>{formatSomRounded(totals.avgCheck)}</td>}
+            <td className={totalTdNumClass}>{totals.plan > 0 ? totals.plan : '—'}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
@@ -202,38 +311,42 @@ export function LostRevenueTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+      <table className="data-table">
+        <thead>
           <tr>
             <th className={thClass}>Menejer</th>
-            {HOLE_KEYS.map((key) => <th key={key} className={thClass}>{HOLE_LABELS[key]}</th>)}
+            {HOLE_KEYS.map((key) => <th key={key} className={thNumClass}>{HOLE_LABELS[key]}</th>)}
             <th className={thClass}>Asosiy teshik</th>
-            <th className={thClass}>Yo&apos;qotilgan tushum</th>
+            <th className={thNumClass}>Yo&apos;qotilgan tushum</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100 bg-white">
+        <tbody>
           {rows.map((row) => (
             <tr key={row.userId}>
-              <td className={`${tdClass} text-gray-900`}>{row.name}</td>
+              <td className={tdClass}><NameCell name={row.name} /></td>
               {HOLE_KEYS.map((key) => (
                 <td
                   key={key}
-                  className={`${tdClass} ${row.mainHole === key ? 'bg-red-50 font-semibold text-red-700' : ''}`}
+                  className={`${tdNumClass} ${row.mainHole === key ? 'bg-red-50 font-semibold text-red-700' : ''}`}
                 >
                   {formatSomRounded(row[key])}
                 </td>
               ))}
-              <td className={`${tdClass} font-medium`}>{row.mainHole ? HOLE_LABELS[row.mainHole] : '—'}</td>
-              <td className={`${tdClass} font-semibold text-red-700`}>{formatSomRounded(row.lostRevenue)}</td>
+              <td className={tdClass}>
+                {row.mainHole ? <span className="badge badge-red">{HOLE_LABELS[row.mainHole]}</span> : '—'}
+              </td>
+              <td className={`${tdNumClass} font-semibold text-red-700`}>{formatSomRounded(row.lostRevenue)}</td>
             </tr>
           ))}
-          <tr className="bg-gray-50" data-testid="lost-totals">
-            <td className={totalTdClass}>Jami</td>
-            {HOLE_KEYS.map((key) => <td key={key} className={totalTdClass}>{formatSomRounded(totals[key])}</td>)}
-            <td className={totalTdClass}>—</td>
-            <td className={`${totalTdClass} text-red-700`}>{formatSomRounded(totals.lostRevenue)}</td>
-          </tr>
         </tbody>
+        <tfoot>
+          <tr data-testid="lost-totals">
+            <td className={totalTdClass}>Jami</td>
+            {HOLE_KEYS.map((key) => <td key={key} className={totalTdNumClass}>{formatSomRounded(totals[key])}</td>)}
+            <td className={totalTdClass}>—</td>
+            <td className={`${totalTdNumClass} text-red-700`}>{formatSomRounded(totals.lostRevenue)}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );

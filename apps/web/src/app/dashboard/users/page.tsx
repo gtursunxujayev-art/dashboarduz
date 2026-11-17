@@ -4,23 +4,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { roleNeedsManagerMapping } from '@dashboarduz/shared';
-
-const availableRoles = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'OfflineDashboard', 'Finance', 'Tashkiliy'] as const;
-const roleLabels: Record<(typeof availableRoles)[number], string> = {
-  Admin: 'Admin',
-  Manager: 'Menejer',
-  TeamLeader: 'Team lider',
-  Agent: 'Agent',
-  OnlineAgent: 'Online agent',
-  OfflineAgent: 'Offline agent',
-  Dashboard: 'Dashboard',
-  OfflineDashboard: 'Offline dashboard',
-  Finance: 'Moliya',
-  Tashkiliy: 'Tashkiliy',
-};
-
-type UserRole = (typeof availableRoles)[number];
+import { IconPencil, IconRefresh, IconSearch, IconUserCheck, IconUserOff, IconUserPlus, IconUsers } from '@tabler/icons-react';
+import { UserCreateSheet } from './_components/user-create-sheet';
+import { UserEditSheet } from './_components/user-edit-sheet';
+import { availableRoles, roleLabels } from './_components/user-roles';
+import type { UserRole } from './_components/user-roles';
 
 export default function UsersPage() {
   const { user: currentUser } = useAuth();
@@ -57,6 +49,12 @@ export default function UsersPage() {
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
+
+  // UI-only: which sheet is open and how the directory is filtered.
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
+  const [search, setSearch] = useState('');
 
   const amocrmManagers = useMemo(() => amocrmManagersQuery.data || [], [amocrmManagersQuery.data]);
   const telegramRecipients = useMemo(() => telegramRecipientsQuery.data || [], [telegramRecipientsQuery.data]);
@@ -209,271 +207,185 @@ export default function UsersPage() {
     }
   };
 
+  const users = (usersQuery.data || []) as any[];
+
+  const roleCounts = new Map<string, number>();
+  for (const user of users) {
+    for (const role of (Array.isArray(user.roles) ? user.roles : []) as string[]) {
+      roleCounts.set(role, (roleCounts.get(role) || 0) + 1);
+    }
+  }
+  const roleFilters = availableRoles.filter((role) => roleCounts.has(role));
+  const searchQuery = search.trim().toLowerCase();
+  const visibleUsers = users.filter((user) => {
+    if (roleFilter !== 'all' && !(Array.isArray(user.roles) && user.roles.includes(roleFilter))) {
+      return false;
+    }
+    if (!searchQuery) {
+      return true;
+    }
+    return [user.name, user.username, user.phone, user.id]
+      .some((value) => String(value || '').toLowerCase().includes(searchQuery));
+  });
+  const editingUser = editingUserId ? users.find((user) => user.id === editingUserId) : null;
+
   return (
     <div className="space-y-6">
-      <div className="rounded-lg bg-white shadow">
-        <div className="flex flex-col gap-3 border-b border-gray-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Foydalanuvchilar</h1>
-            <p className="mt-1 text-sm text-gray-500">Foydalanuvchi yarating, agentni AmoCRM menejeriga bog'lang va login/parolni boshqaring.</p>
+      <PageHeader
+        title="Foydalanuvchilar"
+        description="Foydalanuvchi yarating, agentni AmoCRM menejeriga bog'lang va login/parolni boshqaring."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => telegramRecipientsQuery.refetch()}
+              disabled={telegramRecipientsQuery.isFetching}
+              className="btn btn-secondary"
+            >
+              <IconRefresh className={`h-4 w-4 ${telegramRecipientsQuery.isFetching ? 'animate-spin' : ''}`} stroke={1.8} />
+              {telegramRecipientsQuery.isFetching ? 'Yangilanmoqda...' : "Telegram ro'yxatini yangilash"}
+            </button>
+            <button type="button" onClick={() => setCreateOpen(true)} className="btn btn-primary">
+              <IconUserPlus className="h-4 w-4" stroke={1.8} />
+              Foydalanuvchi qo&apos;shish
+            </button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="relative w-full lg:max-w-xs">
+            <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Ism, login yoki telefon bo'yicha qidirish"
+              aria-label="Ism, login yoki telefon bo'yicha qidirish"
+              className="field rounded-full pl-10 shadow-sm"
+            />
           </div>
-          <button
-            type="button"
-            onClick={() => telegramRecipientsQuery.refetch()}
-            disabled={telegramRecipientsQuery.isFetching}
-            className="shrink-0 rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {telegramRecipientsQuery.isFetching ? 'Yangilanmoqda...' : "Telegram ro'yxatini yangilash"}
-          </button>
+          {roleFilters.length > 0 && (
+            <div className="-mx-1 min-w-0 overflow-x-auto px-1 py-1">
+              <div className="segmented" role="group" aria-label="Rol">
+                <button
+                  type="button"
+                  onClick={() => setRoleFilter('all')}
+                  aria-pressed={roleFilter === 'all'}
+                  className={`segmented-item ${roleFilter === 'all' ? 'segmented-item-active' : ''}`}
+                >
+                  Hammasi <span className="tabular ml-1 opacity-70">{users.length}</span>
+                </button>
+                {roleFilters.map((role) => (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => setRoleFilter(role)}
+                    aria-pressed={roleFilter === role}
+                    className={`segmented-item ${roleFilter === role ? 'segmented-item-active' : ''}`}
+                  >
+                    {roleLabels[role]} <span className="tabular ml-1 opacity-70">{roleCounts.get(role)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      </PageHeader>
 
-        <div className="space-y-4 p-6">
-          {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-          {success && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
+      {(error || success || amocrmManagersQuery.error || telegramRecipientsQuery.error || createdCredentials) && (
+        <div className="space-y-3">
+          {error && <p className="alert alert-error">{error}</p>}
+          {success && <p className="alert alert-success">{success}</p>}
           {amocrmManagersQuery.error && (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            <p className="alert alert-warning">
               AmoCRM menejerlari topilmadi. Agentlarni bog'lash uchun AmoCRM integratsiyasini ulang.
             </p>
           )}
           {telegramRecipientsQuery.error && (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            <p className="alert alert-warning">
               Telegram bot foydalanuvchilari topilmadi. Integratsiyalar bo'limida botni ulang va /start yuboring.
             </p>
           )}
           {createdCredentials && (
-            <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
+            <p className="alert alert-success">
               Foydalanuvchi yaratildi. Login: <strong>{createdCredentials.login}</strong>, Parol: <strong>{createdCredentials.password}</strong>
             </p>
           )}
+        </div>
+      )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            <input
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-              placeholder="Foydalanuvchi ismi (ixtiyoriy)"
-              className="min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <input
-              value={newPhone}
-              onChange={(event) => setNewPhone(event.target.value)}
-              placeholder="Telefon raqam (ixtiyoriy)"
-              className="min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <select
-              value={newRole}
-              onChange={(event) => setNewRole(event.target.value as UserRole)}
-              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              {availableRoles.map((role) => (
-                <option key={role} value={role}>
-                  {roleLabels[role]}
-                </option>
-              ))}
-            </select>
-            <select
-              value={newAmoManagerId}
-              onChange={(event) => setNewAmoManagerId(event.target.value)}
-              disabled={!roleNeedsManagerMapping(newRole)}
-              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-            >
-              <option value="">{roleNeedsManagerMapping(newRole) ? 'AmoCRM menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
-              {amocrmManagers.map((manager: any) => (
-                <option key={manager.id} value={manager.id}>
-                  {manager.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={newTelegramChatId}
-              onChange={(event) => setNewTelegramChatId(event.target.value)}
-              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="">Telegram (ixtiyoriy)</option>
-              {telegramRecipients.map((recipient: any) => (
-                <option key={recipient.id} value={recipient.id}>
-                  {recipient.name}{recipient.username ? ` (@${recipient.username})` : ''}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={handleCreateUser}
-              disabled={createUser.isLoading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 xl:whitespace-nowrap"
-            >
-              {createUser.isLoading ? 'Yaratilmoqda...' : "Foydalanuvchi qo'shish"}
-            </button>
+      <section className="panel min-w-0 overflow-hidden">
+        <div className="panel-header pb-4 sm:pb-4">
+          <div className="flex items-center gap-2">
+            <h2 className="section-title">Ish maydoni foydalanuvchilari</h2>
+            {users.length > 0 && <span className="badge badge-neutral tabular">{users.length}</span>}
           </div>
         </div>
-      </div>
 
-      <div className="rounded-lg bg-white shadow">
-        <div className="border-b border-gray-100 px-6 py-5">
-          <h2 className="text-lg font-medium text-gray-900">Ish maydoni foydalanuvchilari</h2>
-        </div>
+        {usersQuery.isLoading ? (
+          <LoadingBlock message="Foydalanuvchilar yuklanmoqda..." className="mx-5 mb-5 sm:mx-6 sm:mb-6" />
+        ) : visibleUsers.length ? (
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="pl-5 sm:pl-6">Foydalanuvchi</th>
+                  <th>Rol</th>
+                  <th>Oxirgi kirish</th>
+                  <th>Holat</th>
+                  <th className="pr-5 text-right sm:pr-6"><span className="sr-only">Amal</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleUsers.map((user) => {
+                  const userRoles: string[] = Array.isArray(user.roles) ? user.roles : [];
+                  const contact = [user.username, user.phone].filter(Boolean).join(' · ');
 
-        <div className="p-6">
-          {usersQuery.isLoading ? (
-            <LoadingBlock message="Foydalanuvchilar yuklanmoqda..." />
-          ) : usersQuery.data?.length ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Foydalanuvchi</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Rol + CRM/Telegram</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Login/Parol</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Holat</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Oxirgi kirish</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {(usersQuery.data as any[]).map((user) => {
-                    const resetState = generatedResetPassword;
-                    const generatedPasswordForRow =
-                      resetState && resetState.userId === user.id ? resetState.password : null;
-
-                    return (
+                  return (
                     <tr key={user.id}>
-                      <td className="px-4 py-3 text-sm text-gray-800">
-                        <div className="space-y-2">
-                          <input
-                            value={nameDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setNameDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Foydalanuvchi ismi"
-                            className="w-full min-w-[220px] rounded-md border border-gray-300 px-2 py-1 text-sm"
-                          />
-                          <input
-                            value={phoneDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setPhoneDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Telefon raqam"
-                            className="w-full min-w-[220px] rounded-md border border-gray-300 px-2 py-1 text-sm"
-                          />
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs text-gray-500">ID: {user.id}</div>
-                            <button
-                              type="button"
-                              onClick={() => handleNameSave(user.id)}
-                              disabled={updateName.isLoading}
-                              className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                            >
-                              {updateName.isLoading ? 'Saqlanmoqda...' : "Ism/telefonni saqlash"}
-                            </button>
+                      <td className="pl-5 sm:pl-6">
+                        <div className="flex min-w-[220px] items-center gap-3">
+                          <UserAvatar name={user.name || user.username || '?'} />
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-gray-900">{user.name || user.username || user.id}</p>
+                            {contact && <p className="tabular truncate text-xs text-gray-500">{contact}</p>}
+                            <p className="truncate text-[11px] text-gray-400">ID: {user.id}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
-                        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-[130px_1fr_1fr_auto]">
-                          <select
-                            value={roleDrafts[user.id] || 'Agent'}
-                            onChange={(event) =>
-                              setRoleDrafts((prev) => ({ ...prev, [user.id]: event.target.value as UserRole }))
-                            }
-                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
-                          >
-                            {availableRoles.map((role) => (
-                              <option key={role} value={role}>
-                                {roleLabels[role]}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            value={managerDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setManagerDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            disabled={!roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')}
-                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
-                          >
-                            <option value="">
-                              {roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')
-                                ? 'AmoCRM menejerini tanlang'
-                                : 'Bu rol uchun shart emas'}
-                            </option>
-                            {amocrmManagers.map((manager: any) => (
-                              <option key={manager.id} value={manager.id}>
-                                {manager.name}
-                              </option>
-                              ))}
-                            </select>
-                          <select
-                            value={telegramDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setTelegramDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
-                          >
-                            <option value="">Telegram (ixtiyoriy)</option>
-                            {telegramRecipients.map((recipient: any) => (
-                              <option key={recipient.id} value={recipient.id}>
-                                {recipient.name}{recipient.username ? ` (@${recipient.username})` : ''}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => handleRoleSave(user.id)}
-                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Saqlash
-                          </button>
+                      <td>
+                        <div className="flex flex-wrap gap-1.5">
+                          {userRoles.map((role) => (
+                            <span key={role} className="badge badge-blue">{roleLabels[role as UserRole] || role}</span>
+                          ))}
                         </div>
                       </td>
-                      <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto_auto]">
-                          <input
-                            value={loginDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setLoginDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Login"
-                            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                          />
-                          <input
-                            type="password"
-                            value={passwordDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setPasswordDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Yangi parol"
-                            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleCredentialsSave(user.id)}
-                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Saqlash
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleGeneratePassword(user.id)}
-                            className="rounded-md bg-blue-50 px-3 py-1 text-sm text-blue-700 hover:bg-blue-100"
-                          >
-                            Yaratish
-                          </button>
-                        </div>
-                        {generatedPasswordForRow && (
-                          <p className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">
-                            Yangi yaratilgan parol: <strong>{generatedPasswordForRow}</strong>
-                          </p>
-                        )}
+                      <td className="tabular whitespace-nowrap text-gray-600">
+                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Hech qachon'}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">
-                        <div className="flex flex-col gap-2">
-                          <span className={`inline-flex w-fit rounded-full px-2 py-1 text-xs font-medium ${user.isActive ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {user.isActive ? 'Faol' : 'Nofaol'}
-                          </span>
+                      <td>
+                        <span className={`badge ${user.isActive ? 'badge-green' : 'badge-amber'}`}>
+                          <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${user.isActive ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          {user.isActive ? 'Faol' : 'Nofaol'}
+                        </span>
+                      </td>
+                      <td className="pr-5 sm:pr-6">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditingUserId(user.id)}
+                            className="btn btn-soft btn-sm"
+                          >
+                            <IconPencil className="h-4 w-4" stroke={1.8} />
+                            Tahrirlash
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleToggleActive(user.id, !user.isActive)}
                             disabled={!isAdmin || setActiveMutation.isLoading}
-                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            className="btn btn-ghost btn-sm"
                           >
+                            {user.isActive ? <IconUserOff className="h-4 w-4" stroke={1.8} /> : <IconUserCheck className="h-4 w-4" stroke={1.8} />}
                             {!isAdmin
                               ? "Faqat admin"
                               : setActiveMutation.isLoading
@@ -484,20 +396,69 @@ export default function UsersPage() {
                           </button>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Hech qachon'}
-                      </td>
                     </tr>
                   );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-600">Bu ish maydonida foydalanuvchi topilmadi.</p>
-          )}
-        </div>
-      </div>
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState icon={IconUsers} title="Bu ish maydonida foydalanuvchi topilmadi." className="mx-5 mb-5 sm:mx-6 sm:mb-6" />
+        )}
+      </section>
+
+      {createOpen && (
+        <UserCreateSheet
+          onClose={() => setCreateOpen(false)}
+          onSubmit={handleCreateUser}
+          isSubmitting={createUser.isLoading}
+          error={error}
+          createdCredentials={createdCredentials}
+          newName={newName}
+          setNewName={setNewName}
+          newPhone={newPhone}
+          setNewPhone={setNewPhone}
+          newRole={newRole}
+          setNewRole={setNewRole}
+          newAmoManagerId={newAmoManagerId}
+          setNewAmoManagerId={setNewAmoManagerId}
+          newTelegramChatId={newTelegramChatId}
+          setNewTelegramChatId={setNewTelegramChatId}
+          amocrmManagers={amocrmManagers}
+          telegramRecipients={telegramRecipients}
+        />
+      )}
+
+      {editingUser && (
+        <UserEditSheet
+          user={editingUser}
+          onClose={() => setEditingUserId(null)}
+          error={error}
+          success={success}
+          generatedPassword={generatedResetPassword && generatedResetPassword.userId === editingUser.id ? generatedResetPassword.password : null}
+          nameDrafts={nameDrafts}
+          setNameDrafts={setNameDrafts}
+          phoneDrafts={phoneDrafts}
+          setPhoneDrafts={setPhoneDrafts}
+          loginDrafts={loginDrafts}
+          setLoginDrafts={setLoginDrafts}
+          passwordDrafts={passwordDrafts}
+          setPasswordDrafts={setPasswordDrafts}
+          roleDrafts={roleDrafts}
+          setRoleDrafts={setRoleDrafts}
+          managerDrafts={managerDrafts}
+          setManagerDrafts={setManagerDrafts}
+          telegramDrafts={telegramDrafts}
+          setTelegramDrafts={setTelegramDrafts}
+          amocrmManagers={amocrmManagers}
+          telegramRecipients={telegramRecipients}
+          isSavingName={updateName.isLoading}
+          onSaveName={handleNameSave}
+          onGeneratePassword={handleGeneratePassword}
+          onSaveCredentials={handleCredentialsSave}
+          onSaveRole={handleRoleSave}
+        />
+      )}
     </div>
   );
 }

@@ -257,6 +257,7 @@ model Lead {
   @@index([contactId])
   @@index([status])
   @@index([createdAt])
+  @@index([tenantId, externalCreatedAt])
   @@index([externalCreatedAt])
   @@map("leads")
 }

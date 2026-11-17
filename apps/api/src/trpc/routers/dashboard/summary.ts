@@ -5,14 +5,18 @@ import { withTimeout } from '../../../lib/async';
 import { resolveDateRange } from '../../../lib/dates';
 import { logger } from '../../../lib/logger';
 import { asObject } from '../../../lib/object';
-import { buildCacheKey, getOrSet } from '../../../services/cache';
+import { buildCacheKey, getOrSet, invalidateCache } from '../../../services/cache';
 import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { createSummarySourceStatus, runSummarySourceWithRetry } from '../../../services/dashboard/summary-sources';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
+import type { AmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 
-import { amocrmService, asStringArray, buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, getAmoCRMActivityMetrics, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, TRPCError, z } from './helpers';
+import { asStringArray, buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, fetchSnapshotLeads, getAmoCRMActivityMetricsWithin, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, TRPCError, z } from './helpers';
+
+/** How long the dashboard summary waits for amoCRM activity before answering without it. */
+const SUMMARY_ACTIVITY_WAIT_MS = 3_000;
 
 export const summaryProcedures = {
   summary: protectedProcedure
@@ -44,7 +48,7 @@ export const summaryProcedures = {
         cr: corporateRevisionKey,
       });
 
-      return getOrSet(cacheKey, 120, async () => {
+      const result = await getOrSet(cacheKey, 120, async () => {
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const tashkiliyOnly = isTashkiliyOnly(ctx.user.roles);
@@ -124,16 +128,15 @@ export const summaryProcedures = {
           fallback: [] as any[],
           run: async () => {
             const fetched = await withTimeout(
-              amocrmService.fetchAllLeads(
-                amoContext.accessToken,
+              fetchSnapshotLeads(
+                ctx.tenantId,
                 {
                   pipelineIds: selectedPipelineIds,
                   responsibleUserIds: scope.isScoped ? [scope.responsibleUserId as string] : undefined,
                   createdAtFrom: rangeStart,
                   createdAtTo: rangeEnd,
-                  limit: 250,
                 },
-                amoContext.baseUrl,
+                ctx.db,
               ),
               3000,
               'amo_leads_timeout',
@@ -288,15 +291,19 @@ export const summaryProcedures = {
         .map((agent) => (agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId).trim() : ''))
         .filter(Boolean);
       const activityDiagnostics = createAmoCRMActivityDiagnostics();
+      // amoCRM activity (tasks, notes, stage changes) is paged from amoCRM live and can take longer
+      // than the whole page should wait. Wait briefly; otherwise it finishes in the background and the
+      // next refresh shows it, instead of every widget in this batched request spinning for 30 s.
+      let activityPending = false;
       const activityByManager = amoContext && activityManagerIds.length > 0
         ? await runSummarySourceWithRetry({
             key: 'activity',
             status: sourceStatus,
             logContext: sourceLogContext,
             reasonFallback: 'activity_fetch_failed',
-            fallback: new Map(),
-            run: async () => withTimeout(
-              getAmoCRMActivityMetrics({
+            fallback: new Map<string, AmoCRMActivityMetrics>(),
+            run: async () => {
+              const lookup = await getAmoCRMActivityMetricsWithin({
                 tenantId: ctx.tenantId,
                 accessToken: amoContext.accessToken,
                 baseUrl: amoContext.baseUrl,
@@ -305,14 +312,20 @@ export const summaryProcedures = {
                 rangeEnd,
                 rangeKind: input.range,
                 diagnostics: activityDiagnostics,
-              }),
-              15_000,
-              'amo_activity_timeout',
-            ),
-          })
-        : new Map();
+              }, SUMMARY_ACTIVITY_WAIT_MS);
 
-      if (!amoContext) {
+              activityPending = lookup.pending;
+
+              return lookup.metrics ?? new Map<string, AmoCRMActivityMetrics>();
+            },
+          })
+        : new Map<string, AmoCRMActivityMetrics>();
+
+      if (activityPending) {
+        sourceStatus.activity.ok = false;
+        sourceStatus.activity.reason = 'activity_loading';
+        sourceStatus.activity.state = 'partial';
+      } else if (!amoContext) {
         sourceStatus.activity.ok = false;
         sourceStatus.activity.reason = 'amo_unavailable';
         sourceStatus.activity.state = 'unavailable';
@@ -516,7 +529,9 @@ export const summaryProcedures = {
         sourceStatus.activity.state = 'partial';
         sourceStatus.activity.reason = [sourceStatus.activity.reason, 'mapping_missing'].filter(Boolean).join(',');
       }
-      const activityRequestUnavailable = sourceStatus.activity.state === 'timeout'
+      // While activity is still loading, show its cells as unknown rather than 0.
+      const activityRequestUnavailable = activityPending
+        || sourceStatus.activity.state === 'timeout'
         || sourceStatus.activity.state === 'unavailable';
 
       const sellerPerformance = agentUsers
@@ -648,5 +663,13 @@ export const summaryProcedures = {
         updatedAt: now.toISOString(),
       };
       }); // end getOrSet
+
+      // Don't keep a summary whose amoCRM activity was still loading: the next request should pick
+      // up the activity once the background fetch lands.
+      if (result.sourceStatus.activity.reason?.includes('activity_loading')) {
+        await invalidateCache(cacheKey);
+      }
+
+      return result;
     }),
 };

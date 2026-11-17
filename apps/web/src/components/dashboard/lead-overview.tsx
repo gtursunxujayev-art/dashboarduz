@@ -1,29 +1,43 @@
 'use client';
 
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { SplitBar, sharePercent } from '@/components/ui/split-bar';
 import { trpc } from '@/lib/trpc';
 
 type LeadPeriod = { total: number; qualified: number; nonQualified: number };
 
-function LeadCard({ title, period }: { title: string; period: LeadPeriod }) {
+function LeadColumn({ title, period }: { title: string; period: LeadPeriod }) {
   return (
-    <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-      <p className="text-base font-medium text-gray-500">{title}</p>
-      <div className="mt-3 flex items-end justify-between gap-4">
-        <span className="text-sm font-semibold text-gray-700">Jami</span>
-        <span className="text-2xl font-extrabold tracking-tight text-cyan-500 sm:text-3xl">{period.total}</span>
+    <div className="p-5 sm:p-6">
+      <p className="text-[13px] font-medium text-gray-500">{title}</p>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className="tabular text-3xl font-semibold leading-none tracking-tight text-gray-900">{period.total}</span>
+        <span className="text-[13px] text-gray-500">Jami</span>
       </div>
-      <div className="mt-4 divide-y divide-gray-100 border-t border-gray-100">
-        <div className="flex items-center justify-between gap-4 py-3">
-          <span className="text-sm font-medium text-gray-700 sm:text-base">Sifatli</span>
-          <span className="text-base font-bold text-cyan-500 sm:text-lg">{period.qualified}</span>
+      <SplitBar first={period.qualified} second={period.nonQualified} className="mt-4" />
+      <dl className="mt-3 space-y-1.5 text-[13px]">
+        <div className="flex items-center justify-between gap-3">
+          <dt className="flex items-center gap-2 text-gray-600">
+            <span className="h-2 w-2 rounded-full bg-blue-600 dark:bg-blue-500" aria-hidden="true" />
+            <span>Sifatli</span>
+          </dt>
+          <dd className="tabular font-medium text-gray-900">
+            {period.qualified}
+            <span className="ml-2 font-normal text-gray-400">{sharePercent(period.qualified, period.total)}</span>
+          </dd>
         </div>
-        <div className="flex items-center justify-between gap-4 py-3">
-          <span className="text-sm font-medium text-gray-700 sm:text-base">Sifatsiz</span>
-          <span className="text-base font-bold text-cyan-500 sm:text-lg">{period.nonQualified}</span>
+        <div className="flex items-center justify-between gap-3">
+          <dt className="flex items-center gap-2 text-gray-600">
+            <span className="h-2 w-2 rounded-full bg-gray-300" aria-hidden="true" />
+            <span>Sifatsiz</span>
+          </dt>
+          <dd className="tabular font-medium text-gray-900">
+            {period.nonQualified}
+            <span className="ml-2 font-normal text-gray-400">{sharePercent(period.nonQualified, period.total)}</span>
+          </dd>
         </div>
-      </div>
-    </article>
+      </dl>
+    </div>
   );
 }
 
@@ -34,13 +48,13 @@ export default function DashboardLeadOverview() {
     refetchInterval: 5 * 60_000,
   });
 
-  if (query.isLoading) return <LoadingBlock message="Yangi lidlar yuklanmoqda..." />;
+  if (query.isLoading) return <LoadingBlock message="Yangi lidlar yuklanmoqda..." className="min-h-[220px]" />;
 
   if (query.error || !query.data?.available) {
     return (
-      <section>
-        <h2 className="mb-3 text-xl font-bold text-gray-900">Yangi lidlar</h2>
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+      <section className="panel p-5 sm:p-6">
+        <h2 className="section-title">Yangi lidlar</h2>
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
           AmoCRM yangi lidlar ma&apos;lumotini hozir yuklab bo&apos;lmadi.
           <button type="button" onClick={() => query.refetch()} className="ml-2 font-semibold underline">
             Qayta urinish
@@ -51,12 +65,14 @@ export default function DashboardLeadOverview() {
   }
 
   return (
-    <section>
-      <h2 className="mb-3 text-xl font-bold text-gray-900">Yangi lidlar</h2>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <LeadCard title="Bugungi" period={query.data.daily} />
-        <LeadCard title="Haftadagi" period={query.data.weekly} />
-        <LeadCard title="Oydagi" period={query.data.monthly} />
+    <section className="panel">
+      <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+        <h2 className="section-title">Yangi lidlar</h2>
+      </div>
+      <div className="grid grid-cols-1 divide-y divide-gray-100 md:grid-cols-3 md:divide-x md:divide-y-0">
+        <LeadColumn title="Bugungi" period={query.data.daily} />
+        <LeadColumn title="Haftadagi" period={query.data.weekly} />
+        <LeadColumn title="Oydagi" period={query.data.monthly} />
       </div>
     </section>
   );

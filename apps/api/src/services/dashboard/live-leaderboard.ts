@@ -166,6 +166,7 @@ export function summarizeAgreementBonusAndDebt(params: {
   const sales = params.sales.filter((sale) => wanted.has(sale.managerUserId));
   const teamAgreementByCourse = new Map<string, number>();
   const salesCountByAgentCategory = new Map<string, number>();
+  const agreementByAgentCategory = new Map<string, number>();
 
   for (const sale of sales) {
     const agreement = resolveSaleAgreementAmount(sale);
@@ -179,6 +180,7 @@ export function summarizeAgreementBonusAndDebt(params: {
       const key = `${sale.managerUserId}:${category}`;
 
       salesCountByAgentCategory.set(key, (salesCountByAgentCategory.get(key) || 0) + 1);
+      agreementByAgentCategory.set(key, (agreementByAgentCategory.get(key) || 0) + agreement);
     }
   }
 
@@ -201,10 +203,10 @@ export function summarizeAgreementBonusAndDebt(params: {
     const override = sale.courseId ? params.policy.courseOverrides[sale.courseId] : undefined;
     const percent = override
       ? resolveCourseIncomePercent(override, teamAgreementByCourse.get(sale.courseId!) || 0).percent
-      : resolveBonusPercent(
-          params.policy.bonusRules[category],
-          salesCountByAgentCategory.get(`${sale.managerUserId}:${category}`) || 0,
-        );
+      : resolveBonusPercent(params.policy.bonusRules[category], {
+          closedCount: salesCountByAgentCategory.get(`${sale.managerUserId}:${category}`) || 0,
+          closedAgreementAmount: agreementByAgentCategory.get(`${sale.managerUserId}:${category}`) || 0,
+        });
 
     bonus.set(sale.managerUserId, (bonus.get(sale.managerUserId) || 0) + Math.round(agreement * percent / 100));
     if (remaining === 0) {
@@ -232,7 +234,8 @@ export type OpenSale = {
 
 /**
  * Offline Kutilma: this month's bonus in the given courses if every still-unpaid sale there were paid off this
- * month. Payroll tiers on the number of sales an agent closes in the month (every course of the category) and the
+ * month. Payroll tiers on the number of sales an agent closes in the month (or their agreement total, per the rule's
+ * tier basis; every course of the category) and the
  * tier's percent applies to all of that month's closures, so the open sales raise the count and the higher percent
  * is applied to this month's closures plus the open sales. Course overrides tier on the course's team amount the
  * same way. In on-income mode an open sale adds its remaining debt instead of its whole agreement.
@@ -275,11 +278,14 @@ export function projectMonthlyKutilma(params: {
 
     for (const category of categories) {
       // Tier count: what payroll counts this month (closures in every course of the category) plus the open sales.
-      const closedCount = plainItems
-        .filter((item) => item.category === category)
-        .reduce((max, item) => Math.max(max, item.closedCount), 0);
+      const categoryItems = plainItems.filter((item) => item.category === category);
+      const closedCount = categoryItems.reduce((max, item) => Math.max(max, item.closedCount), 0);
+      const closedAgreementAmount = categoryItems.reduce((max, item) => Math.max(max, item.closedAgreementAmount), 0);
       const openInCategory = openPlain.filter((sale) => sale.category === category);
-      const percent = resolveBonusPercent(params.policy.bonusRules[category], closedCount + openInCategory.length);
+      const percent = resolveBonusPercent(params.policy.bonusRules[category], {
+        closedCount: closedCount + openInCategory.length,
+        closedAgreementAmount: closedAgreementAmount + openInCategory.reduce((sum, sale) => sum + sale.agreement, 0),
+      });
       const base = plainItems
         .filter((item) => item.category === category && item.courseId !== null && courses.has(item.courseId))
         .reduce((sum, item) => sum + item.baseAmount, 0)

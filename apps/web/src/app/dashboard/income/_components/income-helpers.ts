@@ -98,16 +98,6 @@ export function getSubTariffOptionValue(option: SubTariffOptionLike): string {
   return normalizeTextToken(option.name);
 }
 
-export function buildFieldClass(fieldErrors: FieldErrors, field: string, extra = ''): string {
-  const base =
-    'mt-1 w-full rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1';
-  const normal =
-    'border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400';
-  const invalid =
-    'border-red-500 bg-red-50 text-gray-900 ring-1 ring-red-300 focus:border-red-500 focus:ring-red-400 animate-pulse dark:border-red-400 dark:bg-red-950/30 dark:text-slate-100';
-  return `${base} ${fieldErrors[field] ? invalid : normal} ${extra}`.trim();
-}
-
 export function getTelegramDispatchWarning(dispatch: any): string | null {
   if (!dispatch || typeof dispatch !== 'object') {
     return null;

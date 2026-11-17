@@ -3,7 +3,7 @@ import { PLAN_BONUS_PERIOD_MODES, type PlanBonusPeriodMode, SALARY_RULE_MODES, t
 export { dashboardWidgetIdSchema, dashboardCustomSalesWidgetSchema, dashboardLayoutInputSchema, type DashboardCustomSalesWidget, type DashboardUserLayout, normalizeDashboardUserLayout } from '../../../services/dashboard/layout';
 export { PIE_COLORS, toPieData, buildFieldLabelMap, collectCatalogFieldOptions, isMappedValue, normalizeCourseCategoryName, classifyCourseCategory, classifyCourseCategoryFromField } from '../../../services/dashboard/catalog-fields';
 export { type DashboardRange, REPORT_MONTH_LABELS_UZ, getDaysInReportLocalMonth, getReportLocalDayOfYear, getReportLocalDaysInYear, getReportLocalDayOfYearForMonthEnd, buildTrend, getCurrentMonthRange } from '../../../services/dashboard/report-dates';
-export { SALARY_CATEGORIES, PLAN_BONUS_CATEGORIES, type SalaryCategory, type SalaryBreakdown, type SalaryRuleTier, type SalaryCategoryBonusRule, type SalaryBonusRules, type PlanBonusCategory, type SalaryPlanBonus, type KpiThreshold, KPI_METRIC_KEYS, type KpiMetricKey, type KpiSettings, type AttendancePenaltySettings, type SalarySettingsSnapshot, createZeroBreakdown, createSimpleBonusRule, normalizeSalaryTier, isValidTierSequence, normalizeCategoryBonusRule, resolveBonusPercent, toPositiveInteger, normalizePlanBonus, extractSalarySettings, getBonusAmount } from '../../../services/dashboard/salary-settings';
+export { SALARY_CATEGORIES, PLAN_BONUS_CATEGORIES, type SalaryCategory, type SalaryBreakdown, type SalaryRuleTier, type SalaryCategoryBonusRule, type SalaryBonusRules, type PlanBonusCategory, type SalaryPlanBonus, type KpiThreshold, KPI_METRIC_KEYS, type KpiMetricKey, type KpiSettings, type AttendancePenaltySettings, type SalarySettingsSnapshot, createZeroBreakdown, createSimpleBonusRule, normalizeSalaryTier, isValidTierSequence, normalizeCategoryBonusRule, resolveBonusPercent, usedTierFallback, type TierProgress, toPositiveInteger, normalizePlanBonus, extractSalarySettings, getBonusAmount } from '../../../services/dashboard/salary-settings';
 
 export { PLAN_BONUS_PERIOD_MODES, SALARY_RULE_MODES, type PlanBonusPeriodMode, type SalaryBonusMode, type SalaryRuleMode };
 
@@ -24,9 +24,12 @@ export {
 
 export { amocrmService } from '../../../services/integrations/amocrm';
 
+export { fetchSnapshotLeadPage, fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
+
 export {
   createAmoCRMActivityDiagnostics,
   getAmoCRMActivityMetrics,
+  getAmoCRMActivityMetricsWithin,
   summarizeAmoCRMActivityMetrics,
   type AmoCRMActivityDiagnostics,
 } from '../../../services/integrations/amocrm-activity';

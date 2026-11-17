@@ -1,4 +1,7 @@
+import type { DbClient } from '@dashboarduz/db';
+
 import { type AmoCRMLead, type AmoCRMLeadPipeline, amocrmService } from '../integrations/amocrm';
+import { fetchSnapshotLeads } from '../integrations/amocrm-lead-snapshot-read';
 
 import { asString, parseAmoDate } from './metrics';
 
@@ -175,75 +178,29 @@ export function buildStatusFilters(
   return filters;
 }
 
-function buildStatusFilterSet(filters: Array<{ pipelineId: string; statusId: string }>): Set<string> {
-  return new Set(filters.map((filter) => `${filter.pipelineId}:${filter.statusId}`));
-}
-
-function isLeadInStatusSet(lead: AmoCRMLead, statusSet: Set<string>) {
-  const pipelineId = asString(lead.pipeline_id);
-  const statusId = asString(lead.status_id);
-
-  if (!pipelineId || !statusId) {
-    return false;
-  }
-
-  return statusSet.has(`${pipelineId}:${statusId}`);
-}
-
+/** Snapshot leads in the given pipeline/status pairs, assigned to the given managers. */
 export async function fetchLeadsByStatusFilters(
-  accessToken: string,
-  baseUrl: string | undefined,
+  tenantId: string,
+  db: DbClient,
   pipelineIds: string[],
   statusFilters: Array<{ pipelineId: string; statusId: string }>,
   responsibleUserIds: string[],
   rangeStart?: Date,
   rangeEnd?: Date,
-  withContacts = false,
 ): Promise<AmoCRMLead[]> {
   if (pipelineIds.length === 0 || statusFilters.length === 0 || responsibleUserIds.length === 0) {
     return [];
   }
 
-  const statusSet = buildStatusFilterSet(statusFilters);
-
-  try {
-    return await amocrmService.fetchAllLeads(
-      accessToken,
-      {
-        pipelineIds,
-        statusFilters,
-        responsibleUserIds,
-        createdAtFrom: rangeStart,
-        createdAtTo: rangeEnd,
-        with: withContacts ? 'contacts' : undefined,
-        limit: 250,
-      },
-      baseUrl,
-    );
-  } catch {
-    const fallback = await amocrmService.fetchAllLeads(
-      accessToken,
-      {
-        pipelineIds,
-        responsibleUserIds,
-        createdAtFrom: rangeStart,
-        createdAtTo: rangeEnd,
-        with: withContacts ? 'contacts' : undefined,
-        limit: 250,
-      },
-      baseUrl,
-    );
-
-    return fallback.filter((lead) => {
-      if (!isLeadInStatusSet(lead, statusSet)) {
-        return false;
-      }
-      if (!rangeStart || !rangeEnd) {
-        return true;
-      }
-      const createdAt = parseAmoDate(lead.created_at);
-
-      return createdAt >= rangeStart && createdAt <= rangeEnd;
-    });
-  }
+  return fetchSnapshotLeads(
+    tenantId,
+    {
+      pipelineIds,
+      statusFilters,
+      responsibleUserIds,
+      createdAtFrom: rangeStart,
+      createdAtTo: rangeEnd,
+    },
+    db,
+  );
 }

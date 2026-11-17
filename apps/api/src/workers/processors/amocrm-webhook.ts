@@ -82,7 +82,8 @@ export async function processAmoCRMWebhook(event: any, tenantId: string) {
         status: leadData.status_id ? String(leadData.status_id) : null,
         pipelineId,
         responsibleUserId: leadData.responsible_user_id ? String(leadData.responsible_user_id) : null,
-        metadata: leadData,
+        // The stored payload comes from the lead snapshot (API format). A webhook payload has a
+        // different shape, so a webhook only updates the columns above.
         source: 'amocrm',
         externalCreatedAt,
         externalUpdatedAt,

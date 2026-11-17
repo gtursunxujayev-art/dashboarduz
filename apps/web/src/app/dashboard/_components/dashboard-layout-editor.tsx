@@ -8,7 +8,7 @@ export function DashboardLayoutEditor({ vm }: { vm: DashboardPageModel }) {
   return (
     <>
       {isEditMode && (
-        <div className="rounded-lg bg-white shadow">
+        <div className="panel">
           <div className="space-y-4 px-4 py-4 sm:px-5">
             <div>
               <h3 className="text-sm font-semibold text-gray-900">Kartalarni ko'rsatish/yashirish</h3>
@@ -19,7 +19,7 @@ export function DashboardLayoutEditor({ vm }: { vm: DashboardPageModel }) {
                       type="checkbox"
                       checked={effectiveVisibleWidgetSet.has(card.id)}
                       onChange={() => toggleWidgetVisibility(card.id)}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="checkbox"
                     />
                     <span className="text-gray-800">{card.title}</span>
                   </label>
@@ -35,7 +35,7 @@ export function DashboardLayoutEditor({ vm }: { vm: DashboardPageModel }) {
                   value={newWidgetTitle}
                   onChange={(event) => setNewWidgetTitle(event.target.value)}
                   placeholder="Karta nomi (ixtiyoriy)"
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  className="field"
                 />
                 <select
                   value={newWidgetCourseId}
@@ -44,7 +44,7 @@ export function DashboardLayoutEditor({ vm }: { vm: DashboardPageModel }) {
                     setNewWidgetTariffId('');
                     setNewWidgetSubTariffId('');
                   }}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  className="field"
                 >
                   <option value="">Kurs tanlang</option>
                   {widgetCourses.map((course: any) => (
@@ -58,7 +58,7 @@ export function DashboardLayoutEditor({ vm }: { vm: DashboardPageModel }) {
                     setNewWidgetSubTariffId('');
                   }}
                   disabled={!selectedWidgetCourse}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+                  className="field"
                 >
                   <option value="">Barcha tariflar</option>
                   {(selectedWidgetCourse?.tariffs || []).map((tariff: any) => (
@@ -69,7 +69,7 @@ export function DashboardLayoutEditor({ vm }: { vm: DashboardPageModel }) {
                   value={newWidgetSubTariffId}
                   onChange={(event) => setNewWidgetSubTariffId(event.target.value)}
                   disabled={!selectedWidgetCourse}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+                  className="field"
                 >
                   <option value="">Barcha subtariflar</option>
                   {availableSubTariffs.map((subTariff: any) => (
@@ -80,7 +80,7 @@ export function DashboardLayoutEditor({ vm }: { vm: DashboardPageModel }) {
                   type="button"
                   onClick={addCustomSalesWidget}
                   disabled={!newWidgetCourseId}
-                  className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                  className="btn btn-primary"
                 >
                   Qo'shish
                 </button>
@@ -97,14 +97,14 @@ export function DashboardLayoutEditor({ vm }: { vm: DashboardPageModel }) {
                             type="checkbox"
                             checked={effectiveVisibleWidgetSet.has(widgetId)}
                             onChange={() => toggleWidgetVisibility(widgetId)}
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            className="checkbox"
                           />
                           <span>{widget.title}</span>
                         </label>
                         <button
                           type="button"
                           onClick={() => removeCustomSalesWidget(widget.id)}
-                          className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                          className="btn btn-danger-soft btn-sm"
                         >
                           O'chirish
                         </button>
@@ -120,14 +120,14 @@ export function DashboardLayoutEditor({ vm }: { vm: DashboardPageModel }) {
                 type="button"
                 onClick={() => saveDashboardLayout().catch((err) => { console.error('saveDashboardLayout failed', err); return null; })}
                 disabled={saveDashboardLayoutMutation.isPending}
-                className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-green-300"
+                className="btn btn-success"
               >
                 {saveDashboardLayoutMutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}
               </button>
               <button
                 type="button"
                 onClick={restoreLayoutFromServer}
-                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="btn btn-secondary"
               >
                 Bekor qilish
               </button>

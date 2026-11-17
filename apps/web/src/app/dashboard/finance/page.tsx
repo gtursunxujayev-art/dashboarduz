@@ -1,7 +1,12 @@
 'use client';
 
+import { IconAlertTriangle, IconArrowRight, IconBook, IconListDetails, IconReceiptRefund, IconReportMoney, IconUserDollar, IconUsers } from '@tabler/icons-react';
 import { getIncomeStatusBadge } from '@/components/dashboard/income-status-badge';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatTile } from '@/components/ui/stat-tile';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { useAuth } from '@/contexts/auth-context';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import { type ExtendedDashboardRange as DashboardRange, getPreviousMonthRange, getPreviousWeekRange, getTashkentDateShift, getTashkentToday } from '@/lib/date-range';
@@ -9,8 +14,9 @@ import { formatSom } from '@/lib/format';
 import { trpc } from '@/lib/trpc';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { AGENT_ROLES, formatCompactAmount, getTrendMeta } from './_components/finance-helpers';
+import { ComparisonCard, FinanceHero, ForecastPanel } from './_components/finance-cockpit';
+import { FinanceFilterBar } from './_components/finance-filter-bar';
+import { AGENT_ROLES } from './_components/finance-helpers';
 
 export default function FinancePage() {
   const { user } = useAuth();
@@ -139,433 +145,339 @@ export default function FinancePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Moliya</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Kurs, agent va sana bo'yicha tushum hamda qarzdorlik tahlili.
-        </p>
+      <PageHeader
+        title="Moliya"
+        description="Kurs, agent va sana bo'yicha tushum hamda qarzdorlik tahlili."
+      >
         {isAgentOnly && (
-          <p className="mt-2 text-xs font-medium text-blue-700">
+          <p className="alert alert-info">
             Agent rejimi: bu sahifada faqat o'zingizga tegishli moliyaviy ma'lumotlar ko'rsatiladi.
           </p>
         )}
-      </div>
-
-      <div className="rounded-lg bg-white p-6 shadow">
-        <div className={`grid grid-cols-1 gap-3 ${isAgentOnly ? 'md:grid-cols-[180px_180px_180px_1fr]' : 'md:grid-cols-[180px_180px_180px_1fr_1fr]'}`}>
-          <select
-            value={range}
-            onChange={(event) => setRange(event.target.value as DashboardRange)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="today">Bugun</option>
-            <option value="week">Hafta</option>
-            <option value="month">Oy</option>
-            <option value="last_week">O'tgan hafta</option>
-            <option value="last_month">O'tgan oy</option>
-            <option value="custom">Ixtiyoriy</option>
-          </select>
-
-          <input
-            type="date"
-            value={range === 'custom' ? dateFrom : effectiveDateRange.dateFrom}
-            disabled={range !== 'custom'}
-            onChange={(event) => setDateFrom(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-          />
-          <input
-            type="date"
-            value={range === 'custom' ? dateTo : effectiveDateRange.dateTo}
-            disabled={range !== 'custom'}
-            onChange={(event) => setDateTo(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-          />
-
-          <select
-            value={courseId}
-            onChange={(event) => setCourseId(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">Barcha kurslar</option>
-            {courseOptions.map((course: any) => (
-              <option key={course.id} value={course.id}>
-                {course.name}
-              </option>
-            ))}
-          </select>
-
-          {!isAgentOnly && (
-            <select
-              value={managerUserId}
-              onChange={(event) => setManagerUserId(event.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="">Barcha agentlar</option>
-              {managerOptions.map((manager: any) => (
-                <option key={manager.id} value={manager.id}>
-                  {manager.label}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      </div>
+        <FinanceFilterBar
+          range={range}
+          onRangeChange={setRange}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          effectiveDateFrom={effectiveDateRange.dateFrom}
+          effectiveDateTo={effectiveDateRange.dateTo}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+          courseId={courseId}
+          onCourseChange={setCourseId}
+          courseOptions={courseOptions}
+          showManagerFilter={!isAgentOnly}
+          managerUserId={managerUserId}
+          onManagerChange={setManagerUserId}
+          managerOptions={managerOptions}
+        />
+      </PageHeader>
 
       {financeQuery.error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           {financeQuery.error.message || 'Moliya ma\'lumotlarini yuklashda xatolik.'}
         </div>
       )}
 
-      <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${canSeeRefundAnalytics ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Jami tushum</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(totals?.totalIncomeAmount)}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Yangi sotuvlar</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{totals?.newSalesCount ?? 0}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Qayta to'lovlar</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{totals?.repaymentCount ?? 0}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Qarzdorlar</p>
-          <p className="mt-2 text-2xl font-semibold text-amber-700">{totals?.debtorsCount ?? 0}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Jami qarzdorlik</p>
-          <p className="mt-2 text-2xl font-semibold text-amber-700">{formatSom(totals?.totalDebtAmount)}</p>
-        </div>
-        {canSeeRefundAnalytics && (
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">Qaytarilgan tushum</p>
-            <p className="mt-2 text-2xl font-semibold text-red-700">{formatSom(totals?.refundAmount)}</p>
-            <p className="mt-1 text-xs text-gray-500">{totals?.refundCount ?? 0} ta qaytarish</p>
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
-          <p className="text-sm text-blue-700">Hisoblangan maosh</p>
-          <p className="mt-2 text-2xl font-semibold text-blue-900">{formatSom(salaryTotals?.salary)}</p>
-          <p className="mt-1 text-xs text-blue-700">
-            {effectiveDateRange.dateFrom} - {effectiveDateRange.dateTo}
-          </p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Fiks maosh</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(salaryTotals?.fixedSalary)}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Asosiy bonus</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(salaryTotals?.bonus)}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Qo'shimcha bonuslar</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(salaryTotals?.planBonus)}</p>
-          <p className="mt-1 text-xs text-gray-500">KPI: {formatSom(salaryTotals?.kpi)}</p>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+        <FinanceHero
+          totalIncomeAmount={totals?.totalIncomeAmount}
+          newSalesCount={totals?.newSalesCount}
+          repaymentCount={totals?.repaymentCount}
+          debtorsCount={totals?.debtorsCount}
+          dateFrom={effectiveDateRange.dateFrom}
+          dateTo={effectiveDateRange.dateTo}
+        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:auto-rows-fr xl:grid-cols-1">
+          <StatTile label="Jami qarzdorlik" value={formatSom(totals?.totalDebtAmount)} icon={IconAlertTriangle} tone="amber" />
+          {canSeeRefundAnalytics && (
+            <StatTile
+              label="Qaytarilgan tushum"
+              value={formatSom(totals?.refundAmount)}
+              hint={`${totals?.refundCount ?? 0} ta qaytarish`}
+              icon={IconReceiptRefund}
+              tone="red"
+            />
+          )}
         </div>
       </div>
 
-      <div className="rounded-lg bg-white p-6 shadow">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Agentlar maoshi</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Tanlangan davr bo'yicha umumiy maosh, fiks, KPI, qo'shimcha bonus va asosiy bonus.
-            </p>
-          </div>
-        </div>
-        {salaryQuery.isLoading ? (
-          <LoadingBlock className="mt-3" />
-        ) : salaryByAgent.length ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Umumiy maosh</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fiks</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">KPI</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qo'shimcha bonus</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Asosiy bonus</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {salaryByAgent.map((row: any) => (
-                  <tr key={row.userId}>
-                    <td className="px-3 py-2 text-sm text-gray-900">{row.name}</td>
-                    <td className="px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(row.totalSalary)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.fixedSalary)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.kpiAmount)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.planBonusAmount)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusAmount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha maosh ma'lumoti topilmadi.</p>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        {[
-          {
-            title: "Bu oy (hozirgacha) vs o'tgan oy (shu sana)",
-            data: comparisons?.monthToDateVsLastMonthToDate,
-          },
-          {
-            title: "Bu oy (hozirgacha) vs o'tgan yil shu oy",
-            data: comparisons?.monthToDateVsLastYearSameMonth,
-          },
-          {
-            title: 'YTD: Bu yil vs O‘tgan yil',
-            data: comparisons?.ytdVsLastYearYtd,
-          },
-        ].map((item) => {
-          const trend = getTrendMeta(item.data?.direction);
-          return (
-            <div key={item.title} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-gray-500">{item.title}</p>
-              <div className="mt-3 space-y-1">
-                <p className="text-sm text-gray-600">Joriy: <span className="font-semibold text-gray-900">{formatSom(item.data?.currentValue)}</span></p>
-                <p className="text-sm text-gray-600">Taqqoslash: <span className="font-semibold text-gray-900">{formatSom(item.data?.previousValue)}</span></p>
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${trend.badgeClass}`}>
-                  {trend.label}
-                </span>
-                <span className="text-sm font-semibold text-gray-900">
-                  {trend.sign}{formatSom(item.data?.diffAmount)} ({trend.sign}{Number(item.data?.diffPercent || 0).toFixed(2)}%)
-                </span>
-              </div>
-            </div>
-          );
-        })}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <ComparisonCard title="Bu oy (hozirgacha) vs o'tgan oy (shu sana)" data={comparisons?.monthToDateVsLastMonthToDate} />
+        <ComparisonCard title="Bu oy (hozirgacha) vs o'tgan yil shu oy" data={comparisons?.monthToDateVsLastYearSameMonth} />
+        <ComparisonCard title="YTD: Bu yil vs O‘tgan yil" data={comparisons?.ytdVsLastYearYtd} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="rounded-lg bg-white p-6 shadow">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Oy yakuni prognozi</h2>
-              <p className="mt-1 text-sm text-gray-500">
-                Hozirgi kunlik sur&apos;at asosida oy oxiri prognozi.
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-gray-500">Prognoz</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.monthEnd?.projectedTotal)}</p>
-            </div>
-          </div>
-
-          <div className="mb-3 grid grid-cols-2 gap-3">
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs text-gray-500">Hozirgacha</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.monthEnd?.currentToDate)}</p>
-            </div>
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs text-gray-500">Qolgan potensial</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.monthEnd?.remainingAmount)}</p>
-            </div>
-          </div>
-
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={monthSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={(value) => formatCompactAmount(value)} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  formatter={(value: any, name: string) => [formatSom(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
-                  labelFormatter={(label) => `${label}-kun`}
-                />
-                <Line type="monotone" dataKey="actual" name="actual" stroke="#2563EB" strokeWidth={2.5} dot={false} connectNulls={false} />
-                <Line type="monotone" dataKey="forecast" name="forecast" stroke="#F59E0B" strokeWidth={2} dot={false} strokeDasharray="6 4" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="rounded-lg bg-white p-6 shadow">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Yil yakuni prognozi</h2>
-              <p className="mt-1 text-sm text-gray-500">
-                YTD dinamikasi va yil oxirigacha prognoz.
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-gray-500">Prognoz</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.yearEnd?.projectedTotal)}</p>
-            </div>
-          </div>
-
-          <div className="mb-3 grid grid-cols-2 gap-3">
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs text-gray-500">YTD</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.yearEnd?.currentToDate)}</p>
-            </div>
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs text-gray-500">Qolgan potensial</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.yearEnd?.remainingAmount)}</p>
-            </div>
-          </div>
-
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={yearSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={(value) => formatCompactAmount(value)} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  formatter={(value: any, name: string) => [formatSom(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
-                />
-                <Line type="monotone" dataKey="actual" name="actual" stroke="#2563EB" strokeWidth={2.5} dot={false} connectNulls={false} />
-                <Line type="monotone" dataKey="forecast" name="forecast" stroke="#F59E0B" strokeWidth={2} dot={false} strokeDasharray="6 4" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <ForecastPanel
+          title="Oy yakuni prognozi"
+          description={<>Hozirgi kunlik sur&apos;at asosida oy oxiri prognozi.</>}
+          block={forecast?.monthEnd}
+          currentLabel="Hozirgacha"
+          data={monthSeries}
+          labelFormatter={(label: any) => `${label}-kun`}
+        />
+        <ForecastPanel
+          title="Yil yakuni prognozi"
+          description="YTD dinamikasi va yil oxirigacha prognoz."
+          block={forecast?.yearEnd}
+          currentLabel="YTD"
+          data={yearSeries}
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-lg font-semibold text-gray-900">Kurslar bo'yicha tushum</h2>
-          {financeQuery.isLoading ? (
-            <LoadingBlock className="mt-3" />
-          ) : incomeByCourse.length ? (
-            <div className="mt-3 overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+      <section className="panel">
+        <div className="panel-header items-start">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+              <IconUserDollar className="h-[18px] w-[18px]" stroke={1.6} />
+            </span>
+            <div className="min-w-0">
+              <h2 className="section-title">Agentlar maoshi</h2>
+              <p className="mt-0.5 text-sm text-gray-500">
+                Tanlangan davr bo'yicha umumiy maosh, fiks, KPI, qo'shimcha bonus va asosiy bonus.
+              </p>
+            </div>
+          </div>
+          {salaryByAgent.length ? <span className="badge badge-neutral tabular">{salaryByAgent.length}</span> : null}
+        </div>
+        <div className="panel-body space-y-5">
+          <div className="grid grid-cols-1 overflow-hidden rounded-[16px] bg-gray-50 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="bg-blue-50 p-4">
+              <p className="caption text-blue-700">Hisoblangan maosh</p>
+              <p className="tabular mt-2 text-xl font-semibold text-blue-900">{formatSom(salaryTotals?.salary)}</p>
+              <p className="tabular mt-1 text-xs text-blue-700">
+                {effectiveDateRange.dateFrom} - {effectiveDateRange.dateTo}
+              </p>
+            </div>
+            <div className="border-t border-gray-200/70 p-4 sm:border-l sm:border-t-0">
+              <p className="caption">Fiks maosh</p>
+              <p className="tabular mt-2 text-xl font-semibold text-gray-900">{formatSom(salaryTotals?.fixedSalary)}</p>
+            </div>
+            <div className="border-t border-gray-200/70 p-4 xl:border-l xl:border-t-0">
+              <p className="caption">Asosiy bonus</p>
+              <p className="tabular mt-2 text-xl font-semibold text-gray-900">{formatSom(salaryTotals?.bonus)}</p>
+            </div>
+            <div className="border-t border-gray-200/70 p-4 sm:border-l xl:border-t-0">
+              <p className="caption">Qo'shimcha bonuslar</p>
+              <p className="tabular mt-2 text-xl font-semibold text-gray-900">{formatSom(salaryTotals?.planBonus)}</p>
+              <p className="tabular mt-1 text-xs text-gray-500">KPI: {formatSom(salaryTotals?.kpi)}</p>
+            </div>
+          </div>
+
+          {salaryQuery.isLoading ? (
+            <LoadingBlock />
+          ) : salaryByAgent.length ? (
+            <div className="-mx-2 overflow-x-auto sm:-mx-3">
+              <table className="data-table">
+                <thead>
                   <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Soni</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Shartnoma</th>
+                    <th className="text-left">Agent</th>
+                    <th className="text-right">Umumiy maosh</th>
+                    <th className="text-right">Fiks</th>
+                    <th className="text-right">KPI</th>
+                    <th className="text-right">Qo'shimcha bonus</th>
+                    <th className="text-right">Asosiy bonus</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {incomeByCourse.map((row: any) => (
-                    <tr key={row.courseName}>
-                      <td className="px-3 py-2 text-sm text-gray-900">{row.courseName}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{row.count}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.amount)}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.agreementAmount)}</td>
+                <tbody>
+                  {salaryByAgent.map((row: any) => (
+                    <tr key={row.userId}>
+                      <td>
+                        <div className="flex items-center gap-2.5">
+                          <UserAvatar name={row.name || '?'} size="sm" />
+                          <span className="whitespace-nowrap font-medium text-gray-900">{row.name}</span>
+                        </div>
+                      </td>
+                      <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">{formatSom(row.totalSalary)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.fixedSalary)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.kpiAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.planBonusAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.bonusAmount)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha kurs tushumi topilmadi.</p>
+            <EmptyState icon={IconUserDollar} title="Tanlangan filtr bo'yicha maosh ma'lumoti topilmadi." />
           )}
         </div>
+      </section>
 
-        <div className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-lg font-semibold text-gray-900">Agentlar bo'yicha tushum</h2>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <section className="panel">
+          <div className="panel-header">
+            <div className="flex items-center gap-2.5">
+              <h2 className="section-title">Kurslar bo'yicha tushum</h2>
+              {incomeByCourse.length ? <span className="badge badge-neutral tabular">{incomeByCourse.length}</span> : null}
+            </div>
+          </div>
+          <div className="p-2 sm:p-3">
+            {financeQuery.isLoading ? (
+              <LoadingBlock className="m-2" />
+            ) : incomeByCourse.length ? (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="text-left">Kurs</th>
+                      <th className="text-right">Soni</th>
+                      <th className="text-right">Tushum</th>
+                      <th className="text-right">Shartnoma</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {incomeByCourse.map((row: any) => (
+                      <tr key={row.courseName}>
+                        <td>
+                          <div className="flex items-center gap-2.5">
+                            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500" aria-hidden="true">
+                              <IconBook className="h-4 w-4" stroke={1.8} />
+                            </span>
+                            <span className="font-medium text-gray-900">{row.courseName}</span>
+                          </div>
+                        </td>
+                        <td className="tabular text-right">{row.count}</td>
+                        <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">{formatSom(row.amount)}</td>
+                        <td className="tabular whitespace-nowrap text-right">{formatSom(row.agreementAmount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState icon={IconBook} title="Tanlangan filtr bo'yicha kurs tushumi topilmadi." className="m-2" />
+            )}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header">
+            <div className="flex items-center gap-2.5">
+              <h2 className="section-title">Agentlar bo'yicha tushum</h2>
+              {incomeByAgent.length ? <span className="badge badge-neutral tabular">{incomeByAgent.length}</span> : null}
+            </div>
+          </div>
+          <div className="p-2 sm:p-3">
+            {financeQuery.isLoading ? (
+              <LoadingBlock className="m-2" />
+            ) : incomeByAgent.length ? (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="text-left">Agent</th>
+                      <th className="text-right">Soni</th>
+                      <th className="text-right">Tushum</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {incomeByAgent.map((row: any) => (
+                      <tr key={row.agent}>
+                        <td>
+                          <div className="flex items-center gap-2.5">
+                            <UserAvatar name={row.agent || '?'} size="sm" />
+                            <span className="font-medium text-gray-900">{row.agent}</span>
+                          </div>
+                        </td>
+                        <td className="tabular text-right">{row.count}</td>
+                        <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">{formatSom(row.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState icon={IconUsers} title="Tanlangan filtr bo'yicha agent tushumi topilmadi." className="m-2" />
+            )}
+          </div>
+        </section>
+      </div>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div className="flex items-center gap-2.5">
+            <h2 className="section-title">So'nggi tushumlar</h2>
+            {recentIncomes.length ? <span className="badge badge-neutral tabular">{recentIncomes.length}</span> : null}
+          </div>
+        </div>
+        <div className="p-2 sm:p-3">
           {financeQuery.isLoading ? (
-            <LoadingBlock className="mt-3" />
-          ) : incomeByAgent.length ? (
-            <div className="mt-3 overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+            <LoadingBlock className="m-2" />
+          ) : recentIncomes.length ? (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
                   <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Soni</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
+                    <th className="text-left">Sana</th>
+                    <th className="text-left">Turi</th>
+                    <th className="text-left">Mijoz</th>
+                    <th className="text-left">Agent</th>
+                    <th className="text-left">Kurs/Tarif</th>
+                    <th className="text-left">Holat</th>
+                    <th className="text-right">To'lov</th>
+                    <th className="text-right">Qoldiq qarz</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {incomeByAgent.map((row: any) => (
-                    <tr key={row.agent}>
-                      <td className="px-3 py-2 text-sm text-gray-900">{row.agent}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{row.count}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.amount)}</td>
+                <tbody>
+                  {recentIncomes.map((income: any) => (
+                    <tr key={income.id}>
+                      <td className="tabular whitespace-nowrap text-gray-600">
+                        {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <span className={income.type === 'repayment' ? 'badge badge-amber' : 'badge badge-blue'}>
+                          {income.type === 'repayment' ? 'Qarzdorlik' : 'Yangi sotuv'}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap font-medium text-gray-900">
+                        {income.customerNumber} - {income.customerName}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={income.managerLabel || '?'} size="sm" />
+                          <span>{income.managerLabel}</span>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap">
+                        {[income.courseName, income.tariffName].filter(Boolean).join(' / ') || '-'}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <span className={`badge ${getIncomeStatusBadge(income.lifecycleStatus, { darkMode: false }).className}`}>
+                          {getIncomeStatusBadge(income.lifecycleStatus, { darkMode: false }).label}
+                        </span>
+                      </td>
+                      <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">{formatSom(income.paymentAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(income.remainingDebtAmount)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha agent tushumi topilmadi.</p>
+            <EmptyState icon={IconReportMoney} title="Tanlangan filtr bo'yicha tushum yo'q." className="m-2" />
           )}
         </div>
-      </div>
+      </section>
 
-      <div className="rounded-lg bg-white p-6 shadow">
-        <h2 className="text-lg font-semibold text-gray-900">So'nggi tushumlar</h2>
-        {financeQuery.isLoading ? (
-          <LoadingBlock className="mt-3" />
-        ) : recentIncomes.length ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sana</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Turi</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Mijoz</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs/Tarif</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Holat</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">To'lov</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qoldiq qarz</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {recentIncomes.map((income: any) => (
-                  <tr key={income.id}>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {income.type === 'repayment' ? 'Qarzdorlik' : 'Yangi sotuv'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {income.customerNumber} - {income.customerName}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{income.managerLabel}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {[income.courseName, income.tariffName].filter(Boolean).join(' / ') || '-'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getIncomeStatusBadge(income.lifecycleStatus, { darkMode: false }).className}`}>
-                        {getIncomeStatusBadge(income.lifecycleStatus, { darkMode: false }).label}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(income.paymentAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(income.remainingDebtAmount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha tushum yo'q.</p>
-        )}
-      </div>
-
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Bonus tafsiloti</h2>
-            <p className="mt-1 text-sm text-gray-500">
+      <section className="panel flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+            <IconListDetails className="h-5 w-5" stroke={1.6} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="section-title">Bonus tafsiloti</h2>
+            <p className="mt-0.5 text-sm text-gray-500">
               Bonus tafsilotini alohida sahifada ko&apos;ring (real-time debug ustunlari bilan).
             </p>
           </div>
-          <Link
-            href="/dashboard/finance/bonus-details"
-            className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
-          >
-            Bonus tafsilotiga o&apos;tish
-          </Link>
         </div>
-      </div>
+        <Link href="/dashboard/finance/bonus-details" className="btn btn-soft inline-flex flex-shrink-0">
+          Bonus tafsilotiga o&apos;tish
+          <IconArrowRight className="h-4 w-4" stroke={1.8} />
+        </Link>
+      </section>
     </div>
   );
 }

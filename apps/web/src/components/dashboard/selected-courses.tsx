@@ -1,5 +1,7 @@
 'use client';
 
+import { IconBuildingCommunity, IconFlame, IconWorld } from '@tabler/icons-react';
+import type { Icon } from '@tabler/icons-react';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatCompactMoney } from '@/lib/format';
@@ -12,36 +14,43 @@ type SelectedCourse = {
   tariffs: Array<{ tariffId: string | null; name: string; salesCount: number }>;
 };
 
-const GROUP_LABELS: Record<'online' | 'offline' | 'intensive', string> = {
-  online: 'Online',
-  offline: 'Offline',
-  intensive: 'Intensiv',
+type GroupKey = 'online' | 'offline' | 'intensive';
+
+const GROUPS: Record<GroupKey, { label: string; icon: Icon }> = {
+  online: { label: 'Online', icon: IconWorld },
+  offline: { label: 'Offline', icon: IconBuildingCommunity },
+  intensive: { label: 'Intensiv', icon: IconFlame },
 };
 
-function CourseCard({ label, course }: { label: string; course: SelectedCourse | null }) {
+function CourseCard({ group, course }: { group: GroupKey; course: SelectedCourse | null }) {
+  const { label, icon: GroupIcon } = GROUPS[group];
+
   return (
-    <article className="min-h-[230px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-gray-400">Tanlangan kurs</p>
-        <span className="rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs font-semibold text-cyan-700">
-          {label}
+    <article className="panel flex min-h-[212px] flex-col p-5 sm:p-6">
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-700">
+          <GroupIcon className="h-5 w-5" stroke={1.6} />
         </span>
+        <div className="min-w-0">
+          <p className="text-[13px] font-medium text-gray-500">Tanlangan kurs</p>
+          <p className="text-sm font-medium text-gray-900">{label}</p>
+        </div>
       </div>
       {course ? (
         <>
-          <h3 className="mt-3 text-xl font-extrabold tracking-tight text-gray-900 sm:text-2xl">
-            {course.name} - <span className="text-blue-600">{course.salesCount}</span>
+          <h3 className="mt-5 text-xl font-semibold tracking-tight text-gray-900">
+            {course.name} - <span className="tabular text-blue-600 dark:text-blue-400">{course.salesCount}</span>
           </h3>
-          <p className="mt-2 text-sm font-medium text-gray-700 sm:text-base">
-            Kelishuv - <span className="font-bold text-cyan-500">{formatCompactMoney(course.agreementAmount)} so&apos;m</span>
+          <p className="mt-1 text-sm text-gray-500">
+            Kelishuv - <span className="tabular font-medium text-gray-900">{formatCompactMoney(course.agreementAmount)} so&apos;m</span>
           </p>
-          <div className="mt-5 flex flex-wrap gap-2.5">
+          <div className="mt-auto flex flex-wrap gap-2 pt-5">
             {course.tariffs.map((tariff) => (
               <div
                 key={`${course.courseId}:${tariff.tariffId || 'none'}`}
-                className="rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2 text-sm font-bold text-gray-700"
+                className="rounded-md bg-gray-100 px-2.5 py-1.5 text-[13px] text-gray-600"
               >
-                {tariff.name} - <span className="text-cyan-500">{tariff.salesCount}</span>
+                {tariff.name} - <span className="tabular font-semibold text-gray-900">{tariff.salesCount}</span>
               </div>
             ))}
             {!course.tariffs.length ? (
@@ -50,7 +59,7 @@ function CourseCard({ label, course }: { label: string; course: SelectedCourse |
           </div>
         </>
       ) : (
-        <div className="mt-8 rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
+        <div className="mt-5 flex flex-1 items-center justify-center rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
           Tanlangan kurs topilmadi.
         </div>
       )}
@@ -62,7 +71,7 @@ export default function DashboardSelectedCourses() {
   const query = trpc.dashboard.selectedCourseOverview.useQuery();
 
   if (query.isLoading) {
-    return <LoadingBlock message="Yuklanmoqda..." />;
+    return <LoadingBlock message="Yuklanmoqda..." className="min-h-[212px]" />;
   }
 
   if (query.error) {
@@ -77,11 +86,11 @@ export default function DashboardSelectedCourses() {
 
   return (
     <section>
-      <h2 className="mb-3 text-xl font-bold text-gray-900">Tanlangan kurslar</h2>
+      <h2 className="section-title mb-3">Tanlangan kurslar</h2>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <CourseCard label={GROUP_LABELS.online} course={data.online} />
-        <CourseCard label={GROUP_LABELS.offline} course={data.offline} />
-        <CourseCard label={GROUP_LABELS.intensive} course={data.intensive} />
+        <CourseCard group="online" course={data.online} />
+        <CourseCard group="offline" course={data.offline} />
+        <CourseCard group="intensive" course={data.intensive} />
       </div>
     </section>
   );

@@ -1,41 +1,42 @@
 'use client';
 
+import { IconGauge } from '@tabler/icons-react';
 import { KPI_METRICS } from './bonus-helpers';
+import { SettingRow, SettingsCard, SettingsFooter } from './settings-card';
 import type { BonusPageModel } from './use-bonus-page';
 
 export function KpiSettingsSection({ vm }: { vm: BonusPageModel }) {
   const { handleKpiMetricSlotChange, handleSaveKpiSettings, isAdmin, kpiMetricSlots, kpiMonthlyAmount, kpiThresholds, salaryConfigQuery, selectedKpiMetrics, setKpiMonthlyAmount, setKpiThresholds, updateKpiSettingsMutation } = vm;
 
   return (
-    <div className="rounded-lg bg-white shadow">
-      <div className="border-b border-gray-100 px-6 py-5">
-        <h2 className="text-lg font-semibold text-gray-900">KPI sozlamalari</h2>
-        <p className="mt-1 text-sm text-gray-500">Oylik KPI summasi va baholash ko&apos;rsatkichlarini belgilang.</p>
-      </div>
-      <div className="p-6">
-        <form onSubmit={handleSaveKpiSettings} className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Oylik KPI summasi (UZS)</label>
+    <SettingsCard
+      id="kpi-settings"
+      icon={IconGauge}
+      title="KPI sozlamalari"
+      description={<>Oylik KPI summasi va baholash ko&apos;rsatkichlarini belgilang.</>}
+    >
+      <form onSubmit={handleSaveKpiSettings}>
+        <div className="panel-body space-y-5">
+          <div className="divide-y divide-gray-100">
+            <SettingRow label={<label>Oylik KPI summasi (UZS)</label>}>
               <input
                 value={kpiMonthlyAmount}
                 onChange={(event) => setKpiMonthlyAmount(event.target.value.replace(/[^\d]/g, ''))}
                 disabled={!isAdmin}
                 inputMode="numeric"
                 placeholder="0"
-                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                className="field tabular text-right"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Tanlangan KPI ko&apos;rsatkichlari (maks. 4)</label>
-              <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            </SettingRow>
+            <SettingRow label={<label>Tanlangan KPI ko&apos;rsatkichlari (maks. 4)</label>}>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {[0, 1, 2, 3].map((slotIndex) => (
                   <select
                     key={slotIndex}
                     value={kpiMetricSlots[slotIndex] || ''}
                     onChange={(event) => handleKpiMetricSlotChange(slotIndex, event.target.value)}
                     disabled={!isAdmin}
-                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                    className="field"
                   >
                     <option value="">Tanlanmagan</option>
                     {KPI_METRICS.map((metric) => {
@@ -49,51 +50,57 @@ export function KpiSettingsSection({ vm }: { vm: BonusPageModel }) {
                   </select>
                 ))}
               </div>
-            </div>
+            </SettingRow>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {selectedKpiMetrics.map((metric) => (
-              <div key={metric} className="rounded-md border border-gray-200 bg-gray-50 p-3">
-                <p className="text-sm font-medium text-gray-800">{KPI_METRICS.find((item) => item.key === metric)?.label || metric}</p>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <input
-                    value={kpiThresholds[metric]?.half || ''}
-                    onChange={(event) => {
-                      const nextValue = event.target.value.replace(/[^\d]/g, '');
-                      setKpiThresholds((prev) => ({ ...prev, [metric]: { ...prev[metric], half: nextValue } }));
-                    }}
-                    disabled={!isAdmin}
-                    inputMode="numeric"
-                    placeholder="Half target"
-                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                  />
-                  <input
-                    value={kpiThresholds[metric]?.full || ''}
-                    onChange={(event) => {
-                      const nextValue = event.target.value.replace(/[^\d]/g, '');
-                      setKpiThresholds((prev) => ({ ...prev, [metric]: { ...prev[metric], full: nextValue } }));
-                    }}
-                    disabled={!isAdmin}
-                    inputMode="numeric"
-                    placeholder="Full target"
-                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                  />
+          {selectedKpiMetrics.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {selectedKpiMetrics.map((metric) => (
+                <div key={metric} className="panel-inset">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-900">{KPI_METRICS.find((item) => item.key === metric)?.label || metric}</p>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <input
+                      value={kpiThresholds[metric]?.half || ''}
+                      onChange={(event) => {
+                        const nextValue = event.target.value.replace(/[^\d]/g, '');
+                        setKpiThresholds((prev) => ({ ...prev, [metric]: { ...prev[metric], half: nextValue } }));
+                      }}
+                      disabled={!isAdmin}
+                      inputMode="numeric"
+                      placeholder="Half target"
+                      className="field tabular"
+                    />
+                    <input
+                      value={kpiThresholds[metric]?.full || ''}
+                      onChange={(event) => {
+                        const nextValue = event.target.value.replace(/[^\d]/g, '');
+                        setKpiThresholds((prev) => ({ ...prev, [metric]: { ...prev[metric], full: nextValue } }));
+                      }}
+                      disabled={!isAdmin}
+                      inputMode="numeric"
+                      placeholder="Full target"
+                      className="field tabular"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">Tanlanganda ulushi: {selectedKpiMetrics.length ? `${(100 / selectedKpiMetrics.length).toFixed(2)}%` : '0%'}</p>
                 </div>
-                <p className="mt-2 text-xs text-gray-500">Tanlanganda ulushi: {selectedKpiMetrics.length ? `${(100 / selectedKpiMetrics.length).toFixed(2)}%` : '0%'}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
+        </div>
 
+        <SettingsFooter>
           <button
             type="submit"
             disabled={!isAdmin || updateKpiSettingsMutation.isLoading || salaryConfigQuery.isLoading}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="btn btn-primary"
           >
             {updateKpiSettingsMutation.isLoading ? 'Saqlanmoqda...' : 'KPI sozlamalarini saqlash'}
           </button>
-        </form>
-      </div>
-    </div>
+        </SettingsFooter>
+      </form>
+    </SettingsCard>
   );
 }

@@ -145,6 +145,50 @@ describe('bonus attribution and reconcile', () => {
     expect(result.items[0]).toMatchObject({ agentUserId: 'agent-b', closedCount: 1, appliedPercent: 3, bonusAmount: 180_000 });
   });
 
+  it('tiers on the closing agent agreement total when the rule says so', async () => {
+    const tiers = [
+      { minSales: 1, maxSales: 9_999_999, percent: 2 },
+      { minSales: 10_000_000, maxSales: null, percent: 4 },
+    ];
+    const byAmount = buildLegacyBonusPolicy({
+      salary: { bonusMode: 'on_debt_closed', bonusRules: { online: { mode: 'tiered', tierBasis: 'agreement_amount', simplePercent: 1, tiers } } },
+    });
+    const byCount = buildLegacyBonusPolicy({
+      salary: { bonusMode: 'on_debt_closed', bonusRules: { online: { mode: 'tiered', tierBasis: 'sales_count', simplePercent: 1, tiers } } },
+    });
+    const amountResult = await calculateBonusMonth({ tenantId: 't', month: july, policy: byAmount });
+    const countResult = await calculateBonusMonth({ tenantId: 't', month: july, policy: byCount });
+
+    // One closure of a 10M agreement: 10M reaches the 4% tier; a count of 1 falls in the 2% tier.
+    expect(amountResult.items[0]).toMatchObject({ agentUserId: 'agent-b', closedCount: 1, closedAgreementAmount: 10_000_000, appliedPercent: 4, bonusAmount: 400_000, usedFallback: false });
+    expect(countResult.items[0]).toMatchObject({ appliedPercent: 2, bonusAmount: 200_000 });
+  });
+
+  it('falls back to the simple percent when the agreement total is below every tier', async () => {
+    const policy = buildLegacyBonusPolicy({
+      salary: {
+        bonusMode: 'on_income',
+        bonusRules: { online: { mode: 'tiered', tierBasis: 'agreement_amount', simplePercent: 1, tiers: [{ minSales: 20_000_000, maxSales: null, percent: 5 }] } },
+      },
+    });
+    const result = await calculateBonusMonth({ tenantId: 't', month: july, policy });
+
+    expect(result.items[0]).toMatchObject({ appliedPercent: 1, bonusAmount: 60_000, usedFallback: true });
+  });
+
+  it('keeps the source digest of a policy saved before the tier basis existed', async () => {
+    const tiers = [{ minSales: 1, maxSales: null, percent: 3 }];
+    const current = buildLegacyBonusPolicy({ salary: { bonusRules: { online: { mode: 'tiered', simplePercent: 0, tiers } } } });
+    const legacy = JSON.parse(JSON.stringify(current)) as { bonusRules: Record<string, Record<string, unknown>> };
+
+    for (const rule of Object.values(legacy.bonusRules)) delete rule.tierBasis;
+    const withBasis = await calculateBonusMonth({ tenantId: 't', month: july, policy: current });
+    const withoutBasis = await calculateBonusMonth({ tenantId: 't', month: july, policy: legacy as unknown as typeof current });
+
+    expect(current.bonusRules.online.tierBasis).toBe('sales_count');
+    expect(withBasis.sourceDigest).toBe(withoutBasis.sourceDigest);
+  });
+
   it('deletes pending adjustments once the data matches the finalized snapshot again', async () => {
     const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_debt_closed', bonusPercentages: { online: 5 } } });
     const current = await calculateBonusMonth({ tenantId: 't', month: july, policy });
