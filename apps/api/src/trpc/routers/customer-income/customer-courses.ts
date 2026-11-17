@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, INCOME_LIFECYCLE_PENDING_REFUND } from '../../../services/customer-income/constants';
 import { notifyFinanceUsersRefundRequested, sendRefundRequestedTelegram } from '../../../services/customer-income/refund-notifications';
-import { assertSaleChainDebtInvariant, normalizeSaleChainChronology, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
+import { assertSaleChainDebtInvariant, lockSaleChainUnchanged, normalizeSaleChainChronology, readSaleChainState, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
 import { extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { adminProcedure } from '../../trpc';
 
@@ -44,6 +44,13 @@ export const customerCourseProcedures = {
         });
       }
 
+      // Amounts and checks below are computed from rows read now; the transaction locks the chain and refuses to
+      // write if any of them changed meanwhile (a concurrent repayment, refund request or edit).
+      const chainStateBefore = await readSaleChainState(ctx.db, { tenantId: ctx.tenantId, saleId: saleIncome.id });
+
+      if (chainStateBefore.find((row) => row.id === saleIncome.id)?.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
+        throw new TRPCError({ code: 'CONFLICT', message: "Bu kurs hozirgina o'zgartirildi. Sahifani yangilab, qayta urinib ko'ring." });
+      }
       const saleChain = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -108,6 +115,12 @@ export const customerCourseProcedures = {
       }
 
       const resultPayload = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await lockSaleChainUnchanged(tx, { tenantId: ctx.tenantId, saleId: saleIncome.id, expected: chainStateBefore });
+        if (await tx.incomeAdjustmentRequest.count({
+          where: { tenantId: ctx.tenantId, incomeId: { in: saleChainIds }, status: ADJUSTMENT_STATUS_PENDING },
+        }) > 0) {
+          throw new TRPCError({ code: 'CONFLICT', message: "Bu kurs bo'yicha kutilayotgan so'rovlar bor. Avval so'rovlarni yakunlang." });
+        }
         if (input.action === 'refund') {
           const existingPending = await tx.incomeAdjustmentRequest.findFirst({
             where: {
@@ -470,6 +483,13 @@ export const customerCourseProcedures = {
         }
       }
 
+      // Amounts and checks below are computed from rows read now; the transaction locks the chain and refuses to
+      // write if any of them changed meanwhile (a concurrent repayment, refund request or edit).
+      const chainStateBefore = await readSaleChainState(ctx.db, { tenantId: ctx.tenantId, saleId: saleIncome.id });
+
+      if (chainStateBefore.find((row) => row.id === saleIncome.id)?.lifecycleStatus !== INCOME_LIFECYCLE_ACTIVE) {
+        throw new TRPCError({ code: 'CONFLICT', message: "Bu kurs hozirgina o'zgartirildi. Sahifani yangilab, qayta urinib ko'ring." });
+      }
       const saleChain = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -495,6 +515,12 @@ export const customerCourseProcedures = {
       }
 
       await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await lockSaleChainUnchanged(tx, { tenantId: ctx.tenantId, saleId: saleIncome.id, expected: chainStateBefore });
+        if (await tx.incomeAdjustmentRequest.count({
+          where: { tenantId: ctx.tenantId, incomeId: { in: saleChainIds }, status: ADJUSTMENT_STATUS_PENDING },
+        }) > 0) {
+          throw new TRPCError({ code: 'CONFLICT', message: "Bu kurs bo'yicha kutilayotgan so'rovlar bor. Avval so'rovlarni yakunlang." });
+        }
         await tx.income.update({
           where: { id: saleIncome.id },
           data: {
