@@ -55,32 +55,6 @@ export function parseAmoTimestamp(value: unknown): Date | null {
   return null;
 }
 
-/**
- * The leads router's variant: unparseable values give the current time, and an out-of-range
- * number gives an Invalid Date instead of falling back (kept as it was; see the reuse report).
- */
-export function parseAmoTimestampOrNow(value: unknown): Date {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return new Date(toAmoMillis(value));
-  }
-
-  if (typeof value === 'string') {
-    const asNumber = Number(value);
-
-    if (!Number.isNaN(asNumber)) {
-      return parseAmoTimestampOrNow(asNumber);
-    }
-
-    const parsed = new Date(value);
-
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed;
-    }
-  }
-
-  return new Date();
-}
-
 /** `is_completed` / `completed` / `isCompleted` as a boolean (1, '1', 'true', 'yes', 'done' count as done). */
 export function isCompletedTask(task: AmoCRMTask): boolean {
   const source = task as Record<string, unknown>;

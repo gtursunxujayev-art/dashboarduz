@@ -4,7 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { getAgentResponsibleScope } from '../../lib/access';
-import { parseAmoTimestampOrNow } from '../../lib/amocrm';
+import { parseAmoTimestamp } from '../../lib/amocrm';
 import { asObject } from '../../lib/object';
 import { amocrmService, type AmoCRMLead } from '../../services/integrations/amocrm';
 import { getAmoReference } from '../../services/integrations/amocrm-activity-snapshot-read';
@@ -74,8 +74,8 @@ function mapLeadForUi(lead: AmoCRMLead, statusMap: Map<string, string>, pipeline
     pipelineName: pipelineId ? (pipelineMap.get(pipelineId) || pipelineId) : null,
     source: extractLeadValue(lead, sourceFieldKey) || '-',
     contact,
-    createdAt: parseAmoTimestampOrNow(lead.created_at),
-    updatedAt: parseAmoTimestampOrNow(lead.updated_at),
+    createdAt: parseAmoTimestamp(lead.created_at),
+    updatedAt: parseAmoTimestamp(lead.updated_at),
     metadata: lead,
   };
 }
@@ -212,8 +212,8 @@ export const leadsRouter = router({
         pipelineId,
         pipelineName: pipelineId ? (pipelineMap.get(pipelineId) || pipelineId) : null,
         contact: getPrimaryContact(lead),
-        createdAt: parseAmoTimestampOrNow(lead.created_at),
-        updatedAt: parseAmoTimestampOrNow(lead.updated_at),
+        createdAt: parseAmoTimestamp(lead.created_at),
+        updatedAt: parseAmoTimestamp(lead.updated_at),
         metadata: lead,
       };
     }),

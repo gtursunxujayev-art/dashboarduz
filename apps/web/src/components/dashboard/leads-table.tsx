@@ -15,7 +15,7 @@ interface LeadRow {
   status?: string | null;
   source?: string | null;
   pipelineName?: string | null;
-  createdAt: string | Date;
+  createdAt: string | Date | null;
   contact?: {
     name?: string | null;
     phone?: string | null;
@@ -117,7 +117,7 @@ export default function LeadsTable({ pipelineIds }: { pipelineIds?: string[] }) 
                     )}
                   </td>
                   <td className="tabular whitespace-nowrap text-sm text-gray-500">
-                    {new Date(lead.createdAt).toLocaleDateString()}
+                    {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : '-'}
                   </td>
                   <td className="whitespace-nowrap text-right">
                     <Link

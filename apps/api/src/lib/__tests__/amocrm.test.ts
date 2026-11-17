@@ -3,33 +3,24 @@ import {
   isCompletedTask,
   isLeadTask,
   parseAmoTimestamp,
-  parseAmoTimestampOrNow,
   taskResponsibleUserId,
   toStringId,
 } from '../amocrm';
 
 const task = (fields: Record<string, unknown>) => fields as unknown as AmoCRMTask;
 
-describe('parseAmoTimestamp (workers) / parseAmoTimestampOrNow (leads router)', () => {
-  beforeAll(() => jest.useFakeTimers().setSystemTime(new Date('2026-01-01T00:00:00.000Z')));
-  afterAll(() => jest.useRealTimers());
-
+describe('parseAmoTimestamp (workers and the leads router)', () => {
   it('reads seconds, milliseconds, numeric strings and date strings alike', () => {
-    for (const parse of [parseAmoTimestamp, parseAmoTimestampOrNow]) {
-      expect(parse(1_700_000_000)?.toISOString()).toBe('2023-11-14T22:13:20.000Z');
-      expect(parse(1_700_000_000_000)?.toISOString()).toBe('2023-11-14T22:13:20.000Z');
-      expect(parse('1700000000')?.toISOString()).toBe('2023-11-14T22:13:20.000Z');
-      expect(parse('2024-05-01T10:00:00Z')?.toISOString()).toBe('2024-05-01T10:00:00.000Z');
-    }
+    expect(parseAmoTimestamp(1_700_000_000)?.toISOString()).toBe('2023-11-14T22:13:20.000Z');
+    expect(parseAmoTimestamp(1_700_000_000_000)?.toISOString()).toBe('2023-11-14T22:13:20.000Z');
+    expect(parseAmoTimestamp('1700000000')?.toISOString()).toBe('2023-11-14T22:13:20.000Z');
+    expect(parseAmoTimestamp('2024-05-01T10:00:00Z')?.toISOString()).toBe('2024-05-01T10:00:00.000Z');
   });
 
-  it('differs on bad input: null vs now (and Invalid Date for out-of-range numbers)', () => {
+  it('is null for a missing, unparseable or out-of-range timestamp (leads used to show the current time)', () => {
     expect(parseAmoTimestamp('nope')).toBeNull();
     expect(parseAmoTimestamp(undefined)).toBeNull();
     expect(parseAmoTimestamp(1e20)).toBeNull();
-    expect(parseAmoTimestampOrNow('nope').toISOString()).toBe('2026-01-01T00:00:00.000Z');
-    expect(parseAmoTimestampOrNow(undefined).toISOString()).toBe('2026-01-01T00:00:00.000Z');
-    expect(Number.isNaN(parseAmoTimestampOrNow(1e20).getTime())).toBe(true);
   });
 });
 
