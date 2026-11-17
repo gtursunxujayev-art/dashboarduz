@@ -40,6 +40,31 @@ const MAX_PAGES_PER_WINDOW = 300;
 const TASK_PAGE_SIZE = 250;
 const EVENT_PAGE_SIZE = 100;
 const REFERENCE_REFRESH_MS = 30 * 60 * 1000;
+/** amoCRM answers old-history pages slowly; a background job can wait for them. */
+const PAGE_TIMEOUT_MS = 45_000;
+const PAGE_ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [2_000, 8_000];
+
+/** Retries a page on timeouts and dropped connections (amoCRM throttles under load). */
+export async function withPageRetry<T>(load: () => Promise<T>, sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < PAGE_ATTEMPTS; attempt += 1) {
+    try {
+      return await load();
+    } catch (error) {
+      lastError = error;
+      const message = String((error as Error | undefined)?.message || error).toLowerCase();
+      const retryable = message.includes('timeout') || message.includes('fetch failed') || message.includes('429')
+        || message.includes('502') || message.includes('503') || message.includes('504');
+
+      if (!retryable || attempt === PAGE_ATTEMPTS - 1) break;
+      await sleep(RETRY_DELAYS_MS[attempt] ?? 8_000);
+    }
+  }
+
+  throw lastError;
+}
 const LOCK_TTL_SECONDS = 30 * 60;
 const LOCK_TIMEOUT_MS = 2_000;
 
@@ -175,25 +200,27 @@ async function pullWindow(
     budget.remaining -= 1;
 
     if (kind === 'tasks') {
-      const response = await amocrmService.fetchTasks(context.accessToken, {
+      const response = await withPageRetry(() => amocrmService.fetchTasks(context.accessToken, {
         page,
         limit: TASK_PAGE_SIZE,
         updatedAtFrom: new Date(window.from),
         updatedAtTo: new Date(window.to),
-      }, context.baseUrl);
+        timeoutMs: PAGE_TIMEOUT_MS,
+      }, context.baseUrl));
       const tasks = Array.isArray(response._embedded?.tasks) ? response._embedded.tasks : [];
 
       await storeTasks(tasks.map((task) => taskToRow(tenantId, task)).filter((row): row is Prisma.AmocrmTaskCreateManyInput => row !== null));
       stored += tasks.length;
       if (!response._links?.next?.href || tasks.length < TASK_PAGE_SIZE) return { done: true, stored };
     } else {
-      const response = await amocrmService.fetchEvents(context.accessToken, {
+      const response = await withPageRetry(() => amocrmService.fetchEvents(context.accessToken, {
         page,
         limit: EVENT_PAGE_SIZE,
         dateFrom: new Date(window.from),
         dateTo: new Date(window.to),
         entityType: 'lead',
-      }, context.baseUrl);
+        timeoutMs: PAGE_TIMEOUT_MS,
+      }, context.baseUrl));
       const events = Array.isArray(response._embedded?.events) ? response._embedded.events : [];
 
       await storeEvents(events.map((event) => eventToRow(tenantId, event)).filter((row): row is Prisma.AmocrmEventCreateManyInput => row !== null));

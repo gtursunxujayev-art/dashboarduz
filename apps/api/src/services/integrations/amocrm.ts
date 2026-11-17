@@ -189,9 +189,9 @@ export class AmoCRMService {
     return (baseUrl || this.defaultBaseUrl).replace(/\/+$/, '');
   }
 
-  private async fetchWithTimeout(input: string, init: RequestInit = {}): Promise<Response> {
+  private async fetchWithTimeout(input: string, init: RequestInit = {}, timeoutMs = this.requestTimeoutMs): Promise<Response> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       return await fetch(input, {
@@ -200,7 +200,7 @@ export class AmoCRMService {
       });
     } catch (error: any) {
       if (error?.name === 'AbortError') {
-        throw new Error(`AmoCRM request timeout after ${this.requestTimeoutMs}ms`);
+        throw new Error(`AmoCRM request timeout after ${timeoutMs}ms`);
       }
       throw error;
     } finally {
@@ -606,6 +606,8 @@ export class AmoCRMService {
     /** Tasks changed in this window (used by the snapshot job). */
     updatedAtFrom?: Date;
     updatedAtTo?: Date;
+    /** Per-request limit; background jobs can afford to wait longer than a page. */
+    timeoutMs?: number;
   }, baseUrl?: string): Promise<AmoCRMTaskListResponse> {
     const queryParams = new URLSearchParams();
 
@@ -648,7 +650,7 @@ export class AmoCRMService {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-    });
+    }, params?.timeoutMs);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -767,6 +769,8 @@ export class AmoCRMService {
     dateTo?: Date;
     userIds?: string[];
     entityType?: string;
+    /** Per-request limit; background jobs can afford to wait longer than a page. */
+    timeoutMs?: number;
   }, baseUrl?: string): Promise<AmoCRMEventListResponse> {
     const queryParams = new URLSearchParams();
 
@@ -795,7 +799,7 @@ export class AmoCRMService {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-    });
+    }, params?.timeoutMs);
 
     if (!response.ok) {
       const errorText = await response.text();

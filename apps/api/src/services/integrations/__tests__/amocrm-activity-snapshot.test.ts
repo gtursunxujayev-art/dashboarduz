@@ -4,7 +4,7 @@ jest.mock('@dashboarduz/db', () => ({ systemPrisma: {} }));
 jest.mock('../../queue/redis-client', () => ({ getRedisClient: () => ({}) }));
 
 /* eslint-disable import/first -- the mocks above must be registered before these imports */
-import { BACKFILL_DAYS, eventToRow, planWindows, readActivitySnapshotState, taskToRow } from '../amocrm-activity-snapshot';
+import { BACKFILL_DAYS, eventToRow, planWindows, readActivitySnapshotState, taskToRow, withPageRetry } from '../amocrm-activity-snapshot';
 import { buildSnapshotEventWhere, buildSnapshotTaskWhere } from '../amocrm-activity-snapshot-read';
 /* eslint-enable import/first */
 
@@ -91,5 +91,29 @@ describe('snapshot reader filters', () => {
       externalCreatedAt: { gte: from },
       entityType: { in: ['lead', 'leads'] },
     });
+  });
+});
+
+describe('page retry', () => {
+  const noWait = () => Promise.resolve();
+
+  it('retries timeouts and dropped connections, then succeeds', async () => {
+    const load = jest.fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error('AmoCRM request timeout after 45000ms'))
+      .mockRejectedValueOnce(new Error('fetch failed'))
+      .mockResolvedValueOnce('page');
+
+    await expect(withPageRetry(load, noWait)).resolves.toBe('page');
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry other errors and gives up after three attempts', async () => {
+    const bad = jest.fn<() => Promise<string>>().mockRejectedValue(new Error('Failed to fetch AmoCRM events: 400 Bad Request'));
+    const slow = jest.fn<() => Promise<string>>().mockRejectedValue(new Error('AmoCRM request timeout after 45000ms'));
+
+    await expect(withPageRetry(bad, noWait)).rejects.toThrow('400');
+    expect(bad).toHaveBeenCalledTimes(1);
+    await expect(withPageRetry(slow, noWait)).rejects.toThrow('timeout');
+    expect(slow).toHaveBeenCalledTimes(3);
   });
 });
