@@ -70,7 +70,6 @@ model User {
   providerId   String?  // external provider ID
   telegramId   String?  @unique
   amocrmResponsibleUserId String?
-  utelManagerExternalId String?
   isActive     Boolean  @default(true)
   lastLoginAt  DateTime?
   createdAt    DateTime @default(now())
@@ -97,11 +96,9 @@ model User {
   @@unique([tenantId, phone])
   @@index([tenantId, isActive])
   @@index([tenantId, amocrmResponsibleUserId])
-  @@index([tenantId, utelManagerExternalId])
   @@index([email])
   @@index([phone])
   @@index([amocrmResponsibleUserId])
-  @@index([utelManagerExternalId])
   @@map("users")
 }
 
@@ -128,7 +125,7 @@ model UserAuthLink {
 model Integration {
   id              String   @id @default(uuid())
   tenantId        String
-  type            String   // amocrm, telegram, google_sheets, voip_utel, faceid_attendance, meta_ads
+  type            String   // amocrm, telegram, google_sheets, faceid_attendance, meta_ads
   status          String   @default("pending") // pending, active, error, disconnected
   config          Json?    // integration-specific config
   tokensEncrypted String?  // encrypted tokens (access_token, refresh_token)
@@ -364,7 +361,7 @@ model Notification {
 model WebhookEvent {
   id          String   @id @default(uuid())
   tenantId    String?
-  source      String   // amocrm, utel, telegram, etc.
+  source      String   // amocrm, telegram, faceid (older rows may hold the removed voip/utel sources)
   eventType   String
   idempotencyKey String?
   rawPayload  Json     // original webhook payload
