@@ -1,4 +1,4 @@
-import { formatAmount, groupDigits } from '@dashboarduz/shared';
+import { formatAmount, formatSomAmount, groupDigits } from '@dashboarduz/shared';
 
 const NBSP = ' ';
 
@@ -31,5 +31,22 @@ describe('groupDigits', () => {
     expect(groupDigits('1234567')).toBe('1,234,567');
     expect(groupDigits('1234.5')).toBe('1,234.5');
     expect(groupDigits('')).toBe('');
+  });
+});
+
+describe('formatSomAmount (the one API money format)', () => {
+  it('rounds to whole som and groups with plain spaces', () => {
+    expect(formatSomAmount(1234567)).toBe("1 234 567 so'm");
+    expect(formatSomAmount(1234567.6)).toBe("1 234 568 so'm");
+    expect(formatSomAmount(999)).toBe("999 so'm");
+    expect(formatSomAmount(0)).toBe("0 so'm");
+  });
+
+  it('keeps the sign and maps missing values to 0', () => {
+    expect(formatSomAmount(-5000)).toBe("-5 000 so'm");
+    expect(formatSomAmount(-0.4)).toBe("0 so'm");
+    expect(formatSomAmount(null)).toBe("0 so'm");
+    expect(formatSomAmount(undefined)).toBe("0 so'm");
+    expect(formatSomAmount(Number.NaN)).toBe("0 so'm");
   });
 });

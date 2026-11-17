@@ -1,5 +1,5 @@
 import { type DbClient, systemPrisma } from '@dashboarduz/db';
-import { fromTashkentLocalParts, groupDigits, shiftToTashkent, type ManagerGroup } from '@dashboarduz/shared';
+import { formatSomAmount, fromTashkentLocalParts, type ManagerGroup, shiftToTashkent } from '@dashboarduz/shared';
 
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
@@ -94,18 +94,18 @@ export function formatTelegramGroupSummary(group: TelegramGroupSummaryGroup, met
   const lines = [
     `📊 Bugun — ${label}`,
     `🆕 Yangi sotuvlar: ${metrics.newSalesCount}`,
-    `💰 Umumiy tushum: ${groupDigits(String(Math.round(metrics.totalIncome)), ' ')} so'm`,
-    `💳 Yangi tushum: ${groupDigits(String(Math.round(metrics.newIncome)), ' ')} so'm`,
-    `📥 Qarzdorlik tushumi: ${groupDigits(String(Math.round(metrics.debtIncome)), ' ')} so'm`,
+    `💰 Umumiy tushum: ${formatSomAmount(metrics.totalIncome)}`,
+    `💳 Yangi tushum: ${formatSomAmount(metrics.newIncome)}`,
+    `📥 Qarzdorlik tushumi: ${formatSomAmount(metrics.debtIncome)}`,
   ];
 
   if (group === 'offline' && metrics.coaching) {
     lines.push(`🎓 Couching sotuvi: ${metrics.coaching.salesCount}`);
-    lines.push(`💰 Couching tushumi: ${groupDigits(String(Math.round(metrics.coaching.income)), ' ')} so'm`);
+    lines.push(`💰 Couching tushumi: ${formatSomAmount(metrics.coaching.income)}`);
   }
   if (group === 'offline' && metrics.intensive) {
     lines.push(`🔥 Intensiv sotuvi: ${metrics.intensive.salesCount}`);
-    lines.push(`💰 Intensiv tushumi: ${groupDigits(String(Math.round(metrics.intensive.income)), ' ')} so'm`);
+    lines.push(`💰 Intensiv tushumi: ${formatSomAmount(metrics.intensive.income)}`);
   }
 
   return lines.join('\n');

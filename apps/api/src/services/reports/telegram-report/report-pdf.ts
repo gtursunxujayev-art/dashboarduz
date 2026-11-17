@@ -1,8 +1,8 @@
-import { formatAmount, toTashkentDateKey } from '@dashboarduz/shared';
+import { formatSomAmount, toTashkentDateKey } from '@dashboarduz/shared';
 
 import { formatClockHoursMinutes, formatCompactCurrency, formatDuration, formatLocalDateTime, formatSelectedCourseLine, getBreakdownLayout, groupManagerRows } from './format';
 import { PdfCanvas, type PdfColor } from './pdf-canvas';
-import { CURRENCY_FORMAT, type ReportManagerRow, type ReportMetrics } from './types';
+import { type ReportManagerRow, type ReportMetrics } from './types';
 
 export function createStyledReportPdf(params: {
   tenantName: string;
@@ -67,9 +67,9 @@ export function createStyledReportPdf(params: {
     });
   };
 
-  drawStandardCard(0, 0, 'Kelishuv summasi', formatAmount(params.metrics.agreementTotal, CURRENCY_FORMAT));
-  drawStandardCard(0, 2, 'Online kelishuv summasi', formatAmount(params.metrics.onlineAgreementTotal, CURRENCY_FORMAT));
-  drawStandardCard(1, 0, 'Offline kelishuv summasi', formatAmount(params.metrics.offlineAgreementTotal, CURRENCY_FORMAT));
+  drawStandardCard(0, 0, 'Kelishuv summasi', formatSomAmount(params.metrics.agreementTotal));
+  drawStandardCard(0, 2, 'Online kelishuv summasi', formatSomAmount(params.metrics.onlineAgreementTotal));
+  drawStandardCard(1, 0, 'Offline kelishuv summasi', formatSomAmount(params.metrics.offlineAgreementTotal));
   drawStandardCard(1, 2, 'Sifatli lidlar', `${params.metrics.qualifiedLeads} (${params.metrics.qualifiedShare.toFixed(1)}%)`);
 
   // Tushum card with new-sale vs debt-repayment split.
@@ -78,7 +78,7 @@ export function createStyledReportPdf(params: {
 
   c.rect(incomeTop, incomeLeft, 160, cardHeight, { fill: cardBg, stroke: lightBorder, lineWidth: 0.8 });
   // Label 6-14, amount 15-27, split lines 30-37.5 and 41-48.5: no overlap within the 54-point card.
-  const incomeValue = formatAmount(params.metrics.incomeTotal, CURRENCY_FORMAT);
+  const incomeValue = formatSomAmount(params.metrics.incomeTotal);
 
   c.text(incomeTop + 6, incomeLeft + 10, 'Tushum', { size: size(8), color: [0.4, 0.46, 0.56] });
   c.text(incomeTop + 15, incomeLeft + 10, incomeValue, {
@@ -87,12 +87,12 @@ export function createStyledReportPdf(params: {
     color: accent,
     maxWidth: cardTextWidth,
   });
-  c.text(incomeTop + 30, incomeLeft + 10, `Yangi sotuv: ${formatAmount(params.metrics.newSalesIncomeTotal, CURRENCY_FORMAT)}`, {
+  c.text(incomeTop + 30, incomeLeft + 10, `Yangi sotuv: ${formatSomAmount(params.metrics.newSalesIncomeTotal)}`, {
     size: size(7.5),
     color: textDark,
     maxWidth: cardTextWidth,
   });
-  c.text(incomeTop + 41, incomeLeft + 10, `Qarz to'lovi: ${formatAmount(params.metrics.debtRepaymentIncomeTotal, CURRENCY_FORMAT)}`, {
+  c.text(incomeTop + 41, incomeLeft + 10, `Qarz to'lovi: ${formatSomAmount(params.metrics.debtRepaymentIncomeTotal)}`, {
     size: size(7.5),
     color: textDark,
     maxWidth: cardTextWidth,

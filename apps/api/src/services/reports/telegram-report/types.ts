@@ -1,6 +1,4 @@
-import type { AmountFormatOptions, ManagerGroup } from '@dashboarduz/shared';
-
-export const CURRENCY_FORMAT: AmountFormatOptions = { locale: 'en-US', unit: 'UZS', round: true };
+import type { ManagerGroup } from '@dashboarduz/shared';
 
 /** A call of at least this many seconds counts in the per-manager "4+ daq" column. */
 export const LONG_CALL_MIN_SECONDS = 4 * 60;

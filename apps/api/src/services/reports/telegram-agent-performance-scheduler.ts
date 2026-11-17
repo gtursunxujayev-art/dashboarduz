@@ -1,5 +1,5 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { AGENT_ROLES, fromTashkentLocalParts, shiftToTashkent, toTashkentDateKey, TASHKENT_TIMEZONE_LABEL, formatAmount, type AmountFormatOptions } from '@dashboarduz/shared';
+import { AGENT_ROLES, formatSomAmount, fromTashkentLocalParts, shiftToTashkent, TASHKENT_TIMEZONE_LABEL, toTashkentDateKey } from '@dashboarduz/shared';
 
 import { isCompletedTask, isLeadTask, taskResponsibleUserId } from '../../lib/amocrm';
 import { createIntervalJob } from '../../lib/interval-job';
@@ -15,7 +15,6 @@ import { getRedisClient } from '../queue/redis-client';
 import { decryptIntegrationTokens } from '../security/encryption';
 
 const POLL_INTERVAL_MS = 30_000;
-const CURRENCY_FORMAT: AmountFormatOptions = { locale: 'ru-RU', unit: "so'm", round: true, clampNegative: true };
 const LOCK_TTL_SECONDS = 60 * 60 * 24 * 2; // 2 days
 
 const AGENT_MOTIVATION_ABOVE = "Harakatlaringiz juda yaxshi, qo'ng'iroqlarni kamaytirmang va albatta natija siz kutganingizdek bo'ladi!";
@@ -84,7 +83,7 @@ function buildAgentMessage(row: AgentMetricRow): string {
   const motivation = row.aboveAverageDuration ? AGENT_MOTIVATION_ABOVE : AGENT_MOTIVATION_BELOW;
 
   return [
-    `Bugungi tushum - ${formatAmount(row.incomeToday, CURRENCY_FORMAT)}`,
+    `Bugungi tushum - ${formatSomAmount(row.incomeToday)}`,
     `Qo'ng'iroqlar soni - ${row.callsCount}`,
     `Qo'ng'iroqlar davomiyligi - ${formatDurationUz(row.callDurationSeconds)}`,
     `Bajarilgan topshiriqlar - ${row.followUpsDone}`,

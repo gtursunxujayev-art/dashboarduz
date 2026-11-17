@@ -37,3 +37,15 @@ export function groupDigits(value: string, separator = ','): string {
 
   return value.replace(/\B(?=(\d{3})+(?!\d))/g, separator);
 }
+
+/**
+ * The one money format for API output (Telegram reports, payment/refund/tariff notifications, AI hints):
+ * whole so'm, digits grouped with plain spaces, e.g. `1 234 567 so'm`. Missing or non-finite values are 0;
+ * negative amounts keep their sign (`-5 000 so'm`).
+ */
+export function formatSomAmount(value: number | null | undefined): string {
+  const amount = Math.round(Number.isFinite(value) ? Number(value) : 0);
+  const sign = amount < 0 ? '-' : '';
+
+  return `${sign}${groupDigits(String(Math.abs(amount)), ' ')} so'm`;
+}

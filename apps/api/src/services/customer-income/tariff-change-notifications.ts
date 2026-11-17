@@ -1,4 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
+import { formatSomAmount } from '@dashboarduz/shared';
 
 import { logger } from '../../lib/logger';
 import { resolveTelegramBotTokenForTenant } from '../../lib/telegram';
@@ -13,7 +14,7 @@ import {
   sendToTelegramGroups,
   userLabel,
 } from './notification-parts';
-import { formatAmountUz, formatDateGmt5 } from './payment-notifications';
+import { formatDateGmt5 } from './payment-notifications';
 
 /** A tariff-change request with its sale, people and new course, or `null` when it has no customer. */
 async function findTariffChangeRequest(db: DbClient, params: { tenantId: string; requestId: string; status: string }) {
@@ -89,7 +90,7 @@ export async function sendTariffChangeRequestedTelegram(params: {
     `Yangi kurs/tarif: ${formatCourseTariff(request.newCourse.name, request.newTariff?.name)}`,
   ].join('\n');
 
-  const agreementBlock = `Yangi kelishuv: ${formatAmountUz(request.newAgreementAmount ?? 0)}`;
+  const agreementBlock = `Yangi kelishuv: ${formatSomAmount(request.newAgreementAmount ?? 0)}`;
 
   const metaBlock = [
     `So'rov yuborgan: ${userLabel(request.requestedBy, params.requestedByUserId)}`,

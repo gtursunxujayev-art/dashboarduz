@@ -1,3 +1,4 @@
+import { formatSomAmount } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -239,7 +240,7 @@ export const customerCourseProcedures = {
           if (transferAmount > targetCurrentDebtAmount) {
             throw new TRPCError({
               code: 'PRECONDITION_FAILED',
-              message: `Summalar juda katta: o'tkaziladigan to'lov (${transferAmount.toLocaleString('uz-UZ')}) maqsad kurs qarzidan (${targetCurrentDebtAmount.toLocaleString('uz-UZ')}) katta.`,
+              message: `Summalar juda katta: o'tkaziladigan to'lov (${formatSomAmount(transferAmount)}) maqsad kurs qarzidan (${formatSomAmount(targetCurrentDebtAmount)}) katta.`,
             });
           }
 

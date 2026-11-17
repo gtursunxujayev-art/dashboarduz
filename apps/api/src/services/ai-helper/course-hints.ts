@@ -1,4 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
+import { formatSomAmount } from '@dashboarduz/shared';
 
 import { INCOME_LIFECYCLE_ACTIVE } from '../income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../income-facts';
@@ -97,10 +98,6 @@ export function shouldPreferCourseDirectAnswer(message: string): boolean {
   );
 }
 
-function formatMoneyUz(value: number): string {
-  return `${new Intl.NumberFormat('ru-RU').format(Math.round(value || 0))} so'm`;
-}
-
 export function buildCourseDirectAnswer(courseHint: CourseHintSummary): string {
   const tariffParts = courseHint.tariffBreakdown
     .filter((item) => item.salesCount > 0)
@@ -112,9 +109,9 @@ export function buildCourseDirectAnswer(courseHint: CourseHintSummary): string {
   return [
     `${courseHint.matchedCourseName}ga ${courseHint.salesCount} ta sotuv bo'lgan.`,
     `Tariflar: ${tariffLine}.`,
-    `Kelishuv summasi: ${formatMoneyUz(courseHint.agreementAmount)}.`,
-    `To'langan summasi: ${formatMoneyUz(courseHint.incomeAmount)}.`,
-    `Qarzdorlik summasi: ${formatMoneyUz(courseHint.debtAmount)}.`,
+    `Kelishuv summasi: ${formatSomAmount(courseHint.agreementAmount)}.`,
+    `To'langan summasi: ${formatSomAmount(courseHint.incomeAmount)}.`,
+    `Qarzdorlik summasi: ${formatSomAmount(courseHint.debtAmount)}.`,
   ].join(' ');
 }
 

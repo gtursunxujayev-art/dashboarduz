@@ -1,3 +1,5 @@
+import { formatSomAmount } from '@dashboarduz/shared';
+
 import type { ResolveTelegramBotTokenOptions } from '../../lib/telegram';
 
 import type { buildMetrics, SellerSalesMetrics } from './metrics';
@@ -31,13 +33,13 @@ export function buildSellerReportPdf(params: SellerReportPayload): Buffer {
     `Period: ${params.rangeStart.toISOString()} — ${params.rangeEnd.toISOString()}`,
     '',
     `Sales count: ${params.metrics.newSalesCount}`,
-    `Agreement amount: ${Math.round(params.metrics.newSalesAgreementAmount).toLocaleString('en-US')} UZS`,
-    `Income amount: ${Math.round(params.metrics.incomeAmount).toLocaleString('en-US')} UZS`,
+    `Agreement amount: ${formatSomAmount(params.metrics.newSalesAgreementAmount)}`,
+    `Income amount: ${formatSomAmount(params.metrics.incomeAmount)}`,
     `Average sales: ${params.metrics.averageSalesCount.toFixed(2)}`,
     '',
-    `Online: ${params.metrics.onlineSalesCount} | Agreement ${Math.round(params.metrics.onlineSalesAgreementAmount).toLocaleString('en-US')} UZS | Income ${Math.round(params.metrics.onlineSalesIncomeAmount).toLocaleString('en-US')} UZS`,
-    `Offline: ${params.metrics.offlineSalesCount} | Agreement ${Math.round(params.metrics.offlineSalesAgreementAmount).toLocaleString('en-US')} UZS | Income ${Math.round(params.metrics.offlineSalesIncomeAmount).toLocaleString('en-US')} UZS`,
-    `Intensive: ${params.metrics.intensiveSalesCount} | Agreement ${Math.round(params.metrics.intensiveSalesAgreementAmount).toLocaleString('en-US')} UZS | Income ${Math.round(params.metrics.intensiveSalesIncomeAmount).toLocaleString('en-US')} UZS`,
+    `Online: ${params.metrics.onlineSalesCount} | Agreement ${formatSomAmount(params.metrics.onlineSalesAgreementAmount)} | Income ${formatSomAmount(params.metrics.onlineSalesIncomeAmount)}`,
+    `Offline: ${params.metrics.offlineSalesCount} | Agreement ${formatSomAmount(params.metrics.offlineSalesAgreementAmount)} | Income ${formatSomAmount(params.metrics.offlineSalesIncomeAmount)}`,
+    `Intensive: ${params.metrics.intensiveSalesCount} | Agreement ${formatSomAmount(params.metrics.intensiveSalesAgreementAmount)} | Income ${formatSomAmount(params.metrics.intensiveSalesIncomeAmount)}`,
     '',
     `Calls: ${params.metrics.totalCalls}`,
     `Call duration: ${params.metrics.totalCallDuration} seconds`,

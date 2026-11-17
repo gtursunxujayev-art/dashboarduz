@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
+import { formatSomAmount, TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
 import { logger } from '../../lib/logger';
 import { resolveTelegramBotTokenForTenant, toHashtag } from '../../lib/telegram';
@@ -16,10 +16,6 @@ export function resolveRefundGroupIds(): string[] {
   }
 
   return parseTelegramGroupIdsFromEnvKeys(REFUND_PAYMENT_GROUP_ENV_KEYS);
-}
-
-export function formatAmountUz(value: number | null | undefined): string {
-  return `${Number(value || 0).toLocaleString('ru-RU')} UZS`;
 }
 
 export function formatDateGmt5(dateValue: Date): string {
@@ -306,7 +302,7 @@ export async function sendOfflineOrIntensivePaymentTelegram(params: {
     : '@najotnur_oflayn';
 
   const paymentLines = payments.length
-    ? payments.map((payment, index) => `${index + 1}) ${formatAmountUz(payment.paymentAmount)} - ${formatDateGmt5(payment.entryDate)}`)
+    ? payments.map((payment, index) => `${index + 1}) ${formatSomAmount(payment.paymentAmount)} - ${formatDateGmt5(payment.entryDate)}`)
     : ['1) -'];
 
   const messageLines = [
@@ -319,13 +315,13 @@ export async function sendOfflineOrIntensivePaymentTelegram(params: {
     `2.Tel: ${saleIncome.customer.customerNumber}`,
     `3.Tg: ${telegramUsername}`,
     '',
-    `Narxi - ${formatAmountUz(agreementAmount)}`,
+    `Narxi - ${formatSomAmount(agreementAmount)}`,
     '',
     "To'lov:",
     '',
     ...paymentLines,
     '',
-    `Qarz: ${formatAmountUz(saleIncome.remainingDebtAmount)}`,
+    `Qarz: ${formatSomAmount(saleIncome.remainingDebtAmount)}`,
     `Deadline: ${saleIncome.deadline ? formatDateGmt5(saleIncome.deadline) : '-'}`,
     '',
     '@Moliya_b0limi',

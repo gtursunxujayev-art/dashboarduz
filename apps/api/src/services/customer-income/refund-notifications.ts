@@ -1,4 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
+import { formatSomAmount } from '@dashboarduz/shared';
 
 import { logger } from '../../lib/logger';
 import { resolveTelegramBotTokenForTenant, sendMessageToTelegramChat } from '../../lib/telegram';
@@ -12,7 +13,7 @@ import {
   sendToTelegramGroups,
   userLabel,
 } from './notification-parts';
-import { formatAmountUz, formatDateGmt5, resolveRefundGroupIds } from './payment-notifications';
+import { formatDateGmt5, resolveRefundGroupIds } from './payment-notifications';
 
 const USER_LABEL_SELECT = { select: { id: true, name: true, username: true } } as const;
 
@@ -95,7 +96,7 @@ export async function sendRefundApprovedTelegram(params: {
     ...hashtagLines(userLabel(request.income.manager, null)),
     `${request.customer.name}`,
     `${request.customer.customerNumber}`,
-    `Summa - ${formatAmountUz(refundAmount(request))}`,
+    `Summa - ${formatSomAmount(refundAmount(request))}`,
     `Karta - ${request.refundCardNumber || '-'}`,
     '✅ Qaytarildi',
   ].join('\n');
@@ -132,7 +133,7 @@ export async function sendRefundRequestedTelegram(params: {
     '',
     ...customerLines(request.customer),
     '',
-    `So'ralgan summa: ${formatAmountUz(refundAmount(request))}`,
+    `So'ralgan summa: ${formatSomAmount(refundAmount(request))}`,
     `Karta raqami: ${request.refundCardNumber || '-'}`,
     `Asl to'lov sanasi: ${formatDateGmt5(request.income.entryDate)}`,
     `So'rov yuborgan: ${userLabel(request.requestedBy, params.requestedByUserId)}`,
@@ -162,7 +163,7 @@ function buildRefundDetailsBlock(request: RefundRequestRow, extra: {
   const details = [
     ...customerLines(request.customer),
     '',
-    `Summa: ${formatAmountUz(refundAmount(request))}`,
+    `Summa: ${formatSomAmount(refundAmount(request))}`,
     `Karta raqami: ${request.refundCardNumber || '-'}`,
     `Kurs/Tarif: ${formatCourseTariff(request.income.course?.name, request.income.tariff?.name)}`,
     ...(extra.requesterLabel ? [`So'rov yuborgan: ${extra.requesterLabel}`] : []),

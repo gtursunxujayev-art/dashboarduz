@@ -1,7 +1,6 @@
 import type { DbClient } from '@dashboarduz/db';
 
 import { telegramService } from '../../integrations/telegram';
-import { formatAmountUz as money } from '../payment-notifications';
 import { notifyRefundRequesterReviewResult, sendRefundApprovedTelegram, sendRefundRequestedTelegram } from '../refund-notifications';
 import { sendTariffChangeRequestedTelegram } from '../tariff-change-notifications';
 
@@ -68,7 +67,7 @@ describe('refund and tariff-change Telegram messages', () => {
       '2.Tel: 998901234567',
       '3.Tg: @ali_v',
       '',
-      `So'ralgan summa: ${money(1234567)}`,
+      "So'ralgan summa: 1 234 567 so'm",
       'Karta raqami: 8600 1234',
       "Asl to'lov sanasi: 04.03.2026",
       "So'rov yuborgan: Sardor",
@@ -95,7 +94,7 @@ describe('refund and tariff-change Telegram messages', () => {
       '#Olim_Karimov',
       'Ali Valiyev',
       '998901234567',
-      `Summa - ${money(1500000)}`,
+      "Summa - 1 500 000 so'm",
       'Karta - -',
       '✅ Qaytarildi',
     ].join('\n'));
@@ -118,7 +117,7 @@ describe('refund and tariff-change Telegram messages', () => {
       '2.Tel: 998901234567',
       '3.Tg: @ali_v',
       '',
-      `Summa: ${money(200000)}`,
+      "Summa: 200 000 so'm",
       'Karta raqami: -',
       'Kurs/Tarif: Foundation English / VIP',
       "So'rov yuborgan: sardor",
@@ -145,7 +144,7 @@ describe('refund and tariff-change Telegram messages', () => {
       "#Tarif_o'zgarishi_so'rovi\n#IELTS\n#Olim_Karimov",
       '1.Mijoz: Ali Valiyev\n2.Tel: 998901234567\n3.Tg: @ali_v',
       'Eski kurs/tarif: Foundation English / VIP\nYangi kurs/tarif: IELTS',
-      `Yangi kelishuv: ${money(3000000)}`,
+      "Yangi kelishuv: 3 000 000 so'm",
       "So'rov yuborgan: Sardor\nSo'rov vaqti: 05.03.2026",
     ].join('\n\n'));
   });
