@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { recomputeSaleChainStateFully, refreshCustomerProfileFromLatestActiveSaleForDebug } from '../../../services/income-debug/chain-recompute';
+import { recomputeSaleChainState, refreshCustomerProfileFromLatestActiveSaleForDebug } from '../../../services/income-debug/chain-recompute';
 import { adminProcedure } from '../../trpc';
 
 export const incomeDebugRelinkProcedures = {
@@ -94,9 +94,10 @@ export const incomeDebugRelinkProcedures = {
           };
         }
 
-        await recomputeSaleChainStateFully(tx, {
+        await recomputeSaleChainState(tx, {
           tenantId: ctx.tenantId,
           saleId: targetSale.id,
+          canonicalRule: 'earlier-repayment-only',
         });
         const refreshedTarget = await tx.income.findUnique({
           where: { id: targetSale.id },
@@ -169,9 +170,10 @@ export const incomeDebugRelinkProcedures = {
           },
         });
 
-        await recomputeSaleChainStateFully(tx, {
+        await recomputeSaleChainState(tx, {
           tenantId: ctx.tenantId,
           saleId: refreshedTarget.id,
+          canonicalRule: 'earlier-repayment-only',
         });
         await refreshCustomerProfileFromLatestActiveSaleForDebug(tx, {
           tenantId: ctx.tenantId,

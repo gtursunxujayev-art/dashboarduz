@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { parseSnapshotDate, recomputeSaleChainState, recomputeSaleChainStateFully } from '../../../services/income-debug/chain-recompute';
+import { parseSnapshotDate, recomputeSaleChainState } from '../../../services/income-debug/chain-recompute';
 import { findSnapshotMatch, getSaleChainConsistencySnapshot } from '../../../services/income-debug/snapshots';
 import { getActiveSnapshot } from '../../../services/income-problems/finance-snapshot';
 import { adminProcedure } from '../../trpc';
@@ -278,9 +278,10 @@ export const incomeDebugRepairProcedures = {
           }
 
           const normalized = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
-            return recomputeSaleChainStateFully(tx, {
+            return recomputeSaleChainState(tx, {
               tenantId: ctx.tenantId,
               saleId: sale.id,
+              canonicalRule: 'earlier-repayment-only',
             });
           });
 

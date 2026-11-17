@@ -1,11 +1,77 @@
 import type { DbClient } from '@dashboarduz/db';
 
 import { logger } from '../../lib/logger';
-import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, sendMessageToTelegramChat, toHashtag } from '../../lib/telegram';
-import { telegramService } from '../integrations/telegram';
+import { resolveTelegramBotTokenForTenant, sendMessageToTelegramChat } from '../../lib/telegram';
 
 import { ADJUSTMENT_STATUS_APPROVED, ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, TELEGRAM_BOT_TOKEN_OPTIONS } from './constants';
+import {
+  ADJUSTMENT_INCOME_SELECT,
+  customerLines,
+  formatCourseTariff,
+  hashtagLines,
+  sendToTelegramGroups,
+  userLabel,
+} from './notification-parts';
 import { formatAmountUz, formatDateGmt5, resolveRefundGroupIds } from './payment-notifications';
+
+const USER_LABEL_SELECT = { select: { id: true, name: true, username: true } } as const;
+
+/** Refund group ids and bot token, or `null` (logged) when either is missing. */
+async function resolveRefundGroupDelivery(params: { tenantId: string; db: DbClient; kind: 'refund' | 'refund request' }) {
+  const groupIds = resolveRefundGroupIds();
+
+  if (!groupIds.length) {
+    logger.warn(params.kind === 'refund'
+      ? '[Income][Telegram] Refund group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).'
+      : '[Income][Telegram] Refund request group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
+
+    return null;
+  }
+
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, params.db, TELEGRAM_BOT_TOKEN_OPTIONS);
+
+  if (!botToken) {
+    logger.warn(`[Income][Telegram] Bot token is missing for ${params.kind} message.`);
+
+    return null;
+  }
+
+  return { groupIds, botToken };
+}
+
+/** A refund request with its sale, requester and reviewer, or `null` when it has no customer. */
+async function findRefundRequest(db: DbClient, params: { tenantId: string; requestId: string; status: string }) {
+  const request = await db.incomeAdjustmentRequest.findFirst({
+    where: {
+      id: params.requestId,
+      tenantId: params.tenantId,
+      type: ADJUSTMENT_TYPE_REFUND,
+      status: params.status,
+    },
+    select: {
+      id: true,
+      reason: true,
+      reviewNote: true,
+      requestedAmount: true,
+      refundCardNumber: true,
+      createdAt: true,
+      reviewedAt: true,
+      income: { select: ADJUSTMENT_INCOME_SELECT },
+      requestedBy: { select: { id: true, name: true, username: true, telegramId: true } },
+      reviewedBy: USER_LABEL_SELECT,
+    },
+  });
+
+  if (!request?.income?.customer) {
+    return null;
+  }
+
+  return { ...request, income: request.income, customer: request.income.customer };
+}
+
+function refundAmount(request: { requestedAmount: number | null; income: { paymentAmount: number | null } }): number {
+  return request.requestedAmount ?? request.income.paymentAmount ?? 0;
+}
 
 export async function sendRefundApprovedTelegram(params: {
   tenantId: string;
@@ -13,122 +79,33 @@ export async function sendRefundApprovedTelegram(params: {
   reviewedByUserId: string;
   db: DbClient;
 }) {
-  const { db } = params;
+  const delivery = await resolveRefundGroupDelivery({ tenantId: params.tenantId, db: params.db, kind: 'refund' });
 
-  const groupIds = resolveRefundGroupIds();
-
-  if (!groupIds.length) {
-    logger.warn('[Income][Telegram] Refund group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
-
+  if (!delivery) {
     return;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
+  const request = await findRefundRequest(params.db, { ...params, status: ADJUSTMENT_STATUS_APPROVED });
 
-  if (!botToken) {
-    logger.warn('[Income][Telegram] Bot token is missing for refund message.');
-
+  if (!request) {
     return;
   }
 
-  const request = await db.incomeAdjustmentRequest.findFirst({
-    where: {
-      id: params.requestId,
-      tenantId: params.tenantId,
-      type: ADJUSTMENT_TYPE_REFUND,
-      status: ADJUSTMENT_STATUS_APPROVED,
-    },
-    select: {
-      id: true,
-      reason: true,
-      requestedAmount: true,
-      refundCardNumber: true,
-      income: {
-        select: {
-          id: true,
-          entryDate: true,
-          paymentAmount: true,
-          customer: {
-            select: {
-              name: true,
-              customerNumber: true,
-              telegramUsername: true,
-            },
-          },
-          manager: {
-            select: {
-              name: true,
-              username: true,
-            },
-          },
-          course: {
-            select: {
-              name: true,
-            },
-          },
-          tariff: {
-            select: {
-              name: true,
-            },
-          },
-        },
-      },
-      reviewedBy: {
-        select: {
-          id: true,
-          name: true,
-          username: true,
-        },
-      },
-      reviewedAt: true,
-    },
-  });
-
-  if (!request?.income?.customer) {
-    return;
-  }
-
-  const customer = request.income.customer;
-  const managerLabel = request.income.manager?.name || request.income.manager?.username || null;
-
-  const messageLines = [
-    ...(toHashtag(managerLabel) ? [toHashtag(managerLabel)] : []),
-    `${customer.name}`,
-    `${customer.customerNumber}`,
-    `Summa - ${formatAmountUz(request.requestedAmount ?? request.income.paymentAmount ?? 0)}`,
+  const message = [
+    ...hashtagLines(userLabel(request.income.manager, null)),
+    `${request.customer.name}`,
+    `${request.customer.customerNumber}`,
+    `Summa - ${formatAmountUz(refundAmount(request))}`,
     `Karta - ${request.refundCardNumber || '-'}`,
     '✅ Qaytarildi',
-  ];
+  ].join('\n');
 
-  const message = messageLines.join('\n');
-
-  for (const groupId of groupIds) {
-    const chatIdCandidates = buildTelegramChatIdCandidates(groupId);
-    let delivered = false;
-    let lastError = '';
-
-    for (const candidate of chatIdCandidates) {
-      try {
-        await telegramService.sendMessage(botToken, candidate, message, {
-          disable_web_page_preview: true,
-        });
-        delivered = true;
-        break;
-      } catch (error) {
-        lastError = String((error as any)?.message || error);
-      }
-    }
-
-    if (!delivered) {
-      logger.error({
-        tenantId: params.tenantId,
-        requestId: params.requestId,
-        groupId,
-        chatIdCandidates,
-        error: lastError,
-      }, '[Income][Telegram] Failed to send refund message');
-    }
-  }
+  await sendToTelegramGroups({
+    ...delivery,
+    message,
+    logContext: { tenantId: params.tenantId, requestId: params.requestId },
+    failureLogMessage: '[Income][Telegram] Failed to send refund message',
+  });
 }
 
 export async function sendRefundRequestedTelegram(params: {
@@ -137,173 +114,63 @@ export async function sendRefundRequestedTelegram(params: {
   requestedByUserId: string;
   db: DbClient;
 }) {
-  const { db } = params;
+  const delivery = await resolveRefundGroupDelivery({ tenantId: params.tenantId, db: params.db, kind: 'refund request' });
 
-  const groupIds = resolveRefundGroupIds();
-
-  if (!groupIds.length) {
-    logger.warn('[Income][Telegram] Refund request group is missing. Set PAYMENT_RETURN_GROUP_ID (or REFUND_GROUP_ID).');
-
+  if (!delivery) {
     return;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
+  const request = await findRefundRequest(params.db, { ...params, status: ADJUSTMENT_STATUS_PENDING });
 
-  if (!botToken) {
-    logger.warn('[Income][Telegram] Bot token is missing for refund request message.');
-
+  if (!request) {
     return;
   }
 
-  const request = await db.incomeAdjustmentRequest.findFirst({
-    where: {
-      id: params.requestId,
-      tenantId: params.tenantId,
-      type: ADJUSTMENT_TYPE_REFUND,
-      status: ADJUSTMENT_STATUS_PENDING,
-    },
-    select: {
-      id: true,
-      reason: true,
-      requestedAmount: true,
-      refundCardNumber: true,
-      createdAt: true,
-      income: {
-        select: {
-          id: true,
-          entryDate: true,
-          paymentAmount: true,
-          customer: {
-            select: {
-              name: true,
-              customerNumber: true,
-              telegramUsername: true,
-            },
-          },
-          manager: {
-            select: {
-              name: true,
-              username: true,
-            },
-          },
-          course: {
-            select: {
-              name: true,
-            },
-          },
-          tariff: {
-            select: {
-              name: true,
-            },
-          },
-        },
-      },
-      requestedBy: {
-        select: {
-          id: true,
-          name: true,
-          username: true,
-        },
-      },
-    },
-  });
-
-  if (!request?.income?.customer) {
-    return;
-  }
-
-  const customer = request.income.customer;
-  const managerLabel = request.income.manager?.name || request.income.manager?.username || null;
-  const requesterLabel = request.requestedBy?.name || request.requestedBy?.username || params.requestedByUserId;
-  const telegramUsername = customer.telegramUsername
-    ? (customer.telegramUsername.startsWith('@') ? customer.telegramUsername : `@${customer.telegramUsername}`)
-    : '-';
-
-  const messageLines = [
+  const message = [
     '#Pul_qaytarish_so\'rovi',
-    ...(toHashtag(request.income.course?.name) ? [toHashtag(request.income.course?.name)] : []),
-    ...(toHashtag(request.income.tariff?.name) ? [toHashtag(request.income.tariff?.name)] : []),
-    ...(toHashtag(managerLabel) ? [toHashtag(managerLabel)] : []),
+    ...hashtagLines(request.income.course?.name, request.income.tariff?.name, userLabel(request.income.manager, null)),
     '',
-    `1.Mijoz: ${customer.name}`,
-    `2.Tel: ${customer.customerNumber}`,
-    `3.Tg: ${telegramUsername}`,
+    ...customerLines(request.customer),
     '',
-    `So'ralgan summa: ${formatAmountUz(request.requestedAmount ?? request.income.paymentAmount ?? 0)}`,
+    `So'ralgan summa: ${formatAmountUz(refundAmount(request))}`,
     `Karta raqami: ${request.refundCardNumber || '-'}`,
     `Asl to'lov sanasi: ${formatDateGmt5(request.income.entryDate)}`,
-    `So'rov yuborgan: ${requesterLabel}`,
+    `So'rov yuborgan: ${userLabel(request.requestedBy, params.requestedByUserId)}`,
     `So'rov vaqti: ${formatDateGmt5(request.createdAt)}`,
     'Holat: Kutilmoqda',
     ...(request.reason ? [`Izoh: ${request.reason}`] : []),
     '',
     '@Moliya_b0limi',
     '@najotnur_oflayn',
-  ];
+  ].join('\n');
 
-  const message = messageLines.join('\n');
-
-  for (const groupId of groupIds) {
-    const chatIdCandidates = buildTelegramChatIdCandidates(groupId);
-    let delivered = false;
-    let lastError = '';
-
-    for (const candidate of chatIdCandidates) {
-      try {
-        await telegramService.sendMessage(botToken, candidate, message, {
-          disable_web_page_preview: true,
-        });
-        delivered = true;
-        break;
-      } catch (error) {
-        lastError = String((error as any)?.message || error);
-      }
-    }
-
-    if (!delivered) {
-      logger.error({
-        tenantId: params.tenantId,
-        requestId: params.requestId,
-        groupId,
-        chatIdCandidates,
-        error: lastError,
-      }, '[Income][Telegram] Failed to send refund request message');
-    }
-  }
+  await sendToTelegramGroups({
+    ...delivery,
+    message,
+    logContext: { tenantId: params.tenantId, requestId: params.requestId },
+    failureLogMessage: '[Income][Telegram] Failed to send refund request message',
+  });
 }
 
-function buildRefundDetailsBlock(params: {
-  customerName: string;
-  customerNumber: string;
-  telegramUsername?: string | null;
-  amount: number;
-  courseName?: string | null;
-  tariffName?: string | null;
-  requesterLabel?: string | null;
+type RefundRequestRow = NonNullable<Awaited<ReturnType<typeof findRefundRequest>>>;
+
+function buildRefundDetailsBlock(request: RefundRequestRow, extra: {
+  requesterLabel: string;
   reviewerLabel?: string | null;
-  createdAt?: Date | null;
-  reviewedAt?: Date | null;
-  reason?: string | null;
-  reviewNote?: string | null;
-  refundCardNumber?: string | null;
+  showReview?: boolean;
 }): string {
-  const tg = params.telegramUsername
-    ? (params.telegramUsername.startsWith('@') ? params.telegramUsername : `@${params.telegramUsername}`)
-    : '-';
   const details = [
-    `1.Mijoz: ${params.customerName}`,
-    `2.Tel: ${params.customerNumber}`,
-    `3.Tg: ${tg}`,
+    ...customerLines(request.customer),
     '',
-    `Summa: ${formatAmountUz(params.amount)}`,
-    `Karta raqami: ${params.refundCardNumber || '-'}`,
-    `Kurs/Tarif: ${[params.courseName, params.tariffName].filter(Boolean).join(' / ') || '-'}`,
-    ...(params.requesterLabel ? [`So'rov yuborgan: ${params.requesterLabel}`] : []),
-    ...(params.reviewerLabel ? [`Ko'rib chiqqan: ${params.reviewerLabel}`] : []),
-    ...(params.createdAt ? [`So'rov vaqti: ${formatDateGmt5(params.createdAt)}`] : []),
-    ...(params.reviewedAt ? [`Ko'rib chiqilgan vaqt: ${formatDateGmt5(params.reviewedAt)}`] : []),
-    ...(params.reason ? [`Izoh: ${params.reason}`] : []),
-    ...(params.reviewNote ? [`Javob izohi: ${params.reviewNote}`] : []),
+    `Summa: ${formatAmountUz(refundAmount(request))}`,
+    `Karta raqami: ${request.refundCardNumber || '-'}`,
+    `Kurs/Tarif: ${formatCourseTariff(request.income.course?.name, request.income.tariff?.name)}`,
+    ...(extra.requesterLabel ? [`So'rov yuborgan: ${extra.requesterLabel}`] : []),
+    ...(extra.reviewerLabel ? [`Ko'rib chiqqan: ${extra.reviewerLabel}`] : []),
+    `So'rov vaqti: ${formatDateGmt5(request.createdAt)}`,
+    ...(extra.showReview && request.reviewedAt ? [`Ko'rib chiqilgan vaqt: ${formatDateGmt5(request.reviewedAt)}`] : []),
+    ...(request.reason ? [`Izoh: ${request.reason}`] : []),
+    ...(extra.showReview && request.reviewNote ? [`Javob izohi: ${request.reviewNote}`] : []),
   ];
 
   return details.join('\n');
@@ -324,48 +191,7 @@ export async function notifyFinanceUsersRefundRequested(params: {
   }
 
   const [request, financeUsers] = await Promise.all([
-    db.incomeAdjustmentRequest.findFirst({
-      where: {
-        id: params.requestId,
-        tenantId: params.tenantId,
-        type: ADJUSTMENT_TYPE_REFUND,
-        status: ADJUSTMENT_STATUS_PENDING,
-      },
-      select: {
-        requestedAmount: true,
-        refundCardNumber: true,
-        reason: true,
-        createdAt: true,
-        requestedBy: {
-          select: {
-            name: true,
-            username: true,
-          },
-        },
-        income: {
-          select: {
-            paymentAmount: true,
-            course: {
-              select: {
-                name: true,
-              },
-            },
-            tariff: {
-              select: {
-                name: true,
-              },
-            },
-            customer: {
-              select: {
-                name: true,
-                customerNumber: true,
-                telegramUsername: true,
-              },
-            },
-          },
-        },
-      },
-    }),
+    findRefundRequest(db, { ...params, status: ADJUSTMENT_STATUS_PENDING }),
     db.user.findMany({
       where: {
         tenantId: params.tenantId,
@@ -384,22 +210,12 @@ export async function notifyFinanceUsersRefundRequested(params: {
     }),
   ]);
 
-  if (!request?.income?.customer || financeUsers.length === 0) {
+  if (!request || financeUsers.length === 0) {
     return;
   }
 
-  const requesterLabel = request.requestedBy?.name || request.requestedBy?.username || params.requestedByUserId;
-  const details = buildRefundDetailsBlock({
-    customerName: request.income.customer.name,
-    customerNumber: request.income.customer.customerNumber,
-    telegramUsername: request.income.customer.telegramUsername || null,
-    amount: request.requestedAmount ?? request.income.paymentAmount ?? 0,
-    refundCardNumber: request.refundCardNumber || null,
-    courseName: request.income.course?.name || null,
-    tariffName: request.income.tariff?.name || null,
-    requesterLabel,
-    createdAt: request.createdAt,
-    reason: request.reason || null,
+  const details = buildRefundDetailsBlock(request, {
+    requesterLabel: userLabel(request.requestedBy, params.requestedByUserId),
   });
   const message = `Pul qaytarish uchun yangi so'rov\n\n${details}`;
 
@@ -437,81 +253,17 @@ export async function notifyRefundRequesterReviewResult(params: {
     return;
   }
 
-  const request = await db.incomeAdjustmentRequest.findFirst({
-    where: {
-      id: params.requestId,
-      tenantId: params.tenantId,
-      type: ADJUSTMENT_TYPE_REFUND,
-      status: params.status,
-    },
-    select: {
-      requestedAmount: true,
-      refundCardNumber: true,
-      reason: true,
-      reviewNote: true,
-      createdAt: true,
-      reviewedAt: true,
-      requestedBy: {
-        select: {
-          id: true,
-          name: true,
-          username: true,
-          telegramId: true,
-        },
-      },
-      reviewedBy: {
-        select: {
-          name: true,
-          username: true,
-        },
-      },
-      income: {
-        select: {
-          paymentAmount: true,
-          course: {
-            select: {
-              name: true,
-            },
-          },
-          tariff: {
-            select: {
-              name: true,
-            },
-          },
-          customer: {
-            select: {
-              name: true,
-              customerNumber: true,
-              telegramUsername: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
+  const request = await findRefundRequest(db, params);
   const requesterChatId = String(request?.requestedBy?.telegramId || '').trim();
 
-  if (!request?.income?.customer || !requesterChatId) {
+  if (!request || !requesterChatId) {
     return;
   }
 
-  const reviewerLabel = request.reviewedBy?.name || request.reviewedBy?.username || null;
-  const requesterLabel = request.requestedBy?.name || request.requestedBy?.username || request.requestedBy?.id || '-';
-  const details = buildRefundDetailsBlock({
-    customerName: request.income.customer.name,
-    customerNumber: request.income.customer.customerNumber,
-    telegramUsername: request.income.customer.telegramUsername || null,
-    amount: request.requestedAmount ?? request.income.paymentAmount ?? 0,
-    refundCardNumber: request.refundCardNumber || null,
-    courseName: request.income.course?.name || null,
-    tariffName: request.income.tariff?.name || null,
-    requesterLabel,
-    reviewerLabel,
-    createdAt: request.createdAt,
-    reviewedAt: request.reviewedAt,
-    reason: request.reason || null,
-    reviewNote: request.reviewNote || null,
+  const details = buildRefundDetailsBlock(request, {
+    requesterLabel: userLabel(request.requestedBy, request.requestedBy?.id || '-'),
+    reviewerLabel: userLabel(request.reviewedBy, null),
+    showReview: true,
   });
 
   const header = params.status === 'approved'

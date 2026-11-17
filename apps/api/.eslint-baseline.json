@@ -80,17 +80,12 @@
     "@typescript-eslint/no-unsafe-member-access": 1
   },
   "src/services/customer-income/refund-notifications.ts": {
-    "@typescript-eslint/no-explicit-any": 4,
-    "@typescript-eslint/no-unsafe-member-access": 4
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unsafe-member-access": 2
   },
   "src/services/customer-income/sale-chain.ts": {
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-member-access": 1
-  },
-  "src/services/customer-income/tariff-change-notifications.ts": {
-    "@typescript-eslint/no-explicit-any": 2,
-    "@typescript-eslint/no-unsafe-member-access": 2,
-    "@typescript-eslint/no-unused-vars": 1
   },
   "src/services/dashboard/bonus-income-details.ts": {
     "@typescript-eslint/no-unused-vars": 1
@@ -261,14 +256,7 @@
     "@typescript-eslint/no-unsafe-member-access": 2
   },
   "src/trpc/routers/course-sales/course-detail.ts": {
-    "@typescript-eslint/no-unused-vars": 1,
-    "object-shorthand": 1
-  },
-  "src/trpc/routers/course-sales/customers.ts": {
-    "object-shorthand": 1
-  },
-  "src/trpc/routers/course-sales/type-customers.ts": {
-    "object-shorthand": 1
+    "@typescript-eslint/no-unused-vars": 1
   },
   "src/trpc/routers/customer-income/adjustment-review.ts": {
     "@typescript-eslint/no-explicit-any": 3,

@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { asObjectOrEmpty } from '../../../lib/object';
-import { parseFaceIdUserExternalMap } from '../../../services/integration-settings/faceid';
+import { parseFaceIdUserExternalMap, requireFaceIdIntegration, saveFaceIdConfig } from '../../../services/integration-settings/faceid';
 import { adminProcedure } from '../../trpc';
 
 export const faceIdMappingProcedures = {
@@ -71,25 +71,7 @@ export const faceIdMappingProcedures = {
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const integration = await ctx.db.integration.findUnique({
-        where: {
-          tenantId_type: {
-            tenantId: ctx.tenantId,
-            type: 'faceid_attendance',
-          },
-        },
-        select: {
-          id: true,
-          config: true,
-        },
-      });
-
-      if (!integration) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: 'Face ID integration is not connected.',
-        });
-      }
+      const integration = await requireFaceIdIntegration(ctx.db, ctx.tenantId);
 
       const user = await ctx.db.user.findFirst({
         where: {
@@ -128,28 +110,16 @@ export const faceIdMappingProcedures = {
         lastValidatedAt: new Date().toISOString(),
       };
 
-      await ctx.db.integration.update({
-        where: { id: integration.id },
-        data: {
-          config: nextConfig,
-          lastSyncAt: new Date(),
-          errorMessage: null,
-        },
-      });
-
-      await ctx.db.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'integration_update',
-          resource: 'integration',
-          resourceId: integration.id,
-          metadata: {
-            type: 'faceid_attendance',
-            action: 'upsert_user_external_map',
-            externalUserId,
-            mappedUserId: input.userId,
-          },
+      await saveFaceIdConfig({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        actorUserId: ctx.user.userId,
+        integrationId: integration.id,
+        config: nextConfig,
+        auditMetadata: {
+          action: 'upsert_user_external_map',
+          externalUserId,
+          mappedUserId: input.userId,
         },
       });
 
@@ -162,25 +132,7 @@ export const faceIdMappingProcedures = {
   removeFaceIdMapping: adminProcedure
     .input(z.object({ externalUserId: z.string().min(1).max(128) }))
     .mutation(async ({ input, ctx }) => {
-      const integration = await ctx.db.integration.findUnique({
-        where: {
-          tenantId_type: {
-            tenantId: ctx.tenantId,
-            type: 'faceid_attendance',
-          },
-        },
-        select: {
-          id: true,
-          config: true,
-        },
-      });
-
-      if (!integration) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: 'Face ID integration is not connected.',
-        });
-      }
+      const integration = await requireFaceIdIntegration(ctx.db, ctx.tenantId);
 
       const externalUserId = String(input.externalUserId || '').trim();
       const existingMap = parseFaceIdUserExternalMap(integration.config);
@@ -199,27 +151,15 @@ export const faceIdMappingProcedures = {
         lastValidatedAt: new Date().toISOString(),
       };
 
-      await ctx.db.integration.update({
-        where: { id: integration.id },
-        data: {
-          config: nextConfig,
-          lastSyncAt: new Date(),
-          errorMessage: null,
-        },
-      });
-
-      await ctx.db.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'integration_update',
-          resource: 'integration',
-          resourceId: integration.id,
-          metadata: {
-            type: 'faceid_attendance',
-            action: 'remove_user_external_map',
-            externalUserId,
-          },
+      await saveFaceIdConfig({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        actorUserId: ctx.user.userId,
+        integrationId: integration.id,
+        config: nextConfig,
+        auditMetadata: {
+          action: 'remove_user_external_map',
+          externalUserId,
         },
       });
 

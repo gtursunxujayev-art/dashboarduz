@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { asObjectOrEmpty } from '../../../lib/object';
 import { hashFaceIdWebhookToken } from '../../../services/attendance/faceid';
 import { getPublicApiBaseUrl } from '../../../services/integration-settings/connection';
-import { buildFaceIdWebhookToken, normalizeBranchWhitelist, normalizeUnmatchedUserPolicy } from '../../../services/integration-settings/faceid';
+import { buildFaceIdWebhookToken, normalizeBranchWhitelist, normalizeUnmatchedUserPolicy, requireFaceIdIntegration, saveFaceIdConfig } from '../../../services/integration-settings/faceid';
 import { encryptIntegrationTokens } from '../../../services/security/encryption';
 import { adminProcedure } from '../../trpc';
 
@@ -89,25 +89,7 @@ export const faceIdIntegrationProcedures = {
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const integration = await ctx.db.integration.findUnique({
-        where: {
-          tenantId_type: {
-            tenantId: ctx.tenantId,
-            type: 'faceid_attendance',
-          },
-        },
-        select: {
-          id: true,
-          config: true,
-        },
-      });
-
-      if (!integration) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: 'Face ID integration is not connected.',
-        });
-      }
+      const integration = await requireFaceIdIntegration(ctx.db, ctx.tenantId);
 
       const existingConfig = asObjectOrEmpty(integration.config);
       const nextConfig = {
@@ -119,28 +101,16 @@ export const faceIdIntegrationProcedures = {
         lastValidatedAt: new Date().toISOString(),
       };
 
-      await ctx.db.integration.update({
-        where: { id: integration.id },
-        data: {
-          config: nextConfig,
-          lastSyncAt: new Date(),
-          errorMessage: null,
-        },
-      });
-
-      await ctx.db.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'integration_update',
-          resource: 'integration',
-          resourceId: integration.id,
-          metadata: {
-            type: 'faceid_attendance',
-            action: 'update_settings',
-            branchWhitelist: nextConfig.branchWhitelist,
-            unmatchedUserPolicy: nextConfig.unmatchedUserPolicy,
-          },
+      await saveFaceIdConfig({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        actorUserId: ctx.user.userId,
+        integrationId: integration.id,
+        config: nextConfig,
+        auditMetadata: {
+          action: 'update_settings',
+          branchWhitelist: nextConfig.branchWhitelist,
+          unmatchedUserPolicy: nextConfig.unmatchedUserPolicy,
         },
       });
 
