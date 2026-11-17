@@ -5,7 +5,7 @@ import { AuthProvider } from '@/contexts/auth-context';
 
 export const metadata: Metadata = {
   title: 'Dashboarduz - Ko\'p ijarachili CRM integratori',
-  description: 'AmoCRM, Telegram, Google Sheets va VoIP xizmatlarini bitta platformada boshqaring',
+  description: 'AmoCRM, Telegram va Google Sheets xizmatlarini bitta platformada boshqaring',
 };
 
 export default function RootLayout({

@@ -14,7 +14,7 @@ export function hasAgentRole(roles: readonly string[] | null | undefined): boole
 
 export type AuthProvider = 'phone' | 'telegram' | 'email';
 
-export type IntegrationType = 'amocrm' | 'telegram' | 'google_sheets' | 'voip_utel' | 'faceid_attendance';
+export type IntegrationType = 'amocrm' | 'telegram' | 'google_sheets' | 'faceid_attendance';
 
 export type IntegrationStatus = 'pending' | 'active' | 'error' | 'disconnected';
 

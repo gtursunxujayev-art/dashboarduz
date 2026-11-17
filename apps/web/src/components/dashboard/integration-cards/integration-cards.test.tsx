@@ -17,7 +17,6 @@ jest.mock('@/lib/trpc', () => {
         getTelegramHealth: queryStub({ connected: false, healthy: false, recipientCount: 0 }),
         connectAmoCRM: mutationStub(),
         connectTelegram: mutationStub(),
-        connectVoIP: mutationStub(),
         connectFaceId: mutationStub(),
         updateFaceIdSettings: mutationStub(),
         rotateFaceIdToken: mutationStub(),
@@ -46,7 +45,7 @@ describe('IntegrationCards', () => {
     render(<IntegrationCards />);
     expect(screen.getByText('AmoCRM')).toBeInTheDocument();
     expect(screen.getByText('Telegram Bot')).toBeInTheDocument();
-    expect(screen.getByText('VoIP (Webhook)')).toBeInTheDocument();
+    expect(screen.queryByText('VoIP (Webhook)')).not.toBeInTheDocument();
     expect(screen.getByText('Google Sheets')).toBeInTheDocument();
   });
 });

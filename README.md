@@ -9,7 +9,7 @@
 ## MVP Scope
 - Auth: `phone OTP` + `login/password`
 - Telegram: link/integration only (not primary login)
-- Integrations enabled: `amocrm`, `telegram`, `voip_utel`
+- Integrations enabled: `amocrm`, `telegram`
 - AmoCRM is token-only (long-lived token)
 - Google auth: removed from active runtime
 - Google Sheets: deferred/disabled in MVP
@@ -76,7 +76,6 @@ API/worker core:
 Integrations:
 - `AMOCRM_LONG_LIVED_TOKEN` (optional default token)
 - `AMOCRM_WEBHOOK_SECRET`
-- `UTEL_WEBHOOK_SECRET` (optional, recommended in production)
 - `TELEGRAM_BOT_TOKEN` (required for Telegram integration and outbound notifications)
 
 Web:

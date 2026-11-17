@@ -420,17 +420,6 @@
     "@typescript-eslint/no-unsafe-member-access": 4,
     "@typescript-eslint/require-await": 1
   },
-  "src/webhooks/voip-payload.ts": {
-    "@typescript-eslint/no-unnecessary-type-assertion": 1,
-    "@typescript-eslint/no-unsafe-assignment": 1,
-    "@typescript-eslint/no-unsafe-member-access": 3
-  },
-  "src/webhooks/voip.ts": {
-    "@typescript-eslint/no-explicit-any": 4,
-    "@typescript-eslint/no-misused-promises": 4,
-    "@typescript-eslint/no-unsafe-assignment": 2,
-    "@typescript-eslint/no-unsafe-member-access": 2
-  },
   "src/workers/index.ts": {
     "import/no-cycle": 1
   },
@@ -457,12 +446,6 @@
     "@typescript-eslint/no-unnecessary-type-assertion": 1,
     "@typescript-eslint/no-unsafe-assignment": 1,
     "@typescript-eslint/no-unsafe-member-access": 3
-  },
-  "src/workers/processors/voip-webhook.ts": {
-    "@typescript-eslint/no-explicit-any": 3,
-    "@typescript-eslint/no-unnecessary-type-assertion": 1,
-    "@typescript-eslint/no-unsafe-assignment": 4,
-    "@typescript-eslint/no-unsafe-member-access": 2
   },
   "src/workers/processors/webhook-event.ts": {
     "@typescript-eslint/no-explicit-any": 3,

@@ -6,7 +6,6 @@ import { reportError } from '../../services/observability';
 import { processAmoCRMWebhook } from './amocrm-webhook';
 import { processFaceIdWebhook } from './faceid-webhook';
 import { processTelegramWebhook } from './telegram-webhook';
-import { processVoIPWebhook } from './voip-webhook';
 
 export async function processWebhookEvent(eventId: string) {
   let tenantIdForAudit: string | null = null;
@@ -62,10 +61,6 @@ export async function processWebhookEvent(eventId: string) {
     switch (event.source) {
       case 'amocrm':
         await processAmoCRMWebhook(event, tenantId);
-        break;
-      case 'voip':
-      case 'utel':
-        await processVoIPWebhook(event, tenantId);
         break;
       case 'telegram':
         await processTelegramWebhook(event, tenantId);

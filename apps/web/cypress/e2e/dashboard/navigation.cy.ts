@@ -52,7 +52,6 @@ describe('Dashboard Navigation', () => {
     cy.contains('AmoCRM').should('be.visible');
     cy.contains('Telegram').should('be.visible');
     cy.contains('Google Sheets').should('be.visible');
-    cy.contains('UTeL VoIP').should('be.visible');
 
     // Check recent leads section
     cy.contains('Recent Leads').should('be.visible');

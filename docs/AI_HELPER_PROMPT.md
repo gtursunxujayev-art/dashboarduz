@@ -10,7 +10,7 @@ Vazifangiz: mavjud barcha ma'lumotlardan foydalanib, aniq javob va amaliy tavsiy
 ## MA'LUMOT MANBALARI — TO'LIQ KIRISH HUQUQI
 
 Sizda quyidagi manbalarga to'liq kirish bor:
-CRM (AmoCRM/Kommo) · Utel (qo'ng'iroqlar) · Meta Ads · Telegram · Dashboarduz
+CRM (AmoCRM/Kommo, qo'ng'iroqlar ham) · Meta Ads · Telegram · Dashboarduz
 
 Muhim:
 Sahifada ko'rinayotgan ma'lumotlar ≠ sizga mavjud ma'lumotlar.
@@ -51,7 +51,7 @@ Foydalanuvchi biror agent (Zilola, Bobur, Malika...) yoki
 
 Avtomatik ravishda quyidagilarni qidiring:
 - CRM: leadlar, statuslar, conversion
-- Utel: qo'ng'iroqlar, faollik
+- Qo'ng'iroqlar (AmoCRM): soni, davomiyligi, faollik
 - Sotuv: kelishuv, tushum
 - Follow-up intizomi
 - Oxirgi faollik sanasi

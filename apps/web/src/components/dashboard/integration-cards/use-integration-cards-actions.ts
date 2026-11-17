@@ -4,7 +4,7 @@ import type { IntegrationType as IntegrationId } from '@dashboarduz/shared';
 import type { useIntegrationCardsState } from './use-integration-cards-state';
 
 export function useIntegrationCardsActions(base: ReturnType<typeof useIntegrationCardsState>) {
-  const { amoPipelinesQuery, amocrmBaseUrl, amocrmLongLivedToken, connectAmoCRM, connectFaceId, connectTelegram, connectVoIP, disconnectIntegration, faceIdBranchWhitelistInput, faceIdExternalUserId, faceIdMappedUserId, faceIdMappingsQuery, faceIdStatusQuery, faceIdUnmatchedPolicy, faceIdWebhookToken, listQuery, removeFaceIdMapping, repairTelegramWebhook, rotateFaceIdToken, selectedPipelineIds, selectedTelegramDailyCourseIds, selectedTelegramRecipientIds, sendTelegramGroupSummaryNow, sendTelegramMonthlyReportNow, sendTelegramTodayReportNow, sendTelegramWeeklyReportNow, setActionLoading, setAmocrmBaseUrl, setAmocrmLongLivedToken, setError, setFaceIdExternalUserId, setFaceIdMappedUserId, setFaceIdWebhookToken, setLastGeneratedFaceIdToken, setTelegramReportSentMessage, setTelegramSelectionSavedAt, setTelegramToken, telegramHealthQuery, telegramRecipientsQuery, telegramToken, updateAmoCRMPipelines, updateFaceIdSettings, updateTelegramReportRecipients, upsertFaceIdMapping } = base;
+  const { amoPipelinesQuery, amocrmBaseUrl, amocrmLongLivedToken, connectAmoCRM, connectFaceId, connectTelegram, disconnectIntegration, faceIdBranchWhitelistInput, faceIdExternalUserId, faceIdMappedUserId, faceIdMappingsQuery, faceIdStatusQuery, faceIdUnmatchedPolicy, faceIdWebhookToken, listQuery, removeFaceIdMapping, repairTelegramWebhook, rotateFaceIdToken, selectedPipelineIds, selectedTelegramDailyCourseIds, selectedTelegramRecipientIds, sendTelegramGroupSummaryNow, sendTelegramMonthlyReportNow, sendTelegramTodayReportNow, sendTelegramWeeklyReportNow, setActionLoading, setAmocrmBaseUrl, setAmocrmLongLivedToken, setError, setFaceIdExternalUserId, setFaceIdMappedUserId, setFaceIdWebhookToken, setLastGeneratedFaceIdToken, setTelegramReportSentMessage, setTelegramSelectionSavedAt, setTelegramToken, telegramHealthQuery, telegramRecipientsQuery, telegramToken, updateAmoCRMPipelines, updateFaceIdSettings, updateTelegramReportRecipients, upsertFaceIdMapping } = base;
 
   const handleConnect = async (integrationId: IntegrationId) => {
     setError(null);
@@ -34,12 +34,6 @@ export function useIntegrationCardsActions(base: ReturnType<typeof useIntegratio
         }
         await connectTelegram.mutateAsync({ botToken: telegramToken.trim() });
         setTelegramToken('');
-        await listQuery.refetch();
-        return;
-      }
-
-      if (integrationId === 'voip_utel') {
-        await connectVoIP.mutateAsync({});
         await listQuery.refetch();
         return;
       }

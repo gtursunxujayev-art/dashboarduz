@@ -29,7 +29,6 @@ Integrations:
 - `TELEGRAM_BOT_TOKEN` (required if Telegram integration/notifications are enabled)
 
 Optional:
-- `UTEL_WEBHOOK_SECRET`
 - `SENTRY_DSN`
 - Twilio OTP variables if you use Twilio provider
 

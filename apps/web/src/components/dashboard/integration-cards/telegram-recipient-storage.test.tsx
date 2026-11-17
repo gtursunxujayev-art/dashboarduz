@@ -27,7 +27,7 @@ jest.mock('@/lib/trpc', () => {
           liveWebhookUrl: 'https://api.example.com/webhooks/telegram', pendingUpdateCount: 0,
           lastInboundAt: null, lastErrorMessage: null, error: null,
         }),
-        connectAmoCRM: mutationStub(), connectTelegram: mutationStub(), connectVoIP: mutationStub(),
+        connectAmoCRM: mutationStub(), connectTelegram: mutationStub(),
         connectFaceId: mutationStub(), updateFaceIdSettings: mutationStub(), rotateFaceIdToken: mutationStub(),
         getFaceIdStatus: queryStub(undefined), getFaceIdMappings: queryStub([]),
         upsertFaceIdMapping: mutationStub(), removeFaceIdMapping: mutationStub(),

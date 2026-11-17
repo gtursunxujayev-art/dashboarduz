@@ -361,36 +361,3 @@ async function moveToDLQ(job: Job, queueName: QueueName, error: any): Promise<vo
     });
   }
 }
-
-// Get DLQ metrics
-export async function getDLQMetrics(queueName: QueueName): Promise<{
-  waiting: number;
-  active: number;
-  completed: number;
-  failed: number;
-  delayed: number;
-}> {
-  const dlq = getDLQueue(queueName);
-  
-  const [
-    waiting,
-    active,
-    completed,
-    failed,
-    delayed,
-  ] = await Promise.all([
-    dlq.getWaitingCount(),
-    dlq.getActiveCount(),
-    dlq.getCompletedCount(),
-    dlq.getFailedCount(),
-    dlq.getDelayedCount(),
-  ]);
-
-  return {
-    waiting,
-    active,
-    completed,
-    failed,
-    delayed,
-  };
-}

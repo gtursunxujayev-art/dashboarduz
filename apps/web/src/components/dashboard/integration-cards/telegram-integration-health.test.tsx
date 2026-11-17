@@ -36,7 +36,7 @@ jest.mock('@/lib/trpc', () => {
           lastErrorMessage: null,
           error: null,
         }, healthRefetch),
-        connectAmoCRM: mutationStub(), connectTelegram: mutationStub(), connectVoIP: mutationStub(),
+        connectAmoCRM: mutationStub(), connectTelegram: mutationStub(),
         connectFaceId: mutationStub(), updateFaceIdSettings: mutationStub(), rotateFaceIdToken: mutationStub(),
         getFaceIdStatus: queryStub(undefined), getFaceIdMappings: queryStub([]),
         upsertFaceIdMapping: mutationStub(), removeFaceIdMapping: mutationStub(),

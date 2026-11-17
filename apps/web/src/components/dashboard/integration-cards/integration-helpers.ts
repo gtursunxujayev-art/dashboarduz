@@ -75,12 +75,6 @@ export const integrationCatalog: Array<{
     color: 'bg-gray-50 border-gray-200',
   },
   {
-    id: 'voip_utel',
-    name: 'VoIP (Webhook)',
-    description: "Faqat webhook rejimi: UTeL va boshqa operatorlardan qo'ng'iroqlar qabul qilinadi.",
-    color: 'bg-purple-50 border-purple-200',
-  },
-  {
     id: 'faceid_attendance',
     name: 'Face ID Davomat',
     description: "Face ID webhook orqali IN/OUT davomat eventlari qabul qilinadi (Bearer token).",

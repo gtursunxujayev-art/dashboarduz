@@ -26,9 +26,6 @@ export const googleSheetsConnectSchema = z.object({
   state: z.string().optional(),
 });
 
-// VoIP (UTeL) integration
-export const voipConnectSchema = z.object({}).optional();
-
 // Face ID attendance integration
 export const faceIdConnectSchema = z.object({
   webhookToken: z.string().min(8).optional(),
@@ -53,7 +50,6 @@ export type AmoCRMConnect = z.infer<typeof amocrmConnectSchema>;
 export type AmoCRMWebhook = z.infer<typeof amocrmWebhookSchema>;
 export type TelegramBotConnect = z.infer<typeof telegramBotConnectSchema>;
 export type GoogleSheetsConnect = z.infer<typeof googleSheetsConnectSchema>;
-export type VoIPConnect = z.infer<typeof voipConnectSchema>;
 export type FaceIdConnect = z.infer<typeof faceIdConnectSchema>;
 export type MetaAdsConnect = z.infer<typeof metaAdsConnectSchema>;
 export type IntegrationUpdate = z.infer<typeof integrationUpdateSchema>;

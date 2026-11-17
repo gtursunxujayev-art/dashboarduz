@@ -37,7 +37,6 @@ Required for MVP:
 
 Optional:
 - Twilio OTP vars (if using Twilio provider)
-- `UTEL_WEBHOOK_SECRET`
 - Sentry vars
 
 ## MVP scope
@@ -45,6 +44,6 @@ Optional:
 - Auth: Phone OTP + Login/Password
 - Google Sign-In: removed
 - Google Sheets: deferred/disabled
-- Integrations: AmoCRM, Telegram, VoIP (UTeL)
+- Integrations: AmoCRM (including calls), Telegram
 - AmoCRM is token-only (long-lived token)
 - Queue workers: webhook/notification/export/sync jobs via Redis + BullMQ

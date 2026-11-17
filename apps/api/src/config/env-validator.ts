@@ -54,11 +54,6 @@ const envSchema = z.object({
   AMOCRM_BASE_URL: z.string().url().default('https://www.amocrm.ru'),
   AMOCRM_LONG_LIVED_TOKEN: z.string().optional(),
   
-  // UTeL VoIP
-  UTEL_API_URL: z.string().url().optional(),
-  UTEL_API_TOKEN: z.string().optional(),
-  UTEL_WEBHOOK_SECRET: z.string().optional(),
-  
   // SMS Service (Twilio - additional for SMS notifications)
   TWILIO_PHONE_NUMBER: z.string().optional(),
   TWILIO_SMS_FROM_NUMBER: z.string().optional(),
@@ -198,7 +193,6 @@ export function validateFeatureRequirements(feature: string): void {
     otp_twilio: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_VERIFY_SERVICE_SID'],
     telegram: ['TELEGRAM_BOT_TOKEN'],
     amocrm: ['AMOCRM_WEBHOOK_SECRET'],
-    utel: [],
   };
 
   const required = requirements[feature];
@@ -222,5 +216,4 @@ export function validateAllFeatures(): void {
 
   validateFeatureRequirements('telegram');
   validateFeatureRequirements('amocrm');
-  validateFeatureRequirements('utel');
 }
