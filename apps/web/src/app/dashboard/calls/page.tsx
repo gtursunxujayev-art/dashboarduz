@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import { IconClock, IconPhone, IconPhoneOff, IconTrendingDown, IconTrendingUp, IconUsers } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatTile } from '@/components/ui/stat-tile';
+import { EmptyState } from '@/components/ui/empty-state';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { useAuth } from '@/contexts/auth-context';
 import { getRangeLabel, getTashkentToday } from '@/lib/date-range';
 import { formatDurationShortWords } from '@/lib/format';
@@ -47,27 +52,20 @@ export default function CallsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Qo&apos;ng&apos;iroqlar tahlili</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Agentlar kesimida qo&apos;ng&apos;iroqlar statistikasi va bugungi natijalar
-        </p>
-      </div>
-
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <div className="space-y-3">
-          <div className="overflow-x-auto">
-            <div className="inline-flex min-w-max rounded-md shadow-sm">
-              {RANGE_OPTIONS.map((option, index) => (
+      <PageHeader
+        title={<>Qo&apos;ng&apos;iroqlar tahlili</>}
+        description={<>Agentlar kesimida qo&apos;ng&apos;iroqlar statistikasi va bugungi natijalar</>}
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+          <div className="max-w-full overflow-x-auto">
+            <div className="segmented">
+              {RANGE_OPTIONS.map((option) => (
                 <button
                   key={option}
                   type="button"
                   onClick={() => setRange(option)}
-                  className={`border border-gray-300 px-4 py-2 text-sm font-medium ${
-                    range === option ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
-                  } ${index === 0 ? 'rounded-l-md' : ''} ${
-                    index === RANGE_OPTIONS.length - 1 ? 'rounded-r-md' : ''
-                  } ${index !== 0 ? 'border-l-0' : ''}`}
+                  aria-pressed={range === option}
+                  className={`segmented-item ${range === option ? 'segmented-item-active' : ''}`}
                 >
                   {getRangeLabel(option, 'long')}
                 </button>
@@ -76,102 +74,100 @@ export default function CallsPage() {
           </div>
 
           {range === 'custom' && (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:flex md:items-center">
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(event) => setDateFrom(event.target.value)}
-                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="field md:w-44"
               />
               <input
                 type="date"
                 value={dateTo}
                 onChange={(event) => setDateTo(event.target.value)}
-                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="field md:w-44"
               />
             </div>
           )}
         </div>
-      </div>
+      </PageHeader>
 
       {callsQuery.data?.agentInsight?.message && (
-        <div className={`rounded-lg border px-4 py-3 text-sm font-medium ${
-          callsQuery.data.agentInsight.aboveAverage
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-            : 'border-amber-200 bg-amber-50 text-amber-800'
+        <div className={`alert flex items-start gap-3 font-medium ${
+          callsQuery.data.agentInsight.aboveAverage ? 'alert-success' : 'alert-warning'
         }`}>
-          {callsQuery.data.agentInsight.message}
+          {callsQuery.data.agentInsight.aboveAverage
+            ? <IconTrendingUp className="mt-0.5 h-4 w-4 flex-shrink-0" stroke={1.8} aria-hidden="true" />
+            : <IconTrendingDown className="mt-0.5 h-4 w-4 flex-shrink-0" stroke={1.8} aria-hidden="true" />}
+          <span>{callsQuery.data.agentInsight.message}</span>
         </div>
       )}
 
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-4 py-5 sm:p-6">
-          {callsQuery.data && (
-            <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-                <p className="text-xs uppercase tracking-wide text-gray-500">Agentlar</p>
-                <p className="mt-1 text-lg font-semibold text-gray-900">{callsQuery.data.totals?.totalAgents || 0}</p>
-              </div>
-              <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-                <p className="text-xs uppercase tracking-wide text-gray-500">Jami qo&apos;ng&apos;iroqlar</p>
-                <p className="mt-1 text-lg font-semibold text-gray-900">{totals.totalCalls}</p>
-              </div>
-              <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-                <p className="text-xs uppercase tracking-wide text-gray-500">Umumiy suhbat vaqti</p>
-                <p className="mt-1 text-lg font-semibold text-gray-900">{formatDurationShortWords(totals.totalDurationSeconds)}</p>
-              </div>
-            </div>
-          )}
-
-          {callsQuery.isLoading ? (
-            <LoadingBlock message="Qo'ng'iroqlar statistikasi yuklanmoqda..." />
-          ) : callsQuery.error ? (
-            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {callsQuery.error.message || 'Statistikani yuklashda xatolik yuz berdi.'}
-            </p>
-          ) : rows.length ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">#</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Xodim</th>
-                    {!isAgentOnly && (
-                      <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Ichki raqam</th>
-                    )}
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Barcha qo&apos;ng&apos;iroqlar</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Kuniga o&apos;rtacha qo&apos;ng&apos;iroqlar</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Bugungi qo&apos;ng&apos;iroqlar</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Kiruvchi</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Chiquvchi</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Qo&apos;ng&apos;iroqlar umumiy vaqti</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {rows.map((row: any) => (
-                    <tr key={row.userId}>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{row.rank}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{row.agentName}</td>
-                      {!isAgentOnly && (
-                        <td className="px-4 py-3 text-sm text-gray-700">{row.extension || '-'}</td>
-                      )}
-                      <td className="px-4 py-3 text-sm text-gray-700">{row.totalCalls}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{formatDecimal(row.averageDailyCalls)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{row.callsToday}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{row.incomingCalls}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{row.outgoingCalls}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{formatDurationShortWords(row.totalDurationSeconds)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-600">
-              Hozircha statistikada ko&apos;rsatish uchun qo&apos;ng&apos;iroqlar yo&apos;q.
-            </p>
-          )}
+      {callsQuery.data && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatTile label="Agentlar" value={callsQuery.data.totals?.totalAgents || 0} icon={IconUsers} />
+          <StatTile label={<>Jami qo&apos;ng&apos;iroqlar</>} value={totals.totalCalls} icon={IconPhone} tone="blue" />
+          <StatTile label="Umumiy suhbat vaqti" value={formatDurationShortWords(totals.totalDurationSeconds)} icon={IconClock} />
         </div>
+      )}
+
+      <div className="panel p-2 sm:p-3">
+        {callsQuery.isLoading ? (
+          <LoadingBlock message="Qo'ng'iroqlar statistikasi yuklanmoqda..." />
+        ) : callsQuery.error ? (
+          <p className="alert alert-error">
+            {callsQuery.error.message || 'Statistikani yuklashda xatolik yuz berdi.'}
+          </p>
+        ) : rows.length ? (
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="w-12 text-left">#</th>
+                  <th className="text-left">Xodim</th>
+                  {!isAgentOnly && (
+                    <th className="text-left">Ichki raqam</th>
+                  )}
+                  <th className="text-right">Barcha qo&apos;ng&apos;iroqlar</th>
+                  <th className="text-right">Kuniga o&apos;rtacha qo&apos;ng&apos;iroqlar</th>
+                  <th className="text-right">Bugungi qo&apos;ng&apos;iroqlar</th>
+                  <th className="text-right">Kiruvchi</th>
+                  <th className="text-right">Chiquvchi</th>
+                  <th className="text-right">Qo&apos;ng&apos;iroqlar umumiy vaqti</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row: any) => (
+                  <tr key={row.userId}>
+                    <td className="tabular font-medium text-gray-500">{row.rank}</td>
+                    <td>
+                      <div className="flex items-center gap-2.5">
+                        <UserAvatar name={String(row.agentName || '?')} size="sm" />
+                        <span className="whitespace-nowrap font-medium text-gray-900">{row.agentName}</span>
+                      </div>
+                    </td>
+                    {!isAgentOnly && (
+                      <td>
+                        {row.extension ? <span className="badge badge-neutral tabular">{row.extension}</span> : '-'}
+                      </td>
+                    )}
+                    <td className="tabular text-right font-medium text-gray-900">{row.totalCalls}</td>
+                    <td className="tabular text-right">{formatDecimal(row.averageDailyCalls)}</td>
+                    <td className="tabular text-right">{row.callsToday}</td>
+                    <td className="tabular text-right">{row.incomingCalls}</td>
+                    <td className="tabular text-right">{row.outgoingCalls}</td>
+                    <td className="tabular whitespace-nowrap text-right">{formatDurationShortWords(row.totalDurationSeconds)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            icon={IconPhoneOff}
+            title={<>Hozircha statistikada ko&apos;rsatish uchun qo&apos;ng&apos;iroqlar yo&apos;q.</>}
+          />
+        )}
       </div>
     </div>
   );

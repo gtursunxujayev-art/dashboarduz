@@ -13,14 +13,20 @@ export default function TariffBreakdownList({ rows }: { rows: TariffBreakdownRow
     return <p className="mt-2 text-sm text-gray-500">Sotuv yo&apos;q</p>;
   }
   return (
-    <div className="mt-2 space-y-1 text-sm text-gray-700">
+    <div className="mt-2 divide-y divide-gray-100 text-sm text-gray-700">
       {rows.map((row) => (
-        <div key={row.tariffId ?? 'none'}>
-          <p><span className="font-medium">{row.name}</span> - {row.salesCount}</p>
+        <div key={row.tariffId ?? 'none'} className="py-2 first:pt-0 last:pb-0">
+          <p className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate font-medium text-gray-900">{row.name}</span>
+            <span className="badge badge-blue tabular">{row.salesCount}</span>
+          </p>
           {row.subTariffs.length > 0 && (
-            <div className="ml-3 space-y-0.5 text-xs text-gray-500">
+            <div className="ml-1 mt-1.5 space-y-1 border-l-2 border-gray-100 pl-3 text-xs text-gray-500">
               {row.subTariffs.map((sub) => (
-                <p key={sub.subTariffId ?? 'none'}>{sub.name} - {sub.salesCount}</p>
+                <p key={sub.subTariffId ?? 'none'} className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 truncate">{sub.name}</span>
+                  <span className="tabular font-medium text-gray-700">{sub.salesCount}</span>
+                </p>
               ))}
             </div>
           )}

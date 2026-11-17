@@ -1,26 +1,44 @@
 'use client';
 
+import { IconBook2, IconBrandTelegram, IconReceipt2, IconX } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { EmptyState } from '@/components/ui/empty-state';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { formatNumberEn, formatTashkentDate } from '@/lib/format';
 import type { CustomersPageModel } from './use-customers-page';
 
 export function CustomerDetailsModal({ vm }: { vm: CustomersPageModel }) {
   const { customerHistoryQuery, isDetailsModalOpen, setDetailsCustomerId, setIsDetailsModalOpen } = vm;
+  const detailsCustomer = customerHistoryQuery.data?.customer;
+  const detailsCourses = customerHistoryQuery.data?.courses || [];
 
   return (
     <>
       {isDetailsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-6xl rounded-lg bg-white shadow-xl dark:bg-slate-900">
-            <div className="border-b border-gray-100 px-6 py-4 dark:border-slate-700">
+        <div className="modal-backdrop">
+          <div className="modal-panel max-w-6xl">
+            <div className="modal-header">
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Mijoz batafsil</h2>
-                  {customerHistoryQuery.data?.customer && (
-                    <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-                      {customerHistoryQuery.data.customer.customerNumber} - {customerHistoryQuery.data.customer.name}
-                    </p>
+                <div className="flex min-w-0 items-center gap-3">
+                  {detailsCustomer && (
+                    <UserAvatar name={detailsCustomer.name || String(detailsCustomer.customerNumber || '?')} />
                   )}
+                  <div className="min-w-0">
+                    <h2 className="modal-title">Mijoz batafsil</h2>
+                    {detailsCustomer && (
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <p className="tabular text-sm text-gray-500">
+                          {detailsCustomer.customerNumber} - {detailsCustomer.name}
+                        </p>
+                        {detailsCustomer.telegramUsername ? (
+                          <span className="badge badge-neutral">
+                            <IconBrandTelegram className="h-3.5 w-3.5" stroke={1.8} />
+                            {detailsCustomer.telegramUsername}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -28,99 +46,130 @@ export function CustomerDetailsModal({ vm }: { vm: CustomersPageModel }) {
                     setIsDetailsModalOpen(false);
                     setDetailsCustomerId('');
                   }}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                  className="btn btn-secondary btn-sm"
                 >
+                  <IconX className="h-4 w-4" stroke={1.8} />
                   Yopish
                 </button>
               </div>
             </div>
 
-            <div className="max-h-[75vh] space-y-5 overflow-auto px-6 py-5">
+            <div className="max-h-[75vh] space-y-6 overflow-auto bg-gray-50/60 px-4 py-5 sm:px-6">
               {customerHistoryQuery.isLoading ? (
                 <LoadingBlock compact message="Tarix yuklanmoqda..." />
               ) : customerHistoryQuery.error ? (
-                <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+                <p className="alert alert-error">
                   {customerHistoryQuery.error.message || "Mijoz tarixini yuklab bo'lmadi."}
                 </p>
               ) : (
                 <>
-                  <div>
-                    <h3 className="mb-2 text-sm font-semibold uppercase text-gray-700 dark:text-slate-300">Sotib olingan kurslar</h3>
-                    {customerHistoryQuery.data?.courses?.length ? (
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
-                          <thead className="bg-gray-50 dark:bg-slate-800">
-                            <tr>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Sana</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Kurs / tarif / subtarif</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Mas&apos;ul agent</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Kelishuv</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Boshlang&apos;ich to&apos;lov</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Joriy qarz</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Holat</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
-                            {customerHistoryQuery.data.courses.map((item: any) => (
-                              <tr key={item.saleIncomeId}>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatTashkentDate(item.entryDate)}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
-                                  {[item.courseName, item.tariffName, item.subTariffName].filter(Boolean).join(' / ')}
-                                </td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{item.managerLabel}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(item.agreementAmount || 0)}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(item.firstPaymentAmount || 0)}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(item.remainingDebtAmount || 0)}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{item.lifecycleStatus}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                  <section className="panel">
+                    <div className="panel-header">
+                      <div className="flex items-center gap-2">
+                        <IconBook2 className="h-[18px] w-[18px] text-gray-400" stroke={1.6} />
+                        <h3 className="section-title">Sotib olingan kurslar</h3>
+                        {customerHistoryQuery.data?.courses?.length ? (
+                          <span className="badge badge-neutral tabular">{customerHistoryQuery.data.courses.length}</span>
+                        ) : null}
                       </div>
-                    ) : (
-                      <p className="text-sm text-gray-500 dark:text-slate-400">Kurslar topilmadi.</p>
-                    )}
-                  </div>
+                    </div>
+                    <div className="p-2 sm:p-3">
+                      {customerHistoryQuery.data?.courses?.length ? (
+                        <div className="overflow-x-auto">
+                          <table className="data-table">
+                            <thead>
+                              <tr>
+                                <th className="text-left">Sana</th>
+                                <th className="text-left">Kurs / tarif / subtarif</th>
+                                <th className="text-left">Mas&apos;ul agent</th>
+                                <th className="text-right">Kelishuv</th>
+                                <th className="text-right">Boshlang&apos;ich to&apos;lov</th>
+                                <th className="text-right">Joriy qarz</th>
+                                <th className="text-left">Holat</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {customerHistoryQuery.data.courses.map((item: any) => (
+                                <tr key={item.saleIncomeId}>
+                                  <td className="tabular whitespace-nowrap text-gray-600">{formatTashkentDate(item.entryDate)}</td>
+                                  <td className="whitespace-nowrap font-medium text-gray-900">
+                                    {[item.courseName, item.tariffName, item.subTariffName].filter(Boolean).join(' / ')}
+                                  </td>
+                                  <td className="whitespace-nowrap">{item.managerLabel}</td>
+                                  <td className="tabular whitespace-nowrap text-right">{formatNumberEn(item.agreementAmount || 0)}</td>
+                                  <td className="tabular whitespace-nowrap text-right">{formatNumberEn(item.firstPaymentAmount || 0)}</td>
+                                  <td className="tabular whitespace-nowrap text-right">
+                                    <span className={Number(item.remainingDebtAmount || 0) > 0 ? 'font-medium text-amber-700' : 'text-gray-700'}>
+                                      {formatNumberEn(item.remainingDebtAmount || 0)}
+                                    </span>
+                                  </td>
+                                  <td className="whitespace-nowrap">
+                                    <span className="badge badge-neutral">{item.lifecycleStatus}</span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <EmptyState title="Kurslar topilmadi." icon={IconBook2} className="m-1" />
+                      )}
+                    </div>
+                  </section>
 
-                  <div>
-                    <h3 className="mb-2 text-sm font-semibold uppercase text-gray-700 dark:text-slate-300">To&apos;lovlar tarixi</h3>
-                    {customerHistoryQuery.data?.payments?.length ? (
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
-                          <thead className="bg-gray-50 dark:bg-slate-800">
-                            <tr>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Sana</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Tur</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Mas&apos;ul agent</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Kurs / tarif / subtarif</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">To&apos;lov summasi</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">To&apos;lovdan keyingi qarz</th>
-                              <th className="px-3 py-2 text-left text-xs uppercase text-gray-500 dark:text-slate-400">Holat</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
-                            {customerHistoryQuery.data.payments.map((payment: any) => (
-                              <tr key={payment.id}>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatTashkentDate(payment.entryDate)}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
-                                  {payment.type === 'new_sale' ? 'Yangi sotuv' : "Qarzdorlik to'lovi"}
-                                </td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{payment.managerLabel}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
-                                  {[payment.courseName, payment.tariffName, payment.subTariffName].filter(Boolean).join(' / ')}
-                                </td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(payment.paymentAmount || 0)}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatNumberEn(payment.remainingDebtAmount || 0)}</td>
-                                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{payment.lifecycleStatus}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                  <section className="panel">
+                    <div className="panel-header">
+                      <div className="flex items-center gap-2">
+                        <IconReceipt2 className="h-[18px] w-[18px] text-gray-400" stroke={1.6} />
+                        <h3 className="section-title">To&apos;lovlar tarixi</h3>
+                        {customerHistoryQuery.data?.payments?.length ? (
+                          <span className="badge badge-neutral tabular">{customerHistoryQuery.data.payments.length}</span>
+                        ) : null}
                       </div>
-                    ) : (
-                      <p className="text-sm text-gray-500 dark:text-slate-400">To&apos;lovlar tarixi topilmadi.</p>
-                    )}
-                  </div>
+                    </div>
+                    <div className="p-2 sm:p-3">
+                      {customerHistoryQuery.data?.payments?.length ? (
+                        <div className="overflow-x-auto">
+                          <table className="data-table">
+                            <thead>
+                              <tr>
+                                <th className="text-left">Sana</th>
+                                <th className="text-left">Tur</th>
+                                <th className="text-left">Mas&apos;ul agent</th>
+                                <th className="text-left">Kurs / tarif / subtarif</th>
+                                <th className="text-right">To&apos;lov summasi</th>
+                                <th className="text-right">To&apos;lovdan keyingi qarz</th>
+                                <th className="text-left">Holat</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {customerHistoryQuery.data.payments.map((payment: any) => (
+                                <tr key={payment.id}>
+                                  <td className="tabular whitespace-nowrap text-gray-600">{formatTashkentDate(payment.entryDate)}</td>
+                                  <td className="whitespace-nowrap">
+                                    <span className={`badge ${payment.type === 'new_sale' ? 'badge-blue' : 'badge-neutral'}`}>
+                                      {payment.type === 'new_sale' ? 'Yangi sotuv' : "Qarzdorlik to'lovi"}
+                                    </span>
+                                  </td>
+                                  <td className="whitespace-nowrap">{payment.managerLabel}</td>
+                                  <td className="whitespace-nowrap">
+                                    {[payment.courseName, payment.tariffName, payment.subTariffName].filter(Boolean).join(' / ')}
+                                  </td>
+                                  <td className="tabular whitespace-nowrap text-right font-medium text-gray-900">{formatNumberEn(payment.paymentAmount || 0)}</td>
+                                  <td className="tabular whitespace-nowrap text-right">{formatNumberEn(payment.remainingDebtAmount || 0)}</td>
+                                  <td className="whitespace-nowrap">
+                                    <span className="badge badge-neutral">{payment.lifecycleStatus}</span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <EmptyState title="To'lovlar tarixi topilmadi." icon={IconReceipt2} className="m-1" />
+                      )}
+                    </div>
+                  </section>
                 </>
               )}
             </div>

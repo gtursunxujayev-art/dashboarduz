@@ -8,14 +8,12 @@ export default function IntegrationCards() {
   const { error } = vm;
 
   return (
-    <div>
+    <div className="space-y-4">
       {error && (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3">
-          <p className="text-sm text-red-700">{error}</p>
-        </div>
+        <p className="alert alert-error">{error}</p>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-flow-row-dense grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
         <IntegrationList vm={vm} />
       </div>
     </div>

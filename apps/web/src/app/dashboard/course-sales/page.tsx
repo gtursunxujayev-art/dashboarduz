@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { IconArrowRight, IconBolt, IconBuildingStore, IconWorld } from '@tabler/icons-react';
+import { PageHeader } from '@/components/ui/page-header';
 import { CourseEditorModal } from './_components/course-editor-modal';
 import { CourseSalesFilters } from './_components/course-sales-filters';
 import { CourseSalesResults } from './_components/course-sales-results';
@@ -12,63 +14,78 @@ export default function CourseSalesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Kurslar sotuvi</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Kurs, tarif va subtarif bo&apos;yicha joriy mijozlar hamda sotuv ko&apos;rsatkichlari.
-          </p>
-        </div>
-        {courseId && (
+      <PageHeader
+        title="Kurslar sotuvi"
+        description={<>Kurs, tarif va subtarif bo&apos;yicha joriy mijozlar hamda sotuv ko&apos;rsatkichlari.</>}
+        actions={courseId ? (
           <Link
             href={`/dashboard/course-sales/${courseId}`}
-            className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+            className="btn btn-primary"
           >
             Batafsil
+            <IconArrowRight className="h-4 w-4" stroke={1.8} />
           </Link>
-        )}
-      </div>
+        ) : null}
+      />
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Link
           href="/dashboard/course-sales/intensive"
-          className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
+          className="panel group flex items-start gap-3.5 p-4 transition hover:-translate-y-0.5 sm:p-5"
         >
-          <p className="text-sm font-semibold text-gray-900">Intensiv sahifasi</p>
-          <p className="mt-1 text-xs text-gray-500">Intensiv bo&apos;yicha sotilgan, to&apos;langan va qarz holati.</p>
+          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-amber-50 text-amber-600">
+            <IconBolt className="h-5 w-5" stroke={1.6} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900">Intensiv sahifasi</p>
+            <p className="mt-1 text-xs text-gray-500">Intensiv bo&apos;yicha sotilgan, to&apos;langan va qarz holati.</p>
+          </div>
+          <IconArrowRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400 transition group-hover:translate-x-0.5 group-hover:text-blue-600" stroke={1.8} />
         </Link>
         <Link
           href="/dashboard/course-sales/online"
-          className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
+          className="panel group flex items-start gap-3.5 p-4 transition hover:-translate-y-0.5 sm:p-5"
         >
-          <p className="text-sm font-semibold text-gray-900">Online sahifasi</p>
-          <p className="mt-1 text-xs text-gray-500">Online kurslar bo&apos;yicha joriy ko&apos;rsatkichlar.</p>
+          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
+            <IconWorld className="h-5 w-5" stroke={1.6} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900">Online sahifasi</p>
+            <p className="mt-1 text-xs text-gray-500">Online kurslar bo&apos;yicha joriy ko&apos;rsatkichlar.</p>
+          </div>
+          <IconArrowRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400 transition group-hover:translate-x-0.5 group-hover:text-blue-600" stroke={1.8} />
         </Link>
         <Link
           href="/dashboard/course-sales/offline"
-          className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
+          className="panel group flex items-start gap-3.5 p-4 transition hover:-translate-y-0.5 sm:p-5"
         >
-          <p className="text-sm font-semibold text-gray-900">Oflayn sahifasi</p>
-          <p className="mt-1 text-xs text-gray-500">Oflayn kurslar bo&apos;yicha joriy ko&apos;rsatkichlar.</p>
+          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-emerald-50 text-emerald-600">
+            <IconBuildingStore className="h-5 w-5" stroke={1.6} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900">Oflayn sahifasi</p>
+            <p className="mt-1 text-xs text-gray-500">Oflayn kurslar bo&apos;yicha joriy ko&apos;rsatkichlar.</p>
+          </div>
+          <IconArrowRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400 transition group-hover:translate-x-0.5 group-hover:text-blue-600" stroke={1.8} />
         </Link>
       </div>
 
       <CourseSalesFilters vm={vm} />
 
       {summaryQuery.error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           {summaryQuery.error.message || "Kurslar sotuvi ma'lumotini yuklashda xatolik."}
         </div>
       )}
 
       {actionError && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           {actionError}
         </div>
       )}
 
       {actionSuccess && (
-        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+        <div className="alert alert-success">
           {actionSuccess}
         </div>
       )}

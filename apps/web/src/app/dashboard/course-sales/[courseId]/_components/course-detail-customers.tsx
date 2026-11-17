@@ -1,6 +1,9 @@
 'use client';
 
+import { IconChevronLeft, IconChevronRight, IconDownload, IconPencil, IconSearch, IconUsers } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { EmptyState } from '@/components/ui/empty-state';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { formatSom, formatTashkentDate } from '@/lib/format';
 import type { CourseDetailPageModel } from './use-course-detail-page';
 
@@ -10,125 +13,144 @@ export function CourseDetailCustomers({ vm }: { vm: CourseDetailPageModel }) {
   return (
     <>
       {tab === 'mijozlar' && (
-        <div className="rounded-lg bg-white p-5 shadow">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-gray-900">Mijozlar</h2>
+        <div className="panel">
+          <div className="panel-header">
+            <div className="flex items-center gap-2">
+              <h2 className="section-title">Mijozlar</h2>
+              <span className="badge badge-neutral tabular">{pagination.total}</span>
+            </div>
             <button
               type="button"
               onClick={exportCustomers}
               disabled={customers.length === 0}
-              className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-secondary btn-sm"
             >
+              <IconDownload className="h-4 w-4" stroke={1.8} />
               Yuklab olish
             </button>
           </div>
 
-          <div className="mb-3 flex gap-2">
-            <input
-              type="text"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Mijoz raqami yoki ism"
-              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
-            />
-            <button
-              type="button"
-              onClick={applySearch}
-              className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              Qidirish
-            </button>
-            <button
-              type="button"
-              onClick={clearSearch}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Tozalash
-            </button>
+          <div className="px-5 pt-4 sm:px-6">
+            <div className="flex flex-wrap gap-2 sm:flex-nowrap">
+              <div className="relative min-w-0 flex-1 basis-full sm:basis-auto">
+                <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+                <input
+                  type="text"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="Mijoz raqami yoki ism"
+                  className="field pl-9"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={applySearch}
+                className="btn btn-primary"
+              >
+                Qidirish
+              </button>
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="btn btn-ghost"
+              >
+                Tozalash
+              </button>
+            </div>
           </div>
 
-          {customersQuery.isLoading ? (
-            <LoadingBlock message="Mijozlar yuklanmoqda..." />
-          ) : customers.length === 0 ? (
-            <p className="text-sm text-gray-600">Tanlangan filtr bo&apos;yicha mijoz topilmadi.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Mijoz raqami</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Ism</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Telegram</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Mas&apos;ul agent</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs / Tarif / Subtarif</th>
-                    {!isTashkiliyOnly && <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kelishuv</th>}
-                    {!isTashkiliyOnly && <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">To&apos;langan</th>}
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qarz</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Oxirgi faollik</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {customers.map((row: any) => (
-                    <tr key={row.saleId}>
-                      <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.customerNumber}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.customerName}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.telegramUsername || '-'}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.managerLabel}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">
-                        <div className="space-y-1">
-                          {(Array.isArray(row.customerCourses) && row.customerCourses.length ? row.customerCourses : [{
-                            saleIncomeId: row.saleId,
-                            label: [row.courseName, row.tariffName, row.subTariffName].filter(Boolean).join(' / ') || '-',
-                          }]).map((entry: any) => (
-                            <div key={entry.saleIncomeId} className="flex items-center gap-2">
-                              <span className="truncate">{entry.label}</span>
-                            </div>
-                          ))}
-                          {isAdmin && (
-                            <div className="pt-1">
-                              <button
-                                type="button"
-                                onClick={() => openCourseEditorModal(row.customerId)}
-                                className="rounded border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
-                              >
-                                Tahrirlash
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      {!isTashkiliyOnly && <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.agreementAmount)}</td>}
-                      {!isTashkiliyOnly && <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.paidAmount)}</td>}
-                      <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.debtAmount)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatTashkentDate(row.lastActivityAt)}</td>
+          <div className="p-2 sm:p-3">
+            {customersQuery.isLoading ? (
+              <LoadingBlock message="Mijozlar yuklanmoqda..." />
+            ) : customers.length === 0 ? (
+              <EmptyState icon={IconUsers} title="Tanlangan filtr bo'yicha mijoz topilmadi." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="text-left">Mijoz raqami</th>
+                      <th className="text-left">Ism</th>
+                      <th className="text-left">Telegram</th>
+                      <th className="text-left">Mas&apos;ul agent</th>
+                      <th className="text-left">Kurs / Tarif / Subtarif</th>
+                      {!isTashkiliyOnly && <th className="text-right">Kelishuv</th>}
+                      {!isTashkiliyOnly && <th className="text-right">To&apos;langan</th>}
+                      <th className="text-right">Qarz</th>
+                      <th className="text-left">Oxirgi faollik</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {customers.map((row: any) => (
+                      <tr key={row.saleId}>
+                        <td className="tabular whitespace-nowrap text-gray-500">{row.customerNumber}</td>
+                        <td className="whitespace-nowrap">
+                          <div className="flex items-center gap-2.5">
+                            <UserAvatar name={String(row.customerName || '?')} size="sm" />
+                            <span className="font-medium text-gray-900">{row.customerName}</span>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap text-gray-500">{row.telegramUsername || '-'}</td>
+                        <td className="whitespace-nowrap">{row.managerLabel}</td>
+                        <td>
+                          <div className="flex min-w-[200px] flex-col items-start gap-1">
+                            {(Array.isArray(row.customerCourses) && row.customerCourses.length ? row.customerCourses : [{
+                              saleIncomeId: row.saleId,
+                              label: [row.courseName, row.tariffName, row.subTariffName].filter(Boolean).join(' / ') || '-',
+                            }]).map((entry: any) => (
+                              <div key={entry.saleIncomeId} className="flex max-w-full items-center gap-2">
+                                <span className="badge badge-neutral max-w-full truncate">{entry.label}</span>
+                              </div>
+                            ))}
+                            {isAdmin && (
+                              <div className="pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => openCourseEditorModal(row.customerId)}
+                                  className="btn btn-soft btn-sm"
+                                >
+                                  <IconPencil className="h-3.5 w-3.5" stroke={1.8} />
+                                  Tahrirlash
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        {!isTashkiliyOnly && <td className="tabular whitespace-nowrap text-right">{formatSom(row.agreementAmount)}</td>}
+                        {!isTashkiliyOnly && <td className="tabular whitespace-nowrap text-right text-emerald-700">{formatSom(row.paidAmount)}</td>}
+                        <td className="tabular whitespace-nowrap text-right font-medium text-gray-900">{formatSom(row.debtAmount)}</td>
+                        <td className="tabular whitespace-nowrap text-gray-500">{formatTashkentDate(row.lastActivityAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-gray-600">Jami: {pagination.total}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-5 py-3 sm:px-6">
+            <p className="tabular text-sm text-gray-500">Jami: {pagination.total}</p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setPage((current) => Math.max(1, current - 1))}
                 disabled={pagination.page <= 1}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn btn-secondary btn-sm"
               >
+                <IconChevronLeft className="h-4 w-4" stroke={1.8} />
                 Oldingi
               </button>
-              <span className="text-sm text-gray-600">
+              <span className="tabular text-sm text-gray-600">
                 {pagination.page} / {pagination.totalPages}
               </span>
               <button
                 type="button"
                 onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}
                 disabled={pagination.page >= pagination.totalPages}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn btn-secondary btn-sm"
               >
                 Keyingi
+                <IconChevronRight className="h-4 w-4" stroke={1.8} />
               </button>
             </div>
           </div>

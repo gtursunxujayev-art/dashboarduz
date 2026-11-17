@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { IconArrowLeft } from '@tabler/icons-react';
+import { PageHeader } from '@/components/ui/page-header';
 import { CourseDetailCustomers } from './_components/course-detail-customers';
 import { CourseDetailFilters } from './_components/course-detail-filters';
 import type { DetailTab } from './_components/course-detail-helpers';
@@ -14,27 +16,20 @@ export default function CourseSalesDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">
-            {detailQuery.data?.course?.name || course?.name || 'Kurs detali'}
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Kurs bo&apos;yicha umumiy ko&apos;rsatkichlar, tariflar, menejerlar va mijozlar.
-          </p>
-        </div>
-        <Link
-          href="/dashboard/course-sales"
-          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Orqaga
-        </Link>
-      </div>
-
-      <CourseDetailFilters vm={vm} />
-
-      <div className="rounded-lg bg-white p-2 shadow">
-        <div className="flex flex-wrap gap-2">
+      <PageHeader
+        title={detailQuery.data?.course?.name || course?.name || 'Kurs detali'}
+        description={<>Kurs bo&apos;yicha umumiy ko&apos;rsatkichlar, tariflar, menejerlar va mijozlar.</>}
+        actions={(
+          <Link
+            href="/dashboard/course-sales"
+            className="btn btn-secondary"
+          >
+            <IconArrowLeft className="h-4 w-4" stroke={1.8} />
+            Orqaga
+          </Link>
+        )}
+      >
+        <div className="segmented max-w-full overflow-x-auto">
           {([
             { key: 'umumiy', label: 'Umumiy' },
             { key: 'tariflar', label: 'Tariflar' },
@@ -45,32 +40,31 @@ export default function CourseSalesDetailPage() {
               key={item.key}
               type="button"
               onClick={() => setTab(item.key)}
-              className={`rounded-md px-3 py-2 text-sm font-medium ${
-                tab === item.key
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+              aria-pressed={tab === item.key}
+              className={`segmented-item ${tab === item.key ? 'segmented-item-active' : ''}`}
             >
               {item.label}
             </button>
           ))}
         </div>
-      </div>
+      </PageHeader>
+
+      <CourseDetailFilters vm={vm} />
 
       {detailQuery.error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           {detailQuery.error.message || "Kurs detali ma'lumotini yuklashda xatolik."}
         </div>
       )}
 
       {actionError && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           {actionError}
         </div>
       )}
 
       {actionSuccess && (
-        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+        <div className="alert alert-success">
           {actionSuccess}
         </div>
       )}

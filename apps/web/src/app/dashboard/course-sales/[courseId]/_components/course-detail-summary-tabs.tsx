@@ -1,6 +1,9 @@
 'use client';
 
+import { IconAlertCircle, IconCash, IconFileText, IconReceipt, IconUsers } from '@tabler/icons-react';
 import TariffBreakdownList from '@/components/dashboard/course-sales/tariff-breakdown-list';
+import { StatTile } from '@/components/ui/stat-tile';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { formatSom } from '@/lib/format';
 import type { CourseDetailPageModel } from './use-course-detail-page';
 
@@ -10,106 +13,121 @@ export function CourseDetailSummaryTabs({ vm }: { vm: CourseDetailPageModel }) {
   return (
     <>
       {tab === 'umumiy' && (
-        <div className={`grid grid-cols-1 gap-3 ${isTashkiliyOnly ? 'md:grid-cols-2 xl:grid-cols-3' : 'md:grid-cols-2 xl:grid-cols-6'}`}>
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Fakt sotuvlar</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900">{summary?.factSalesCount ?? 0}</p>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="grid grid-cols-1 content-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <StatTile label="Fakt sotuvlar" value={summary?.factSalesCount ?? 0} icon={IconReceipt} tone="blue" />
+            <StatTile label="Jami mijozlar" value={summary?.currentCustomerCount ?? 0} icon={IconUsers} />
+            {!isTashkiliyOnly && (
+              <StatTile
+                label="Kelishuv summasi"
+                value={formatSom(summary?.currentAgreementAmount ?? summary?.rangeAgreementAmount)}
+                icon={IconFileText}
+              />
+            )}
+            {!isTashkiliyOnly && (
+              <StatTile
+                label="Tushum"
+                value={formatSom(summary?.currentIncomeAmount ?? summary?.rangeIncomeAmount)}
+                icon={IconCash}
+                tone="green"
+              />
+            )}
+            <StatTile label="Joriy qarz" value={formatSom(summary?.currentDebtAmount)} icon={IconAlertCircle} tone="amber" />
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Jami mijozlar</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900">{summary?.currentCustomerCount ?? 0}</p>
-          </div>
-          {!isTashkiliyOnly && (
-            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <p className="text-xs uppercase tracking-wide text-gray-500">Kelishuv summasi</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-900">
-                {formatSom(summary?.currentAgreementAmount ?? summary?.rangeAgreementAmount)}
-              </p>
-            </div>
-          )}
-          {!isTashkiliyOnly && (
-            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <p className="text-xs uppercase tracking-wide text-gray-500">Tushum</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-900">
-                {formatSom(summary?.currentIncomeAmount ?? summary?.rangeIncomeAmount)}
-              </p>
-            </div>
-          )}
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Joriy qarz</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900">{formatSom(summary?.currentDebtAmount)}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Tariflar</p>
+          <div className="panel p-4 sm:p-5">
+            <p className="text-[13px] font-medium text-gray-500">Tariflar</p>
             <TariffBreakdownList rows={summary?.tariffBreakdown} />
           </div>
         </div>
       )}
 
       {tab === 'tariflar' && (
-        <div className="rounded-lg bg-white p-5 shadow">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">Tariflar kesimi</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tarif</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Mijozlar</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sotuvlar</th>
-                  {!isTashkiliyOnly && <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kelishuv</th>}
-                  {!isTashkiliyOnly && <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>}
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qarz</th>
-                  {!isTashkiliyOnly && <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Yig&apos;im %</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {tariffRows.map((row: any) => (
-                  <tr key={row.tariffId} className={row.isSelected ? 'bg-blue-50' : ''}>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.tariffName}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.customerCount}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.saleCount}</td>
-                    {!isTashkiliyOnly && <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.agreementAmount)}</td>}
-                    {!isTashkiliyOnly && <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.incomeAmount)}</td>}
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.debtAmount)}</td>
-                    {!isTashkiliyOnly && <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.collectionPercent}%</td>}
+        <div className="panel">
+          <div className="panel-header">
+            <h2 className="section-title">Tariflar kesimi</h2>
+            <span className="badge badge-neutral tabular">{tariffRows.length}</span>
+          </div>
+          <div className="p-2 sm:p-3">
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="text-left">Tarif</th>
+                    <th className="text-right">Mijozlar</th>
+                    <th className="text-right">Sotuvlar</th>
+                    {!isTashkiliyOnly && <th className="text-right">Kelishuv</th>}
+                    {!isTashkiliyOnly && <th className="text-right">Tushum</th>}
+                    <th className="text-right">Qarz</th>
+                    {!isTashkiliyOnly && <th className="text-right">Yig&apos;im %</th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {tariffRows.map((row: any) => (
+                    <tr key={row.tariffId} className={row.isSelected ? 'bg-blue-50' : ''}>
+                      <td className="whitespace-nowrap font-medium text-gray-900">{row.tariffName}</td>
+                      <td className="tabular whitespace-nowrap text-right">{row.customerCount}</td>
+                      <td className="tabular whitespace-nowrap text-right">{row.saleCount}</td>
+                      {!isTashkiliyOnly && <td className="tabular whitespace-nowrap text-right">{formatSom(row.agreementAmount)}</td>}
+                      {!isTashkiliyOnly && <td className="tabular whitespace-nowrap text-right text-emerald-700">{formatSom(row.incomeAmount)}</td>}
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.debtAmount)}</td>
+                      {!isTashkiliyOnly && (
+                        <td className="whitespace-nowrap text-right">
+                          <span className="badge badge-blue tabular">{row.collectionPercent}%</span>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
       {tab === 'menejerlar' && (
-        <div className="rounded-lg bg-white p-5 shadow">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">Menejerlar kesimi</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Menejer</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Mijozlar</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sotuvlar</th>
-                  {!isTashkiliyOnly && <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kelishuv</th>}
-                  {!isTashkiliyOnly && <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>}
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qarz</th>
-                  {!isTashkiliyOnly && <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Yig&apos;im %</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {managerRows.map((row: any) => (
-                  <tr key={row.managerUserId}>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.managerLabel}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.customerCount}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.saleCount}</td>
-                    {!isTashkiliyOnly && <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.agreementAmount)}</td>}
-                    {!isTashkiliyOnly && <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.incomeAmount)}</td>}
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.debtAmount)}</td>
-                    {!isTashkiliyOnly && <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.collectionPercent}%</td>}
+        <div className="panel">
+          <div className="panel-header">
+            <h2 className="section-title">Menejerlar kesimi</h2>
+            <span className="badge badge-neutral tabular">{managerRows.length}</span>
+          </div>
+          <div className="p-2 sm:p-3">
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="text-left">Menejer</th>
+                    <th className="text-right">Mijozlar</th>
+                    <th className="text-right">Sotuvlar</th>
+                    {!isTashkiliyOnly && <th className="text-right">Kelishuv</th>}
+                    {!isTashkiliyOnly && <th className="text-right">Tushum</th>}
+                    <th className="text-right">Qarz</th>
+                    {!isTashkiliyOnly && <th className="text-right">Yig&apos;im %</th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {managerRows.map((row: any) => (
+                    <tr key={row.managerUserId}>
+                      <td className="whitespace-nowrap">
+                        <div className="flex items-center gap-2.5">
+                          <UserAvatar name={String(row.managerLabel || '?')} size="sm" />
+                          <span className="font-medium text-gray-900">{row.managerLabel}</span>
+                        </div>
+                      </td>
+                      <td className="tabular whitespace-nowrap text-right">{row.customerCount}</td>
+                      <td className="tabular whitespace-nowrap text-right">{row.saleCount}</td>
+                      {!isTashkiliyOnly && <td className="tabular whitespace-nowrap text-right">{formatSom(row.agreementAmount)}</td>}
+                      {!isTashkiliyOnly && <td className="tabular whitespace-nowrap text-right text-emerald-700">{formatSom(row.incomeAmount)}</td>}
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.debtAmount)}</td>
+                      {!isTashkiliyOnly && (
+                        <td className="whitespace-nowrap text-right">
+                          <span className="badge badge-blue tabular">{row.collectionPercent}%</span>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

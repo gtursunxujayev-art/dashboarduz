@@ -4,8 +4,11 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
+import { IconInfoCircle } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
-import { FunnelCrmBanner, FunnelTable, LostRevenueTable } from '@/components/dashboard/funnel-tables';
+import { FunnelCrmBanner, FunnelStageBars, FunnelTable, LostRevenueTable } from '@/components/dashboard/funnel-tables';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
 import { getTashkentToday } from '@/lib/date-range';
 import {
   FILTERS_STORAGE_KEY,
@@ -23,7 +26,7 @@ import {
   type FunnelStageRef,
 } from './funnel-view';
 
-const inputClass = 'rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100';
+const inputClass = 'field';
 
 function RefreshSpinner() {
   return (
@@ -134,8 +137,8 @@ export default function FunnelPage() {
     : (callsStatus && !callsStatus.ok ? (callsStatus.reason || 'calls_fetch_failed') : null);
 
   const renderStageSelect = (kind: 'taklif', label: string, value: FunnelStageRef | null) => (
-    <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
-      {label}
+    <label className="block lg:w-60">
+      <span className="field-label">{label}</span>
       <select
         className={inputClass}
         value={serializeStageRef(value)}
@@ -158,51 +161,53 @@ export default function FunnelPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <Link href="/dashboard/analytics" className="text-sm text-blue-600 hover:underline">← Tahlil</Link>
-          <h1 className="mt-1 text-2xl font-semibold text-gray-900">Voronka</h1>
-          <p className="text-sm text-gray-500">Menejerlar bo&apos;yicha voronka va yo&apos;qotilgan tushum tahlili</p>
-        </div>
-      </div>
-
-      <div className="rounded-lg bg-white p-4 shadow">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-600">Davr</span>
-            <div className="flex flex-wrap gap-1">
-              {RANGE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => updateFilters({ range: option.value })}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${range === option.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+      <PageHeader
+        title="Voronka"
+        description={<>Menejerlar bo&apos;yicha voronka va yo&apos;qotilgan tushum tahlili</>}
+        actions={(
+          <Link href="/dashboard/analytics" className="btn btn-ghost">← Tahlil</Link>
+        )}
+      >
+        <div className="flex max-w-full items-center gap-3 overflow-x-auto">
+          <span className="text-[13px] font-medium text-gray-500">Davr</span>
+          <div className="segmented">
+            {RANGE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => updateFilters({ range: option.value })}
+                aria-pressed={range === option.value}
+                className={`segmented-item ${range === option.value ? 'segmented-item-active' : ''}`}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
+        </div>
+      </PageHeader>
+
+      <div className="panel p-3 sm:p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
           {range === 'custom' && (
-            <div className="flex items-end gap-2">
-              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
-                Dan
+            <>
+              <label className="block lg:w-44">
+                <span className="field-label">Dan</span>
                 <input type="date" className={inputClass} value={dateFrom} onChange={(event) => updateFilters({ dateFrom: event.target.value })} />
               </label>
-              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
-                Gacha
+              <label className="block lg:w-44">
+                <span className="field-label">Gacha</span>
                 <input type="date" className={inputClass} value={dateTo} onChange={(event) => updateFilters({ dateTo: event.target.value })} />
               </label>
-            </div>
+            </>
           )}
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
-            Guruh
+          <label className="block lg:w-40">
+            <span className="field-label">Guruh</span>
             <select className={inputClass} value={group} onChange={(event) => updateFilters({ group: event.target.value as FunnelGroup })}>
               {GROUP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
-            Voronka
+          <label className="block lg:w-56">
+            <span className="field-label">Voronka</span>
             <select
               className={inputClass}
               value={pipelineId ?? ''}
@@ -215,30 +220,37 @@ export default function FunnelPage() {
           </label>
           {renderStageSelect('taklif', 'Taklif bosqich', taklif)}
         </div>
-        {customRangeInvalid && <p className="mt-2 text-sm text-red-600">Sanalar oralig&apos;ini to&apos;g&apos;ri tanlang.</p>}
+        {customRangeInvalid && <p className="field-error">Sanalar oralig&apos;ini to&apos;g&apos;ri tanlang.</p>}
         {stageOptionsQuery.isSuccess && !stageOptionsQuery.data.connected && (
-          <p className="mt-2 text-sm text-amber-700">AmoCRM ulanmagan — bosqichlarni tanlab bo&apos;lmaydi.</p>
+          <p className="alert alert-warning mt-3">AmoCRM ulanmagan — bosqichlarni tanlab bo&apos;lmaydi.</p>
         )}
-        <p className="mt-2 text-sm text-gray-500">
-          Ishlangan lid — davrda yaratilgan va kamida {data?.minAnsweredCallSeconds ?? 50} soniya gaplashilgan (amoCRM qo&apos;ng&apos;iroqlari) lidlar.
-        </p>
-        {!taklif && pipelines.length > 0 && (
-          <p className="mt-1 text-sm text-gray-500">Taklif ustuni uchun bosqichni tanlang.</p>
-        )}
+        <div className="mt-3 flex items-start gap-2 border-t border-gray-100 pt-3 text-sm text-gray-500">
+          <IconInfoCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" stroke={1.8} aria-hidden="true" />
+          <div className="space-y-1">
+            <p>
+              Ishlangan lid — davrda yaratilgan va kamida {data?.minAnsweredCallSeconds ?? 50} soniya gaplashilgan (amoCRM qo&apos;ng&apos;iroqlari) lidlar.
+            </p>
+            {!taklif && pipelines.length > 0 && (
+              <p className="font-medium text-gray-600">Taklif ustuni uchun bosqichni tanlang.</p>
+            )}
+          </div>
+        </div>
       </div>
 
       {summaryQuery.error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           Ma&apos;lumotni yuklab bo&apos;lmadi: {summaryQuery.error.message}
         </div>
       )}
 
-      <div className="rounded-lg bg-white shadow">
-        <div className="px-4 py-5 sm:p-6">
-          <h3 className="mb-4 flex items-center gap-2 text-lg font-medium text-gray-900">
+      <div className="panel">
+        <div className="panel-header">
+          <h3 className="section-title flex items-center gap-2">
             Menejerlar voronkasi
             {isRefreshing && <RefreshSpinner />}
           </h3>
+        </div>
+        <div className="space-y-5 p-5 sm:p-6">
           {data && (
             <FunnelCrmBanner
               reason={crmFailureReason}
@@ -247,11 +259,14 @@ export default function FunnelPage() {
               isRetrying={summaryQuery.isFetching}
             />
           )}
-          {planError && <p className="mb-3 text-sm text-red-600">{planError}</p>}
+          {planError && <p className="alert alert-error">{planError}</p>}
           {!data && summaryQuery.isLoading ? (
             <LoadingBlock message="Voronka ma'lumoti yuklanmoqda..." />
           ) : data && data.rows.length ? (
-            <div className={`transition-opacity ${isRefreshing ? 'opacity-50' : ''}`} aria-busy={isRefreshing}>
+            <div className={`space-y-6 transition-opacity ${isRefreshing ? 'opacity-50' : ''}`} aria-busy={isRefreshing}>
+              <div className="panel-inset">
+                <FunnelStageBars totals={data.totals} />
+              </div>
               <FunnelTable
                 rows={data.rows}
                 totals={data.totals}
@@ -261,21 +276,25 @@ export default function FunnelPage() {
               />
             </div>
           ) : data ? (
-            <p className="text-sm text-gray-600">Tanlangan guruhda menejer topilmadi.</p>
+            <EmptyState title="Tanlangan guruhda menejer topilmadi." />
           ) : null}
         </div>
       </div>
 
       {showMoney && data && data.rows.length > 0 && (
-        <div className="rounded-lg bg-white shadow">
-          <div className="px-4 py-5 sm:p-6">
-            <h3 className="flex items-center gap-2 text-lg font-medium text-gray-900">
-              Yo&apos;qotilgan tushum
-              {isRefreshing && <RefreshSpinner />}
-            </h3>
-            <p className="mb-4 mt-1 text-sm text-gray-500">
-              Jamoa ko&apos;rsatkichlariga nisbatan har bir menejer qayerda ko&apos;proq tushum yo&apos;qotayotgani.
-            </p>
+        <div className="panel">
+          <div className="panel-header">
+            <div className="min-w-0">
+              <h3 className="section-title flex items-center gap-2">
+                Yo&apos;qotilgan tushum
+                {isRefreshing && <RefreshSpinner />}
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Jamoa ko&apos;rsatkichlariga nisbatan har bir menejer qayerda ko&apos;proq tushum yo&apos;qotayotgani.
+              </p>
+            </div>
+          </div>
+          <div className="p-2 sm:p-3">
             <div className={`transition-opacity ${isRefreshing ? 'opacity-50' : ''}`} aria-busy={isRefreshing}>
               <LostRevenueTable rows={data.lostRevenue.rows} totals={data.lostRevenue.totals} />
             </div>

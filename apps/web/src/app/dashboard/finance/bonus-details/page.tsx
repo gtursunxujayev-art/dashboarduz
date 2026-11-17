@@ -13,8 +13,28 @@ import {
   buildBonusDetailExportRows,
 } from './bonus-detail-export';
 import { formatSom } from '@/lib/format';
+import { IconArrowLeft, IconCalendar, IconCalendarCheck, IconCash, IconCircleCheck, IconDownload, IconListDetails, IconUsers } from '@tabler/icons-react';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatTile } from '@/components/ui/stat-tile';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
+
+const RANGE_OPTIONS: { value: DashboardRange; label: string }[] = [
+  { value: 'today', label: 'Bugun' },
+  { value: 'week', label: 'Hafta' },
+  { value: 'month', label: 'Oy' },
+  { value: 'last_week', label: "O'tgan hafta" },
+  { value: 'last_month', label: "O'tgan oy" },
+  { value: 'custom', label: 'Ixtiyoriy' },
+];
+
+const ADJUSTMENT_STATUS_BADGE: Record<string, string> = {
+  pending: 'badge-amber',
+  approved: 'badge-green',
+  rejected: 'badge-red',
+};
 
 function getCurrentWeekRange() {
   const now = new Date();
@@ -219,300 +239,333 @@ export default function FinanceBonusDetailsPage() {
     }
   };
 
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Bonus tafsiloti</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Bonus hisobiga ta'sir qilayotgan qatorlar (debug ustunlari bilan).
-          </p>
-        </div>
-        <Link
-          href="/dashboard/finance"
-          className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Moliya sahifasiga qaytish
-        </Link>
-      </div>
-
-      {!isAgentOnly ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Bonus oyini yakunlash</h2>
-              <p className="mt-1 text-sm text-gray-500">Yakunlangan oylar snapshot bo&apos;lib saqlanadi; keyingi o&apos;zgarishlar tuzatish yaratadi.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <input type="month" value={operationMonth} onChange={(event) => setOperationMonth(event.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-              {isAdmin ? (
-                <>
-                  <button type="button" onClick={() => void runMonthAction('preview')} className="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700">Ko&apos;rib chiqish</button>
-                  <button type="button" onClick={() => void runMonthAction('finalize')} className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white">Yakunlash</button>
-                  <button type="button" onClick={() => void runMonthAction('reconcile')} className="rounded-md border border-amber-300 px-3 py-2 text-sm text-amber-700">Qayta solishtirish</button>
-                </>
-              ) : null}
-            </div>
-          </div>
-          {operationMessage ? <p className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700">{operationMessage}</p> : null}
-          <div className="mt-4 grid gap-2 md:grid-cols-3">
-            {(bonusOperationsQuery.data?.snapshots || []).slice(0, 6).map((snapshot) => (
-              <div key={snapshot.id} className="rounded-md border border-gray-200 p-3 text-sm">
-                <p className="font-medium text-gray-900">{snapshot.month}</p>
-                <p className="text-gray-600">{formatSom(snapshot.totalBonusAmount)}</p>
-                <p className="text-xs text-emerald-700">Yakunlangan</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {!isAgentOnly && (bonusOperationsQuery.data?.adjustments.length || 0) > 0 ? (
-        <div className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-lg font-semibold text-gray-900">Bonus tuzatishlari</h2>
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50"><tr>
-                <th className="px-3 py-2 text-left text-xs uppercase text-gray-500">Manba oy</th>
-                <th className="px-3 py-2 text-left text-xs uppercase text-gray-500">Agent</th>
-                <th className="px-3 py-2 text-left text-xs uppercase text-gray-500">Farq</th>
-                <th className="px-3 py-2 text-left text-xs uppercase text-gray-500">Holat</th>
-                <th className="px-3 py-2 text-left text-xs uppercase text-gray-500">Amal</th>
-              </tr></thead>
-              <tbody className="divide-y divide-gray-100">
-                {bonusOperationsQuery.data?.adjustments.map((adjustment) => (
-                  <tr key={adjustment.id}>
-                    <td className="px-3 py-2 text-sm text-gray-700">{adjustment.sourceMonth}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{adjustment.agentUserId}</td>
-                    <td className={`px-3 py-2 text-sm font-medium ${adjustment.deltaAmount < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatSom(adjustment.deltaAmount)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{adjustment.status}</td>
-                    <td className="px-3 py-2 text-sm">
-                      {isAdmin && adjustment.status === 'pending' ? (
-                        <div className="flex gap-2">
-                          <button type="button" onClick={() => void handleReviewAdjustment(adjustment.id, 'approve')} className="text-emerald-700">Tasdiqlash</button>
-                          <button type="button" onClick={() => void handleReviewAdjustment(adjustment.id, 'reject')} className="text-red-700">Rad etish</button>
-                        </div>
-                      ) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="rounded-lg bg-white p-6 shadow">
-        <div className={`grid grid-cols-1 gap-3 ${isAgentOnly ? 'md:grid-cols-[180px_180px_180px_1fr]' : 'md:grid-cols-[180px_180px_180px_1fr_1fr]'}`}>
-          <select
-            value={range}
-            onChange={(event) => setRange(event.target.value as DashboardRange)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="today">Bugun</option>
-            <option value="week">Hafta</option>
-            <option value="month">Oy</option>
-            <option value="last_week">O'tgan hafta</option>
-            <option value="last_month">O'tgan oy</option>
-            <option value="custom">Ixtiyoriy</option>
-          </select>
-
-          <input
-            type="date"
-            value={range === 'custom' ? dateFrom : effectiveDateRange.dateFrom}
-            disabled={range !== 'custom'}
-            onChange={(event) => setDateFrom(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-          />
-          <input
-            type="date"
-            value={range === 'custom' ? dateTo : effectiveDateRange.dateTo}
-            disabled={range !== 'custom'}
-            onChange={(event) => setDateTo(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-          />
-
-          <select
-            value={courseId}
-            onChange={(event) => setCourseId(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">Barcha kurslar</option>
-            {courseOptions.map((course) => (
-              <option key={course.id} value={course.id}>
-                {course.name}
-              </option>
-            ))}
-          </select>
-
-          {!isAgentOnly && (
-            <select
-              value={managerUserId}
-              onChange={(event) => setManagerUserId(event.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      <PageHeader
+        title="Bonus tafsiloti"
+        description="Bonus hisobiga ta'sir qilayotgan qatorlar (debug ustunlari bilan)."
+        actions={(
+          <>
+            <Link href="/dashboard/finance" className="btn btn-secondary inline-flex">
+              <IconArrowLeft className="h-4 w-4" stroke={1.8} />
+              Moliya sahifasiga qaytish
+            </Link>
+            <button
+              type="button"
+              onClick={() => void handleDownloadBonusDetails()}
+              disabled={exportBonusDetails.isLoading}
+              className="btn btn-primary inline-flex"
             >
-              <option value="">Barcha agentlar</option>
-              {managerOptions.map((manager) => (
-                <option key={manager.id} value={manager.id}>
-                  {manager.label}
-                </option>
+              <IconDownload className="h-4 w-4" stroke={1.8} />
+              {exportBonusDetails.isLoading ? 'Tayyorlanmoqda...' : 'XLS yuklab olish'}
+            </button>
+          </>
+        )}
+      />
+
+      {exportError ? <p className="alert alert-error">{exportError}</p> : null}
+      {exportSuccess ? <p className="alert alert-success">{exportSuccess}</p> : null}
+
+      <div className="panel p-3 sm:p-4">
+        <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center">
+          <div className="-mx-1 overflow-x-auto px-1">
+            <div className="segmented" role="group" aria-label="Davr">
+              {RANGE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setRange(option.value)}
+                  aria-pressed={range === option.value}
+                  className={range === option.value ? 'segmented-item segmented-item-active' : 'segmented-item'}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={isAgentOnly ? 'grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3' : 'grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4'}>
+            <div className="relative">
+              <IconCalendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+              <input
+                type="date"
+                value={range === 'custom' ? dateFrom : effectiveDateRange.dateFrom}
+                disabled={range !== 'custom'}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="field pl-9"
+              />
+            </div>
+            <div className="relative">
+              <IconCalendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+              <input
+                type="date"
+                value={range === 'custom' ? dateTo : effectiveDateRange.dateTo}
+                disabled={range !== 'custom'}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="field pl-9"
+              />
+            </div>
+
+            <select
+              value={courseId}
+              onChange={(event) => setCourseId(event.target.value)}
+              className="field"
+            >
+              <option value="">Barcha kurslar</option>
+              {courseOptions.map((course) => (
+                <option key={course.id} value={course.id}>{course.name}</option>
               ))}
             </select>
-          )}
+
+            {!isAgentOnly && (
+              <select
+                value={managerUserId}
+                onChange={(event) => setManagerUserId(event.target.value)}
+                className="field"
+              >
+                <option value="">Barcha agentlar</option>
+                {managerOptions.map((manager) => (
+                  <option key={manager.id} value={manager.id}>{manager.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
       </div>
 
       {bonusDetailsQuery.error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           {bonusDetailsQuery.error.message || "Bonus tafsilotlarini yuklashda xatolik."}
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Agentlar</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">{bonusAgentCount}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Filtr bo'yicha tushum</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatSom(summaryTotals?.incomeAmount ?? bonusTotals?.incomeAmount)}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Yopilgan tushum (kelishuv)</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">{formatSom(summaryTotals?.closedAgreementAmount)}</p>
-        </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatTile label="Agentlar" value={bonusAgentCount} icon={IconUsers} />
+        <StatTile label="Filtr bo'yicha tushum" value={formatSom(summaryTotals?.incomeAmount ?? bonusTotals?.incomeAmount)} icon={IconCash} tone="blue" />
+        <StatTile label="Yopilgan tushum (kelishuv)" value={formatSom(summaryTotals?.closedAgreementAmount)} icon={IconCircleCheck} tone="green" />
       </div>
 
-      <div className="rounded-lg bg-white p-6 shadow">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Agentlar bo'yicha bonuslar</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Tushum, yopilgan tushum va bonuslar kesimi (tanlangan davr bo'yicha).
-          </p>
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="section-title">Agentlar bo'yicha bonuslar</h2>
+            <p className="mt-0.5 text-sm text-gray-500">
+              Tushum, yopilgan tushum va bonuslar kesimi (tanlangan davr bo'yicha).
+            </p>
+          </div>
         </div>
-        {bonusDetailsQuery.isLoading ? (
-          <LoadingBlock message="Yuklanmoqda..." />
-        ) : agentSummary.length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Yopilgan tushum</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Jami bonus</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Online</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Offline</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Intensiv</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qo'shimcha xizmat</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {agentSummary.map((row) => (
-                  <tr key={row.managerUserId}>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{row.managerLabel}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.incomeAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.closedAgreementAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(row.totalBonusAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusByCategory?.online)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusByCategory?.offline)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusByCategory?.intensive)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusByCategory?.additional_service)}</td>
+        <div className="p-2 sm:p-3">
+          {bonusDetailsQuery.isLoading ? (
+            <LoadingBlock message="Yuklanmoqda..." className="m-2" />
+          ) : agentSummary.length ? (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="text-left">Agent</th>
+                    <th className="text-right">Tushum</th>
+                    <th className="text-right">Yopilgan tushum</th>
+                    <th className="text-right">Jami bonus</th>
+                    <th className="text-right">Online</th>
+                    <th className="text-right">Offline</th>
+                    <th className="text-right">Intensiv</th>
+                    <th className="text-right">Qo'shimcha xizmat</th>
                   </tr>
-                ))}
+                </thead>
+                <tbody>
+                  {agentSummary.map((row) => (
+                    <tr key={row.managerUserId}>
+                      <td>
+                        <div className="flex items-center gap-2.5">
+                          <UserAvatar name={row.managerLabel || '?'} size="sm" />
+                          <span className="whitespace-nowrap font-medium text-gray-900">{row.managerLabel}</span>
+                        </div>
+                      </td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.incomeAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.closedAgreementAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">{formatSom(row.totalBonusAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.bonusByCategory?.online)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.bonusByCategory?.offline)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.bonusByCategory?.intensive)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.bonusByCategory?.additional_service)}</td>
+                    </tr>
+                  ))}
+                </tbody>
                 {summaryTotals && (
-                  <tr className="bg-gray-50">
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">Jami</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.incomeAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.closedAgreementAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.totalBonusAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.bonusByCategory?.online)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.bonusByCategory?.offline)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.bonusByCategory?.intensive)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(summaryTotals.bonusByCategory?.additional_service)}</td>
-                  </tr>
+                  <tfoot>
+                    <tr>
+                      <td className="whitespace-nowrap">Jami</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.incomeAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.closedAgreementAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.totalBonusAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.bonusByCategory?.online)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.bonusByCategory?.offline)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.bonusByCategory?.intensive)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(summaryTotals.bonusByCategory?.additional_service)}</td>
+                    </tr>
+                  </tfoot>
                 )}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-sm text-gray-600">Tanlangan filtr bo'yicha agentlar kesimi topilmadi.</p>
-        )}
+              </table>
+            </div>
+          ) : (
+            <EmptyState icon={IconUsers} title="Tanlangan filtr bo'yicha agentlar kesimi topilmadi." className="m-2" />
+          )}
+        </div>
       </div>
 
-      <div className="rounded-lg bg-white p-6 shadow">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-gray-900">Bonus qatorlari tafsiloti</h2>
-          <button
-            type="button"
-            onClick={() => void handleDownloadBonusDetails()}
-            disabled={exportBonusDetails.isLoading}
-            className="inline-flex items-center rounded-md border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {exportBonusDetails.isLoading ? 'Tayyorlanmoqda...' : 'XLS yuklab olish'}
-          </button>
+      <div className="panel">
+        <div className="panel-header">
+          <h2 className="section-title">Bonus qatorlari tafsiloti</h2>
+          {bonusRows.length ? <span className="badge badge-neutral tabular">{bonusRows.length}</span> : null}
         </div>
-        {exportError ? <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{exportError}</p> : null}
-        {exportSuccess ? <p className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{exportSuccess}</p> : null}
-        {bonusDetailsQuery.isLoading ? (
-          <LoadingBlock message="Yuklanmoqda..." />
-        ) : bonusRows.length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sana</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Turi</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Mijoz</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs/Tarif/Subtarif</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kelishuv summasi</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qolgan qarz</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Hisoblangan bonus</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Debug: Kategoriya</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Debug: Fakt</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Debug: Foiz</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Debug: Fallback</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {bonusRows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {new Date(row.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {row.type === 'repayment' ? "Qarzdorlik to'lovi" : 'Yangi sotuv'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {row.customerNumber} - {row.customerName}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{row.managerLabel}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {[row.courseName, row.tariffName, row.subTariffName].filter(Boolean).join(' / ') || '-'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.agreementAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.paymentAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(row.remainingDebtAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm font-medium text-gray-900">
-                      {row.isLastPayment ? formatSom(row.calculatedBonus) : '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-700">{row.bonusDebug?.category || '-'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-700">{row.bonusDebug?.closedCount ?? '-'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-700">
-                      {row.bonusDebug?.appliedPercent == null ? '-' : `${row.bonusDebug.appliedPercent}%`}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-700">{row.bonusDebug?.usedFallback ? 'ha' : 'yo\'q'}</td>
+        <div className="p-2 sm:p-3">
+          {bonusDetailsQuery.isLoading ? (
+            <LoadingBlock message="Yuklanmoqda..." className="m-2" />
+          ) : bonusRows.length ? (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="text-left">Sana</th>
+                    <th className="text-left">Turi</th>
+                    <th className="text-left">Mijoz</th>
+                    <th className="text-left">Agent</th>
+                    <th className="text-left">Kurs/Tarif/Subtarif</th>
+                    <th className="text-right">Kelishuv summasi</th>
+                    <th className="text-right">Tushum</th>
+                    <th className="text-right">Qolgan qarz</th>
+                    <th className="text-right">Hisoblangan bonus</th>
+                    <th className="text-left">Debug: Kategoriya</th>
+                    <th className="text-right">Debug: Fakt</th>
+                    <th className="text-right">Debug: Foiz</th>
+                    <th className="text-left">Debug: Fallback</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-sm text-gray-600">Tanlangan filtr bo'yicha bonus tafsiloti topilmadi.</p>
-        )}
+                </thead>
+                <tbody>
+                  {bonusRows.map((row) => (
+                    <tr key={row.id}>
+                      <td className="tabular whitespace-nowrap text-gray-600">
+                        {new Date(row.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <span className={row.type === 'repayment' ? 'badge badge-amber' : 'badge badge-blue'}>
+                          {row.type === 'repayment' ? "Qarzdorlik to'lovi" : 'Yangi sotuv'}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap font-medium text-gray-900">
+                        {row.customerNumber} - {row.customerName}
+                      </td>
+                      <td className="whitespace-nowrap">{row.managerLabel}</td>
+                      <td className="whitespace-nowrap">
+                        {[row.courseName, row.tariffName, row.subTariffName].filter(Boolean).join(' / ') || '-'}
+                      </td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.agreementAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.paymentAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.remainingDebtAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">
+                        {row.isLastPayment ? formatSom(row.calculatedBonus) : '-'}
+                      </td>
+                      <td className="whitespace-nowrap text-xs text-gray-500">{row.bonusDebug?.category || '-'}</td>
+                      <td className="tabular whitespace-nowrap text-right text-xs text-gray-500">{row.bonusDebug?.closedCount ?? '-'}</td>
+                      <td className="tabular whitespace-nowrap text-right text-xs text-gray-500">
+                        {row.bonusDebug?.appliedPercent == null ? '-' : `${row.bonusDebug.appliedPercent}%`}
+                      </td>
+                      <td className="whitespace-nowrap text-xs text-gray-500">{row.bonusDebug?.usedFallback ? 'ha' : 'yo\'q'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState icon={IconListDetails} title="Tanlangan filtr bo'yicha bonus tafsiloti topilmadi." className="m-2" />
+          )}
+        </div>
       </div>
+
+      {!isAgentOnly ? (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+          <div className="panel">
+            <div className="panel-header items-start">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
+                  <IconCalendarCheck className="h-[18px] w-[18px]" stroke={1.8} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="section-title">Bonus oyini yakunlash</h2>
+                  <p className="mt-0.5 text-sm text-gray-500">Yakunlangan oylar snapshot bo&apos;lib saqlanadi; keyingi o&apos;zgarishlar tuzatish yaratadi.</p>
+                </div>
+              </div>
+            </div>
+            <div className="panel-body space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <input type="month" value={operationMonth} onChange={(event) => setOperationMonth(event.target.value)} className="field w-auto flex-1 sm:flex-none" />
+                {isAdmin ? (
+                  <>
+                    <button type="button" onClick={() => void runMonthAction('preview')} className="btn btn-soft">Ko&apos;rib chiqish</button>
+                    <button type="button" onClick={() => void runMonthAction('finalize')} className="btn btn-primary">Yakunlash</button>
+                    <button type="button" onClick={() => void runMonthAction('reconcile')} className="btn btn-warning-soft">Qayta solishtirish</button>
+                  </>
+                ) : null}
+              </div>
+              {operationMessage ? <p className="alert alert-info">{operationMessage}</p> : null}
+              {(bonusOperationsQuery.data?.snapshots || []).length > 0 && (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {(bonusOperationsQuery.data?.snapshots || []).slice(0, 6).map((snapshot) => (
+                    <div key={snapshot.id} className="panel-inset flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+                      <div className="min-w-0">
+                        <p className="tabular font-medium text-gray-900">{snapshot.month}</p>
+                        <p className="tabular text-gray-600">{formatSom(snapshot.totalBonusAmount)}</p>
+                      </div>
+                      <span className="badge badge-green">Yakunlangan</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {(bonusOperationsQuery.data?.adjustments.length || 0) > 0 ? (
+            <div className="panel">
+              <div className="panel-header">
+                <h2 className="section-title">Bonus tuzatishlari</h2>
+                <span className="badge badge-neutral tabular">{bonusOperationsQuery.data?.adjustments.length}</span>
+              </div>
+              <div className="p-2 sm:p-3">
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead><tr>
+                      <th className="text-left">Manba oy</th>
+                      <th className="text-left">Agent</th>
+                      <th className="text-right">Farq</th>
+                      <th className="text-left">Holat</th>
+                      <th className="text-left">Amal</th>
+                    </tr></thead>
+                    <tbody>
+                      {bonusOperationsQuery.data?.adjustments.map((adjustment) => (
+                        <tr key={adjustment.id}>
+                          <td className="tabular whitespace-nowrap">{adjustment.sourceMonth}</td>
+                          <td>{adjustment.agentUserId}</td>
+                          <td className={adjustment.deltaAmount < 0 ? 'tabular whitespace-nowrap text-right font-medium text-red-700' : 'tabular whitespace-nowrap text-right font-medium text-emerald-700'}>{formatSom(adjustment.deltaAmount)}</td>
+                          <td><span className={`badge ${ADJUSTMENT_STATUS_BADGE[adjustment.status] || 'badge-neutral'}`}>{adjustment.status}</span></td>
+                          <td>
+                            {isAdmin && adjustment.status === 'pending' ? (
+                              <div className="flex gap-2">
+                                <button type="button" onClick={() => void handleReviewAdjustment(adjustment.id, 'approve')} className="btn btn-sm btn-success">Tasdiqlash</button>
+                                <button type="button" onClick={() => void handleReviewAdjustment(adjustment.id, 'reject')} className="btn btn-sm btn-danger-soft">Rad etish</button>
+                              </div>
+                            ) : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

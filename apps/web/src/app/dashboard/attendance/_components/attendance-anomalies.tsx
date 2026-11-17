@@ -1,95 +1,161 @@
 'use client';
 
+import { IconActivity, IconAlertTriangle, IconLinkOff } from '@tabler/icons-react';
+import type { ReactNode } from 'react';
+import type { Icon } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { EmptyState } from '@/components/ui/empty-state';
 import { formatDateTime, UZ_TASHKENT_DATE_TIME } from '@/lib/format';
 import type { AttendancePageModel } from './use-attendance-page';
 
+function ListPanel({
+  title,
+  icon: PanelIcon,
+  iconClassName,
+  count,
+  countClassName,
+  children,
+}: {
+  title: ReactNode;
+  icon: Icon;
+  iconClassName: string;
+  count?: number;
+  countClassName?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="panel flex flex-col">
+      <div className="panel-header">
+        <div className="flex items-center gap-2.5">
+          <span className={`flex h-8 w-8 items-center justify-center rounded-[9px] ${iconClassName}`}>
+            <PanelIcon className="h-4 w-4" stroke={1.8} />
+          </span>
+          <h3 className="section-title">{title}</h3>
+          {count ? <span className={`badge tabular ${countClassName || 'badge-neutral'}`}>{count}</span> : null}
+        </div>
+      </div>
+      <div className="p-3 sm:p-4">{children}</div>
+    </section>
+  );
+}
+
 export function AttendanceAnomalies({ vm }: { vm: AttendancePageModel }) {
   const { anomaliesQuery, canReadAnomalies, eventsQuery, presenceByUserDate } = vm;
+  const summaryAnomalies = anomaliesQuery.data?.summaryAnomalies || [];
+  const unmatchedEvents = anomaliesQuery.data?.unmatchedEvents || [];
 
   return (
     <>
       {canReadAnomalies && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="rounded-lg border border-gray-200 p-4 dark:border-slate-700">
-            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">Kunlik anomaliyalar</h3>
-            <div className="max-h-52 space-y-2 overflow-auto">
-              {(anomaliesQuery.data?.summaryAnomalies || []).map((row: any) => (
-                <div key={row.id} className="rounded-md border border-amber-300/40 bg-amber-50/40 px-3 py-2 text-sm dark:border-amber-800/50 dark:bg-amber-950/20">
-                  <p className="font-medium text-gray-900 dark:text-slate-100">{row.user?.name || row.user?.username || row.userId}</p>
-                  <p className="text-gray-700 dark:text-slate-300">
-                    {row.summaryDate} | anomaliya: {row.anomalyCount || 0} |{' '}
-                    {presenceByUserDate.get(`${row.userId || ''}|${row.summaryDate || ''}`) ? 'Kelgan (IN bor)' : "Kelmagan (IN yo'q)"}
-                  </p>
-                </div>
-              ))}
-              {anomaliesQuery.isLoading && <LoadingBlock compact message="Yuklanmoqda..." />}
-              {!anomaliesQuery.isLoading && (anomaliesQuery.data?.summaryAnomalies || []).length === 0 && (
-                <p className="text-sm text-gray-500 dark:text-slate-400">Anomaliya topilmadi.</p>
-              )}
-            </div>
-          </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <ListPanel
+            title="Kunlik anomaliyalar"
+            icon={IconAlertTriangle}
+            iconClassName="bg-amber-50 text-amber-600"
+            count={summaryAnomalies.length}
+            countClassName="badge-amber"
+          >
+            <ul className="max-h-64 divide-y divide-gray-100 overflow-auto">
+              {summaryAnomalies.map((row: any) => {
+                const isPresent = presenceByUserDate.get(`${row.userId || ''}|${row.summaryDate || ''}`);
+                return (
+                  <li key={row.id} className="flex items-start justify-between gap-3 px-1 py-2.5 text-sm">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-gray-900">{row.user?.name || row.user?.username || row.userId}</p>
+                      <p className="tabular mt-0.5 text-[13px] text-gray-500">{row.summaryDate}</p>
+                    </div>
+                    <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1.5">
+                      <span className="badge badge-amber tabular">anomaliya: {row.anomalyCount || 0}</span>
+                      <span className={`badge ${isPresent ? 'badge-green' : 'badge-red'}`}>
+                        {isPresent ? 'Kelgan (IN bor)' : "Kelmagan (IN yo'q)"}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            {anomaliesQuery.isLoading && <LoadingBlock compact message="Yuklanmoqda..." />}
+            {!anomaliesQuery.isLoading && summaryAnomalies.length === 0 && (
+              <EmptyState title="Anomaliya topilmadi." icon={IconAlertTriangle} className="py-6" />
+            )}
+          </ListPanel>
 
-          <div className="rounded-lg border border-gray-200 p-4 dark:border-slate-700">
-            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">Bog&apos;lanmagan eventlar</h3>
-            <div className="max-h-52 space-y-2 overflow-auto">
-              {(anomaliesQuery.data?.unmatchedEvents || []).map((row: any) => (
-                <div key={row.id} className="rounded-md border border-red-300/40 bg-red-50/40 px-3 py-2 text-sm dark:border-red-800/50 dark:bg-red-950/20">
-                  <p className="font-medium text-gray-900 dark:text-slate-100">
+          <ListPanel
+            title={<>Bog&apos;lanmagan eventlar</>}
+            icon={IconLinkOff}
+            iconClassName="bg-red-50 text-red-600"
+            count={unmatchedEvents.length}
+            countClassName="badge-red"
+          >
+            <ul className="max-h-64 divide-y divide-gray-100 overflow-auto">
+              {unmatchedEvents.map((row: any) => (
+                <li key={row.id} className="space-y-1 px-1 py-2.5 text-sm">
+                  <p className="font-medium text-gray-900">
                     {(row.firstName || '')} {(row.lastName || '')} ({row.externalPhone || '-'})
                   </p>
-                  <p className="text-gray-700 dark:text-slate-300">
+                  <p className="tabular text-[13px] text-gray-500">
                     {row.localDate} | {row.action} | {formatDateTime(row.eventAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}
                   </p>
-                  <p className="text-xs text-red-700 dark:text-red-300">
+                  <p className="text-xs text-red-700">
                     Sabab: {row.matchReason || 'unknown'} | Qadam: {row.matchStepTried || 'unknown'}
                   </p>
-                  <p className="text-xs text-gray-600 dark:text-slate-300">
+                  <p className="break-all rounded-md bg-gray-50 px-2 py-1 font-mono text-[11px] text-gray-600">
                     Raw user: ID={row.rawUser?.id ?? '-'}, name={(row.rawUser?.first_name || '')} {(row.rawUser?.last_name || '')}, phone={row.rawUser?.phone_number || '-'}
                   </p>
-                </div>
+                </li>
               ))}
-              {anomaliesQuery.isLoading && <LoadingBlock compact message="Yuklanmoqda..." />}
-              {!anomaliesQuery.isLoading && (anomaliesQuery.data?.unmatchedEvents || []).length === 0 && (
-                <p className="text-sm text-gray-500 dark:text-slate-400">Bog&apos;lanmagan event yo&apos;q.</p>
-              )}
-            </div>
-          </div>
+            </ul>
+            {anomaliesQuery.isLoading && <LoadingBlock compact message="Yuklanmoqda..." />}
+            {!anomaliesQuery.isLoading && unmatchedEvents.length === 0 && (
+              <EmptyState title="Bog'lanmagan event yo'q." icon={IconLinkOff} className="py-6" />
+            )}
+          </ListPanel>
         </div>
       )}
 
-      <div className="rounded-lg border border-gray-200 p-4 dark:border-slate-700">
-        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">Oxirgi eventlar</h3>
-        <div className="max-h-56 overflow-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
-            <thead className="bg-gray-50 dark:bg-slate-800">
-              <tr>
-                <th className="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Vaqt</th>
-                <th className="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Harakat</th>
-                <th className="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Xodim</th>
-                <th className="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Branch</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
-              {(eventsQuery.data?.rows || []).map((row: any) => (
-                <tr key={row.id}>
-                  <td className="px-2 py-2 text-xs text-gray-700 dark:text-slate-300">{formatDateTime(row.eventAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}</td>
-                  <td className="px-2 py-2 text-xs text-gray-700 dark:text-slate-300">{row.action}</td>
-                  <td className="px-2 py-2 text-xs text-gray-700 dark:text-slate-300">{row.user?.name || `${row.firstName || ''} ${row.lastName || ''}`.trim() || '-'}</td>
-                  <td className="px-2 py-2 text-xs text-gray-700 dark:text-slate-300">{row.branchName || '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <section className="panel">
+        <div className="panel-header">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-gray-100 text-gray-600">
+              <IconActivity className="h-4 w-4" stroke={1.8} />
+            </span>
+            <h3 className="section-title">Oxirgi eventlar</h3>
+          </div>
         </div>
-        {eventsQuery.isLoading ? (
-          <LoadingBlock className="mt-2" compact message="Yuklanmoqda..." />
-        ) : eventsQuery.error ? (
-          <p className="mt-2 text-sm text-red-600 dark:text-red-400">{eventsQuery.error.message}</p>
-        ) : (eventsQuery.data?.rows || []).length === 0 ? (
-          <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">Event topilmadi.</p>
-        ) : null}
-      </div>
+        <div className="p-2 sm:p-3">
+          <div className="max-h-72 overflow-auto">
+            <table className="data-table">
+              <thead className="sticky top-0 z-[1]">
+                <tr>
+                  <th className="text-left">Vaqt</th>
+                  <th className="text-left">Harakat</th>
+                  <th className="text-left">Xodim</th>
+                  <th className="text-left">Branch</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(eventsQuery.data?.rows || []).map((row: any) => (
+                  <tr key={row.id}>
+                    <td className="tabular whitespace-nowrap text-gray-600">{formatDateTime(row.eventAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}</td>
+                    <td className="whitespace-nowrap">
+                      <span className="badge badge-neutral">{row.action}</span>
+                    </td>
+                    <td className="whitespace-nowrap font-medium text-gray-900">{row.user?.name || `${row.firstName || ''} ${row.lastName || ''}`.trim() || '-'}</td>
+                    <td className="whitespace-nowrap">{row.branchName || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {eventsQuery.isLoading ? (
+            <LoadingBlock className="m-1" compact message="Yuklanmoqda..." />
+          ) : eventsQuery.error ? (
+            <p className="alert alert-error m-1">{eventsQuery.error.message}</p>
+          ) : (eventsQuery.data?.rows || []).length === 0 ? (
+            <EmptyState title="Event topilmadi." icon={IconActivity} className="m-1" />
+          ) : null}
+        </div>
+      </section>
     </>
   );
 }

@@ -18,6 +18,8 @@ interface MultiSelectDropdownProps {
   loading?: boolean;
   loadingText?: string;
   emptyText?: string;
+  /** Keeps the label for screen readers only, for toolbars where the placeholder says enough. */
+  hideLabel?: boolean;
 }
 
 export default function MultiSelectDropdown({
@@ -30,6 +32,7 @@ export default function MultiSelectDropdown({
   loading = false,
   loadingText = 'Variantlar yuklanmoqda...',
   emptyText = 'Variantlar topilmadi.',
+  hideLabel = false,
 }: MultiSelectDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -72,8 +75,8 @@ export default function MultiSelectDropdown({
 
   return (
     <div ref={containerRef}>
-      <label className="block text-sm font-medium text-gray-700">{label}</label>
-      <div className="relative mt-1">
+      <label className={hideLabel ? 'sr-only' : 'block text-[13px] font-medium text-gray-500'}>{label}</label>
+      <div className={hideLabel ? 'relative' : 'relative mt-1'}>
         <button
           type="button"
           onClick={() => {
@@ -83,8 +86,8 @@ export default function MultiSelectDropdown({
             setIsOpen((value) => !value);
           }}
           aria-expanded={isOpen}
-          style={{ backgroundColor: disabled ? '#F3F4F6' : '#FFFFFF', color: disabled ? '#6B7280' : '#111827' }}
-          className={`w-full rounded-md border border-gray-300 px-3 py-2 text-left text-sm ${disabled ? '' : 'cursor-pointer'}`}
+          aria-label={hideLabel ? label : undefined}
+          className={`w-full text-left text-sm ${hideLabel ? 'h-11 rounded-[12px] px-4 shadow' : 'h-10 rounded-md border border-gray-200 px-3'} ${disabled ? 'bg-gray-50 text-gray-500' : `cursor-pointer bg-white text-gray-900 ${hideLabel ? 'hover:bg-gray-50' : 'hover:border-gray-300'}`}`}
         >
           <div className="flex items-center justify-between gap-3">
             <span className="truncate">{selectedLabels}</span>
@@ -94,8 +97,7 @@ export default function MultiSelectDropdown({
 
         {!disabled && isOpen && (
           <div
-            style={{ backgroundColor: '#FFFFFF', color: '#111827' }}
-            className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-md border border-gray-200 p-2 shadow-lg"
+            className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-lg bg-white p-2 text-gray-900 shadow-lg"
           >
             {loading ? (
               <p className="px-2 py-2 text-sm text-gray-500">{loadingText}</p>
@@ -115,7 +117,7 @@ export default function MultiSelectDropdown({
                         }
                         onChange(selectedIds.filter((id) => id !== option.id));
                       }}
-                      className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="checkbox mt-1"
                     />
                     <div className="min-w-0">
                       <p className="truncate">{option.label}</p>

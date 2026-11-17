@@ -1,5 +1,6 @@
 'use client';
 
+import { IconArrowRight, IconCheck, IconX } from '@tabler/icons-react';
 import { formatAmountDigits, formatCourseBundle } from '@/lib/format';
 import { formatCardNumberInput, getRequestTypeLabel } from './adjustments-helpers';
 import type { AdjustmentsPageModel } from './use-adjustments-page';
@@ -10,104 +11,113 @@ export function AdjustmentReviewModal({ vm }: { vm: AdjustmentsPageModel }) {
   return (
     <>
       {reviewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
-          <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl dark:bg-slate-900">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100">
-              {reviewModal.action === 'approve' ? "So'rovni qabul qilish" : "So'rovni rad etish"}
-            </h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-              Iltimos, qaror bo&apos;yicha izoh qoldiring.
-            </p>
+        <div className="modal-backdrop">
+          <div className="modal-panel max-w-2xl">
+            <div className="modal-header">
+              <h3 className="modal-title">
+                {reviewModal.action === 'approve' ? "So'rovni qabul qilish" : "So'rovni rad etish"}
+              </h3>
+              <p className="modal-description">
+                Iltimos, qaror bo&apos;yicha izoh qoldiring.
+              </p>
+            </div>
 
-            <form onSubmit={handleReviewSubmit} className="mt-4 space-y-4">
-              {/* The page-level banner sits behind this overlay, so review errors must render here. */}
-              {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
-              {reviewRequest && (
-                <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <p><span className="font-medium">So&apos;rov turi:</span> {getRequestTypeLabel(reviewRequest.type)}</p>
-                    <p>
-                      <span className="font-medium">Mijoz:</span> {reviewRequest.income.customer.customerNumber} - {reviewRequest.income.customer.name}
-                    </p>
-                    <p><span className="font-medium">Mas&apos;ul agent:</span> {reviewRequest.income.managerLabel || '-'}</p>
-                  </div>
-
-                  <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-slate-600 dark:bg-slate-900">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">Oldingi ma&apos;lumot</p>
-                    <div className="mt-2 grid grid-cols-1 gap-1">
+            <form onSubmit={handleReviewSubmit}>
+              <div className="modal-body">
+                {/* The page-level banner sits behind this overlay, so review errors must render here. */}
+                {error && <p className="alert alert-error">{error}</p>}
+                {reviewRequest && (
+                  <div className="space-y-3 text-sm text-gray-700">
+                    <div className="panel-inset grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <p><span className="font-medium text-gray-900">So&apos;rov turi:</span> {getRequestTypeLabel(reviewRequest.type)}</p>
                       <p>
-                        <span className="font-medium">Kurs / Tarif / Subtarif:</span>{' '}
-                        {formatCourseBundle(
-                          reviewRequest.income.course?.name,
-                          reviewRequest.income.tariff?.name,
-                          reviewRequest.income.profileSubTariffName,
-                        )}
+                        <span className="font-medium text-gray-900">Mijoz:</span> {reviewRequest.income.customer.customerNumber} - {reviewRequest.income.customer.name}
                       </p>
-                      <p><span className="font-medium">Kelishuv:</span> {formatAmountDigits(reviewRequest.income.coursePriceAmount)} UZS</p>
+                      <p><span className="font-medium text-gray-900">Mas&apos;ul agent:</span> {reviewRequest.income.managerLabel || '-'}</p>
                     </div>
-                  </div>
 
-                  <div className="rounded-md border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/30">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Yangi ma&apos;lumot</p>
-                    <div className="mt-2 grid grid-cols-1 gap-1">
-                      <p>
-                        <span className="font-medium">Kurs / Tarif / Subtarif:</span>{' '}
-                        {formatCourseBundle(
-                          reviewRequest.newCourse?.name || reviewRequest.income.course?.name,
-                          reviewRequest.newTariff?.name || reviewRequest.income.tariff?.name,
-                          reviewRequest.inferredNewSubTariffName || reviewRequest.income.profileSubTariffName || null,
-                        )}
-                      </p>
-                      <p>
-                        <span className="font-medium">Kelishuv:</span>{' '}
-                        {formatAmountDigits(reviewRequest.newAgreementAmount ?? reviewRequest.income.coursePriceAmount)} UZS
-                      </p>
-                      {reviewRequest.type === 'refund' && (
-                        <>
+                    <div className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+                      <div className="rounded-[12px] border border-gray-200 p-4">
+                        <p className="text-[13px] font-semibold text-gray-500">Oldingi ma&apos;lumot</p>
+                        <div className="mt-2 grid grid-cols-1 gap-1.5">
                           <p>
-                            <span className="font-medium">Qaytariladigan summa:</span>{' '}
-                            {formatAmountDigits(reviewRequest.requestedAmount ?? reviewRequest.income.paymentAmount)} UZS
+                            <span className="font-medium text-gray-900">Kurs / Tarif / Subtarif:</span>{' '}
+                            {formatCourseBundle(
+                              reviewRequest.income.course?.name,
+                              reviewRequest.income.tariff?.name,
+                              reviewRequest.income.profileSubTariffName,
+                            )}
+                          </p>
+                          <p><span className="font-medium text-gray-900">Kelishuv:</span> <span className="tabular">{formatAmountDigits(reviewRequest.income.coursePriceAmount)} UZS</span></p>
+                        </div>
+                      </div>
+
+                      <div className="hidden items-center justify-center text-gray-400 md:flex">
+                        <IconArrowRight className="h-5 w-5" stroke={1.6} />
+                      </div>
+
+                      <div className="rounded-[12px] border border-blue-200 bg-blue-50 p-4">
+                        <p className="text-[13px] font-semibold text-blue-700">Yangi ma&apos;lumot</p>
+                        <div className="mt-2 grid grid-cols-1 gap-1.5">
+                          <p>
+                            <span className="font-medium text-gray-900">Kurs / Tarif / Subtarif:</span>{' '}
+                            {formatCourseBundle(
+                              reviewRequest.newCourse?.name || reviewRequest.income.course?.name,
+                              reviewRequest.newTariff?.name || reviewRequest.income.tariff?.name,
+                              reviewRequest.inferredNewSubTariffName || reviewRequest.income.profileSubTariffName || null,
+                            )}
                           </p>
                           <p>
-                            <span className="font-medium">Karta raqami:</span>{' '}
-                            {formatCardNumberInput(reviewRequest.refundCardNumber || '') || '-'}
+                            <span className="font-medium text-gray-900">Kelishuv:</span>{' '}
+                            <span className="tabular">{formatAmountDigits(reviewRequest.newAgreementAmount ?? reviewRequest.income.coursePriceAmount)} UZS</span>
                           </p>
-                        </>
-                      )}
+                          {reviewRequest.type === 'refund' && (
+                            <>
+                              <p>
+                                <span className="font-medium text-gray-900">Qaytariladigan summa:</span>{' '}
+                                <span className="tabular">{formatAmountDigits(reviewRequest.requestedAmount ?? reviewRequest.income.paymentAmount)} UZS</span>
+                              </p>
+                              <p>
+                                <span className="font-medium text-gray-900">Karta raqami:</span>{' '}
+                                <span className="tabular">{formatCardNumberInput(reviewRequest.refundCardNumber || '') || '-'}</span>
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
+                )}
+
+                <div>
+                  <label className="field-label">Izoh</label>
+                  <textarea
+                    value={reviewNote}
+                    onChange={(event) => setReviewNote(event.target.value)}
+                    rows={4}
+                    placeholder="Izoh kiriting..."
+                    className="field"
+                  />
                 </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Izoh</label>
-                <textarea
-                  value={reviewNote}
-                  onChange={(event) => setReviewNote(event.target.value)}
-                  rows={4}
-                  placeholder="Izoh kiriting..."
-                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                />
               </div>
 
-              <div className="flex items-center justify-end gap-2">
+              <div className="modal-footer">
                 <button
                   type="button"
                   onClick={closeReviewModal}
                   disabled={approveRequestMutation.isLoading || rejectRequestMutation.isLoading}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                  className="btn btn-secondary"
                 >
                   Bekor qilish
                 </button>
                 <button
                   type="submit"
                   disabled={approveRequestMutation.isLoading || rejectRequestMutation.isLoading}
-                  className={`rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
-                    reviewModal.action === 'approve'
-                      ? 'bg-emerald-600 hover:bg-emerald-700'
-                      : 'bg-red-600 hover:bg-red-700'
-                  }`}
+                  className={`btn ${reviewModal.action === 'approve' ? 'btn-success' : 'btn-danger'}`}
                 >
+                  {reviewModal.action === 'approve'
+                    ? <IconCheck className="h-4 w-4" stroke={2} />
+                    : <IconX className="h-4 w-4" stroke={2} />}
                   {approveRequestMutation.isLoading || rejectRequestMutation.isLoading
                     ? 'Saqlanmoqda...'
                     : reviewModal.action === 'approve'

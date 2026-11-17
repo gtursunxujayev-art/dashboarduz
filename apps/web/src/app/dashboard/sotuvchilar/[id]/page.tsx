@@ -2,7 +2,26 @@
 
 import { trpc } from '@/lib/trpc';
 import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import type { Icon } from '@tabler/icons-react';
+import {
+  IconCalendarTime,
+  IconChartBar,
+  IconChecklist,
+  IconClockHour4,
+  IconCoin,
+  IconMessageCircle,
+  IconPercentage,
+  IconPhone,
+  IconSend,
+  IconTargetArrow,
+  IconUserSearch,
+  IconWallet,
+} from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatTile, type StatTone } from '@/components/ui/stat-tile';
+import { getInitials } from '@/components/ui/user-avatar';
 import { formatDurationClock, formatPercent, formatResponseTime, formatSomRounded } from '@/lib/format';
 import { getTashkentDateShift, getTashkentToday } from '@/lib/date-range';
 import { getConversionBadge, getDailyTalkBadge, getDeadlineBadge, getDebtCollectionBadge, getFollowUpBadge, getMissedCallBadge, getOutboundBadge, getRefundBadge, getResponseTimeBadge, type KpiBadge } from '@/components/dashboard/seller-kpi-badges';
@@ -17,21 +36,62 @@ function formatDurationReadable(seconds: number | null | undefined): string {
   return `${minutes} daqiqa`;
 }
 
-const BADGE_COLORS: Record<KpiBadge, string> = {
-  good: 'border-emerald-500/40 bg-emerald-500/10',
-  warning: 'border-amber-500/40 bg-amber-500/10',
-  critical: 'border-red-500/40 bg-red-500/10',
-  neutral: 'border-slate-700/60 bg-slate-900/70',
+const BADGE_TONES: Record<KpiBadge, StatTone> = {
+  good: 'green',
+  warning: 'amber',
+  critical: 'red',
+  neutral: 'neutral',
 };
 
 const BADGE_TEXT: Record<KpiBadge, string> = {
-  good: 'text-emerald-300',
-  warning: 'text-amber-300',
-  critical: 'text-red-300',
-  neutral: 'text-slate-300',
+  good: 'text-emerald-700',
+  warning: 'text-amber-700',
+  critical: 'text-red-700',
+  neutral: 'text-gray-900',
 };
 
+const BADGE_DOTS: Record<KpiBadge, string> = {
+  good: 'bg-emerald-500',
+  warning: 'bg-amber-500',
+  critical: 'bg-red-500',
+  neutral: 'bg-gray-300',
+};
+
+/** Headline KPI: a stat tile tinted by its traffic-light grade. */
 function MetricCard({
+  title,
+  value,
+  subtitle,
+  extra,
+  badge,
+  icon,
+}: {
+  title: string;
+  value: string | number;
+  subtitle?: string | null;
+  extra?: string | null;
+  badge?: KpiBadge;
+  icon?: Icon;
+}) {
+  const b = badge ?? 'neutral';
+  return (
+    <StatTile
+      label={title}
+      value={value}
+      icon={icon}
+      tone={badge ? BADGE_TONES[b] : 'blue'}
+      hint={subtitle || extra ? (
+        <>
+          {subtitle ? <span className="block">{subtitle}</span> : null}
+          {extra ? <span className="mt-0.5 block font-semibold text-gray-900">{extra}</span> : null}
+        </>
+      ) : undefined}
+    />
+  );
+}
+
+/** Detail metric: a row inside a section panel, label and note left, value right. */
+function MetricRow({
   title,
   value,
   subtitle,
@@ -46,18 +106,35 @@ function MetricCard({
 }) {
   const b = badge ?? 'neutral';
   return (
-    <div className={`rounded-2xl border p-5 ${BADGE_COLORS[b]}`}>
-      <p className="text-sm text-slate-300">{title}</p>
-      <p className={`mt-2 text-4xl font-semibold ${badge ? BADGE_TEXT[b] : 'text-white'}`}>{value}</p>
-      {subtitle ? <p className="mt-3 text-sm text-slate-300">{subtitle}</p> : null}
-      {extra ? <p className="mt-1 text-sm font-semibold text-white">{extra}</p> : null}
-    </div>
+    <li className="flex items-start justify-between gap-4 py-3.5">
+      <div className="min-w-0">
+        <p className="flex items-center gap-2 text-sm font-medium text-gray-900">
+          {badge ? <span className={`h-2 w-2 flex-shrink-0 rounded-full ${BADGE_DOTS[b]}`} aria-hidden="true" /> : null}
+          {title}
+        </p>
+        {subtitle ? <p className="tabular mt-0.5 text-[13px] text-gray-500">{subtitle}</p> : null}
+      </div>
+      <div className="flex-shrink-0 text-right">
+        <p className={`tabular text-lg font-semibold leading-tight tracking-tight ${BADGE_TEXT[b]}`}>{value}</p>
+        {extra ? <p className="tabular mt-0.5 text-[13px] font-medium text-gray-700">{extra}</p> : null}
+      </div>
+    </li>
   );
 }
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
+function SectionPanel({ title, icon: SectionIcon, children, className = '' }: { title: ReactNode; icon: Icon; children: ReactNode; className?: string }) {
   return (
-    <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">{children}</h3>
+    <section className={`panel ${className}`}>
+      <div className="panel-header">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-gray-100 text-gray-600">
+            <SectionIcon className="h-4 w-4" stroke={1.8} />
+          </span>
+          <h3 className="section-title">{title}</h3>
+        </div>
+      </div>
+      <ul className="divide-y divide-gray-100 px-5 pb-2 pt-2 sm:px-6">{children}</ul>
+    </section>
   );
 }
 
@@ -91,7 +168,7 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
   }
 
   if (!sellerQuery.data) {
-    return <p className="text-sm text-red-300">Sotuvchi topilmadi.</p>;
+    return <p className="alert alert-error">Sotuvchi topilmadi.</p>;
   }
 
   const { seller, metrics: m } = sellerQuery.data;
@@ -106,240 +183,251 @@ export default function SellerDetailsPage({ params }: { params: { id: string } }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-white">{displayName}</h1>
-            <p className="mt-2 text-sm text-slate-300">Agent bo'yicha sotuv, tushum, CRM va qo'ng'iroq ko'rsatkichlari.</p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <button
-              onClick={() => {
-                setSendMessage(null);
-                sendPdfMutation.mutate(queryInput);
-              }}
-              disabled={sendPdfMutation.isLoading}
-              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+      {/* Profile header */}
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-4">
+            <span
+              aria-hidden="true"
+              className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-lg font-semibold text-blue-700"
             >
-              {sendPdfMutation.isLoading ? 'Yuborilmoqda...' : 'PDF ni adminlarga yuborish'}
-            </button>
+              {getInitials(displayName)}
+            </span>
+            <span className="min-w-0 break-words">{displayName}</span>
+          </span>
+        )}
+        description="Agent bo'yicha sotuv, tushum, CRM va qo'ng'iroq ko'rsatkichlari."
+        actions={(
+          <button
+            onClick={() => {
+              setSendMessage(null);
+              sendPdfMutation.mutate(queryInput);
+            }}
+            disabled={sendPdfMutation.isLoading}
+            className="btn btn-primary"
+          >
+            <IconSend className="h-4 w-4" stroke={1.8} />
+            {sendPdfMutation.isLoading ? 'Yuborilmoqda...' : 'PDF ni adminlarga yuborish'}
+          </button>
+        )}
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="max-w-full overflow-x-auto">
+            <div className="segmented">
+              {[
+                { key: 'today', label: 'Bugun' },
+                { key: 'week', label: 'Hafta' },
+                { key: 'month', label: 'Oy' },
+                { key: 'last30days', label: '30 kun' },
+                { key: 'custom', label: 'Maxsus' },
+              ].map((option) => (
+                <button
+                  key={option.key}
+                  onClick={() => {
+                    setSendMessage(null);
+                    setRange(option.key as SellerRange);
+                  }}
+                  aria-pressed={range === option.key}
+                  className={`segmented-item ${range === option.key ? 'segmented-item-active' : ''}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          {[
-            { key: 'today', label: 'Bugun' },
-            { key: 'week', label: 'Hafta' },
-            { key: 'month', label: 'Oy' },
-            { key: 'last30days', label: '30 kun' },
-            { key: 'custom', label: 'Maxsus' },
-          ].map((option) => (
-            <button
-              key={option.key}
-              onClick={() => {
-                setSendMessage(null);
-                setRange(option.key as SellerRange);
-              }}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                range === option.key
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
 
           {range === 'custom' ? (
-            <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(event) => setDateFrom(event.target.value)}
-                className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+                className="field w-auto"
               />
+              <span className="text-gray-400" aria-hidden="true">-</span>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(event) => setDateTo(event.target.value)}
-                className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+                className="field w-auto"
               />
             </div>
           ) : null}
         </div>
 
         {sendMessage ? (
-          <div className="mt-4 rounded-xl border border-slate-700/60 bg-slate-950/50 px-4 py-3 text-sm text-slate-200">
+          <p className="alert alert-info">
             {sendMessage}
-          </div>
+          </p>
         ) : null}
-      </div>
+      </PageHeader>
 
       {/* KPI Performance Indicators */}
-      <div>
-        <SectionHeading>Asosiy ko'rsatkichlar (KPI)</SectionHeading>
-        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
+      <section className="space-y-3">
+        <h2 className="section-title">Asosiy ko'rsatkichlar (KPI)</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <MetricCard
             title="Konversiya"
             value={formatPercent(m.conversionRate, 1)}
             subtitle={`Yangi lidlar: ${m.newLeadsInRange ?? 0} -> Sotuvlar: ${salesCount}`}
             badge={getConversionBadge(m.conversionRate)}
+            icon={IconTargetArrow}
           />
           <MetricCard
             title="O'rtacha sotuv"
             value={formatSomRounded(m.averageAgreementAmount ?? m.averageDealAmount)}
             subtitle="Bir sotuvga o'rtacha kelishuv"
+            icon={IconCoin}
           />
           <MetricCard
             title="Follow-up bajarish"
             value={followUpRate !== null ? `${followUpRate.toFixed(0)}%` : '-'}
             subtitle={`${m.followUpCount ?? 0} bajarildi / ${m.overdueFollowUpCount ?? 0} kechikdi`}
             badge={followUpRate !== null ? getFollowUpBadge(m.followUpCount ?? 0, m.overdueFollowUpCount ?? 0) : undefined}
+            icon={IconChecklist}
           />
           <MetricCard
             title="Kunlik suhbat vaqti"
             value={formatDurationReadable(m.averageDailyCallDuration)}
             subtitle={`Kunlik o'rtacha ${m.averageDailyCalls ?? 0} qo'ng'iroq`}
             badge={getDailyTalkBadge(m.averageDailyCallDuration, (m.totalCalls ?? 0) > 0)}
+            icon={IconClockHour4}
           />
           <MetricCard
             title="Lid javob vaqti"
             value={formatResponseTime(m.leadResponseTime?.avgResponseSeconds ?? 0)}
             subtitle={`Median: ${formatResponseTime(m.leadResponseTime?.medianResponseSeconds ?? 0)} | ${m.leadResponseTime?.respondedCount ?? 0}/${m.leadResponseTime?.totalCount ?? 0} lid`}
             badge={getResponseTimeBadge(m.leadResponseTime?.avgResponseSeconds ?? 0)}
+            icon={IconMessageCircle}
           />
         </div>
-      </div>
+      </section>
 
-      {/* Sales Breakdown */}
-      <div>
-        <SectionHeading>Sotuv ko'rsatkichlari</SectionHeading>
-        <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {/* Sales Breakdown */}
+        <SectionPanel title="Sotuv ko'rsatkichlari" icon={IconChartBar}>
+          <MetricRow
             title="Sotuv shartnomasi"
             value={salesCount}
             subtitle={`Kelishuv - ${formatSomRounded(m.newSalesAgreementAmount)}`}
             extra={`Tushum - ${formatSomRounded(m.incomeAmount)}`}
           />
-          <MetricCard
+          <MetricRow
             title="Sotuv - Onlayn"
             value={m.onlineSalesCount ?? 0}
             subtitle={`Kelishuv - ${formatSomRounded(m.onlineSalesAgreementAmount)}`}
             extra={`Tushum - ${formatSomRounded(m.onlineSalesIncomeAmount)}`}
           />
-          <MetricCard
+          <MetricRow
             title="Sotuv - Oflayn"
             value={m.offlineSalesCount ?? 0}
             subtitle={`Kelishuv - ${formatSomRounded(m.offlineSalesAgreementAmount)}`}
             extra={`Tushum - ${formatSomRounded(m.offlineSalesIncomeAmount)}`}
           />
-          <MetricCard
+          <MetricRow
             title="Sotuv - Intensiv"
             value={m.intensiveSalesCount ?? 0}
             subtitle={`Kelishuv - ${formatSomRounded(m.intensiveSalesAgreementAmount)}`}
             extra={`Tushum - ${formatSomRounded(m.intensiveSalesIncomeAmount)}`}
           />
-        </div>
-      </div>
+        </SectionPanel>
 
-      {/* Calls & Activity */}
-      <div>
-        <SectionHeading>Qo'ng'iroqlar va faollik</SectionHeading>
-        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <MetricCard
+        {/* Calls & Activity */}
+        <SectionPanel title="Qo'ng'iroqlar va faollik" icon={IconPhone}>
+          <MetricRow
             title="Jami qo'ng'iroqlar"
             value={m.totalCalls ?? 0}
             subtitle={`Davomiylik - ${formatDurationClock(m.totalCallDuration)}`}
           />
-          <MetricCard
+          <MetricRow
             title="Chiquvchi qo'ng'iroqlar"
             value={`${m.outboundCalls ?? 0} (${outboundRate !== null ? outboundRate.toFixed(0) + '%' : '-'})`}
             subtitle="Proaktiv qo'ng'iroqlar"
             badge={outboundRate !== null ? getOutboundBadge(m.outboundCalls ?? 0, m.totalCalls ?? 0) : undefined}
           />
-          <MetricCard
+          <MetricRow
             title="Kiruvchi qo'ng'iroqlar"
             value={`${m.inboundCalls ?? 0} (${inboundRate !== null ? inboundRate.toFixed(0) + '%' : '-'})`}
             subtitle="Qabul qilingan qo'ng'iroqlar"
           />
-          <MetricCard
+          <MetricRow
             title="O'tkazib yuborilgan"
             value={`${m.missedCalls ?? 0} (${formatPercent(m.missedCallRate, 1)})`}
             subtitle="Javobsiz qo'ng'iroqlar"
             badge={getMissedCallBadge(m.missedCallRate)}
           />
-          <MetricCard
+          <MetricRow
             title="O'rtacha davomiylik"
             value={formatDurationClock(m.averageCallDuration)}
             subtitle="Har bir qo'ng'iroq uchun"
           />
-        </div>
-      </div>
+        </SectionPanel>
 
-      {/* CRM Activity */}
-      <div>
-        <SectionHeading>CRM faoliyat</SectionHeading>
-        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <MetricCard title="Bajarilgan follow-up" value={m.followUpCount ?? 0} subtitle="Yakunlangan vazifalar" />
-          <MetricCard title="Bugungi follow-up" value={m.todayFollowUpCount ?? 0} subtitle="Bugun uchun vazifalar" />
-          <MetricCard
+        {/* CRM Activity */}
+        <SectionPanel title="CRM faoliyat" icon={IconCalendarTime}>
+          <MetricRow title="Bajarilgan follow-up" value={m.followUpCount ?? 0} subtitle="Yakunlangan vazifalar" />
+          <MetricRow title="Bugungi follow-up" value={m.todayFollowUpCount ?? 0} subtitle="Bugun uchun vazifalar" />
+          <MetricRow
             title="Muddati o'tgan"
             value={m.overdueFollowUpCount ?? 0}
             subtitle="Kechikkan follow-up lar"
             badge={(m.overdueFollowUpCount ?? 0) > 5 ? 'critical' : (m.overdueFollowUpCount ?? 0) > 0 ? 'warning' : 'good'}
           />
-          <MetricCard title="Yozuvlar" value={m.noteCount ?? 0} subtitle="CRM izohlari" />
-          <MetricCard title="Bosqich o'zgarishi" value={m.stageChangeCount ?? 0} subtitle="Bosqich almashuvlari" />
-        </div>
-      </div>
+          <MetricRow title="Yozuvlar" value={m.noteCount ?? 0} subtitle="CRM izohlari" />
+          <MetricRow title="Bosqich o'zgarishi" value={m.stageChangeCount ?? 0} subtitle="Bosqich almashuvlari" />
+        </SectionPanel>
 
-      {/* Lead Metrics */}
-      <div>
-        <SectionHeading>Lid ko'rsatkichlari</SectionHeading>
-        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <MetricCard title="Faol lidlar" value={m.activeLeads ?? 0} subtitle="Hozirgi faol lidlar" />
-          <MetricCard title="Yangi lidlar" value={m.newLeadsInRange ?? 0} subtitle="Filtr davridagi yangi lidlar" />
-          <MetricCard title="Yutilgan lidlar" value={m.wonLeads ?? 0} subtitle="Muvaffaqiyatli sotuvlar" />
-          <MetricCard title="Yo'qotilgan lidlar" value={m.lostLeads ?? 0} subtitle="Yo'qotilgan imkoniyatlar" />
-          <MetricCard
+        {/* Lead Metrics */}
+        <SectionPanel title="Lid ko'rsatkichlari" icon={IconUserSearch}>
+          <MetricRow title="Faol lidlar" value={m.activeLeads ?? 0} subtitle="Hozirgi faol lidlar" />
+          <MetricRow title="Yangi lidlar" value={m.newLeadsInRange ?? 0} subtitle="Filtr davridagi yangi lidlar" />
+          <MetricRow title="Yutilgan lidlar" value={m.wonLeads ?? 0} subtitle="Muvaffaqiyatli sotuvlar" />
+          <MetricRow title="Yo'qotilgan lidlar" value={m.lostLeads ?? 0} subtitle="Yo'qotilgan imkoniyatlar" />
+          <MetricRow
             title="Konversiya"
             value={formatPercent(m.conversionRate, 1)}
             subtitle={`Yangi lidlar: ${m.newLeadsInRange ?? 0} -> Sotuvlar: ${salesCount}`}
             badge={getConversionBadge(m.conversionRate)}
           />
-        </div>
+        </SectionPanel>
       </div>
 
       {/* Financial KPIs */}
-      <div>
-        <SectionHeading>Moliyaviy ko'rsatkichlar</SectionHeading>
-        <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <section className="space-y-3">
+        <h2 className="flex items-center gap-2 section-title">
+          <IconWallet className="h-[18px] w-[18px] text-gray-400" stroke={1.6} />
+          Moliyaviy ko'rsatkichlar
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             title="Qarz yig'ish darajasi"
             value={formatPercent(m.debtCollectionRate, 1)}
             subtitle={`${formatSomRounded(m.totalPaidAmount)} / ${formatSomRounded(m.totalAgreementAmount)}`}
             badge={getDebtCollectionBadge(m.debtCollectionRate)}
+            icon={IconWallet}
           />
           <MetricCard
             title="Qaytarish darajasi"
             value={formatPercent(m.refundRate, 1)}
             subtitle={`${m.refundCount ?? 0} ta qaytarish / ${salesCount} sotuv`}
             badge={getRefundBadge(m.refundRate)}
+            icon={IconPercentage}
           />
           <MetricCard
             title="To'lov muddati"
             value={formatPercent(m.deadlineAdherenceRate, 1)}
             subtitle={`${m.deadlineMet ?? 0} / ${m.deadlineTotal ?? 0} o'z vaqtida`}
             badge={getDeadlineBadge(m.deadlineAdherenceRate)}
+            icon={IconCalendarTime}
           />
           <MetricCard
             title="Yangi vs Qayta mijozlar"
             value={`${m.newCustomers ?? 0} / ${m.repeatCustomers ?? 0}`}
             subtitle={`Yangi mijoz: ${formatPercent(m.newCustomerRate, 1)}`}
+            icon={IconUserSearch}
           />
         </div>
-      </div>
+      </section>
     </div>
   );
 }

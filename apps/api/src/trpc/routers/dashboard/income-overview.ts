@@ -10,14 +10,44 @@ import { loadSelectedReportCourses, type SelectedCourseCategory } from './select
 
 type IncomeSplit = { online: number; offline: number };
 
-async function sumIncomeSplit(params: {
+type IncomeRowQuery = {
   tenantId: string;
   rangeStart: Date;
   rangeEnd: Date;
   managerUserId: string | null;
   technicalSaleIds: Set<string>;
   db: DbClient;
-}): Promise<IncomeSplit> {
+};
+
+export type CountedIncomeRow = {
+  entryDate: Date;
+  amount: number;
+  category: ReturnType<typeof classifyCourseCategoryFromField>;
+};
+
+/** Ids of technical sales, whose payments the dashboard income figures leave out. */
+export async function loadTechnicalSaleIds(tenantId: string, managerUserId: string | null, db: DbClient): Promise<Set<string>> {
+  const technicalSales = await db.income.findMany({
+    where: {
+      tenantId,
+      type: 'new_sale',
+      lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+      ...(managerUserId ? { managerUserId } : {}),
+    },
+    select: {
+      id: true,
+      type: true,
+      coursePriceAmount: true,
+      debtAmount: true,
+      paymentAmount: true,
+    },
+  });
+
+  return buildTechnicalSaleIdSet(technicalSales);
+}
+
+/** Active income rows of a period with their amount and course category, technical sales excluded. */
+export async function loadCountedIncomeRows(params: IncomeRowQuery): Promise<CountedIncomeRow[]> {
   const { db } = params;
 
   const rows = await db.income.findMany({
@@ -32,6 +62,7 @@ async function sumIncomeSplit(params: {
     },
     select: {
       id: true,
+      entryDate: true,
       type: true,
       relatedDebtIncomeId: true,
       paymentAmount: true,
@@ -54,7 +85,7 @@ async function sumIncomeSplit(params: {
     },
   });
 
-  const split: IncomeSplit = { online: 0, offline: 0 };
+  const counted: CountedIncomeRow[] = [];
 
   for (const row of rows) {
     if (isRowLinkedToTechnicalSale({
@@ -69,12 +100,21 @@ async function sumIncomeSplit(params: {
     const category = course?.category
       ? classifyCourseCategoryFromField(course.category)
       : classifyCourseCategoryFromField(course?.name);
-    const amount = row.paymentAmount ?? 0;
 
-    if (category === 'online') {
-      split.online += amount;
-    } else if (category === 'offline') {
-      split.offline += amount;
+    counted.push({ entryDate: row.entryDate, amount: row.paymentAmount ?? 0, category });
+  }
+
+  return counted;
+}
+
+async function sumIncomeSplit(params: IncomeRowQuery): Promise<IncomeSplit> {
+  const split: IncomeSplit = { online: 0, offline: 0 };
+
+  for (const row of await loadCountedIncomeRows(params)) {
+    if (row.category === 'online') {
+      split.online += row.amount;
+    } else if (row.category === 'offline') {
+      split.offline += row.amount;
     }
   }
 
@@ -97,22 +137,7 @@ export const incomeOverviewProcedures = {
     const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
     const managerUserId = scope.isScoped ? ctx.user.userId : null;
 
-    const technicalSales = await ctx.db.income.findMany({
-      where: {
-        tenantId: ctx.tenantId,
-        type: 'new_sale',
-        lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-        ...(managerUserId ? { managerUserId } : {}),
-      },
-      select: {
-        id: true,
-        type: true,
-        coursePriceAmount: true,
-        debtAmount: true,
-        paymentAmount: true,
-      },
-    });
-    const technicalSaleIds = buildTechnicalSaleIdSet(technicalSales);
+    const technicalSaleIds = await loadTechnicalSaleIds(ctx.tenantId, managerUserId, ctx.db);
 
     const [daily, weekly, monthly] = await Promise.all([
       sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('today', now), rangeEnd: now, managerUserId, technicalSaleIds, db: ctx.db }),

@@ -3,9 +3,10 @@ import { formatSomUz } from '@/lib/format';
 /** A labelled KPI tile on a light card (analytics charts). */
 export function KpiCard({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
-      <p className={`mt-2 text-xl font-semibold ${accent ? 'text-blue-700' : 'text-gray-900'}`}>{value}</p>
+    <div className="panel relative overflow-hidden p-4 sm:p-5">
+      {accent ? <span aria-hidden="true" className="absolute inset-y-4 left-0 w-[3px] rounded-r-full bg-blue-600" /> : null}
+      <p className="text-[13px] font-medium text-gray-500">{label}</p>
+      <p className={`tabular mt-1.5 break-words text-2xl font-semibold leading-tight tracking-tight ${accent ? 'text-blue-700' : 'text-gray-900'}`}>{value}</p>
     </div>
   );
 }

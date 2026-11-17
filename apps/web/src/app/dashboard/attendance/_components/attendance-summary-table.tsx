@@ -1,73 +1,98 @@
 'use client';
 
+import { IconClockCheck, IconClockExclamation, IconClockHour4, IconUserCheck } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { EmptyState } from '@/components/ui/empty-state';
+import { StatTile } from '@/components/ui/stat-tile';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { formatDateTime, UZ_TASHKENT_DATE_TIME } from '@/lib/format';
-import { formatSeconds, formatSecondsOrDash, getPresenceLabel } from './attendance-helpers';
+import { formatSeconds, formatSecondsOrDash, getPresenceLabel, hasInPresence } from './attendance-helpers';
 import type { AttendancePageModel } from './use-attendance-page';
 
-export function AttendanceSummaryTable({ vm }: { vm: AttendancePageModel }) {
-  const { displayRows, presentCount, summariesQuery, totals } = vm;
+/** Period totals as a stat row. */
+export function AttendanceStats({ vm }: { vm: AttendancePageModel }) {
+  const { presentCount, totals } = vm;
 
   return (
-    <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-700">
-          <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Ishlangan vaqt</p>
-          <p className="text-base font-semibold text-gray-900 dark:text-slate-100">{formatSeconds(totals.workedSeconds)}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-700">
-          <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Talab vaqt</p>
-          <p className="text-base font-semibold text-gray-900 dark:text-slate-100">{formatSeconds(totals.requiredSeconds)}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-700">
-          <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Yetishmaydi</p>
-          <p className="text-base font-semibold text-gray-900 dark:text-slate-100">{formatSeconds(totals.missingSeconds)}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-700">
-          <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Kelganlar soni</p>
-          <p className="text-base font-semibold text-gray-900 dark:text-slate-100">{presentCount}</p>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <StatTile label="Ishlangan vaqt" value={formatSeconds(totals.workedSeconds)} icon={IconClockCheck} tone="blue" />
+      <StatTile label="Talab vaqt" value={formatSeconds(totals.requiredSeconds)} icon={IconClockHour4} tone="neutral" />
+      <StatTile
+        label="Yetishmaydi"
+        value={formatSeconds(totals.missingSeconds)}
+        icon={IconClockExclamation}
+        tone={totals.missingSeconds > 0 ? 'amber' : 'green'}
+      />
+      <StatTile label="Kelganlar soni" value={presentCount} icon={IconUserCheck} tone="green" />
+    </div>
+  );
+}
+
+export function AttendanceSummaryTable({ vm }: { vm: AttendancePageModel }) {
+  const { displayRows, summariesQuery } = vm;
+
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div className="flex items-center gap-2">
+          <h2 className="section-title">Kunlik davomat</h2>
+          {displayRows.length > 0 && <span className="badge badge-neutral tabular">{displayRows.length}</span>}
         </div>
       </div>
-
-      <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-slate-700">
-        <div className="max-h-[420px] overflow-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
-            <thead className="bg-gray-50 dark:bg-slate-800">
+      <div className="p-2 sm:p-3">
+        <div className="max-h-[520px] overflow-auto">
+          <table className="data-table">
+            <thead className="sticky top-0 z-[1]">
               <tr>
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Sana</th>
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Xodim</th>
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Ishlangan</th>
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Yetishmaydi</th>
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Kechikish</th>
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">IN</th>
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">OUT</th>
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">Davomat</th>
+                <th className="text-left">Sana</th>
+                <th className="text-left">Xodim</th>
+                <th className="text-right">Ishlangan</th>
+                <th className="text-right">Yetishmaydi</th>
+                <th className="text-right">Kechikish</th>
+                <th className="text-left">IN</th>
+                <th className="text-left">OUT</th>
+                <th className="text-left">Davomat</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
-              {displayRows.map((row: any) => (
-                <tr key={row.id}>
-                  <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.summaryDate}</td>
-                  <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{row.user?.name || row.user?.username || row.userId}</td>
-                  <td className="px-3 py-2 text-sm font-medium text-gray-900 dark:text-slate-100">{formatSecondsOrDash(row.workedSeconds)}</td>
-                  <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatSecondsOrDash(row.missingSeconds)}</td>
-                  <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{typeof row.lateMinutes === 'number' ? `${row.lateMinutes} daq` : '-'}</td>
-                  <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.firstInAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}</td>
-                  <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{formatDateTime(row.lastOutAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}</td>
-                  <td className="px-3 py-2 text-sm text-gray-700 dark:text-slate-300">{getPresenceLabel(row)}</td>
-                </tr>
-              ))}
+            <tbody>
+              {displayRows.map((row: any) => {
+                const employeeName = row.user?.name || row.user?.username || row.userId;
+                const isLate = typeof row.lateMinutes === 'number' && row.lateMinutes > 0;
+                return (
+                  <tr key={row.id}>
+                    <td className="tabular whitespace-nowrap text-gray-600">{row.summaryDate}</td>
+                    <td className="whitespace-nowrap">
+                      <div className="flex items-center gap-2.5">
+                        <UserAvatar name={String(employeeName || '?')} size="sm" />
+                        <span className="font-medium text-gray-900">{employeeName}</span>
+                      </div>
+                    </td>
+                    <td className="tabular whitespace-nowrap text-right font-medium text-gray-900">{formatSecondsOrDash(row.workedSeconds)}</td>
+                    <td className="tabular whitespace-nowrap text-right">{formatSecondsOrDash(row.missingSeconds)}</td>
+                    <td className="tabular whitespace-nowrap text-right">
+                      <span className={isLate ? 'font-medium text-amber-700' : ''}>
+                        {typeof row.lateMinutes === 'number' ? `${row.lateMinutes} daq` : '-'}
+                      </span>
+                    </td>
+                    <td className="tabular whitespace-nowrap text-gray-600">{formatDateTime(row.firstInAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}</td>
+                    <td className="tabular whitespace-nowrap text-gray-600">{formatDateTime(row.lastOutAt, { ...UZ_TASHKENT_DATE_TIME, emptyText: '-' })}</td>
+                    <td className="whitespace-nowrap">
+                      <span className={`badge ${hasInPresence(row) ? 'badge-green' : 'badge-red'}`}>{getPresenceLabel(row)}</span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
         {summariesQuery.isLoading ? (
-          <LoadingBlock compact message="Yuklanmoqda..." />
+          <LoadingBlock compact message="Yuklanmoqda..." className="m-1" />
         ) : summariesQuery.error ? (
-          <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{summariesQuery.error.message}</p>
+          <p className="alert alert-error m-1">{summariesQuery.error.message}</p>
         ) : displayRows.length === 0 ? (
-          <p className="px-3 py-3 text-sm text-gray-500 dark:text-slate-400">Bu filtr uchun davomat yo&apos;q.</p>
+          <EmptyState title="Bu filtr uchun davomat yo'q." icon={IconUserCheck} className="m-1" />
         ) : null}
       </div>
-    </>
+    </section>
   );
 }

@@ -4,7 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/auth-context';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { roleNeedsManagerMapping } from '@dashboarduz/shared';
+import { IconKey, IconRefresh, IconUserCheck, IconUserOff, IconUserPlus, IconUsers } from '@tabler/icons-react';
 
 const availableRoles = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'OfflineDashboard', 'Finance', 'Tashkiliy'] as const;
 const roleLabels: Record<(typeof availableRoles)[number], string> = {
@@ -223,65 +227,80 @@ export default function UsersPage() {
     }
   };
 
+  const users = (usersQuery.data || []) as any[];
+
   return (
     <div className="space-y-6">
-      <div className="rounded-lg bg-white shadow">
-        <div className="flex flex-col gap-3 border-b border-gray-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Foydalanuvchilar</h1>
-            <p className="mt-1 text-sm text-gray-500">Foydalanuvchi yarating, agentni AmoCRM/UTeL menejeriga bog'lang va login/parolni boshqaring.</p>
-          </div>
+      <PageHeader
+        title="Foydalanuvchilar"
+        description="Foydalanuvchi yarating, agentni AmoCRM/UTeL menejeriga bog'lang va login/parolni boshqaring."
+        actions={
           <button
             type="button"
             onClick={() => telegramRecipientsQuery.refetch()}
             disabled={telegramRecipientsQuery.isFetching}
-            className="shrink-0 rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn btn-secondary"
           >
+            <IconRefresh className={`h-4 w-4 ${telegramRecipientsQuery.isFetching ? 'animate-spin' : ''}`} stroke={1.8} />
             {telegramRecipientsQuery.isFetching ? 'Yangilanmoqda...' : "Telegram ro'yxatini yangilash"}
           </button>
-        </div>
+        }
+      />
 
-        <div className="space-y-4 p-6">
-          {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-          {success && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
+      {(error || success || amocrmManagersQuery.error || utelManagersQuery.error || telegramRecipientsQuery.error || createdCredentials) && (
+        <div className="space-y-3">
+          {error && <p className="alert alert-error">{error}</p>}
+          {success && <p className="alert alert-success">{success}</p>}
           {amocrmManagersQuery.error && (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            <p className="alert alert-warning">
               AmoCRM menejerlari topilmadi. Agentlarni bog'lash uchun AmoCRM integratsiyasini ulang.
             </p>
           )}
           {utelManagersQuery.error && (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            <p className="alert alert-warning">
               UTeL menejerlari topilmadi. Ro'yxat uchun UTeL qo'ng'iroqlari kelishi kerak.
             </p>
           )}
           {telegramRecipientsQuery.error && (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            <p className="alert alert-warning">
               Telegram bot foydalanuvchilari topilmadi. Integratsiyalar bo'limida botni ulang va /start yuboring.
             </p>
           )}
           {createdCredentials && (
-            <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
+            <p className="alert alert-success">
               Foydalanuvchi yaratildi. Login: <strong>{createdCredentials.login}</strong>, Parol: <strong>{createdCredentials.password}</strong>
             </p>
           )}
+        </div>
+      )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
+      <div className="grid grid-cols-1 items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="panel 2xl:sticky 2xl:top-6 2xl:order-2">
+          <div className="panel-header">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
+                <IconUserPlus className="h-[18px] w-[18px]" stroke={1.8} />
+              </span>
+              <h2 className="section-title">Yangi foydalanuvchi</h2>
+            </div>
+          </div>
+          <div className="panel-body grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-1">
             <input
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
               placeholder="Foydalanuvchi ismi (ixtiyoriy)"
-              className="min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="field min-w-0"
             />
             <input
               value={newPhone}
               onChange={(event) => setNewPhone(event.target.value)}
               placeholder="Telefon raqam (ixtiyoriy)"
-              className="min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="field min-w-0"
             />
             <select
               value={newRole}
               onChange={(event) => setNewRole(event.target.value as UserRole)}
-              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="field min-w-0"
             >
               {availableRoles.map((role) => (
                 <option key={role} value={role}>
@@ -293,7 +312,7 @@ export default function UsersPage() {
               value={newAmoManagerId}
               onChange={(event) => setNewAmoManagerId(event.target.value)}
               disabled={!roleNeedsManagerMapping(newRole)}
-              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+              className="field min-w-0"
             >
               <option value="">{roleNeedsManagerMapping(newRole) ? 'AmoCRM menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
               {amocrmManagers.map((manager: any) => (
@@ -306,7 +325,7 @@ export default function UsersPage() {
               value={newUtelManagerId}
               onChange={(event) => setNewUtelManagerId(event.target.value)}
               disabled={!roleNeedsManagerMapping(newRole)}
-              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+              className="field min-w-0"
             >
               <option value="">{roleNeedsManagerMapping(newRole) ? 'UTeL menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
               {utelManagers.map((manager: any) => (
@@ -318,7 +337,7 @@ export default function UsersPage() {
             <select
               value={newTelegramChatId}
               onChange={(event) => setNewTelegramChatId(event.target.value)}
-              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="field min-w-0"
             >
               <option value="">Telegram (ixtiyoriy)</option>
               {telegramRecipients.map((recipient: any) => (
@@ -327,204 +346,75 @@ export default function UsersPage() {
                 </option>
               ))}
             </select>
+          </div>
+          <div className="flex justify-end border-t border-gray-100 px-5 py-4 sm:px-6">
             <button
               type="button"
               onClick={handleCreateUser}
               disabled={createUser.isLoading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 xl:whitespace-nowrap"
+              className="btn btn-primary w-full sm:w-auto 2xl:w-full"
             >
+              <IconUserPlus className="h-4 w-4" stroke={1.8} />
               {createUser.isLoading ? 'Yaratilmoqda...' : "Foydalanuvchi qo'shish"}
             </button>
           </div>
-        </div>
-      </div>
+        </section>
 
-      <div className="rounded-lg bg-white shadow">
-        <div className="border-b border-gray-100 px-6 py-5">
-          <h2 className="text-lg font-medium text-gray-900">Ish maydoni foydalanuvchilari</h2>
-        </div>
+        <section className="panel min-w-0 2xl:order-1">
+          <div className="panel-header">
+            <div className="flex items-center gap-2">
+              <h2 className="section-title">Ish maydoni foydalanuvchilari</h2>
+              {users.length > 0 && <span className="badge badge-neutral tabular">{users.length}</span>}
+            </div>
+          </div>
 
-        <div className="p-6">
-          {usersQuery.isLoading ? (
-            <LoadingBlock message="Foydalanuvchilar yuklanmoqda..." />
-          ) : usersQuery.data?.length ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Foydalanuvchi</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Rol + CRM/UTeL/Telegram</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Login/Parol</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Holat</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Oxirgi kirish</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {(usersQuery.data as any[]).map((user) => {
-                    const resetState = generatedResetPassword;
-                    const generatedPasswordForRow =
-                      resetState && resetState.userId === user.id ? resetState.password : null;
+          <div className="p-2 pt-3 sm:p-3 sm:pt-4">
+            {usersQuery.isLoading ? (
+              <LoadingBlock message="Foydalanuvchilar yuklanmoqda..." className="m-2" />
+            ) : users.length ? (
+              <ul className="divide-y divide-gray-100">
+                {users.map((user) => {
+                  const resetState = generatedResetPassword;
+                  const generatedPasswordForRow =
+                    resetState && resetState.userId === user.id ? resetState.password : null;
+                  const userRoles: string[] = Array.isArray(user.roles) ? user.roles : [];
 
-                    return (
-                    <tr key={user.id}>
-                      <td className="px-4 py-3 text-sm text-gray-800">
-                        <div className="space-y-2">
-                          <input
-                            value={nameDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setNameDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Foydalanuvchi ismi"
-                            className="w-full min-w-[220px] rounded-md border border-gray-300 px-2 py-1 text-sm"
-                          />
-                          <input
-                            value={phoneDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setPhoneDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Telefon raqam"
-                            className="w-full min-w-[220px] rounded-md border border-gray-300 px-2 py-1 text-sm"
-                          />
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs text-gray-500">ID: {user.id}</div>
-                            <button
-                              type="button"
-                              onClick={() => handleNameSave(user.id)}
-                              disabled={updateName.isLoading}
-                              className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                            >
-                              {updateName.isLoading ? 'Saqlanmoqda...' : "Ism/telefonni saqlash"}
-                            </button>
+                  return (
+                    <li key={user.id} className="space-y-4 px-3 py-5 first:pt-2">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <UserAvatar name={user.name || user.username || '?'} />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate font-medium text-gray-900">{user.name || user.username || user.id}</p>
+                              {userRoles.map((role) => (
+                                <span key={role} className="badge badge-blue">{roleLabels[role as UserRole] || role}</span>
+                              ))}
+                            </div>
+                            <p className="mt-0.5 truncate text-xs text-gray-500">ID: {user.id}</p>
                           </div>
                         </div>
-                      </td>
-                      <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
-                        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-[130px_1fr_1fr_1fr_auto]">
-                          <select
-                            value={roleDrafts[user.id] || 'Agent'}
-                            onChange={(event) =>
-                              setRoleDrafts((prev) => ({ ...prev, [user.id]: event.target.value as UserRole }))
-                            }
-                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
-                          >
-                            {availableRoles.map((role) => (
-                              <option key={role} value={role}>
-                                {roleLabels[role]}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            value={managerDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setManagerDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            disabled={!roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')}
-                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
-                          >
-                            <option value="">
-                              {roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')
-                                ? 'AmoCRM menejerini tanlang'
-                                : 'Bu rol uchun shart emas'}
-                            </option>
-                            {amocrmManagers.map((manager: any) => (
-                              <option key={manager.id} value={manager.id}>
-                                {manager.name}
-                              </option>
-                              ))}
-                            </select>
-                          <select
-                            value={utelDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setUtelDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            disabled={!roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')}
-                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
-                          >
-                            <option value="">
-                              {roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')
-                                ? 'UTeL menejerini tanlang'
-                                : 'Bu rol uchun shart emas'}
-                            </option>
-                            {utelManagers.map((manager: any) => (
-                              <option key={manager.id} value={manager.id}>
-                                {manager.name}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            value={telegramDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setTelegramDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
-                          >
-                            <option value="">Telegram (ixtiyoriy)</option>
-                            {telegramRecipients.map((recipient: any) => (
-                              <option key={recipient.id} value={recipient.id}>
-                                {recipient.name}{recipient.username ? ` (@${recipient.username})` : ''}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => handleRoleSave(user.id)}
-                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Saqlash
-                          </button>
-                        </div>
-                      </td>
-                      <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto_auto]">
-                          <input
-                            value={loginDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setLoginDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Login"
-                            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                          />
-                          <input
-                            type="password"
-                            value={passwordDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setPasswordDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            placeholder="Yangi parol"
-                            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleCredentialsSave(user.id)}
-                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Saqlash
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleGeneratePassword(user.id)}
-                            className="rounded-md bg-blue-50 px-3 py-1 text-sm text-blue-700 hover:bg-blue-100"
-                          >
-                            Yaratish
-                          </button>
-                        </div>
-                        {generatedPasswordForRow && (
-                          <p className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">
-                            Yangi yaratilgan parol: <strong>{generatedPasswordForRow}</strong>
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">
-                        <div className="flex flex-col gap-2">
-                          <span className={`inline-flex w-fit rounded-full px-2 py-1 text-xs font-medium ${user.isActive ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {user.isActive ? 'Faol' : 'Nofaol'}
-                          </span>
+
+                        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                          <div>
+                            <p className="text-xs text-gray-500">Oxirgi kirish</p>
+                            <p className="tabular mt-0.5 text-sm text-gray-700">
+                              {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Hech qachon'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Holat</p>
+                            <span className={`badge mt-0.5 ${user.isActive ? 'badge-green' : 'badge-amber'}`}>
+                              {user.isActive ? 'Faol' : 'Nofaol'}
+                            </span>
+                          </div>
                           <button
                             type="button"
                             onClick={() => handleToggleActive(user.id, !user.isActive)}
                             disabled={!isAdmin || setActiveMutation.isLoading}
-                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            className={`btn btn-sm ${user.isActive ? 'btn-secondary' : 'btn-soft'}`}
                           >
+                            {user.isActive ? <IconUserOff className="h-4 w-4" stroke={1.8} /> : <IconUserCheck className="h-4 w-4" stroke={1.8} />}
                             {!isAdmin
                               ? "Faqat admin"
                               : setActiveMutation.isLoading
@@ -534,20 +424,169 @@ export default function UsersPage() {
                                 : 'Faollashtirish'}
                           </button>
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Hech qachon'}
-                      </td>
-                    </tr>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                        <div className="panel-inset space-y-2.5">
+                          <p className="text-xs font-medium text-gray-500">Foydalanuvchi</p>
+                          <input
+                            value={nameDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setNameDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            placeholder="Foydalanuvchi ismi"
+                            className="field"
+                          />
+                          <input
+                            value={phoneDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setPhoneDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            placeholder="Telefon raqam"
+                            className="field"
+                          />
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleNameSave(user.id)}
+                              disabled={updateName.isLoading}
+                              className="btn btn-secondary btn-sm"
+                            >
+                              {updateName.isLoading ? 'Saqlanmoqda...' : "Ism/telefonni saqlash"}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="panel-inset space-y-2.5">
+                          <p className="text-xs font-medium text-gray-500">Login/Parol</p>
+                          <input
+                            value={loginDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setLoginDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            placeholder="Login"
+                            className="field"
+                          />
+                          <input
+                            type="password"
+                            value={passwordDrafts[user.id] || ''}
+                            onChange={(event) =>
+                              setPasswordDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            placeholder="Yangi parol"
+                            className="field"
+                          />
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleGeneratePassword(user.id)}
+                              className="btn btn-soft btn-sm"
+                            >
+                              <IconKey className="h-4 w-4" stroke={1.8} />
+                              Yaratish
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCredentialsSave(user.id)}
+                              className="btn btn-secondary btn-sm"
+                            >
+                              Saqlash
+                            </button>
+                          </div>
+                          {generatedPasswordForRow && (
+                            <p className="alert alert-success px-3 py-2 text-xs">
+                              Yangi yaratilgan parol: <strong>{generatedPasswordForRow}</strong>
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="panel-inset space-y-2.5 lg:col-span-2">
+                          <p className="text-xs font-medium text-gray-500">Rol + CRM/UTeL/Telegram</p>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[150px_1fr_1fr_1fr_auto]">
+                            <select
+                              value={roleDrafts[user.id] || 'Agent'}
+                              onChange={(event) =>
+                                setRoleDrafts((prev) => ({ ...prev, [user.id]: event.target.value as UserRole }))
+                              }
+                              className="field min-w-0"
+                            >
+                              {availableRoles.map((role) => (
+                                <option key={role} value={role}>
+                                  {roleLabels[role]}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={managerDrafts[user.id] || ''}
+                              onChange={(event) =>
+                                setManagerDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                              }
+                              disabled={!roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')}
+                              className="field min-w-0"
+                            >
+                              <option value="">
+                                {roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')
+                                  ? 'AmoCRM menejerini tanlang'
+                                  : 'Bu rol uchun shart emas'}
+                              </option>
+                              {amocrmManagers.map((manager: any) => (
+                                <option key={manager.id} value={manager.id}>
+                                  {manager.name}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={utelDrafts[user.id] || ''}
+                              onChange={(event) =>
+                                setUtelDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                              }
+                              disabled={!roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')}
+                              className="field min-w-0"
+                            >
+                              <option value="">
+                                {roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')
+                                  ? 'UTeL menejerini tanlang'
+                                  : 'Bu rol uchun shart emas'}
+                              </option>
+                              {utelManagers.map((manager: any) => (
+                                <option key={manager.id} value={manager.id}>
+                                  {manager.name}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={telegramDrafts[user.id] || ''}
+                              onChange={(event) =>
+                                setTelegramDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                              }
+                              className="field min-w-0"
+                            >
+                              <option value="">Telegram (ixtiyoriy)</option>
+                              {telegramRecipients.map((recipient: any) => (
+                                <option key={recipient.id} value={recipient.id}>
+                                  {recipient.name}{recipient.username ? ` (@${recipient.username})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => handleRoleSave(user.id)}
+                              className="btn btn-secondary sm:col-span-2 xl:col-span-1"
+                            >
+                              Saqlash
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
                   );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-600">Bu ish maydonida foydalanuvchi topilmadi.</p>
-          )}
-        </div>
+                })}
+              </ul>
+            ) : (
+              <EmptyState icon={IconUsers} title="Bu ish maydonida foydalanuvchi topilmadi." className="m-2" />
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );

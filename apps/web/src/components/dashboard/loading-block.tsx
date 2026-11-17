@@ -13,13 +13,15 @@ export default function LoadingBlock({
 }: Props) {
   return (
     <div
-      className={`flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 px-4 ${
+      role="status"
+      aria-live="polite"
+      className={`flex items-center justify-center rounded-lg bg-gray-100/70 px-4 ${
         compact ? 'min-h-[56px] py-3' : 'min-h-[96px] py-6'
       } ${className}`.trim()}
     >
-      <div className="flex items-center gap-3 text-sm text-gray-600">
+      <div className="flex items-center gap-2.5 text-sm text-gray-500">
         <span
-          className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"
+          className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"
           aria-hidden="true"
         />
         <span>{message}</span>

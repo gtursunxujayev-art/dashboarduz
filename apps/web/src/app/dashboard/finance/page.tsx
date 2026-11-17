@@ -1,7 +1,12 @@
 'use client';
 
+import { IconAlertTriangle, IconArrowRight, IconBook, IconCalendar, IconCash, IconListDetails, IconMinus, IconReceiptRefund, IconRepeat, IconReportMoney, IconShoppingCart, IconTrendingDown, IconTrendingUp, IconUserDollar, IconUserExclamation, IconUsers } from '@tabler/icons-react';
 import { getIncomeStatusBadge } from '@/components/dashboard/income-status-badge';
 import LoadingBlock from '@/components/dashboard/loading-block';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatTile } from '@/components/ui/stat-tile';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { useAuth } from '@/contexts/auth-context';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import { type ExtendedDashboardRange as DashboardRange, getPreviousMonthRange, getPreviousWeekRange, getTashkentDateShift, getTashkentToday } from '@/lib/date-range';
@@ -11,6 +16,17 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { AGENT_ROLES, formatCompactAmount, getTrendMeta } from './_components/finance-helpers';
+
+const RANGE_OPTIONS: { value: DashboardRange; label: string }[] = [
+  { value: 'today', label: 'Bugun' },
+  { value: 'week', label: 'Hafta' },
+  { value: 'month', label: 'Oy' },
+  { value: 'last_week', label: "O'tgan hafta" },
+  { value: 'last_month', label: "O'tgan oy" },
+  { value: 'custom', label: 'Ixtiyoriy' },
+];
+const CHART_TICK = { fontSize: 11, fill: 'rgb(var(--gray-500))' };
+const CHART_TOOLTIP_STYLE = { borderRadius: 10, border: '1px solid rgb(var(--gray-200))', background: 'rgb(var(--surface))', fontSize: 12 };
 
 export default function FinancePage() {
   const { user } = useAuth();
@@ -139,432 +155,434 @@ export default function FinancePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Moliya</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Kurs, agent va sana bo'yicha tushum hamda qarzdorlik tahlili.
-        </p>
+      <PageHeader
+        title="Moliya"
+        description="Kurs, agent va sana bo'yicha tushum hamda qarzdorlik tahlili."
+      >
         {isAgentOnly && (
-          <p className="mt-2 text-xs font-medium text-blue-700">
+          <p className="alert alert-info">
             Agent rejimi: bu sahifada faqat o'zingizga tegishli moliyaviy ma'lumotlar ko'rsatiladi.
           </p>
         )}
-      </div>
+      </PageHeader>
 
-      <div className="rounded-lg bg-white p-6 shadow">
-        <div className={`grid grid-cols-1 gap-3 ${isAgentOnly ? 'md:grid-cols-[180px_180px_180px_1fr]' : 'md:grid-cols-[180px_180px_180px_1fr_1fr]'}`}>
-          <select
-            value={range}
-            onChange={(event) => setRange(event.target.value as DashboardRange)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="today">Bugun</option>
-            <option value="week">Hafta</option>
-            <option value="month">Oy</option>
-            <option value="last_week">O'tgan hafta</option>
-            <option value="last_month">O'tgan oy</option>
-            <option value="custom">Ixtiyoriy</option>
-          </select>
+      <div className="panel p-3 sm:p-4">
+        <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center">
+          <div className="-mx-1 overflow-x-auto px-1">
+            <div className="segmented" role="group" aria-label="Davr">
+              {RANGE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setRange(option.value)}
+                  aria-pressed={range === option.value}
+                  className={range === option.value ? 'segmented-item segmented-item-active' : 'segmented-item'}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <input
-            type="date"
-            value={range === 'custom' ? dateFrom : effectiveDateRange.dateFrom}
-            disabled={range !== 'custom'}
-            onChange={(event) => setDateFrom(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-          />
-          <input
-            type="date"
-            value={range === 'custom' ? dateTo : effectiveDateRange.dateTo}
-            disabled={range !== 'custom'}
-            onChange={(event) => setDateTo(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-          />
+          <div className={`grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 ${isAgentOnly ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>
+            <div className="relative">
+              <IconCalendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+              <input
+                type="date"
+                value={range === 'custom' ? dateFrom : effectiveDateRange.dateFrom}
+                disabled={range !== 'custom'}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="field pl-9"
+              />
+            </div>
+            <div className="relative">
+              <IconCalendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+              <input
+                type="date"
+                value={range === 'custom' ? dateTo : effectiveDateRange.dateTo}
+                disabled={range !== 'custom'}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="field pl-9"
+              />
+            </div>
 
-          <select
-            value={courseId}
-            onChange={(event) => setCourseId(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">Barcha kurslar</option>
-            {courseOptions.map((course: any) => (
-              <option key={course.id} value={course.id}>
-                {course.name}
-              </option>
-            ))}
-          </select>
-
-          {!isAgentOnly && (
             <select
-              value={managerUserId}
-              onChange={(event) => setManagerUserId(event.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              value={courseId}
+              onChange={(event) => setCourseId(event.target.value)}
+              className="field"
             >
-              <option value="">Barcha agentlar</option>
-              {managerOptions.map((manager: any) => (
-                <option key={manager.id} value={manager.id}>
-                  {manager.label}
-                </option>
+              <option value="">Barcha kurslar</option>
+              {courseOptions.map((course: any) => (
+                <option key={course.id} value={course.id}>{course.name}</option>
               ))}
             </select>
-          )}
+
+            {!isAgentOnly && (
+              <select
+                value={managerUserId}
+                onChange={(event) => setManagerUserId(event.target.value)}
+                className="field"
+              >
+                <option value="">Barcha agentlar</option>
+                {managerOptions.map((manager: any) => (
+                  <option key={manager.id} value={manager.id}>{manager.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
       </div>
 
       {financeQuery.error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           {financeQuery.error.message || 'Moliya ma\'lumotlarini yuklashda xatolik.'}
         </div>
       )}
 
-      <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${canSeeRefundAnalytics ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Jami tushum</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(totals?.totalIncomeAmount)}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Yangi sotuvlar</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{totals?.newSalesCount ?? 0}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Qayta to'lovlar</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{totals?.repaymentCount ?? 0}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Qarzdorlar</p>
-          <p className="mt-2 text-2xl font-semibold text-amber-700">{totals?.debtorsCount ?? 0}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Jami qarzdorlik</p>
-          <p className="mt-2 text-2xl font-semibold text-amber-700">{formatSom(totals?.totalDebtAmount)}</p>
-        </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <StatTile label="Jami tushum" value={formatSom(totals?.totalIncomeAmount)} icon={IconCash} tone="blue" />
+        <StatTile label="Yangi sotuvlar" value={totals?.newSalesCount ?? 0} icon={IconShoppingCart} />
+        <StatTile label="Qayta to'lovlar" value={totals?.repaymentCount ?? 0} icon={IconRepeat} />
+        <StatTile label="Qarzdorlar" value={totals?.debtorsCount ?? 0} icon={IconUserExclamation} tone="amber" />
+        <StatTile label="Jami qarzdorlik" value={formatSom(totals?.totalDebtAmount)} icon={IconAlertTriangle} tone="amber" />
         {canSeeRefundAnalytics && (
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">Qaytarilgan tushum</p>
-            <p className="mt-2 text-2xl font-semibold text-red-700">{formatSom(totals?.refundAmount)}</p>
-            <p className="mt-1 text-xs text-gray-500">{totals?.refundCount ?? 0} ta qaytarish</p>
-          </div>
+          <StatTile
+            label="Qaytarilgan tushum"
+            value={formatSom(totals?.refundAmount)}
+            hint={`${totals?.refundCount ?? 0} ta qaytarish`}
+            icon={IconReceiptRefund}
+            tone="red"
+          />
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
-          <p className="text-sm text-blue-700">Hisoblangan maosh</p>
-          <p className="mt-2 text-2xl font-semibold text-blue-900">{formatSom(salaryTotals?.salary)}</p>
-          <p className="mt-1 text-xs text-blue-700">
-            {effectiveDateRange.dateFrom} - {effectiveDateRange.dateTo}
-          </p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Fiks maosh</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(salaryTotals?.fixedSalary)}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Asosiy bonus</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(salaryTotals?.bonus)}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Qo'shimcha bonuslar</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{formatSom(salaryTotals?.planBonus)}</p>
-          <p className="mt-1 text-xs text-gray-500">KPI: {formatSom(salaryTotals?.kpi)}</p>
-        </div>
-      </div>
-
-      <div className="rounded-lg bg-white p-6 shadow">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Agentlar maoshi</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Tanlangan davr bo'yicha umumiy maosh, fiks, KPI, qo'shimcha bonus va asosiy bonus.
-            </p>
-          </div>
-        </div>
-        {salaryQuery.isLoading ? (
-          <LoadingBlock className="mt-3" />
-        ) : salaryByAgent.length ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Umumiy maosh</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Fiks</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">KPI</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qo'shimcha bonus</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Asosiy bonus</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {salaryByAgent.map((row: any) => (
-                  <tr key={row.userId}>
-                    <td className="px-3 py-2 text-sm text-gray-900">{row.name}</td>
-                    <td className="px-3 py-2 text-sm font-semibold text-gray-900">{formatSom(row.totalSalary)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.fixedSalary)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.kpiAmount)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.planBonusAmount)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.bonusAmount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha maosh ma'lumoti topilmadi.</p>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {[
-          {
-            title: "Bu oy (hozirgacha) vs o'tgan oy (shu sana)",
-            data: comparisons?.monthToDateVsLastMonthToDate,
-          },
-          {
-            title: "Bu oy (hozirgacha) vs o'tgan yil shu oy",
-            data: comparisons?.monthToDateVsLastYearSameMonth,
-          },
-          {
-            title: 'YTD: Bu yil vs O‘tgan yil',
-            data: comparisons?.ytdVsLastYearYtd,
-          },
+          { title: "Bu oy (hozirgacha) vs o'tgan oy (shu sana)", data: comparisons?.monthToDateVsLastMonthToDate },
+          { title: "Bu oy (hozirgacha) vs o'tgan yil shu oy", data: comparisons?.monthToDateVsLastYearSameMonth },
+          { title: 'YTD: Bu yil vs O‘tgan yil', data: comparisons?.ytdVsLastYearYtd },
         ].map((item) => {
           const trend = getTrendMeta(item.data?.direction);
+          const TrendIcon = item.data?.direction === 'up' ? IconTrendingUp : item.data?.direction === 'down' ? IconTrendingDown : IconMinus;
           return (
-            <div key={item.title} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-gray-500">{item.title}</p>
-              <div className="mt-3 space-y-1">
-                <p className="text-sm text-gray-600">Joriy: <span className="font-semibold text-gray-900">{formatSom(item.data?.currentValue)}</span></p>
-                <p className="text-sm text-gray-600">Taqqoslash: <span className="font-semibold text-gray-900">{formatSom(item.data?.previousValue)}</span></p>
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${trend.badgeClass}`}>
+            <div key={item.title} className="panel flex flex-col p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-[13px] font-medium text-gray-500">{item.title}</p>
+                <span className={`badge ${trend.badgeClass}`}>
+                  <TrendIcon className="h-3.5 w-3.5" stroke={2} />
                   {trend.label}
                 </span>
-                <span className="text-sm font-semibold text-gray-900">
-                  {trend.sign}{formatSom(item.data?.diffAmount)} ({trend.sign}{Number(item.data?.diffPercent || 0).toFixed(2)}%)
-                </span>
               </div>
+              <div className="mt-3 space-y-1">
+                <p className="text-sm text-gray-600">Joriy: <span className="tabular font-semibold text-gray-900">{formatSom(item.data?.currentValue)}</span></p>
+                <p className="text-sm text-gray-600">Taqqoslash: <span className="tabular font-semibold text-gray-900">{formatSom(item.data?.previousValue)}</span></p>
+              </div>
+              <p className="tabular mt-auto border-t border-gray-100 pt-3 text-sm font-semibold text-gray-900">
+                {trend.sign}{formatSom(item.data?.diffAmount)} ({trend.sign}{Number(item.data?.diffPercent || 0).toFixed(2)}%)
+              </p>
             </div>
           );
         })}
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="rounded-lg bg-white p-6 shadow">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Oy yakuni prognozi</h2>
-              <p className="mt-1 text-sm text-gray-500">
-                Hozirgi kunlik sur&apos;at asosida oy oxiri prognozi.
-              </p>
+        {[
+          {
+            key: 'month',
+            title: 'Oy yakuni prognozi',
+            description: <>Hozirgi kunlik sur&apos;at asosida oy oxiri prognozi.</>,
+            block: forecast?.monthEnd,
+            currentLabel: 'Hozirgacha',
+            data: monthSeries,
+            labelFormatter: (label: any) => `${label}-kun`,
+          },
+          {
+            key: 'year',
+            title: 'Yil yakuni prognozi',
+            description: 'YTD dinamikasi va yil oxirigacha prognoz.',
+            block: forecast?.yearEnd,
+            currentLabel: 'YTD',
+            data: yearSeries,
+            labelFormatter: undefined,
+          },
+        ].map((chart) => (
+          <div key={chart.key} className="panel">
+            <div className="panel-header items-start">
+              <div className="min-w-0">
+                <h2 className="section-title">{chart.title}</h2>
+                <p className="mt-0.5 text-sm text-gray-500">{chart.description}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-gray-500">Prognoz</p>
+                <p className="tabular text-lg font-semibold text-gray-900">{formatSom(chart.block?.projectedTotal)}</p>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-gray-500">Prognoz</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.monthEnd?.projectedTotal)}</p>
+            <div className="panel-body space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="panel-inset px-3 py-2.5">
+                  <p className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <span className="h-2 w-2 rounded-full bg-[#3964f3]" aria-hidden="true" />
+                    {chart.currentLabel}
+                  </p>
+                  <p className="tabular mt-0.5 text-sm font-semibold text-gray-900">{formatSom(chart.block?.currentToDate)}</p>
+                </div>
+                <div className="panel-inset px-3 py-2.5">
+                  <p className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+                    Qolgan potensial
+                  </p>
+                  <p className="tabular mt-0.5 text-sm font-semibold text-gray-900">{formatSom(chart.block?.remainingAmount)}</p>
+                </div>
+              </div>
+
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chart.data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--gray-200))" vertical={false} />
+                    <XAxis dataKey="label" tick={CHART_TICK} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={(value) => formatCompactAmount(value)} tick={CHART_TICK} axisLine={false} tickLine={false} width={64} />
+                    <Tooltip
+                      formatter={(value: any, name: string) => [formatSom(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
+                      labelFormatter={chart.labelFormatter}
+                      contentStyle={CHART_TOOLTIP_STYLE}
+                    />
+                    <Line type="monotone" dataKey="actual" name="actual" stroke="#3964f3" strokeWidth={2.5} dot={false} connectNulls={false} />
+                    <Line type="monotone" dataKey="forecast" name="forecast" stroke="#F59E0B" strokeWidth={2} dot={false} strokeDasharray="6 4" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
+        ))}
+      </div>
 
-          <div className="mb-3 grid grid-cols-2 gap-3">
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs text-gray-500">Hozirgacha</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.monthEnd?.currentToDate)}</p>
-            </div>
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs text-gray-500">Qolgan potensial</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.monthEnd?.remainingAmount)}</p>
-            </div>
-          </div>
-
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={monthSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={(value) => formatCompactAmount(value)} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  formatter={(value: any, name: string) => [formatSom(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
-                  labelFormatter={(label) => `${label}-kun`}
-                />
-                <Line type="monotone" dataKey="actual" name="actual" stroke="#2563EB" strokeWidth={2.5} dot={false} connectNulls={false} />
-                <Line type="monotone" dataKey="forecast" name="forecast" stroke="#F59E0B" strokeWidth={2} dot={false} strokeDasharray="6 4" />
-              </LineChart>
-            </ResponsiveContainer>
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="section-title">Agentlar maoshi</h2>
+            <p className="mt-0.5 text-sm text-gray-500">
+              Tanlangan davr bo'yicha umumiy maosh, fiks, KPI, qo'shimcha bonus va asosiy bonus.
+            </p>
           </div>
         </div>
-
-        <div className="rounded-lg bg-white p-6 shadow">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Yil yakuni prognozi</h2>
-              <p className="mt-1 text-sm text-gray-500">
-                YTD dinamikasi va yil oxirigacha prognoz.
+        <div className="panel-body space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-[12px] bg-blue-50 p-4">
+              <p className="text-[13px] font-medium text-blue-700">Hisoblangan maosh</p>
+              <p className="tabular mt-1 text-xl font-semibold text-blue-900">{formatSom(salaryTotals?.salary)}</p>
+              <p className="tabular mt-1 text-xs text-blue-700">
+                {effectiveDateRange.dateFrom} - {effectiveDateRange.dateTo}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-gray-500">Prognoz</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.yearEnd?.projectedTotal)}</p>
+            <div className="panel-inset">
+              <p className="text-[13px] font-medium text-gray-500">Fiks maosh</p>
+              <p className="tabular mt-1 text-xl font-semibold text-gray-900">{formatSom(salaryTotals?.fixedSalary)}</p>
+            </div>
+            <div className="panel-inset">
+              <p className="text-[13px] font-medium text-gray-500">Asosiy bonus</p>
+              <p className="tabular mt-1 text-xl font-semibold text-gray-900">{formatSom(salaryTotals?.bonus)}</p>
+            </div>
+            <div className="panel-inset">
+              <p className="text-[13px] font-medium text-gray-500">Qo'shimcha bonuslar</p>
+              <p className="tabular mt-1 text-xl font-semibold text-gray-900">{formatSom(salaryTotals?.planBonus)}</p>
+              <p className="tabular mt-1 text-xs text-gray-500">KPI: {formatSom(salaryTotals?.kpi)}</p>
             </div>
           </div>
 
-          <div className="mb-3 grid grid-cols-2 gap-3">
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs text-gray-500">YTD</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.yearEnd?.currentToDate)}</p>
+          {salaryQuery.isLoading ? (
+            <LoadingBlock />
+          ) : salaryByAgent.length ? (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="text-left">Agent</th>
+                    <th className="text-right">Umumiy maosh</th>
+                    <th className="text-right">Fiks</th>
+                    <th className="text-right">KPI</th>
+                    <th className="text-right">Qo'shimcha bonus</th>
+                    <th className="text-right">Asosiy bonus</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {salaryByAgent.map((row: any) => (
+                    <tr key={row.userId}>
+                      <td>
+                        <div className="flex items-center gap-2.5">
+                          <UserAvatar name={row.name || '?'} size="sm" />
+                          <span className="whitespace-nowrap font-medium text-gray-900">{row.name}</span>
+                        </div>
+                      </td>
+                      <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">{formatSom(row.totalSalary)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.fixedSalary)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.kpiAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.planBonusAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(row.bonusAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-xs text-gray-500">Qolgan potensial</p>
-              <p className="text-sm font-semibold text-gray-900">{formatSom(forecast?.yearEnd?.remainingAmount)}</p>
-            </div>
-          </div>
-
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={yearSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={(value) => formatCompactAmount(value)} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  formatter={(value: any, name: string) => [formatSom(Number(value || 0)), name === 'actual' ? 'Amaldagi' : 'Prognoz']}
-                />
-                <Line type="monotone" dataKey="actual" name="actual" stroke="#2563EB" strokeWidth={2.5} dot={false} connectNulls={false} />
-                <Line type="monotone" dataKey="forecast" name="forecast" stroke="#F59E0B" strokeWidth={2} dot={false} strokeDasharray="6 4" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          ) : (
+            <EmptyState icon={IconUserDollar} title="Tanlangan filtr bo'yicha maosh ma'lumoti topilmadi." />
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-lg font-semibold text-gray-900">Kurslar bo'yicha tushum</h2>
-          {financeQuery.isLoading ? (
-            <LoadingBlock className="mt-3" />
-          ) : incomeByCourse.length ? (
-            <div className="mt-3 overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Soni</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Shartnoma</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {incomeByCourse.map((row: any) => (
-                    <tr key={row.courseName}>
-                      <td className="px-3 py-2 text-sm text-gray-900">{row.courseName}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{row.count}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.amount)}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.agreementAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha kurs tushumi topilmadi.</p>
-          )}
-        </div>
-
-        <div className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-lg font-semibold text-gray-900">Agentlar bo'yicha tushum</h2>
-          {financeQuery.isLoading ? (
-            <LoadingBlock className="mt-3" />
-          ) : incomeByAgent.length ? (
-            <div className="mt-3 overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Soni</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Tushum</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {incomeByAgent.map((row: any) => (
-                    <tr key={row.agent}>
-                      <td className="px-3 py-2 text-sm text-gray-900">{row.agent}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{row.count}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700">{formatSom(row.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha agent tushumi topilmadi.</p>
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-lg bg-white p-6 shadow">
-        <h2 className="text-lg font-semibold text-gray-900">So'nggi tushumlar</h2>
-        {financeQuery.isLoading ? (
-          <LoadingBlock className="mt-3" />
-        ) : recentIncomes.length ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Sana</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Turi</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Mijoz</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Agent</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Kurs/Tarif</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Holat</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">To'lov</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Qoldiq qarz</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {recentIncomes.map((income: any) => (
-                  <tr key={income.id}>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {income.type === 'repayment' ? 'Qarzdorlik' : 'Yangi sotuv'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {income.customerNumber} - {income.customerName}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{income.managerLabel}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      {[income.courseName, income.tariffName].filter(Boolean).join(' / ') || '-'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
-                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getIncomeStatusBadge(income.lifecycleStatus, { darkMode: false }).className}`}>
-                        {getIncomeStatusBadge(income.lifecycleStatus, { darkMode: false }).label}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(income.paymentAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-700">{formatSom(income.remainingDebtAmount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="panel">
+          <div className="panel-header">
+            <h2 className="section-title">Kurslar bo'yicha tushum</h2>
+            {incomeByCourse.length ? <span className="badge badge-neutral tabular">{incomeByCourse.length}</span> : null}
           </div>
-        ) : (
-          <p className="mt-3 text-sm text-gray-600">Tanlangan filtr bo'yicha tushum yo'q.</p>
-        )}
+          <div className="p-2 sm:p-3">
+            {financeQuery.isLoading ? (
+              <LoadingBlock className="m-2" />
+            ) : incomeByCourse.length ? (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="text-left">Kurs</th>
+                      <th className="text-right">Soni</th>
+                      <th className="text-right">Tushum</th>
+                      <th className="text-right">Shartnoma</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {incomeByCourse.map((row: any) => (
+                      <tr key={row.courseName}>
+                        <td className="font-medium text-gray-900">{row.courseName}</td>
+                        <td className="tabular text-right">{row.count}</td>
+                        <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">{formatSom(row.amount)}</td>
+                        <td className="tabular whitespace-nowrap text-right">{formatSom(row.agreementAmount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState icon={IconBook} title="Tanlangan filtr bo'yicha kurs tushumi topilmadi." className="m-2" />
+            )}
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h2 className="section-title">Agentlar bo'yicha tushum</h2>
+            {incomeByAgent.length ? <span className="badge badge-neutral tabular">{incomeByAgent.length}</span> : null}
+          </div>
+          <div className="p-2 sm:p-3">
+            {financeQuery.isLoading ? (
+              <LoadingBlock className="m-2" />
+            ) : incomeByAgent.length ? (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="text-left">Agent</th>
+                      <th className="text-right">Soni</th>
+                      <th className="text-right">Tushum</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {incomeByAgent.map((row: any) => (
+                      <tr key={row.agent}>
+                        <td>
+                          <div className="flex items-center gap-2.5">
+                            <UserAvatar name={row.agent || '?'} size="sm" />
+                            <span className="font-medium text-gray-900">{row.agent}</span>
+                          </div>
+                        </td>
+                        <td className="tabular text-right">{row.count}</td>
+                        <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">{formatSom(row.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState icon={IconUsers} title="Tanlangan filtr bo'yicha agent tushumi topilmadi." className="m-2" />
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Bonus tafsiloti</h2>
-            <p className="mt-1 text-sm text-gray-500">
+      <div className="panel">
+        <div className="panel-header">
+          <h2 className="section-title">So'nggi tushumlar</h2>
+          {recentIncomes.length ? <span className="badge badge-neutral tabular">{recentIncomes.length}</span> : null}
+        </div>
+        <div className="p-2 sm:p-3">
+          {financeQuery.isLoading ? (
+            <LoadingBlock className="m-2" />
+          ) : recentIncomes.length ? (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="text-left">Sana</th>
+                    <th className="text-left">Turi</th>
+                    <th className="text-left">Mijoz</th>
+                    <th className="text-left">Agent</th>
+                    <th className="text-left">Kurs/Tarif</th>
+                    <th className="text-left">Holat</th>
+                    <th className="text-right">To'lov</th>
+                    <th className="text-right">Qoldiq qarz</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentIncomes.map((income: any) => (
+                    <tr key={income.id}>
+                      <td className="tabular whitespace-nowrap text-gray-600">
+                        {new Date(income.entryDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <span className={income.type === 'repayment' ? 'badge badge-amber' : 'badge badge-blue'}>
+                          {income.type === 'repayment' ? 'Qarzdorlik' : 'Yangi sotuv'}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap font-medium text-gray-900">
+                        {income.customerNumber} - {income.customerName}
+                      </td>
+                      <td className="whitespace-nowrap">{income.managerLabel}</td>
+                      <td className="whitespace-nowrap">
+                        {[income.courseName, income.tariffName].filter(Boolean).join(' / ') || '-'}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <span className={`badge ${getIncomeStatusBadge(income.lifecycleStatus, { darkMode: false }).className}`}>
+                          {getIncomeStatusBadge(income.lifecycleStatus, { darkMode: false }).label}
+                        </span>
+                      </td>
+                      <td className="tabular whitespace-nowrap text-right font-semibold text-gray-900">{formatSom(income.paymentAmount)}</td>
+                      <td className="tabular whitespace-nowrap text-right">{formatSom(income.remainingDebtAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState icon={IconReportMoney} title="Tanlangan filtr bo'yicha tushum yo'q." className="m-2" />
+          )}
+        </div>
+      </div>
+
+      <div className="panel flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-600">
+            <IconListDetails className="h-5 w-5" stroke={1.6} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="section-title">Bonus tafsiloti</h2>
+            <p className="mt-0.5 text-sm text-gray-500">
               Bonus tafsilotini alohida sahifada ko&apos;ring (real-time debug ustunlari bilan).
             </p>
           </div>
-          <Link
-            href="/dashboard/finance/bonus-details"
-            className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
-          >
-            Bonus tafsilotiga o&apos;tish
-          </Link>
         </div>
+        <Link href="/dashboard/finance/bonus-details" className="btn btn-soft inline-flex flex-shrink-0">
+          Bonus tafsilotiga o&apos;tish
+          <IconArrowRight className="h-4 w-4" stroke={1.8} />
+        </Link>
       </div>
     </div>
   );

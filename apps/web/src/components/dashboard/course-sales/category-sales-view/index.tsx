@@ -1,5 +1,6 @@
 'use client';
 
+import { PageHeader } from '@/components/ui/page-header';
 import { CategoryCourseEditorModal } from './category-course-editor-modal';
 import { CategorySalesCustomers } from './category-sales-customers';
 import { CategorySalesFilters } from './category-sales-filters';
@@ -13,29 +14,27 @@ export default function CourseTypeSalesView(props: CourseTypeSalesViewProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">{title || `${CATEGORY_LABELS[category]} sotuvi`}</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          {description || `${CATEGORY_LABELS[category]} turidagi kurslar bo'yicha joriy mijozlar va sotuv ko'rsatkichlari.`}
-        </p>
-      </div>
+      <PageHeader
+        title={title || `${CATEGORY_LABELS[category]} sotuvi`}
+        description={description || `${CATEGORY_LABELS[category]} turidagi kurslar bo'yicha joriy mijozlar va sotuv ko'rsatkichlari.`}
+      />
 
       <CategorySalesFilters vm={vm} />
 
       {summaryQuery.error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           {summaryQuery.error.message || "Ma'lumotlarni yuklashda xatolik."}
         </div>
       )}
 
       {actionError && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           {actionError}
         </div>
       )}
 
       {actionSuccess && (
-        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+        <div className="alert alert-success">
           {actionSuccess}
         </div>
       )}

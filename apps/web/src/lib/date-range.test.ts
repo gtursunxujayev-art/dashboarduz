@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 import {
+  formatRangeBounds,
   getPreviousMonthRange,
+  getRangeBounds,
   getPreviousWeekRange,
   getTashkentDateShift,
   getTashkentToday,
@@ -53,5 +55,20 @@ describe('getCurrentMonthToDateRange', () => {
     expect(getCurrentMonthToDateRange(now)).toEqual({ dateFrom: '2026-11-01', dateTo: '2026-11-07' });
     // 2026-11-30T19:30Z is already 1 December in Tashkent.
     expect(getCurrentMonthToDateRange(new Date('2026-11-30T19:30:00Z'))).toEqual({ dateFrom: '2026-12-01', dateTo: '2026-12-01' });
+  });
+});
+
+describe('range bounds label', () => {
+  const now = new Date('2026-11-17T05:00:00.000Z');
+
+  it('covers Monday to today for the week and the 1st to today for the month', () => {
+    expect(getRangeBounds('week', { dateFrom: '', dateTo: '' }, now)).toEqual({ dateFrom: '2026-11-16', dateTo: '2026-11-17' });
+    expect(getRangeBounds('month', { dateFrom: '', dateTo: '' }, now)).toEqual({ dateFrom: '2026-11-01', dateTo: '2026-11-17' });
+  });
+
+  it('formats single days, same-year spans and cross-year spans', () => {
+    expect(formatRangeBounds({ dateFrom: '2026-11-17', dateTo: '2026-11-17' })).toBe('17-noy, 2026');
+    expect(formatRangeBounds({ dateFrom: '2026-11-01', dateTo: '2026-11-17' })).toBe('1-noy - 17-noy, 2026');
+    expect(formatRangeBounds({ dateFrom: '2025-12-20', dateTo: '2026-01-05' })).toBe('20-dek, 2025 - 5-yan, 2026');
   });
 });

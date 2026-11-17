@@ -1,11 +1,40 @@
 'use client';
 
 import { ChangeEvent, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import {
+  IconAlertTriangle,
+  IconArrowsDiff,
+  IconBolt,
+  IconCircleCheck,
+  IconDatabase,
+  IconDownload,
+  IconEye,
+  IconFileSpreadsheet,
+  IconHash,
+  IconQuestionMark,
+  IconSearch,
+  IconTable,
+  IconUpload,
+} from '@tabler/icons-react';
+import type { Icon } from '@tabler/icons-react';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatTile } from '@/components/ui/stat-tile';
 import { trpc } from '@/lib/trpc';
 
 type RawCell = string | number | boolean | null;
 type SheetData = { name: string; rows: RawCell[][] };
 type MappingState = Record<string, string>;
+
+const STATUS_TONES: Record<string, string> = {
+  matched: 'badge-green',
+  amount_mismatch: 'badge-red',
+  count_mismatch: 'badge-amber',
+  only_in_db: 'badge-blue',
+  only_in_finance: 'badge-blue',
+  ambiguous_match: 'badge-amber',
+};
 
 const MAPPING_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'paymentDate', label: "To'lov sanasi" },
@@ -221,210 +250,255 @@ export default function IncomeProblemsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg bg-white shadow dark:bg-slate-900">
-        <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-700">
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-slate-100">Tushum muammolari</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-            Loyihadagi jonli tushumlar bilan moliya faylidagi snapshotni solishtirish uchun admin sahifa.
-          </p>
+      <PageHeader
+        title="Tushum muammolari"
+        description="Loyihadagi jonli tushumlar bilan moliya faylidagi snapshotni solishtirish uchun admin sahifa."
+        actions={(
+          <label className="btn btn-primary cursor-pointer">
+            <IconUpload className="h-4 w-4" stroke={1.8} />
+            Excel fayl yuklash
+            <input type="file" accept=".xls,.xlsx" className="hidden" onChange={handleFileUpload} />
+          </label>
+        )}
+      />
+
+      {error && <div className="alert alert-error">{error}</div>}
+      {success && <div className="alert alert-success">{success}</div>}
+
+      <section className="panel">
+        <div className="panel-header">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-blue-50 text-blue-600">
+              <IconDatabase className="h-4 w-4" stroke={1.8} />
+            </span>
+            <h2 className="section-title">Faol moliya snapshot</h2>
+          </div>
         </div>
 
-        <div className="space-y-5 p-6">
-          {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
-          {success && <div className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-300">{success}</div>}
-
-          <div className="rounded-lg border border-gray-200 p-4 dark:border-slate-700">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Faol moliya snapshot</h2>
-                {activeSnapshotQuery.data?.exists ? (
-                  <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-slate-300">
-                    <p>Fayl: {activeSnapshotQuery.data.workbookName}</p>
-                    <p>Sheet: {activeSnapshotQuery.data.sheetName}</p>
-                    <p>Qatorlar: {activeSnapshotQuery.data.rowCount}</p>
-                    <p>Faollashtirilgan vaqt: {activeSnapshotQuery.data.activatedAt ? new Date(activeSnapshotQuery.data.activatedAt).toLocaleString('uz-UZ') : '-'}</p>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">Hali snapshot saqlanmagan.</p>
-                )}
+        <div className="panel-body space-y-5">
+          {activeSnapshotQuery.data?.exists ? (
+            <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+              <div className="panel-inset py-3">
+                <dt className="text-xs text-gray-500">Fayl:</dt>
+                <dd className="mt-1 truncate font-medium text-gray-900">{activeSnapshotQuery.data.workbookName}</dd>
               </div>
-              <label className="inline-flex cursor-pointer items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-                Excel fayl yuklash
-                <input type="file" accept=".xls,.xlsx" className="hidden" onChange={handleFileUpload} />
-              </label>
-            </div>
+              <div className="panel-inset py-3">
+                <dt className="text-xs text-gray-500">Sheet:</dt>
+                <dd className="mt-1 truncate font-medium text-gray-900">{activeSnapshotQuery.data.sheetName}</dd>
+              </div>
+              <div className="panel-inset py-3">
+                <dt className="text-xs text-gray-500">Qatorlar:</dt>
+                <dd className="tabular mt-1 font-medium text-gray-900">{activeSnapshotQuery.data.rowCount}</dd>
+              </div>
+              <div className="panel-inset py-3">
+                <dt className="text-xs text-gray-500">Faollashtirilgan vaqt:</dt>
+                <dd className="tabular mt-1 font-medium text-gray-900">{activeSnapshotQuery.data.activatedAt ? new Date(activeSnapshotQuery.data.activatedAt).toLocaleString('uz-UZ') : '-'}</dd>
+              </div>
+            </dl>
+          ) : (
+            <EmptyState title="Hali snapshot saqlanmagan." icon={IconFileSpreadsheet} />
+          )}
 
-            {sheets.length > 0 && (
-              <div className="mt-4 space-y-4">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto]">
-                  <select
-                    value={selectedSheetName}
-                    onChange={(event) => setSelectedSheetName(event.target.value)}
-                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                  >
-                    {sheets.map((sheet) => (
-                      <option key={sheet.name} value={sheet.name}>
-                        {sheet.name} ({sheet.rows.length} qator)
-                      </option>
-                    ))}
-                  </select>
-                  <button type="button" onClick={handlePrepare} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium dark:border-slate-600 dark:text-slate-100">
+          {sheets.length > 0 && (
+            <div className="space-y-4 border-t border-gray-100 pt-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <select
+                  value={selectedSheetName}
+                  onChange={(event) => setSelectedSheetName(event.target.value)}
+                  className="field md:flex-1"
+                >
+                  {sheets.map((sheet) => (
+                    <option key={sheet.name} value={sheet.name}>
+                      {sheet.name} ({sheet.rows.length} qator)
+                    </option>
+                  ))}
+                </select>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={handlePrepare} className="btn btn-secondary">
+                    <IconEye className="h-4 w-4" stroke={1.8} />
                     Preview tayyorlash
                   </button>
-                  <button type="button" onClick={handleActivate} className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
+                  <button type="button" onClick={handleActivate} className="btn btn-success">
+                    <IconBolt className="h-4 w-4" stroke={1.8} />
                     Snapshotni faollashtirish
                   </button>
                 </div>
+              </div>
 
-                {prepareMutation.data && (
-                  <div className="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-slate-700">
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">Jami qator</p><p className="mt-1 text-lg font-semibold">{prepareMutation.data.totalRows}</p></div>
-                      <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">Normalizatsiya bo'lgan qator</p><p className="mt-1 text-lg font-semibold">{prepareMutation.data.normalizedRowCount}</p></div>
-                      <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">Header qatori</p><p className="mt-1 text-lg font-semibold">{prepareMutation.data.headerRowIndex + 1}</p></div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      {MAPPING_FIELDS.map((field) => (
-                        <label key={field.key} className="space-y-1 text-sm">
-                          <span className="font-medium text-gray-700 dark:text-slate-300">{field.label}</span>
-                          <select
-                            value={mappingState[field.key] || ''}
-                            onChange={(event) => setMappingState((prev) => ({ ...prev, [field.key]: event.target.value }))}
-                            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                          >
-                            <option value="">Tanlanmagan</option>
-                            {headerOptions.map((option) => (
-                              <option key={`${field.key}-${option.value}`} value={option.value}>{option.label}</option>
-                            ))}
-                          </select>
-                        </label>
-                      ))}
-                    </div>
-
-                    {prepareMutation.data.errors.length > 0 && (
-                      <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                        {prepareMutation.data.errors.slice(0, 8).map((item: string) => <div key={item}>{item}</div>)}
-                      </div>
-                    )}
+              {prepareMutation.data && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <StatTile label="Jami qator" value={prepareMutation.data.totalRows} icon={IconTable} tone="neutral" />
+                    <StatTile label="Normalizatsiya bo'lgan qator" value={prepareMutation.data.normalizedRowCount} icon={IconCircleCheck} tone="green" />
+                    <StatTile label="Header qatori" value={prepareMutation.data.headerRowIndex + 1} icon={IconHash} tone="blue" />
                   </div>
-                )}
-              </div>
-            )}
-          </div>
 
-          <div className="rounded-lg border border-gray-200 p-4 dark:border-slate-700">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_1fr_220px_auto]">
-              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
-              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Telefon yoki ism bo'yicha qidirish" className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
-              <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
-                <option value="">Barcha statuslar</option>
-                <option value="matched">Mos</option>
-                <option value="amount_mismatch">Summa farqi</option>
-                <option value="count_mismatch">Soni farqi</option>
-                <option value="only_in_db">Faqat bazada</option>
-                <option value="only_in_finance">Faqat moliya faylida</option>
-                <option value="ambiguous_match">Noaniq moslik</option>
-              </select>
-              <button type="button" onClick={handleCompare} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-                Solishtirish
-              </button>
-            </div>
-            {compareQuery.data ? (
-              <div className="mt-3 flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleExport}
-                  className="rounded-md border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/20"
-                >
-                  Muammolarni Excelga yuklab olish
-                </button>
-              </div>
-            ) : null}
-          </div>
+                  <div className="panel-inset grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2 xl:grid-cols-3">
+                    {MAPPING_FIELDS.map((field) => (
+                      <label key={field.key} className="block">
+                        <span className="field-label">{field.label}</span>
+                        <select
+                          value={mappingState[field.key] || ''}
+                          onChange={(event) => setMappingState((prev) => ({ ...prev, [field.key]: event.target.value }))}
+                          className="field"
+                        >
+                          <option value="">Tanlanmagan</option>
+                          {headerOptions.map((option) => (
+                            <option key={`${field.key}-${option.value}`} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
 
-          {compareQuery.data && (
-            <>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">DB jami</p><p className="mt-1 text-lg font-semibold">{Number(compareQuery.data.summary.dbTotal).toLocaleString('uz-UZ')}</p></div>
-                <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">Moliya jami</p><p className="mt-1 text-lg font-semibold">{Number(compareQuery.data.summary.financeTotal).toLocaleString('uz-UZ')}</p></div>
-                <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">Farq</p><p className="mt-1 text-lg font-semibold">{Number(compareQuery.data.summary.differenceAmount).toLocaleString('uz-UZ')}</p></div>
-                <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">Mos mijozlar</p><p className="mt-1 text-lg font-semibold">{compareQuery.data.summary.matchedCustomers}</p></div>
-                <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">Faqat bazada</p><p className="mt-1 text-lg font-semibold">{compareQuery.data.summary.onlyInDbCustomers}</p></div>
-                <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">Faqat moliya faylida</p><p className="mt-1 text-lg font-semibold">{compareQuery.data.summary.onlyInFinanceCustomers}</p></div>
-                <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">Summa farqi</p><p className="mt-1 text-lg font-semibold">{compareQuery.data.summary.amountMismatchCount}</p></div>
-                <div className="rounded-md border border-gray-200 p-3 dark:border-slate-700"><p className="text-xs text-gray-500">Noaniq moslik</p><p className="mt-1 text-lg font-semibold">{compareQuery.data.summary.ambiguousMatchCount}</p></div>
-              </div>
-
-              <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-slate-700">
-                <div className="overflow-auto">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
-                    <thead className="bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        {['Telefon', 'Mijoz', 'DB jami', 'Moliya jami', 'Farq', 'DB soni', 'Moliya soni', 'Status', 'Amal'].map((label) => (
-                          <th key={label} className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-slate-400">{label}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 bg-white dark:divide-slate-700 dark:bg-slate-900">
-                      {compareQuery.data.rows.map((row: any) => (
-                        <tr key={row.matchId}>
-                          <td className="px-3 py-2 text-sm">{row.phone || '-'}</td>
-                          <td className="px-3 py-2 text-sm">{row.name || '-'}</td>
-                          <td className="px-3 py-2 text-sm">{Number(row.dbTotalPaid).toLocaleString('uz-UZ')}</td>
-                          <td className="px-3 py-2 text-sm">{Number(row.financeTotalPaid).toLocaleString('uz-UZ')}</td>
-                          <td className="px-3 py-2 text-sm font-medium">{Number(row.differenceAmount).toLocaleString('uz-UZ')}</td>
-                          <td className="px-3 py-2 text-sm">{row.dbPaymentCount}</td>
-                          <td className="px-3 py-2 text-sm">{row.financePaymentCount}</td>
-                          <td className="px-3 py-2 text-sm">{statusLabels[row.status] || row.status}</td>
-                          <td className="px-3 py-2 text-sm">
-                            <button type="button" onClick={() => handleOpenDrilldown(row)} className="rounded-md border border-blue-300 px-3 py-1 text-blue-700 dark:border-blue-700 dark:text-blue-300">
-                              Batafsil
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-
-          {selectedRow && drilldownQuery.data && (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <div className="rounded-lg border border-gray-200 p-4 dark:border-slate-700">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Loyiha bazasi</h3>
-                <div className="mt-3 space-y-2 text-sm">
-                  {drilldownQuery.data.dbRows.map((row: any) => (
-                    <div key={row.id} className="rounded-md border border-gray-200 p-3 dark:border-slate-700">
-                      <div>{row.paymentDate || '-'} | {row.customerName || row.customerPhone}</div>
-                      <div>{row.courseName} / {row.tariffName}{row.subTariffName ? ` / ${row.subTariffName}` : ''}</div>
-                      <div>To'lov: {Number(row.paymentAmount).toLocaleString('uz-UZ')} | Kelishuv: {Number(row.agreementAmount).toLocaleString('uz-UZ')} | Qarz: {Number(row.remainingDebtAmount).toLocaleString('uz-UZ')}</div>
+                  {prepareMutation.data.errors.length > 0 && (
+                    <div className="alert alert-warning space-y-0.5">
+                      {prepareMutation.data.errors.slice(0, 8).map((item: string) => <div key={item}>{item}</div>)}
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
-              <div className="rounded-lg border border-gray-200 p-4 dark:border-slate-700">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Moliya snapshot</h3>
-                <div className="mt-3 space-y-2 text-sm">
-                  {drilldownQuery.data.financeRows.map((row: any) => (
-                    <div key={`${row.rowIndex}-${row.paymentDate}-${row.customerPhone}`} className="rounded-md border border-gray-200 p-3 dark:border-slate-700">
-                      <div>{row.paymentDate || '-'} | {row.customerName || row.customerPhone}</div>
-                      <div>{row.courseName} / {row.tariffName}{row.subTariffName ? ` / ${row.subTariffName}` : ''}</div>
-                      <div>To'lov: {Number(row.paymentAmount).toLocaleString('uz-UZ')} | Kelishuv: {Number(row.agreementAmount).toLocaleString('uz-UZ')} | Qarz: {Number(row.remainingDebtAmount).toLocaleString('uz-UZ')}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              )}
             </div>
           )}
         </div>
+      </section>
+
+      <div className="panel p-3 sm:p-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[160px_160px_minmax(0,1fr)_200px_auto]">
+          <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="field" />
+          <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="field" />
+          <div className="relative min-w-0 sm:col-span-2 lg:col-span-1">
+            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" stroke={1.8} />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Telefon yoki ism bo'yicha qidirish" className="field pl-9" />
+          </div>
+          <select value={status} onChange={(event) => setStatus(event.target.value)} className="field">
+            <option value="">Barcha statuslar</option>
+            <option value="matched">Mos</option>
+            <option value="amount_mismatch">Summa farqi</option>
+            <option value="count_mismatch">Soni farqi</option>
+            <option value="only_in_db">Faqat bazada</option>
+            <option value="only_in_finance">Faqat moliya faylida</option>
+            <option value="ambiguous_match">Noaniq moslik</option>
+          </select>
+          <button type="button" onClick={handleCompare} className="btn btn-primary">
+            <IconArrowsDiff className="h-4 w-4" stroke={1.8} />
+            Solishtirish
+          </button>
+        </div>
       </div>
+
+      {compareQuery.data && (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatTile label="DB jami" value={Number(compareQuery.data.summary.dbTotal).toLocaleString('uz-UZ')} icon={IconDatabase} tone="blue" />
+            <StatTile label="Moliya jami" value={Number(compareQuery.data.summary.financeTotal).toLocaleString('uz-UZ')} icon={IconFileSpreadsheet} tone="blue" />
+            <StatTile label="Farq" value={Number(compareQuery.data.summary.differenceAmount).toLocaleString('uz-UZ')} icon={IconArrowsDiff} tone={Number(compareQuery.data.summary.differenceAmount) === 0 ? 'green' : 'amber'} />
+            <StatTile label="Mos mijozlar" value={compareQuery.data.summary.matchedCustomers} icon={IconCircleCheck} tone="green" />
+            <StatTile label="Faqat bazada" value={compareQuery.data.summary.onlyInDbCustomers} icon={IconDatabase} tone="neutral" />
+            <StatTile label="Faqat moliya faylida" value={compareQuery.data.summary.onlyInFinanceCustomers} icon={IconFileSpreadsheet} tone="neutral" />
+            <StatTile label="Summa farqi" value={compareQuery.data.summary.amountMismatchCount} icon={IconAlertTriangle} tone="red" />
+            <StatTile label="Noaniq moslik" value={compareQuery.data.summary.ambiguousMatchCount} icon={IconQuestionMark} tone="amber" />
+          </div>
+
+          <section className="panel">
+            <div className="panel-header">
+              <div className="flex items-center gap-2">
+                <h2 className="section-title">Muammolar</h2>
+                <span className="badge badge-neutral tabular">{compareQuery.data.rows.length}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleExport}
+                className="btn btn-soft btn-sm"
+              >
+                <IconDownload className="h-4 w-4" stroke={1.8} />
+                Muammolarni Excelga yuklab olish
+              </button>
+            </div>
+            <div className="p-2 pt-4 sm:p-3 sm:pt-4">
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="text-left">Telefon</th>
+                      <th className="text-left">Mijoz</th>
+                      <th className="text-right">DB jami</th>
+                      <th className="text-right">Moliya jami</th>
+                      <th className="text-right">Farq</th>
+                      <th className="text-right">DB soni</th>
+                      <th className="text-right">Moliya soni</th>
+                      <th className="text-left">Status</th>
+                      <th className="text-right">Amal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {compareQuery.data.rows.map((row: any) => (
+                      <tr key={row.matchId} className={selectedRow?.matchId === row.matchId ? 'bg-blue-50/60' : ''}>
+                        <td className="tabular whitespace-nowrap text-gray-600">{row.phone || '-'}</td>
+                        <td className="whitespace-nowrap font-medium text-gray-900">{row.name || '-'}</td>
+                        <td className="tabular whitespace-nowrap text-right">{Number(row.dbTotalPaid).toLocaleString('uz-UZ')}</td>
+                        <td className="tabular whitespace-nowrap text-right">{Number(row.financeTotalPaid).toLocaleString('uz-UZ')}</td>
+                        <td className={`tabular whitespace-nowrap text-right font-medium ${Number(row.differenceAmount) === 0 ? 'text-gray-500' : 'text-amber-700'}`}>{Number(row.differenceAmount).toLocaleString('uz-UZ')}</td>
+                        <td className="tabular text-right">{row.dbPaymentCount}</td>
+                        <td className="tabular text-right">{row.financePaymentCount}</td>
+                        <td className="whitespace-nowrap">
+                          <span className={`badge ${STATUS_TONES[row.status] || 'badge-neutral'}`}>{statusLabels[row.status] || row.status}</span>
+                        </td>
+                        <td className="text-right">
+                          <button type="button" onClick={() => handleOpenDrilldown(row)} className="btn btn-soft btn-sm">
+                            Batafsil
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </>
+      )}
+
+      {selectedRow && drilldownQuery.data && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <DrilldownPanel title="Loyiha bazasi" icon={IconDatabase}>
+            {drilldownQuery.data.dbRows.map((row: any) => (
+              <DrilldownRow key={row.id} row={row} />
+            ))}
+          </DrilldownPanel>
+          <DrilldownPanel title="Moliya snapshot" icon={IconFileSpreadsheet}>
+            {drilldownQuery.data.financeRows.map((row: any) => (
+              <DrilldownRow key={`${row.rowIndex}-${row.paymentDate}-${row.customerPhone}`} row={row} />
+            ))}
+          </DrilldownPanel>
+        </div>
+      )}
     </div>
   );
 }
 
+function DrilldownPanel({ title, icon: PanelIcon, children }: { title: string; icon: Icon; children: ReactNode }) {
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-gray-100 text-gray-600">
+            <PanelIcon className="h-4 w-4" stroke={1.8} />
+          </span>
+          <h3 className="section-title">{title}</h3>
+        </div>
+      </div>
+      <div className="panel-body space-y-2 text-sm">{children}</div>
+    </section>
+  );
+}
 
-
+function DrilldownRow({ row }: { row: any }) {
+  return (
+    <div className="panel-inset space-y-1 py-3">
+      <div className="font-medium text-gray-900">{row.paymentDate || '-'} | {row.customerName || row.customerPhone}</div>
+      <div className="text-gray-600">{row.courseName} / {row.tariffName}{row.subTariffName ? ` / ${row.subTariffName}` : ''}</div>
+      <div className="tabular text-gray-700">To'lov: {Number(row.paymentAmount).toLocaleString('uz-UZ')} | Kelishuv: {Number(row.agreementAmount).toLocaleString('uz-UZ')} | Qarz: {Number(row.remainingDebtAmount).toLocaleString('uz-UZ')}</div>
+    </div>
+  );
+}

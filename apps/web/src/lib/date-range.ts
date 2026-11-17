@@ -69,3 +69,36 @@ export function getCurrentMonthToDateRange(now: Date = new Date()): { dateFrom: 
     dateTo: toIsoDay(today),
   };
 }
+
+const MONTH_SHORT_UZ = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
+
+/** The Tashkent days a preset or custom range covers, as `YYYY-MM-DD`. */
+export function getRangeBounds(
+  range: ApiDashboardRange,
+  custom: { dateFrom: string; dateTo: string },
+  now: Date = new Date(),
+): { dateFrom: string; dateTo: string } {
+  const today = tashkentCalendarDay(now);
+  if (range === 'custom') return custom;
+  if (range === 'week') {
+    const daysSinceMonday = (today.getUTCDay() + 6) % 7;
+    return { dateFrom: toIsoDay(new Date(today.getTime() - daysSinceMonday * DAY_MS)), dateTo: toIsoDay(today) };
+  }
+  if (range === 'month') return getCurrentMonthToDateRange(now);
+  return { dateFrom: toIsoDay(today), dateTo: toIsoDay(today) };
+}
+
+/** `1-noy - 17-noy, 2026`, or `17-noy, 2026` for a single day. */
+export function formatRangeBounds(bounds: { dateFrom: string; dateTo: string }): string {
+  const parse = (value: string) => {
+    const [year, month, day] = value.split('-').map(Number);
+    return { year, month, day };
+  };
+  const from = parse(bounds.dateFrom);
+  const to = parse(bounds.dateTo);
+  if ([from.year, from.month, from.day, to.year, to.month, to.day].some((part) => !Number.isFinite(part))) return '';
+  const dayLabel = (part: { month: number; day: number }) => `${part.day}-${MONTH_SHORT_UZ[part.month - 1] ?? ''}`;
+  if (bounds.dateFrom === bounds.dateTo) return `${dayLabel(to)}, ${to.year}`;
+  if (from.year === to.year) return `${dayLabel(from)} - ${dayLabel(to)}, ${to.year}`;
+  return `${dayLabel(from)}, ${from.year} - ${dayLabel(to)}, ${to.year}`;
+}

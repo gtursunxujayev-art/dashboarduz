@@ -1,8 +1,10 @@
 'use client';
 
+import { IconAlertTriangle, IconClock, IconShoppingCart, IconUsers } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { formatDurationClock, formatPercent, formatSomUz } from '@/lib/format';
 import { KpiCard } from '@/components/dashboard/kpi-card';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { type ReportRangePreset as DashboardRange } from '@dashboarduz/shared';
 
 
@@ -78,11 +80,16 @@ function CategoryCard({
   income: number;
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <p className="text-sm font-semibold text-gray-900">{title}</p>
-      <p className="mt-2 text-2xl font-bold text-gray-900">{salesCount}</p>
-      <p className="mt-2 text-sm text-gray-600">Kelishuv: {formatSomUz(agreement)}</p>
-      <p className="text-sm text-gray-600">Tushum: {formatSomUz(income)}</p>
+    <div className="p-5 sm:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <span className="badge badge-neutral">{title}</span>
+        <IconShoppingCart className="h-4 w-4 text-gray-400" stroke={1.8} aria-hidden="true" />
+      </div>
+      <p className="tabular mt-3 text-3xl font-semibold tracking-tight text-gray-900">{salesCount}</p>
+      <div className="mt-4 space-y-1.5 border-t border-gray-100 pt-3">
+        <p className="text-sm text-gray-500">Kelishuv: <span className="tabular font-medium text-gray-900">{formatSomUz(agreement)}</span></p>
+        <p className="text-sm text-gray-500">Tushum: <span className="tabular font-medium text-blue-700">{formatSomUz(income)}</span></p>
+      </div>
     </div>
   );
 }
@@ -119,30 +126,30 @@ export default function AnalyticsCharts({
   return (
     <div className="space-y-6">
       {isError && !data && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="alert alert-error">
           Boshqaruv tahlillarini yuklashda xatolik yuz berdi.
         </div>
       )}
 
       {degradedSources.length > 0 && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <p className="font-medium">Ba'zi tashqi manbalar vaqtincha ishlamadi. Asosiy DB ma'lumotlari ko'rsatildi.</p>
-          <div className="mt-1 flex flex-wrap gap-2">
-            {degradedSources.map((source) => (
-              <span
-                key={source.key}
-                className="inline-flex items-center rounded-full border border-amber-300 bg-white px-2 py-0.5 text-xs text-amber-700"
-              >
-                {source.label} ({source.reason}{source.retried ? ', retry' : ''})
-              </span>
-            ))}
+        <div className="alert alert-warning flex items-start gap-3">
+          <IconAlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" stroke={1.8} aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="font-medium">Ba'zi tashqi manbalar vaqtincha ishlamadi. Asosiy DB ma'lumotlari ko'rsatildi.</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {degradedSources.map((source) => (
+                <span key={source.key} className="badge bg-white text-amber-800 ring-1 ring-amber-200">
+                  {source.label} ({source.reason}{source.retried ? ', retry' : ''})
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       {isLoading && <LoadingBlock message="Tahlillar yuklanmoqda..." />}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <KpiCard label="Jami lidlar" value={(data?.summary.totalLeads || 0).toLocaleString('uz-UZ')} />
         <KpiCard label="Sifatli lidlar" value={(data?.summary.qualifiedLeads || 0).toLocaleString('uz-UZ')} />
         <KpiCard label="Sifatsiz lidlar" value={(data?.summary.nonQualifiedLeads || 0).toLocaleString('uz-UZ')} />
@@ -154,7 +161,7 @@ export default function AnalyticsCharts({
         <KpiCard label="Bosqich o'zgarishi" value={(data?.summary.stageChangeCount || 0).toLocaleString('uz-UZ')} />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="panel grid grid-cols-1 divide-y divide-gray-100 lg:grid-cols-3 lg:divide-x lg:divide-y-0">
         <CategoryCard
           title="Online"
           salesCount={data?.summary.onlineSalesCount || 0}
@@ -175,60 +182,73 @@ export default function AnalyticsCharts({
         />
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-base font-semibold text-gray-900">Sotuv jamoasi overview</h3>
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h3 className="section-title flex items-center gap-2">
+            <IconUsers className="h-4 w-4 text-gray-400" stroke={1.8} aria-hidden="true" />
+            Sotuv jamoasi overview
+          </h3>
+          <p className="text-xs text-gray-500">Jami follow-up: <span className="tabular font-medium text-gray-700">{teamFollowUp.toLocaleString('uz-UZ')}</span></p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <KpiCard label="Faol xodimlar" value={rows.length.toLocaleString('uz-UZ')} />
           <KpiCard label="Jami qo'ng'iroqlar" value={teamCalls.toLocaleString('uz-UZ')} />
           <KpiCard label="Jami suhbat vaqti" value={formatDurationClock(teamTalkSeconds, '-')} />
           <KpiCard label="Muddati o'tgan follow-up" value={teamOverdue.toLocaleString('uz-UZ')} />
           <KpiCard label="Bugungi/navbatdagi follow-up" value={teamTodayQueue.toLocaleString('uz-UZ')} />
         </div>
-        <p className="mt-2 text-xs text-gray-500">Jami follow-up: {teamFollowUp.toLocaleString('uz-UZ')}</p>
-      </div>
+      </section>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-base font-semibold text-gray-900">Agent performance</h3>
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50">
+      <div className="panel">
+        <div className="panel-header">
+          <h3 className="section-title">Agent performance</h3>
+          <span className="badge badge-neutral tabular">{rows.length}</span>
+        </div>
+        <div className="overflow-x-auto p-2 sm:p-3">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">Agent</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Yangi lid</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Sifatli lid</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Sotuv</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Konversiya</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Kelishuv</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Tushum</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Qo'ng'iroq</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Suhbat vaqti</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Follow-up</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Bosqich o'zgarishi</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Muddati o'tgan</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Bugungi/navbatdagi</th>
+                <th className="text-left">Agent</th>
+                <th className="text-right">Yangi lid</th>
+                <th className="text-right">Sifatli lid</th>
+                <th className="text-right">Sotuv</th>
+                <th className="text-right">Konversiya</th>
+                <th className="text-right">Kelishuv</th>
+                <th className="text-right">Tushum</th>
+                <th className="text-right">Qo'ng'iroq</th>
+                <th className="text-right">Suhbat vaqti</th>
+                <th className="text-right">Follow-up</th>
+                <th className="text-right">Bosqich o'zgarishi</th>
+                <th className="text-right">Muddati o'tgan</th>
+                <th className="text-right">Bugungi/navbatdagi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody>
               {rows.map((row) => (
                 <tr key={row.userId}>
-                  <td className="px-3 py-2 text-gray-900">{row.name}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{row.newLeads ?? '-'}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{row.qualifiedLeads ?? '-'}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{row.sales.toLocaleString('uz-UZ')}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{formatPercent(row.conversionPercent, 2)}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{formatSomUz(row.agreementsAmount)}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{formatSomUz(row.incomeAmount)}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{row.callsCount.toLocaleString('uz-UZ')}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{formatDurationClock(row.talkedSeconds, '-')}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{row.followUpCount.toLocaleString('uz-UZ')}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{row.stageChangeCount.toLocaleString('uz-UZ')}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{row.overdueFollowUpCount.toLocaleString('uz-UZ')}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{row.todayFollowUpCount.toLocaleString('uz-UZ')}</td>
+                  <td>
+                    <div className="flex items-center gap-2.5">
+                      <UserAvatar name={row.name} size="sm" />
+                      <span className="whitespace-nowrap font-medium text-gray-900">{row.name}</span>
+                    </div>
+                  </td>
+                  <td className="tabular text-right">{row.newLeads ?? '-'}</td>
+                  <td className="tabular text-right">{row.qualifiedLeads ?? '-'}</td>
+                  <td className="tabular text-right font-medium text-gray-900">{row.sales.toLocaleString('uz-UZ')}</td>
+                  <td className="tabular text-right">{formatPercent(row.conversionPercent, 2)}</td>
+                  <td className="tabular whitespace-nowrap text-right">{formatSomUz(row.agreementsAmount)}</td>
+                  <td className="tabular whitespace-nowrap text-right font-medium text-blue-700">{formatSomUz(row.incomeAmount)}</td>
+                  <td className="tabular text-right">{row.callsCount.toLocaleString('uz-UZ')}</td>
+                  <td className="tabular text-right">{formatDurationClock(row.talkedSeconds, '-')}</td>
+                  <td className="tabular text-right">{row.followUpCount.toLocaleString('uz-UZ')}</td>
+                  <td className="tabular text-right">{row.stageChangeCount.toLocaleString('uz-UZ')}</td>
+                  <td className={`tabular text-right ${row.overdueFollowUpCount > 0 ? 'font-medium text-red-600' : ''}`}>{row.overdueFollowUpCount.toLocaleString('uz-UZ')}</td>
+                  <td className="tabular text-right">{row.todayFollowUpCount.toLocaleString('uz-UZ')}</td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-3 py-8 text-center text-gray-500">
+                  <td colSpan={13} className="py-10 text-center text-gray-500">
                     Tanlangan davr uchun agent ma'lumotlari topilmadi.
                   </td>
                 </tr>
@@ -238,8 +258,9 @@ export default function AnalyticsCharts({
         </div>
       </div>
 
-      <p className="text-center text-xs text-gray-500">
-        Ma'lumot yangilangan vaqt: {data?.updatedAt ? new Date(data.updatedAt).toLocaleString('uz-UZ') : 'Mavjud emas'}
+      <p className="flex items-center justify-center gap-1.5 text-xs text-gray-500">
+        <IconClock className="h-3.5 w-3.5" stroke={1.8} aria-hidden="true" />
+        <span>Ma'lumot yangilangan vaqt: {data?.updatedAt ? new Date(data.updatedAt).toLocaleString('uz-UZ') : 'Mavjud emas'}</span>
       </p>
     </div>
   );

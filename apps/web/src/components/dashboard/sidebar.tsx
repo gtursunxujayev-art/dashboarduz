@@ -1,9 +1,36 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import {
+  IconAddressBook,
+  IconAlertTriangle,
+  IconArrowsExchange,
+  IconBell,
+  IconBook2,
+  IconBrandTelegram,
+  IconBug,
+  IconBuildingSkyscraper,
+  IconCalendarCheck,
+  IconChartBar,
+  IconChartLine,
+  IconChevronRight,
+  IconCoins,
+  IconLayoutDashboard,
+  IconLogout,
+  IconPhone,
+  IconPlugConnected,
+  IconSettings,
+  IconUserCog,
+  IconUsersGroup,
+  IconWallet,
+  IconX,
+} from '@tabler/icons-react';
+import type { Icon as NavIcon } from '@tabler/icons-react';
 import { useAuth } from '@/contexts/auth-context';
+import { BrandMark } from '@/components/ui/brand-mark';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
 const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
@@ -49,77 +76,175 @@ const ADMIN_ONLY_HREFS = new Set([
   '/dashboard/income-problems',
   '/dashboard/income-debug',
 ]);
-const DESKTOP_SIDEBAR_STORAGE_KEY = 'dashboarduz-desktop-sidebar-open';
+
+const ROLE_LABELS: Record<string, string> = {
+  Admin: 'Admin',
+  Manager: 'Menejer',
+  TeamLeader: 'Team lider',
+  Agent: 'Agent',
+  OnlineAgent: 'Online agent',
+  OfflineAgent: 'Offline agent',
+  Dashboard: 'Dashboard',
+  OfflineDashboard: 'Offline dashboard',
+  Finance: 'Moliya',
+  Tashkiliy: 'Tashkiliy',
+};
 
 type NavigationItem = {
   name: string;
   href: string;
-  icon: string;
+  icon?: NavIcon;
   children?: NavigationItem[];
+};
+
+type NavigationGroup = {
+  label: string | null;
+  items: NavigationItem[];
 };
 
 type SidebarProps = {
   pendingAdjustmentCount?: number;
+  tenantName?: string;
+  tenantPlan?: string;
+  mobileOpen: boolean;
+  desktopOpen: boolean;
+  onMobileClose: () => void;
 };
 
-const navigation: NavigationItem[] = [
-  { name: 'Boshqaruv', href: '/dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-  { name: 'Tushum', href: '/dashboard/income', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
-  { name: "Qaytarish / O'zgarish", href: '/dashboard/adjustments', icon: 'M8.228 9.247a4.5 4.5 0 117.544 2.581M15.772 14.753a4.5 4.5 0 11-7.544-2.581M4.5 4.5v5h5m10-5v5h-5' },
-  { name: 'Sotuvchilar', href: '/dashboard/sotuvchilar', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
-  { name: "Qo'ng'iroqlar", href: '/dashboard/calls', icon: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z' },
-  { name: "Korporativ qo'ng'iroq", href: '/dashboard/corporate-calls', icon: 'M3 7a2 2 0 012-2h3v14H5a2 2 0 01-2-2V7zm7-2h9a2 2 0 012 2v10a2 2 0 01-2 2h-9V5zm2 4h5m-5 3h5m-5 3h3' },
-  { name: 'Davomat', href: '/dashboard/attendance', icon: 'M9 11l3 3L22 4M20 12v7a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2h8' },
-  { name: 'Mijozlar', href: '/dashboard/customers', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
+const navigationGroups: NavigationGroup[] = [
   {
-    name: 'Kurslar sotuvi',
-    href: '/dashboard/course-sales',
-    icon: 'M9 19V6m4 13V10m4 9V4M4 20h16',
-    children: [
-      { name: 'Intensiv', href: '/dashboard/course-sales/intensive', icon: 'M9 19V6m4 13V10m4 9V4M4 20h16' },
-      { name: 'Online', href: '/dashboard/course-sales/online', icon: 'M9 19V6m4 13V10m4 9V4M4 20h16' },
-      { name: 'Oflayn', href: '/dashboard/course-sales/offline', icon: 'M9 19V6m4 13V10m4 9V4M4 20h16' },
+    label: null,
+    items: [
+      { name: 'Boshqaruv', href: '/dashboard', icon: IconLayoutDashboard },
     ],
   },
   {
-    name: 'Tahlil',
-    href: '/dashboard/analytics',
-    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
-    children: [
-      { name: 'Hisobotlar', href: '/dashboard/analytics/reports', icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-      { name: 'Voronka', href: '/dashboard/analytics/funnel', icon: 'M3 4h18l-7 8v6l-4 2v-8L3 4z' },
+    label: 'Savdo',
+    items: [
+      { name: 'Tushum', href: '/dashboard/income', icon: IconCoins },
+      { name: "Qaytarish / O'zgarish", href: '/dashboard/adjustments', icon: IconArrowsExchange },
+      { name: 'Sotuvchilar', href: '/dashboard/sotuvchilar', icon: IconUsersGroup },
+      { name: 'Mijozlar', href: '/dashboard/customers', icon: IconAddressBook },
+      {
+        name: 'Kurslar sotuvi',
+        href: '/dashboard/course-sales',
+        icon: IconChartBar,
+        children: [
+          { name: 'Intensiv', href: '/dashboard/course-sales/intensive' },
+          { name: 'Online', href: '/dashboard/course-sales/online' },
+          { name: 'Oflayn', href: '/dashboard/course-sales/offline' },
+        ],
+      },
     ],
   },
   {
-    name: 'Moliya',
-    href: '/dashboard/finance',
-    icon: 'M3 10h18M7 15h1m4 0h5M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z',
-    children: [
-      { name: 'Bonus', href: '/dashboard/bonus', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 1v8m0 0v1m0-1h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
-      { name: 'Bonus tafsiloti', href: '/dashboard/finance/bonus-details', icon: 'M9 17v-2a4 4 0 014-4h7m-7 0V7m0 4l-3-3m3 3l-3 3M5 7h4' },
+    label: 'Aloqa',
+    items: [
+      { name: "Qo'ng'iroqlar", href: '/dashboard/calls', icon: IconPhone },
+      { name: "Korporativ qo'ng'iroq", href: '/dashboard/corporate-calls', icon: IconBuildingSkyscraper },
+      { name: 'Davomat', href: '/dashboard/attendance', icon: IconCalendarCheck },
     ],
   },
-  { name: 'Tushum muammolari', href: '/dashboard/income-problems', icon: 'M12 9v2m0 4h.01M10.29 3.86l-7.2 12.47A1 1 0 003.96 18h16.08a1 1 0 00.87-1.67l-7.2-12.47a1 1 0 00-1.74 0z' },
-  { name: 'Tushum debug', href: '/dashboard/income-debug', icon: 'M9 3h6m-9 4h12M5 11h14M7 19h10M4 7h.01M4 11h.01M4 15h.01M4 19h.01' },
-  { name: 'Kurslar', href: '/dashboard/courses', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5 4.462 5 2 6.567 2 8.5v9.75A1.75 1.75 0 003.75 20H9m3-13.747C13.168 5.477 14.754 5 16.5 5 19.538 5 22 6.567 22 8.5v9.75A1.75 1.75 0 0120.25 20H15m-3-13.747v13' },
-  { name: 'Sozlamalar', href: '/dashboard/settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
-  { name: 'Foydalanuvchilar', href: '/dashboard/users', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13 5.197v-1a6 6 0 00-4.5-5.799M12 11a3 3 0 100-6 3 3 0 000 6z' },
-  { name: 'Telegram bot', href: '/dashboard/telegram-bot', icon: 'M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13' },
-  { name: 'Integratsiyalar', href: '/dashboard/integrations', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
-  { name: 'Bildirishnomalar', href: '/dashboard/notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
+  {
+    label: 'Tahlil va moliya',
+    items: [
+      {
+        name: 'Tahlil',
+        href: '/dashboard/analytics',
+        icon: IconChartLine,
+        children: [
+          { name: 'Hisobotlar', href: '/dashboard/analytics/reports' },
+          { name: 'Voronka', href: '/dashboard/analytics/funnel' },
+        ],
+      },
+      {
+        name: 'Moliya',
+        href: '/dashboard/finance',
+        icon: IconWallet,
+        children: [
+          { name: 'Bonus', href: '/dashboard/bonus' },
+          { name: 'Bonus tafsiloti', href: '/dashboard/finance/bonus-details' },
+        ],
+      },
+      { name: 'Tushum muammolari', href: '/dashboard/income-problems', icon: IconAlertTriangle },
+      { name: 'Tushum debug', href: '/dashboard/income-debug', icon: IconBug },
+    ],
+  },
+  {
+    label: 'Tizim',
+    items: [
+      { name: 'Kurslar', href: '/dashboard/courses', icon: IconBook2 },
+      { name: 'Sozlamalar', href: '/dashboard/settings', icon: IconSettings },
+      { name: 'Foydalanuvchilar', href: '/dashboard/users', icon: IconUserCog },
+      { name: 'Telegram bot', href: '/dashboard/telegram-bot', icon: IconBrandTelegram },
+      { name: 'Integratsiyalar', href: '/dashboard/integrations', icon: IconPlugConnected },
+      { name: 'Bildirishnomalar', href: '/dashboard/notifications', icon: IconBell },
+    ],
+  },
 ];
 
-export default function Sidebar({ pendingAdjustmentCount = 0 }: SidebarProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+function matchesPath(pathname: string, href: string) {
+  return href === '/dashboard'
+    ? pathname === href
+    : pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** Title of the deepest navigation entry matching a path. */
+export function getNavigationTitle(pathname: string): string | null {
+  const trail = getNavigationTrail(pathname);
+  return trail.length ? trail[trail.length - 1].name : null;
+}
+
+/** Breadcrumb for a path: its navigation group, parent entry and the deepest matching entry. Used by the header. */
+export function getNavigationTrail(pathname: string): Array<{ name: string; href?: string }> {
+  let best: { length: number; trail: Array<{ name: string; href?: string }> } = { length: 0, trail: [] };
+  for (const group of navigationGroups) {
+    const visit = (item: NavigationItem, parents: NavigationItem[]) => {
+      if (matchesPath(pathname, item.href) && item.href.length > best.length) {
+        best = {
+          length: item.href.length,
+          trail: [
+            ...(group.label ? [{ name: group.label }] : []),
+            ...parents.map((parent) => ({ name: parent.name, href: parent.href })),
+            { name: item.name, href: item.href },
+          ],
+        };
+      }
+      item.children?.forEach((child) => visit(child, [...parents, item]));
+    };
+    group.items.forEach((item) => visit(item, []));
+  }
+  return best.trail;
+}
+
+function CountBadge({ count, onAccent }: { count: number; onAccent: boolean }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className={`tabular inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none ${
+        onAccent ? 'bg-white text-blue-700' : 'bg-red-500 text-white'
+      }`}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+export default function Sidebar({
+  pendingAdjustmentCount = 0,
+  tenantName,
+  tenantPlan,
+  mobileOpen,
+  desktopOpen,
+  onMobileClose,
+}: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const handleLogout = () => {
-    setSidebarOpen(false);
+    onMobileClose();
     logout();
   };
 
-  const roles = user?.roles || [];
   const isAdmin = user?.roles.includes('Admin');
   const isAgentOnly = Boolean(user?.roles.some((role: string) => AGENT_ROLES.has(role)) && !user?.roles.some((role: string) => PRIVILEGED_ROLES.has(role)));
   const isFinanceOnly = Boolean(
@@ -137,278 +262,189 @@ export default function Sidebar({ pendingAdjustmentCount = 0 }: SidebarProps) {
       && !user?.roles.some((role: string) => AGENT_ROLES.has(role))
       && !user?.roles.includes('Finance'),
   );
-  const visibleNavigation = (isAgentOnly
-    ? navigation.filter((item) => AGENT_ALLOWED_HREFS.has(item.href))
-    : isFinanceOnly
-      ? navigation.filter((item) => FINANCE_ALLOWED_HREFS.has(item.href))
-      : isTashkiliyOnly
-        ? navigation.filter((item) => TASHKILIY_ALLOWED_HREFS.has(item.href))
-      : isAdmin
-        ? navigation
-        : navigation.filter((item) => !ADMIN_ONLY_HREFS.has(item.href)));
-  const childVisible = (child: NavigationItem) => (
+  const itemVisible = (item: NavigationItem) => (
     isAgentOnly
-      ? AGENT_ALLOWED_HREFS.has(child.href)
+      ? AGENT_ALLOWED_HREFS.has(item.href)
       : isFinanceOnly
-        ? FINANCE_ALLOWED_HREFS.has(child.href)
+        ? FINANCE_ALLOWED_HREFS.has(item.href)
         : isTashkiliyOnly
-          ? TASHKILIY_ALLOWED_HREFS.has(child.href)
+          ? TASHKILIY_ALLOWED_HREFS.has(item.href)
           : isAdmin
             ? true
-            : !ADMIN_ONLY_HREFS.has(child.href)
+            : !ADMIN_ONLY_HREFS.has(item.href)
   );
-  const isItemActive = (href: string) => (
-    href === '/dashboard'
-      ? pathname === href
-      : pathname === href || pathname.startsWith(`${href}/`)
-  );
-  const isExpanded = (item: NavigationItem) => Boolean(item.children?.some((child) => isItemActive(child.href)) || isItemActive(item.href));
-  const visibleChildren = (item: NavigationItem) => (item.children || []).filter(childVisible);
+  const isItemActive = (href: string) => matchesPath(pathname, href);
+  const visibleGroups = navigationGroups
+    .map((group) => ({ ...group, items: group.items.filter(itemVisible) }))
+    .filter((group) => group.items.length > 0);
 
   useEffect(() => {
-    setSidebarOpen(false);
+    onMobileClose();
+    // Close the drawer on navigation only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const stored = window.localStorage.getItem(DESKTOP_SIDEBAR_STORAGE_KEY);
-    if (stored === 'false') {
-      setDesktopSidebarOpen(false);
-    }
-  }, []);
+    if (!mobileOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onMobileClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [mobileOpen, onMobileClose]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(DESKTOP_SIDEBAR_STORAGE_KEY, desktopSidebarOpen ? 'true' : 'false');
-  }, [desktopSidebarOpen]);
+  const displayName = user?.name?.trim()
+    || user?.username?.trim()
+    || user?.email?.split('@')[0]
+    || user?.phone
+    || 'Akkaunt';
+  const roleLabel = user?.roles?.map((role: string) => ROLE_LABELS[role] || role).join(', ');
+
+  const panel = (
+    <div className="flex h-full flex-col bg-white">
+      <div className="flex h-[68px] flex-shrink-0 items-center justify-between gap-2 px-4">
+        <Link href="/dashboard" className="flex min-w-0 items-center gap-3 rounded-md">
+          <BrandMark />
+          <span className="min-w-0">
+            <span className="block truncate text-[15px] font-semibold leading-tight tracking-tight text-gray-900">
+              {tenantName || 'Dashboarduz'}
+            </span>
+            <span className="block truncate text-xs leading-tight text-gray-500">
+              {tenantName ? `Dashboarduz, ${tenantPlan || 'free'} tarif` : 'Savdo boshqaruvi'}
+            </span>
+          </span>
+        </Link>
+        <button
+          type="button"
+          onClick={onMobileClose}
+          className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 lg:hidden"
+        >
+          <span className="sr-only">Menyuni yopish</span>
+          <IconX className="h-5 w-5" stroke={1.5} />
+        </button>
+      </div>
+
+      <nav className="flex-1 space-y-6 overflow-y-auto px-3 pb-4 pt-3" aria-label="Asosiy menyu">
+        {visibleGroups.map((group) => (
+          <div key={group.label ?? 'root'}>
+            {group.label ? (
+              <p className="mb-1.5 px-3 text-xs font-medium text-gray-400">{group.label}</p>
+            ) : null}
+            <ul className="space-y-0.5">
+              {group.items.map((item) => {
+                const children = (item.children || []).filter(itemVisible);
+                const selfActive = isItemActive(item.href);
+                const childActive = children.some((child) => isItemActive(child.href));
+                const current = selfActive && !childActive;
+                const expanded = children.length > 0 && (selfActive || childActive);
+                const Icon = item.icon;
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onMobileClose}
+                      aria-current={current ? 'page' : undefined}
+                      className={`group flex h-10 items-center gap-3 rounded-[10px] px-3 text-sm active:scale-[0.99] ${
+                        current
+                          ? 'bg-blue-600 font-medium text-white shadow-sm'
+                          : childActive
+                            ? 'font-medium text-gray-900 hover:bg-gray-100'
+                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      }`}
+                    >
+                      {Icon ? (
+                        <Icon
+                          stroke={1.6}
+                          className={`h-[19px] w-[19px] flex-shrink-0 ${
+                            current
+                              ? 'text-white'
+                              : childActive
+                                ? 'text-blue-600 dark:text-blue-400'
+                                : 'text-gray-400 group-hover:text-gray-700'
+                          }`}
+                        />
+                      ) : null}
+                      <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                      {item.href === '/dashboard/adjustments' ? (
+                        <CountBadge count={pendingAdjustmentCount} onAccent={current} />
+                      ) : null}
+                      {children.length > 0 ? (
+                        <IconChevronRight
+                          stroke={1.6}
+                          className={`h-4 w-4 flex-shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''} ${current ? 'text-white/80' : 'text-gray-400'}`}
+                        />
+                      ) : null}
+                    </Link>
+                    {expanded ? (
+                      <ul className="ml-[21px] mt-1 space-y-0.5 border-l border-gray-200 pl-3">
+                        {children.map((child) => {
+                          const isCurrent = isItemActive(child.href);
+                          return (
+                            <li key={child.href}>
+                              <Link
+                                href={child.href}
+                                onClick={onMobileClose}
+                                aria-current={isCurrent ? 'page' : undefined}
+                                className={`flex h-9 items-center rounded-md px-3 text-sm ${
+                                  isCurrent
+                                    ? 'bg-blue-50 font-medium text-blue-700'
+                                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
+                                }`}
+                              >
+                                {child.name}
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
+
+      <div className="flex-shrink-0 p-3">
+        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-2.5">
+          <UserAvatar name={displayName} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium leading-tight text-gray-900">{displayName}</p>
+            <p className="truncate text-xs leading-tight text-gray-500">{roleLabel || user?.email || user?.phone}</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            title="Chiqish"
+            className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600 active:scale-[0.96]"
+          >
+            <span className="sr-only">Chiqish</span>
+            <IconLogout className="h-[18px] w-[18px]" stroke={1.6} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <>
-      {/* Mobile sidebar toggle */}
-      <div className="fixed left-4 top-4 z-50 lg:hidden">
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="relative rounded-md border border-gray-200 bg-white p-2 text-gray-500 shadow-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
-        >
-          <span className="sr-only">Menyuni ochish</span>
-          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-          {pendingAdjustmentCount > 0 && (
-            <span className="absolute -right-1 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
-              {pendingAdjustmentCount > 99 ? '99+' : pendingAdjustmentCount}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* Desktop sidebar toggle */}
-      <div className="fixed left-4 top-4 z-50 hidden lg:block">
-        <button
-          onClick={() => setDesktopSidebarOpen((value) => !value)}
-          className="relative rounded-md border border-gray-200 bg-white p-2 text-gray-500 shadow-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
-        >
-          <span className="sr-only">Menyuni ochish yoki yopish</span>
-          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-          {pendingAdjustmentCount > 0 && (
-            <span className="absolute -right-1 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
-              {pendingAdjustmentCount > 99 ? '99+' : pendingAdjustmentCount}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)} />
-          <div className="fixed inset-0 z-40 flex pointer-events-none">
-            <div className="relative pointer-events-auto flex-1 flex flex-col max-w-xs w-full bg-white">
-              <div className="absolute top-0 right-0 -mr-12 pt-2">
-                <button
-                  onClick={() => setSidebarOpen(false)}
-                  className="ml-1 flex items-center justify-center h-10 w-10 rounded-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
-                >
-                  <span className="sr-only">Menyuni yopish</span>
-                  <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="flex-1 h-0 pt-5 pb-4 overflow-y-auto">
-                <div className="flex-shrink-0 flex items-center px-4">
-                  <h1 className="text-xl font-bold text-gray-900">Dashboarduz</h1>
-                </div>
-                <nav className="mt-5 px-2 space-y-1">
-                  {visibleNavigation.map((item) => {
-                    const children = visibleChildren(item);
-                    const hasVisibleChildren = children.length > 0;
-                    return (
-                    <div key={item.name} className="space-y-1">
-                      <Link
-                        href={item.href}
-                        onClick={() => setSidebarOpen(false)}
-                        className={`group flex items-center px-2 py-2 text-base font-medium rounded-md ${
-                          isItemActive(item.href)
-                            ? 'bg-gray-100 text-gray-900'
-                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                        }`}
-                      >
-                        <svg
-                          className={`mr-4 h-6 w-6 ${
-                            isItemActive(item.href) ? 'text-gray-500' : 'text-gray-400 group-hover:text-gray-500'
-                          }`}
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
-                        </svg>
-                        <span className="flex min-w-0 flex-1 items-center gap-2">
-                          <span className="truncate">{item.name}</span>
-                          {item.href === '/dashboard/adjustments' && pendingAdjustmentCount > 0 && (
-                            <span className="inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
-                              {pendingAdjustmentCount > 99 ? '99+' : pendingAdjustmentCount}
-                            </span>
-                          )}
-                        </span>
-                        {hasVisibleChildren ? (
-                          <svg className={`h-4 w-4 transition ${isExpanded(item) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        ) : null}
-                      </Link>
-                      {hasVisibleChildren && isExpanded(item) ? (
-                        <div className="ml-10 space-y-1">
-                          {children.map((child) => (
-                            <Link
-                              key={child.href}
-                              href={child.href}
-                              onClick={() => setSidebarOpen(false)}
-                              className={`block rounded-md px-2 py-2 text-sm ${
-                                isItemActive(child.href)
-                                  ? 'bg-gray-100 text-gray-900'
-                                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                              }`}
-                            >
-                              {child.name}
-                            </Link>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                    );
-                  })}
-                </nav>
-              </div>
-              <div className="flex-shrink-0 flex border-t border-gray-200 p-4">
-                <div className="w-full space-y-3">
-                  <div>
-                    <p className="text-sm font-medium text-gray-700">{user?.email || user?.phone}</p>
-                    <p className="text-xs text-gray-500">{user?.roles.join(', ')}</p>
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100"
-                  >
-                    Chiqish
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="flex-shrink-0 w-14">{/* Spacer */}</div>
+      {/* Mobile drawer */}
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Menyu">
+          <div className="absolute inset-0 bg-slate-950/60" onClick={onMobileClose} />
+          <div className="relative h-full w-72 max-w-[85vw] shadow-xl">
+            {panel}
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Desktop sidebar */}
-      <div className={`${desktopSidebarOpen ? 'hidden lg:flex lg:flex-shrink-0' : 'hidden'}`}>
-        <div className="flex flex-col w-64">
-          <div className="flex flex-col h-0 flex-1 border-r border-gray-200 bg-white">
-            <div className="flex-1 flex flex-col pt-5 pb-4 overflow-y-auto">
-              <div className="flex items-center flex-shrink-0 px-4">
-                <h1 className="text-xl font-bold text-gray-900">Dashboarduz</h1>
-              </div>
-              <nav className="mt-5 flex-1 px-2 bg-white space-y-1">
-                {visibleNavigation.map((item) => {
-                  const children = visibleChildren(item);
-                  const hasVisibleChildren = children.length > 0;
-                  return (
-                  <div key={item.name} className="space-y-1">
-                    <Link
-                      href={item.href}
-                      className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                        isItemActive(item.href)
-                          ? 'bg-gray-100 text-gray-900'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                    >
-                      <svg
-                        className={`mr-3 h-6 w-6 ${
-                          isItemActive(item.href) ? 'text-gray-500' : 'text-gray-400 group-hover:text-gray-500'
-                        }`}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
-                      </svg>
-                      <span className="flex min-w-0 flex-1 items-center gap-2">
-                        <span className="truncate">{item.name}</span>
-                        {item.href === '/dashboard/adjustments' && pendingAdjustmentCount > 0 && (
-                          <span className="inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
-                            {pendingAdjustmentCount > 99 ? '99+' : pendingAdjustmentCount}
-                          </span>
-                        )}
-                      </span>
-                      {hasVisibleChildren ? (
-                        <svg className={`h-4 w-4 transition ${isExpanded(item) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      ) : null}
-                    </Link>
-                    {hasVisibleChildren && isExpanded(item) ? (
-                      <div className="ml-9 space-y-1">
-                        {children.map((child) => (
-                          <Link
-                            key={child.href}
-                            href={child.href}
-                            className={`block rounded-md px-2 py-2 text-sm ${
-                              isItemActive(child.href)
-                                ? 'bg-gray-100 text-gray-900'
-                                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                            }`}
-                          >
-                            {child.name}
-                          </Link>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  );
-                })}
-              </nav>
-            </div>
-            <div className="flex-shrink-0 border-t border-gray-200 p-4">
-              <div className="w-full space-y-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">{user?.email || user?.phone}</p>
-                  <p className="text-xs text-gray-500">{user?.roles.join(', ')}</p>
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="w-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100"
-                >
-                  Chiqish
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {desktopOpen ? (
+        <aside className="sticky top-0 hidden h-[100dvh] w-[260px] flex-shrink-0 border-r border-gray-200 lg:block">
+          {panel}
+        </aside>
+      ) : null}
     </>
   );
 }
-
