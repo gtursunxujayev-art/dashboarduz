@@ -2,58 +2,16 @@ import { reportRangeSchema } from '@dashboarduz/shared';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
+import { loadActiveCourseCatalog } from '../../../services/course-sales/catalog';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 
 import { z, protectedProcedure, } from './helpers';
 
 export const widgetProcedures = {
-  widgetCatalogOptions: protectedProcedure.query(async ({ ctx }) => {
-    const courses = await ctx.db.course.findMany({
-      where: {
-        tenantId: ctx.tenantId,
-        isActive: true,
-      },
-      orderBy: [{ name: 'asc' }],
-      select: {
-        id: true,
-        name: true,
-        category: true,
-        tariffs: {
-          where: { isActive: true },
-          orderBy: [{ name: 'asc' }],
-          select: {
-            id: true,
-            name: true,
-            subTariffs: {
-              where: { isActive: true },
-              orderBy: [{ name: 'asc' }],
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    return {
-      courses: courses.map((course) => ({
-        id: course.id,
-        name: course.name,
-        category: String(course.category || '').trim().toLowerCase(),
-        tariffs: course.tariffs.map((tariff) => ({
-          id: tariff.id,
-          name: tariff.name,
-          subTariffs: tariff.subTariffs.map((subTariff) => ({
-            id: subTariff.id,
-            name: subTariff.name,
-          })),
-        })),
-      })),
-    };
-  }),
+  widgetCatalogOptions: protectedProcedure.query(async ({ ctx }) => ({
+    courses: await loadActiveCourseCatalog({ db: ctx.db, tenantId: ctx.tenantId }),
+  })),
 
   customSalesWidgets: protectedProcedure
     .input(

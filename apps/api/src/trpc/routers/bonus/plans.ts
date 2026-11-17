@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { normalizeMatchText } from '../../../lib/text';
 import { mergeSalarySettings, parsePlanBonuses, validatePlanScope } from '../../../services/bonus-config/plans';
 import { type BonusPlan, canReadBonusPlans } from '../../../services/bonus-config/types';
+import { loadActiveCourseCatalog } from '../../../services/course-sales/catalog';
 import { adminProcedure, protectedProcedure } from '../../trpc';
 
 import { createPlanInput, updatePlanInput } from './schemas';
@@ -32,46 +33,8 @@ export const bonusPlanProcedures = {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus plan catalog is available for Admin/Manager/TeamLeader only.' });
     }
 
-    const courses = await ctx.db.course.findMany({
-      where: {
-        tenantId: ctx.tenantId,
-        isActive: true,
-      },
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        category: true,
-        tariffs: {
-          where: { isActive: true },
-          orderBy: { name: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            subTariffs: {
-              where: { isActive: true },
-              orderBy: { name: 'asc' },
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
     return {
-      courses: courses.map((course) => ({
-        id: course.id,
-        name: course.name,
-        category: String(course.category || '').trim().toLowerCase(),
-        tariffs: course.tariffs.map((tariff) => ({
-          id: tariff.id,
-          name: tariff.name,
-          subTariffs: tariff.subTariffs,
-        })),
-      })),
+      courses: await loadActiveCourseCatalog({ db: ctx.db, tenantId: ctx.tenantId }),
     };
   }),
   createPlan: adminProcedure.input(createPlanInput).mutation(async ({ ctx, input }) => {

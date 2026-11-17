@@ -1,9 +1,8 @@
 import { courseTypeCategorySchema, isAgentOnly } from '@dashboarduz/shared';
-import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { buildCategoryLabel, buildTechnicalSaleIdSetByAgreement } from '../../../services/course-sales/helpers';
-import { buildActiveSaleChainMetrics, INCOME_LIFECYCLE_ACTIVE, type SaleChainSaleRow } from '../../../services/income-chain';
+import { buildCategoryLabel } from '../../../services/course-sales/helpers';
+import { activeSalesWhere, buildCourseSaleFilters, findCategoryCourseIds, splitTechnicalSales } from '../../../services/course-sales/queries';
 import { resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 import { buildTariffBreakdown, type TariffBreakdownRow } from '../../../services/tariff-breakdown';
 import { protectedProcedure } from '../../trpc';
@@ -20,15 +19,7 @@ export const courseSalesTypeSummaryProcedures = {
     )
     .query(async ({ ctx, input }) => {
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
-      const categoryCourses = await ctx.db.course.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          isActive: true,
-          category: input.category,
-        },
-        select: { id: true, name: true },
-      });
-      const categoryCourseIds = categoryCourses.map((course) => course.id);
+      const categoryCourseIds = await findCategoryCourseIds(ctx.db, ctx.tenantId, input.category);
 
       if (categoryCourseIds.length === 0) {
         return {
@@ -56,29 +47,17 @@ export const courseSalesTypeSummaryProcedures = {
         };
       }
 
-      const scopedFilters: Record<string, unknown>[] = [];
-
-      if (input.courseId) {
-        if (!categoryCourseIds.includes(input.courseId)) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: "Kurs tanlangan turga tegishli emas." });
-        }
-        scopedFilters.push({ courseId: input.courseId });
-      } else {
-        scopedFilters.push({ courseId: { in: categoryCourseIds } });
-      }
-
-      if (input.tariffId) {
-        scopedFilters.push({ tariffId: input.tariffId });
-      }
+      // The sub-tariff is matched in memory below (resolveSaleSubTariffId), not in the query.
+      const scopedFilters = await buildCourseSaleFilters({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        courseId: input.courseId,
+        categoryCourseIds,
+        tariffId: input.tariffId,
+      });
 
       const matchedSales = await ctx.db.income.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          type: 'new_sale',
-          lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
-          ...(scopedFilters.length ? { AND: scopedFilters } : {}),
-        },
+        where: activeSalesWhere({ tenantId: ctx.tenantId, scopedManagerUserId, filters: scopedFilters }),
         select: {
           id: true,
           entryDate: true,
@@ -112,21 +91,13 @@ export const courseSalesTypeSummaryProcedures = {
       const filteredSales = input.subTariffId
         ? salesWithResolvedSubTariff.filter((sale) => sale.resolvedSubTariffId === input.subTariffId)
         : salesWithResolvedSubTariff;
-      const allChainMetricsBySaleId = await buildActiveSaleChainMetrics({
-        tenantId: ctx.tenantId,
-        sales: filteredSales as SaleChainSaleRow[],
-        db: ctx.db,
-      });
-      const technicalSaleIds = buildTechnicalSaleIdSetByAgreement({
-        sales: filteredSales,
-        chainMetricsBySaleId: allChainMetricsBySaleId,
-      });
-      const filteredNonTechnicalSales = filteredSales.filter((sale) => !technicalSaleIds.has(sale.id));
-      const nonTechnicalSaleIdSet = new Set(filteredNonTechnicalSales.map((sale) => sale.id));
+      const {
+        technicalSaleIds,
+        nonTechnicalSales: filteredNonTechnicalSales,
+        nonTechnicalSaleIdSet,
+        chainMetricsBySaleId,
+      } = await splitTechnicalSales({ db: ctx.db, tenantId: ctx.tenantId, sales: filteredSales });
       const nonTechnicalSaleCustomerById = new Map(filteredNonTechnicalSales.map((sale) => [sale.id, sale.customerId]));
-      const chainMetricsBySaleId = new Map(
-        Array.from(allChainMetricsBySaleId.entries()).filter(([saleId]) => nonTechnicalSaleIdSet.has(saleId)),
-      );
       const technicalCustomerCount = new Set(
         filteredSales
           .filter((sale) => technicalSaleIds.has(sale.id))

@@ -3,8 +3,9 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { resolveDateRange } from '../../../lib/dates';
-import { buildCategoryLabel, buildTechnicalSaleIdSetByAgreement, COURSE_SALES_DATE_MESSAGES, findSaleIdsBySubTariff } from '../../../services/course-sales/helpers';
-import { buildActiveSaleChainMetrics, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
+import { describeCourse } from '../../../services/course-sales/catalog';
+import { COURSE_SALES_DATE_MESSAGES } from '../../../services/course-sales/helpers';
+import { activeSalesWhere, buildCourseSaleFilters, echoReportRange, loadSalePaymentTotals, splitTechnicalSales } from '../../../services/course-sales/queries';
 import { resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 import { buildTariffBreakdown } from '../../../services/tariff-breakdown';
 import { protectedProcedure } from '../../trpc';
@@ -25,19 +26,13 @@ export const courseDetailProcedures = {
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo, COURSE_SALES_DATE_MESSAGES);
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
-      const scopedFilters: Record<string, unknown>[] = [];
-
-      if (input.courseId) {
-        scopedFilters.push({ courseId: input.courseId });
-      }
-      if (input.tariffId) {
-        scopedFilters.push({ tariffId: input.tariffId });
-      }
-      if (input.subTariffId) {
-        scopedFilters.push({
-          id: { in: await findSaleIdsBySubTariff(ctx.tenantId, input.subTariffId, [...scopedFilters], ctx.db) },
-        });
-      }
+      const scopedFilters = await buildCourseSaleFilters({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        courseId: input.courseId,
+        tariffId: input.tariffId,
+        subTariffId: input.subTariffId,
+      });
 
       const [course, sales] = await Promise.all([
         ctx.db.course.findFirst({
@@ -61,13 +56,7 @@ export const courseDetailProcedures = {
           },
         }),
         ctx.db.income.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            type: 'new_sale',
-            lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
-            ...(scopedFilters.length ? { AND: scopedFilters } : {}),
-          },
+          where: activeSalesWhere({ tenantId: ctx.tenantId, scopedManagerUserId, filters: scopedFilters }),
           select: {
             id: true,
             customerId: true,
@@ -102,17 +91,11 @@ export const courseDetailProcedures = {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Kurs topilmadi.' });
       }
 
-      const allChainMetricsBySaleId = await buildActiveSaleChainMetrics({
-        tenantId: ctx.tenantId,
-        sales: sales,
+      const { nonTechnicalSales, chainMetricsBySaleId } = await splitTechnicalSales({
         db: ctx.db,
-      });
-      const technicalSaleIds = buildTechnicalSaleIdSetByAgreement({
+        tenantId: ctx.tenantId,
         sales,
-        chainMetricsBySaleId: allChainMetricsBySaleId,
       });
-      const nonTechnicalSales = sales.filter((sale) => !technicalSaleIds.has(sale.id));
-      const saleIds = nonTechnicalSales.map((sale) => sale.id);
       const profileSubTariffIds = Array.from(
         new Set(
           sales
@@ -121,45 +104,14 @@ export const courseDetailProcedures = {
         ),
       );
 
-      const [rangeIncomes, allIncomes, subTariffs] = await Promise.all([
-        saleIds.length > 0
-          ? ctx.db.income.findMany({
-              where: {
-                tenantId: ctx.tenantId,
-                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-                entryDate: {
-                  gte: rangeStart,
-                  lte: rangeEnd,
-                },
-                OR: [
-                  { id: { in: saleIds } },
-                  { relatedDebtIncomeId: { in: saleIds } },
-                ],
-              },
-              select: {
-                id: true,
-                relatedDebtIncomeId: true,
-                paymentAmount: true,
-              },
-            })
-          : Promise.resolve([]),
-        saleIds.length > 0
-          ? ctx.db.income.findMany({
-              where: {
-                tenantId: ctx.tenantId,
-                lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-                OR: [
-                  { id: { in: saleIds } },
-                  { relatedDebtIncomeId: { in: saleIds } },
-                ],
-              },
-              select: {
-                id: true,
-                relatedDebtIncomeId: true,
-                paymentAmount: true,
-              },
-            })
-          : Promise.resolve([]),
+      const [{ rangeIncomeBySaleId: incomeBySaleId, currentIncomeBySaleId }, subTariffs] = await Promise.all([
+        loadSalePaymentTotals({
+          db: ctx.db,
+          tenantId: ctx.tenantId,
+          saleIds: nonTechnicalSales.map((sale) => sale.id),
+          rangeStart,
+          rangeEnd,
+        }),
         profileSubTariffIds.length > 0
           ? ctx.db.subTariff.findMany({
               where: {
@@ -173,31 +125,6 @@ export const courseDetailProcedures = {
             })
           : Promise.resolve([]),
       ]);
-
-      const saleIdSet = new Set(saleIds);
-      const nonTechnicalSaleIdSet = new Set(nonTechnicalSales.map((sale) => sale.id));
-      const chainMetricsBySaleId = new Map(
-        Array.from(allChainMetricsBySaleId.entries()).filter(([saleId]) => nonTechnicalSaleIdSet.has(saleId)),
-      );
-      const incomeBySaleId = new Map<string, number>();
-      const currentIncomeBySaleId = new Map<string, number>();
-
-      for (const income of rangeIncomes) {
-        const saleId = income.relatedDebtIncomeId || income.id;
-
-        if (!saleIdSet.has(saleId)) {
-          continue;
-        }
-        incomeBySaleId.set(saleId, (incomeBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
-      }
-      for (const income of allIncomes) {
-        const saleId = income.relatedDebtIncomeId || income.id;
-
-        if (!saleIdSet.has(saleId)) {
-          continue;
-        }
-        currentIncomeBySaleId.set(saleId, (currentIncomeBySaleId.get(saleId) ?? 0) + (income.paymentAmount ?? 0));
-      }
 
       const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, normalizeSubTariffName(subTariff.name)]));
 
@@ -400,15 +327,8 @@ export const courseDetailProcedures = {
         .sort((a, b) => b.incomeAmount - a.incomeAmount);
 
       return {
-        range: input.range,
-        dateFrom: input.range === 'custom' ? input.dateFrom || null : null,
-        dateTo: input.range === 'custom' ? input.dateTo || null : null,
-        course: {
-          id: course.id,
-          name: course.name,
-          category: String(course.category || '').trim().toLowerCase(),
-          categoryLabel: buildCategoryLabel(String(course.category || '')),
-        },
+        ...echoReportRange(input),
+        course: describeCourse(course),
         selectedTariffId: input.tariffId || null,
         selectedSubTariffId: input.subTariffId || null,
         summary: {
