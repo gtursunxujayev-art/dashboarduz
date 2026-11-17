@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { normalizePercentage } from '../../../lib/number';
 import { asObjectOrEmpty } from '../../../lib/object';
+import { loadTenantSettings, saveTenantSettings, withSalarySettings } from '../../../lib/tenant-settings';
 import { parseAttendancePenaltySettings, parseBonusRules, parseFixedSalaries, parseKpiSettings, sanitizeCategoryRule, validateTierRules } from '../../../services/bonus-config/rules';
 import { BONUS_RULE_CATEGORIES, type BonusRuleCategory, canReadBonusPlans, getCategoryLabel, type SalaryBonusRules } from '../../../services/bonus-config/types';
 import { buildLegacyBonusPolicy, getTashkentMonthKey, getTashkentMonthStart, normalizeBonusPolicy, resolveEffectiveBonusPolicy } from '../../../services/bonus-engine';
@@ -16,23 +17,16 @@ export const bonusPolicyProcedures = {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus settings are available for Admin/Manager/TeamLeader only.' });
     }
 
-    const tenant = await ctx.db.tenant.findUnique({
-      where: { id: ctx.tenantId },
-      select: { settings: true },
-    });
+    const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
-    if (!tenant) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-    }
-
-    const parsed = parseBonusRules(tenant.settings);
+    const parsed = parseBonusRules(tenantSettings);
 
     return {
       bonusMode: parsed.bonusMode,
       bonusRules: parsed.bonusRules,
-      fixedSalaries: parseFixedSalaries(tenant.settings),
-      attendancePenaltySettings: parseAttendancePenaltySettings(tenant.settings),
-      kpiSettings: parseKpiSettings(tenant.settings),
+      fixedSalaries: parseFixedSalaries(tenantSettings),
+      attendancePenaltySettings: parseAttendancePenaltySettings(tenantSettings),
+      kpiSettings: parseKpiSettings(tenantSettings),
     };
   }),
   getPolicyEditor: protectedProcedure
@@ -115,9 +109,7 @@ export const bonusPolicyProcedures = {
         throw new TRPCError({ code: 'BAD_REQUEST', message: `${courseId}: oxirgi tier ochiq bo'lishi kerak.` });
       }
     }
-    const tenant = await ctx.db.tenant.findUnique({ where: { id: ctx.tenantId }, select: { settings: true } });
-
-    if (!tenant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
+    const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
     const normalizedRules: SalaryBonusRules = {
       online: sanitizeCategoryRule(input.bonusRules.online, input.bonusRules.online.simplePercent),
       offline: sanitizeCategoryRule(input.bonusRules.offline, input.bonusRules.offline.simplePercent),
@@ -129,8 +121,8 @@ export const bonusPolicyProcedures = {
       bonusMode: input.bonusMode,
       bonusRules: normalizedRules,
       courseOverrides: input.courseOverrides,
-    }, tenant.settings);
-    const settingsObject = asObjectOrEmpty(tenant.settings);
+    }, tenantSettings);
+    const settingsObject = asObjectOrEmpty(tenantSettings);
     const salarySettings = asObjectOrEmpty(settingsObject.salary);
 
     await ctx.db.$transaction(async (tx) => {
@@ -141,7 +133,7 @@ export const bonusPolicyProcedures = {
           data: {
             tenantId: ctx.tenantId,
             effectiveMonth: new Date('1970-01-01T00:00:00.000Z'),
-            policy: buildLegacyBonusPolicy(tenant.settings) as any,
+            policy: buildLegacyBonusPolicy(tenantSettings) as any,
             createdByUserId: ctx.user.userId,
           },
         });
@@ -202,17 +194,8 @@ export const bonusPolicyProcedures = {
       }
     }
 
-    const tenant = await ctx.db.tenant.findUnique({
-      where: { id: ctx.tenantId },
-      select: { settings: true },
-    });
+    const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
-    if (!tenant) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-    }
-
-    const settingsObject = asObjectOrEmpty(tenant.settings);
-    const salarySettings = asObjectOrEmpty(settingsObject.salary);
     const normalizedRules: SalaryBonusRules = {
       online: sanitizeCategoryRule(input.bonusRules.online, input.bonusRules.online.simplePercent),
       offline: sanitizeCategoryRule(input.bonusRules.offline, input.bonusRules.offline.simplePercent),
@@ -232,31 +215,18 @@ export const bonusPolicyProcedures = {
           : 0,
     };
 
-    const nextSettings = {
-      ...settingsObject,
-      salary: {
-        ...salarySettings,
-        bonusMode: input.bonusMode,
-        bonusRules: normalizedRules,
-        bonusPercentages: compatibilityPercentages,
-      },
-    };
-
-    await ctx.db.tenant.update({
-      where: { id: ctx.tenantId },
-      data: {
-        settings: JSON.parse(JSON.stringify(nextSettings)),
-      },
+    const nextSettings = withSalarySettings(tenantSettings, {
+      bonusMode: input.bonusMode,
+      bonusRules: normalizedRules,
+      bonusPercentages: compatibilityPercentages,
     });
 
-    await ctx.db.auditLog.create({
-      data: {
-        tenantId: ctx.tenantId,
-        userId: ctx.user.userId,
-        action: 'bonus_rules_update',
-        resource: 'tenant_settings',
-        resourceId: ctx.tenantId,
-      },
+    await saveTenantSettings({
+      db: ctx.db,
+      tenantId: ctx.tenantId,
+      actorUserId: ctx.user.userId,
+      settings: nextSettings,
+      auditAction: 'bonus_rules_update',
     });
 
     return { success: true };

@@ -1,9 +1,9 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, isAgentOnly, isTashkiliyOnly, reportRangeSchema, type UserRole } from '@dashboarduz/shared';
+import { isAgentOnly, isTashkiliyOnly, reportRangeSchema, type UserRole } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { resolveDateRange } from '../../lib/dates';
-import { classifyCourseCategoryFromField, createZeroBreakdown, extractSalarySettings, type SalaryBreakdown, type SalaryCategory, TRPCError } from '../../trpc/routers/dashboard/helpers';
+import { classifyCourseCategoryFromField, createZeroBreakdown, type SalaryBreakdown, type SalaryCategory, TRPCError } from '../../trpc/routers/dashboard/helpers';
 import { buildBonusDetailIncomeWhere, isBonusDetailExportOverLimit } from '../bonus-detail-export';
 import { calculateBonusRange, loadSaleClosures, resolveEffectiveBonusPolicy } from '../bonus-engine';
 import { buildSaleChainMetricsBySaleId, INCOME_LIFECYCLE_ACTIVE } from '../income-chain';
@@ -11,6 +11,7 @@ import { resolveSaleAgreementAmount } from '../income-facts';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../technical-income';
 
 import { extractBonusDetailSubTariffId } from './salary-helpers';
+import { loadSalarySettingsAndAgents } from './salary-settings';
 
 export const bonusIncomeDetailsInputSchema = z.object({
   range: reportRangeSchema.default('month'),
@@ -54,33 +55,7 @@ export async function loadBonusIncomeDetails({
       const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
       const selectedManagerUserId = scopedManagerUserId || input.managerUserId;
 
-      const [tenant, allAgents] = await Promise.all([
-        ctx.db.tenant.findUnique({
-          where: { id: ctx.tenantId },
-          select: { settings: true },
-        }),
-        ctx.db.user.findMany({
-          where: {
-            tenantId: ctx.tenantId,
-            isActive: true,
-            roles: {
-              hasSome: [...AGENT_ROLES, 'TeamLeader'],
-            },
-          },
-          orderBy: [{ name: 'asc' }, { username: 'asc' }],
-          select: {
-            id: true,
-            name: true,
-            username: true,
-          },
-        }),
-      ]);
-
-      if (!tenant) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-      }
-
-      const salarySettings = extractSalarySettings(tenant.settings);
+      const { allAgents } = await loadSalarySettingsAndAgents(ctx.db, ctx.tenantId);
       // Label with the bonus policy that applies to the viewed period, not whatever was saved last.
       const viewedBonusMode = (await resolveEffectiveBonusPolicy(ctx.tenantId, rangeEnd, ctx.db)).policy.bonusMode;
       const visibleAgents = selectedManagerUserId

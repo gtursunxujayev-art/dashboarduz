@@ -1,4 +1,4 @@
-import { AGENT_ROLES, isAgentOnly, normalizeSubTariffName, reportRangeSchema, TASHKENT_OFFSET_MS, toTashkentDateKey } from '@dashboarduz/shared';
+import { isAgentOnly, normalizeSubTariffName, reportRangeSchema, TASHKENT_OFFSET_MS, toTashkentDateKey } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { resolveDateRange } from '../../../lib/dates';
@@ -6,6 +6,7 @@ import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthSt
 import { buildCacheKey, getOrSet } from '../../../services/cache';
 import { countedCallsWhere } from '../../../services/calls-source';
 import { buildRequiredWorkdaysByMonth, calculateProratedFixedSalary, getDayOfWeekFromLocalDateKey, type KpiBreakdownEntry, scoreKpi } from '../../../services/dashboard/salary-helpers';
+import { loadSalarySettingsAndAgents } from '../../../services/dashboard/salary-settings';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
@@ -14,7 +15,7 @@ import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-li
 import { computePlanProgressByAgent } from '../../../services/plan-bonus';
 
 import { bonusIncomeDetails, exportBonusIncomeDetails } from './bonus-income-details';
-import { createZeroBreakdown, extractSalarySettings, getCurrentMonthRange, KPI_METRIC_KEYS, type KpiMetricKey, type PlanBonusPeriodMode, protectedProcedure, type SalaryBreakdown, TRPCError } from './helpers';
+import { createZeroBreakdown, getCurrentMonthRange, KPI_METRIC_KEYS, type KpiMetricKey, type PlanBonusPeriodMode, protectedProcedure, type SalaryBreakdown } from './helpers';
 
 /** KPI metrics whose values come from amoCRM tasks and events. */
 const AMO_ACTIVITY_KPI_METRICS = ['followUpCount', 'followUpDonePercent', 'stageChangeCount'] as const;
@@ -51,33 +52,7 @@ const salarySummary = protectedProcedure
     const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
     const selectedManagerUserId = scopedManagerUserId || input?.managerUserId;
 
-    const [tenant, allAgents] = await Promise.all([
-      ctx.db.tenant.findUnique({
-        where: { id: ctx.tenantId },
-        select: { settings: true },
-      }),
-      ctx.db.user.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          isActive: true,
-          roles: {
-            hasSome: [...AGENT_ROLES, 'TeamLeader'],
-          },
-        },
-        orderBy: [{ name: 'asc' }, { username: 'asc' }],
-        select: {
-          id: true,
-          name: true,
-          username: true,
-        },
-      }),
-    ]);
-
-    if (!tenant) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-    }
-
-    const salarySettings = extractSalarySettings(tenant.settings);
+    const { salarySettings, allAgents } = await loadSalarySettingsAndAgents(ctx.db, ctx.tenantId);
     // Label with the bonus policy that applies to the viewed period, not whatever was saved last.
     const viewedBonusMode = (await resolveEffectiveBonusPolicy(ctx.tenantId, rangeEnd, ctx.db)).policy.bonusMode;
     const agents = selectedManagerUserId
@@ -435,10 +410,10 @@ const salarySummary = protectedProcedure
           avgDailyTalkTime: Math.round(dailyTalkTime),
           debtCollectPercent: Number(debtCollectionRate.toFixed(2)),
           avgLeadResponseTime: 0,
-          callCount: callCount,
-          followUpCount: followUpCount,
+          callCount,
+          followUpCount,
           followUpDonePercent: Number(followUpDonePercent.toFixed(2)),
-          stageChangeCount: stageChangeCount,
+          stageChangeCount,
         };
 
         const kpiBreakdown = {} as Record<KpiMetricKey, KpiBreakdownEntry>;

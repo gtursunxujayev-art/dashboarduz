@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { loadTenantSettings, saveTenantSettings } from '../../../lib/tenant-settings';
 import { normalizeMatchText } from '../../../lib/text';
 import { mergeSalarySettings, parsePlanBonuses, validatePlanScope } from '../../../services/bonus-config/plans';
 import { type BonusPlan, canReadBonusPlans } from '../../../services/bonus-config/types';
@@ -15,17 +16,10 @@ export const bonusPlanProcedures = {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus plans are available for Admin/Manager/TeamLeader only.' });
     }
 
-    const tenant = await ctx.db.tenant.findUnique({
-      where: { id: ctx.tenantId },
-      select: { settings: true },
-    });
-
-    if (!tenant) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-    }
+    const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
     return {
-      plans: parsePlanBonuses(tenant.settings),
+      plans: parsePlanBonuses(tenantSettings),
     };
   }),
   catalogOptions: protectedProcedure.query(async ({ ctx }) => {
@@ -38,14 +32,7 @@ export const bonusPlanProcedures = {
     };
   }),
   createPlan: adminProcedure.input(createPlanInput).mutation(async ({ ctx, input }) => {
-    const tenant = await ctx.db.tenant.findUnique({
-      where: { id: ctx.tenantId },
-      select: { settings: true },
-    });
-
-    if (!tenant) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-    }
+    const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
     await validatePlanScope({
       tenantId: ctx.tenantId,
@@ -57,7 +44,7 @@ export const bonusPlanProcedures = {
       db: ctx.db,
     });
 
-    const currentPlans = parsePlanBonuses(tenant.settings);
+    const currentPlans = parsePlanBonuses(tenantSettings);
     const nowIso = new Date().toISOString();
     const newPlan: BonusPlan = {
       id: crypto.randomUUID(),
@@ -76,44 +63,28 @@ export const bonusPlanProcedures = {
     };
 
     const settingsPayload = mergeSalarySettings({
-      currentSettings: tenant.settings,
+      currentSettings: tenantSettings,
       nextPlans: [...currentPlans, newPlan],
     });
 
-    await ctx.db.tenant.update({
-      where: { id: ctx.tenantId },
-      data: {
-        settings: JSON.parse(JSON.stringify(settingsPayload)),
-      },
-    });
-
-    await ctx.db.auditLog.create({
-      data: {
-        tenantId: ctx.tenantId,
-        userId: ctx.user.userId,
-        action: 'bonus_plan_create',
-        resource: 'tenant_settings',
-        resourceId: ctx.tenantId,
-        metadata: {
-          planId: newPlan.id,
-          name: newPlan.name,
-        },
+    await saveTenantSettings({
+      db: ctx.db,
+      tenantId: ctx.tenantId,
+      actorUserId: ctx.user.userId,
+      settings: settingsPayload,
+      auditAction: 'bonus_plan_create',
+      auditMetadata: {
+        planId: newPlan.id,
+        name: newPlan.name,
       },
     });
 
     return { success: true, plan: newPlan };
   }),
   updatePlan: adminProcedure.input(updatePlanInput).mutation(async ({ ctx, input }) => {
-    const tenant = await ctx.db.tenant.findUnique({
-      where: { id: ctx.tenantId },
-      select: { settings: true },
-    });
+    const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
-    if (!tenant) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-    }
-
-    const currentPlans = parsePlanBonuses(tenant.settings);
+    const currentPlans = parsePlanBonuses(tenantSettings);
     const targetIndex = currentPlans.findIndex((plan) => plan.id === input.id);
 
     if (targetIndex < 0) {
@@ -159,28 +130,19 @@ export const bonusPlanProcedures = {
     nextPlans[targetIndex] = normalizedNextPlan;
 
     const settingsPayload = mergeSalarySettings({
-      currentSettings: tenant.settings,
+      currentSettings: tenantSettings,
       nextPlans,
     });
 
-    await ctx.db.tenant.update({
-      where: { id: ctx.tenantId },
-      data: {
-        settings: JSON.parse(JSON.stringify(settingsPayload)),
-      },
-    });
-
-    await ctx.db.auditLog.create({
-      data: {
-        tenantId: ctx.tenantId,
-        userId: ctx.user.userId,
-        action: 'bonus_plan_update',
-        resource: 'tenant_settings',
-        resourceId: ctx.tenantId,
-        metadata: {
-          planId: nextPlan.id,
-          name: normalizedNextPlan.name,
-        },
+    await saveTenantSettings({
+      db: ctx.db,
+      tenantId: ctx.tenantId,
+      actorUserId: ctx.user.userId,
+      settings: settingsPayload,
+      auditAction: 'bonus_plan_update',
+      auditMetadata: {
+        planId: nextPlan.id,
+        name: normalizedNextPlan.name,
       },
     });
 
@@ -189,16 +151,9 @@ export const bonusPlanProcedures = {
   deletePlan: adminProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const tenant = await ctx.db.tenant.findUnique({
-        where: { id: ctx.tenantId },
-        select: { settings: true },
-      });
+      const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
-      if (!tenant) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-      }
-
-      const currentPlans = parsePlanBonuses(tenant.settings);
+      const currentPlans = parsePlanBonuses(tenantSettings);
       const deletedPlan = currentPlans.find((plan) => plan.id === input.id);
 
       if (!deletedPlan) {
@@ -207,28 +162,19 @@ export const bonusPlanProcedures = {
 
       const nextPlans = currentPlans.filter((plan) => plan.id !== input.id);
       const settingsPayload = mergeSalarySettings({
-        currentSettings: tenant.settings,
+        currentSettings: tenantSettings,
         nextPlans,
       });
 
-      await ctx.db.tenant.update({
-        where: { id: ctx.tenantId },
-        data: {
-          settings: JSON.parse(JSON.stringify(settingsPayload)),
-        },
-      });
-
-      await ctx.db.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'bonus_plan_delete',
-          resource: 'tenant_settings',
-          resourceId: ctx.tenantId,
-          metadata: {
-            planId: deletedPlan.id,
-            name: deletedPlan.name,
-          },
+      await saveTenantSettings({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        actorUserId: ctx.user.userId,
+        settings: settingsPayload,
+        auditAction: 'bonus_plan_delete',
+        auditMetadata: {
+          planId: deletedPlan.id,
+          name: deletedPlan.name,
         },
       });
 

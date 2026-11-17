@@ -4,16 +4,17 @@ import { getAgentResponsibleScope } from '../../../lib/access';
 import { withTimeout } from '../../../lib/async';
 import { resolveDateRange } from '../../../lib/dates';
 import { logger } from '../../../lib/logger';
-import { asObject } from '../../../lib/object';
+import { loadTenantSettings } from '../../../lib/tenant-settings';
 import { buildCacheKey, getOrSet, invalidateCache } from '../../../services/cache';
 import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
+import { readDashboardSettings } from '../../../services/dashboard/dashboard-settings';
 import { createSummarySourceStatus, runSummarySourceWithRetry } from '../../../services/dashboard/summary-sources';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import type { AmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 
-import { asStringArray, buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, fetchSnapshotLeads, getAmoCRMActivityMetricsWithin, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, TRPCError, z } from './helpers';
+import { buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, fetchSnapshotLeads, getAmoCRMActivityMetricsWithin, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, z } from './helpers';
 
 /** How long the dashboard summary waits for amoCRM activity before answering without it. */
 const SUMMARY_ACTIVITY_WAIT_MS = 3_000;
@@ -53,22 +54,9 @@ export const summaryProcedures = {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const tashkiliyOnly = isTashkiliyOnly(ctx.user.roles);
       const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
-      const tenant = await ctx.db.tenant.findUnique({
-        where: { id: ctx.tenantId },
-        select: { settings: true },
-      });
+      const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
-      if (!tenant) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-      }
-
-      const settings = asObject(tenant.settings);
-      const dashboardSettings = asObject(settings?.dashboard);
-      const reasonFieldKey = typeof dashboardSettings?.reasonFieldKey === 'string' ? dashboardSettings.reasonFieldKey : null;
-      const sourceFieldKey = typeof dashboardSettings?.sourceFieldKey === 'string' ? dashboardSettings.sourceFieldKey : null;
-      const qualifiedValues = asStringArray(dashboardSettings?.qualifiedValues);
-      const nonQualifiedValues = asStringArray(dashboardSettings?.nonQualifiedValues);
-      const qualifiedStageIds = asStringArray(dashboardSettings?.qualifiedStageIds);
+      const { reasonFieldKey, sourceFieldKey, qualifiedValues, nonQualifiedValues, qualifiedStageIds } = readDashboardSettings(tenantSettings);
 
       // Tahlil source map:
       // - dashboard.summary (this route) => KPI/team block

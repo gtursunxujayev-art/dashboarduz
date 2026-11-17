@@ -1,7 +1,7 @@
 import { asObject } from '../../../lib/object';
+import { loadTenantSettings, saveTenantSettings } from '../../../lib/tenant-settings';
 
 import {
-  TRPCError,
   protectedProcedure,
   dashboardLayoutInputSchema,
   normalizeDashboardUserLayout,
@@ -10,16 +10,9 @@ import {
 
 export const layoutProcedures = {
   getUserLayout: protectedProcedure.query(async ({ ctx }) => {
-    const tenant = await ctx.db.tenant.findUnique({
-      where: { id: ctx.tenantId },
-      select: { settings: true },
-    });
+    const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
-    if (!tenant) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-    }
-
-    const settings = asObject(tenant.settings) || {};
+    const settings = asObject(tenantSettings) || {};
     const dashboardUserLayouts = asObject(settings?.dashboardUserLayouts) || {};
     const userLayout = normalizeDashboardUserLayout(dashboardUserLayouts?.[ctx.user.userId]);
 
@@ -29,14 +22,7 @@ export const layoutProcedures = {
   saveUserLayout: protectedProcedure
     .input(dashboardLayoutInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const tenant = await ctx.db.tenant.findUnique({
-        where: { id: ctx.tenantId },
-        select: { settings: true },
-      });
-
-      if (!tenant) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-      }
+      const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
       const uniqueVisibleWidgetIds = Array.from(
         new Set(input.visibleWidgetIds.map((item) => item.trim()).filter(Boolean)),
@@ -58,7 +44,7 @@ export const layoutProcedures = {
         });
       }
 
-      const settings = asObject(tenant.settings) || {};
+      const settings = asObject(tenantSettings) || {};
       const dashboardUserLayouts = asObject(settings?.dashboardUserLayouts) || {};
 
       dashboardUserLayouts[ctx.user.userId] = {
@@ -67,29 +53,18 @@ export const layoutProcedures = {
         updatedAt: new Date().toISOString(),
       };
 
-      await ctx.db.tenant.update({
-        where: { id: ctx.tenantId },
-        data: {
-          settings: JSON.parse(
-            JSON.stringify({
-              ...settings,
-              dashboardUserLayouts,
-            }),
-          ),
+      await saveTenantSettings({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        actorUserId: ctx.user.userId,
+        settings: {
+          ...settings,
+          dashboardUserLayouts,
         },
-      });
-
-      await ctx.db.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'dashboard_layout_update',
-          resource: 'tenant_settings',
-          resourceId: ctx.tenantId,
-          metadata: {
-            visibleWidgetCount: uniqueVisibleWidgetIds.length,
-            customWidgetCount: customWidgetById.size,
-          },
+        auditAction: 'dashboard_layout_update',
+        auditMetadata: {
+          visibleWidgetCount: uniqueVisibleWidgetIds.length,
+          customWidgetCount: customWidgetById.size,
         },
       });
 

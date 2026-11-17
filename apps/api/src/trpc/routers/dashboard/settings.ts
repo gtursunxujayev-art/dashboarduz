@@ -1,9 +1,8 @@
-import { asObject } from '../../../lib/object';
+import { loadTenantSettings } from '../../../lib/tenant-settings';
+import { readDashboardSettings } from '../../../services/dashboard/dashboard-settings';
 
 import {
-  TRPCError,
   z,
-  asStringArray,
   extractLeadValue,
   getSystemLeadFieldOptions,
   getTenantAmoCRMContext,
@@ -33,25 +32,9 @@ export const settingsProcedures = {
   }),
 
   getSettings: protectedProcedure.query(async ({ ctx }) => {
-    const tenant = await ctx.db.tenant.findUnique({
-      where: { id: ctx.tenantId },
-      select: { settings: true },
-    });
+    const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
-    if (!tenant) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Tenant not found' });
-    }
-
-    const settings = asObject(tenant.settings);
-    const dashboardSettings = asObject(settings?.dashboard);
-
-    return {
-      reasonFieldKey: typeof dashboardSettings?.reasonFieldKey === 'string' ? dashboardSettings.reasonFieldKey : null,
-      sourceFieldKey: typeof dashboardSettings?.sourceFieldKey === 'string' ? dashboardSettings.sourceFieldKey : null,
-      qualifiedStageIds: asStringArray(dashboardSettings?.qualifiedStageIds),
-      qualifiedValues: asStringArray(dashboardSettings?.qualifiedValues),
-      nonQualifiedValues: asStringArray(dashboardSettings?.nonQualifiedValues),
-    };
+    return readDashboardSettings(tenantSettings);
   }),
 
   reasonValueOptions: adminProcedure

@@ -1,7 +1,9 @@
-import { COURSE_CATEGORIES, PLAN_BONUS_PERIOD_MODES, type PlanBonusPeriodMode, SALARY_RULE_MODES, SALARY_TIER_BASES, type SalaryBonusMode, type SalaryRuleMode, type SalaryTierBasis } from '@dashboarduz/shared';
+import type { DbClient } from '@dashboarduz/db';
+import { AGENT_ROLES, COURSE_CATEGORIES, PLAN_BONUS_PERIOD_MODES, type PlanBonusPeriodMode, SALARY_RULE_MODES, SALARY_TIER_BASES, type SalaryBonusMode, type SalaryRuleMode, type SalaryTierBasis } from '@dashboarduz/shared';
 
 import { normalizePercentage } from '../../lib/number';
 import { asObject, toFiniteNumber } from '../../lib/object';
+import { loadTenantSettings } from '../../lib/tenant-settings';
 
 /** Salary bonus rules and plan bonuses are both configured per course category. */
 export const SALARY_CATEGORIES = COURSE_CATEGORIES;
@@ -412,4 +414,28 @@ export function getBonusAmount(amount: number, percentage: number): number {
   }
 
   return Math.round((amount * percentage) / 100);
+}
+
+/** The tenant's salary settings and its active agents and team leaders (by name), for the salary and bonus screens. */
+export async function loadSalarySettingsAndAgents(db: DbClient, tenantId: string) {
+  const [settings, allAgents] = await Promise.all([
+    loadTenantSettings(db, tenantId),
+    db.user.findMany({
+      where: {
+        tenantId,
+        isActive: true,
+        roles: {
+          hasSome: [...AGENT_ROLES, 'TeamLeader'],
+        },
+      },
+      orderBy: [{ name: 'asc' }, { username: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        username: true,
+      },
+    }),
+  ]);
+
+  return { salarySettings: extractSalarySettings(settings), allAgents };
 }
