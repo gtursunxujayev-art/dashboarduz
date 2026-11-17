@@ -1,9 +1,8 @@
-import { managerGroupSchema, normalizeDigits } from '@dashboarduz/shared';
+import { managerGroupSchema } from '@dashboarduz/shared';
 
 import { getRangeStart } from '../../../lib/dates';
-import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
 import { calculateBonusRange } from '../../../services/bonus-engine';
-import { getCallsProvider } from '../../../services/calls-source';
+import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { type AgentGroup, canReadLiveLeaderboard, courseScopedIncomeWhere, getAgentLabel, groupAgentRoles, incomeRowSelect, type LeaderboardAgent, loadAgreementBonusAndDebt, loadPreviousOnlineCourses, pickLeaderboardWinner, projectMonthlyKutilma, resolveAgentGroup, sumCourseBonusByAgent, summarizeLeaderboardAgents } from '../../../services/dashboard/live-leaderboard';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
@@ -160,40 +159,20 @@ export const liveLeaderboardProcedures = {
         select: {
           id: true,
           roles: true,
-          utelManagerExternalId: true,
         },
       });
       const groupedAgents = agents.filter((agent) => resolveAgentGroup(agent.roles) === requestedGroup);
       const agentIds = groupedAgents.map((agent) => agent.id);
-      const extensionToAgentId = new Map<string, string>();
-
-      for (const agent of groupedAgents) {
-        const extension = normalizeDigits(agent.utelManagerExternalId);
-
-        if (isAllowedUtelManagerExtension(extension) && !extensionToAgentId.has(extension)) {
-          extensionToAgentId.set(extension, agent.id);
-        }
-      }
-      const extensions = Array.from(extensionToAgentId.keys());
-
       const [calls, corporateDurationByAgentId] = await Promise.all([
-        extensions.length > 0
+        agentIds.length > 0
           ? ctx.db.call.findMany({
               where: {
-                tenantId: ctx.tenantId,
-                provider: await getCallsProvider(ctx.tenantId, ctx.db),
+                ...countedCallsWhere(ctx.tenantId, agentIds),
                 startedAt: { gte: todayStart, lte: now },
-                OR: [
-                  { from: { in: extensions } },
-                  { to: { in: extensions } },
-                ],
               },
               select: {
-                from: true,
-                to: true,
-                direction: true,
+                managerUserId: true,
                 duration: true,
-                metadata: true,
               },
             })
           : Promise.resolve([]),
@@ -210,8 +189,7 @@ export const liveLeaderboardProcedures = {
       const callDurationByAgentId = new Map<string, number>();
 
       for (const call of calls) {
-        const extension = resolveCallExtension(call);
-        const agentId = extension ? extensionToAgentId.get(extension) : null;
+        const agentId = call.managerUserId;
 
         if (!agentId) {
           continue;
@@ -219,7 +197,7 @@ export const liveLeaderboardProcedures = {
         callCountByAgentId.set(agentId, (callCountByAgentId.get(agentId) || 0) + 1);
         callDurationByAgentId.set(
           agentId,
-          (callDurationByAgentId.get(agentId) || 0) + resolveCallDuration(call.duration, call.metadata),
+          (callDurationByAgentId.get(agentId) || 0) + Math.max(0, call.duration ?? 0),
         );
       }
 

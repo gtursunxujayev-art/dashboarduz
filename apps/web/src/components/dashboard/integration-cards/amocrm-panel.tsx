@@ -1,6 +1,5 @@
 'use client';
 
-import { AmoCallsSourcePanel } from '@/components/dashboard/amo-calls-source-panel';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import type { IntegrationCardModel } from './use-integration-card';
 
@@ -81,8 +80,6 @@ export function AmoCrmPanel({ vm }: { vm: IntegrationCardModel }) {
           </div>
         </div>
       )}
-
-      {isAmoActive && <AmoCallsSourcePanel />}
     </>
   );
 }

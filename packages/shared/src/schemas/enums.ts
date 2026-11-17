@@ -65,10 +65,6 @@ export type ManagerGroup = z.infer<typeof managerGroupSchema>;
 export const funnelGroupSchema = z.enum(['all', 'online', 'offline']);
 export type FunnelGroup = z.infer<typeof funnelGroupSchema>;
 
-/** Where call records come from. */
-export const callsSourceSchema = z.enum(['utel', 'amocrm']);
-export type CallsSource = z.infer<typeof callsSourceSchema>;
-
 /** Topics the analytics AI can focus on. */
 export const aiFocusSchema = z.enum(['sales', 'lead_quality', 'meta_targeting', 'agents', 'courses']);
 export type AiFocus = z.infer<typeof aiFocusSchema>;

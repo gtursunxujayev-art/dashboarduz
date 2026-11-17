@@ -29,9 +29,6 @@ export default function UsersPage() {
   const amocrmManagersQuery = trpc.users.amocrmManagers.useQuery(undefined, {
     retry: false,
   });
-  const utelManagersQuery = trpc.users.utelManagers.useQuery(undefined, {
-    retry: false,
-  });
   const telegramRecipientsQuery = trpc.users.telegramRecipients.useQuery(undefined, {
     retry: false,
     refetchInterval: 15_000,
@@ -51,12 +48,10 @@ export default function UsersPage() {
   const [newPhone, setNewPhone] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('Agent');
   const [newAmoManagerId, setNewAmoManagerId] = useState('');
-  const [newUtelManagerId, setNewUtelManagerId] = useState('');
   const [newTelegramChatId, setNewTelegramChatId] = useState('');
 
   const [roleDrafts, setRoleDrafts] = useState<Record<string, UserRole>>({});
   const [managerDrafts, setManagerDrafts] = useState<Record<string, string>>({});
-  const [utelDrafts, setUtelDrafts] = useState<Record<string, string>>({});
   const [telegramDrafts, setTelegramDrafts] = useState<Record<string, string>>({});
   const [loginDrafts, setLoginDrafts] = useState<Record<string, string>>({});
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
@@ -64,14 +59,12 @@ export default function UsersPage() {
   const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
 
   const amocrmManagers = useMemo(() => amocrmManagersQuery.data || [], [amocrmManagersQuery.data]);
-  const utelManagers = useMemo(() => utelManagersQuery.data || [], [utelManagersQuery.data]);
   const telegramRecipients = useMemo(() => telegramRecipientsQuery.data || [], [telegramRecipientsQuery.data]);
 
   useEffect(() => {
     const users = usersQuery.data || [];
     const nextRoleDrafts: Record<string, UserRole> = {};
     const nextManagerDrafts: Record<string, string> = {};
-    const nextUtelDrafts: Record<string, string> = {};
     const nextTelegramDrafts: Record<string, string> = {};
     const nextLoginDrafts: Record<string, string> = {};
     const nextNameDrafts: Record<string, string> = {};
@@ -80,7 +73,6 @@ export default function UsersPage() {
     for (const user of users as any[]) {
       nextRoleDrafts[user.id] = (user.roles?.[0] || 'Agent') as UserRole;
       nextManagerDrafts[user.id] = user.amocrmResponsibleUserId || '';
-      nextUtelDrafts[user.id] = user.utelManagerExternalId || '';
       nextTelegramDrafts[user.id] = user.telegramId || '';
       nextLoginDrafts[user.id] = user.username || '';
       nextNameDrafts[user.id] = user.name || '';
@@ -89,7 +81,6 @@ export default function UsersPage() {
 
     setRoleDrafts(nextRoleDrafts);
     setManagerDrafts(nextManagerDrafts);
-    setUtelDrafts(nextUtelDrafts);
     setTelegramDrafts(nextTelegramDrafts);
     setLoginDrafts(nextLoginDrafts);
     setNameDrafts(nextNameDrafts);
@@ -108,7 +99,6 @@ export default function UsersPage() {
         phone: newPhone.trim() || undefined,
         role: newRole,
         amocrmResponsibleUserId: roleNeedsManagerMapping(newRole) ? (newAmoManagerId || undefined) : undefined,
-        utelManagerExternalId: roleNeedsManagerMapping(newRole) ? (newUtelManagerId || undefined) : undefined,
         telegramChatId: newTelegramChatId || undefined,
       });
 
@@ -117,7 +107,6 @@ export default function UsersPage() {
       setNewPhone('');
       setNewRole('Agent');
       setNewAmoManagerId('');
-      setNewUtelManagerId('');
       setNewTelegramChatId('');
       setSuccess("Foydalanuvchi muvaffaqiyatli yaratildi.");
       await usersQuery.refetch();
@@ -137,9 +126,6 @@ export default function UsersPage() {
         roles: [roleDrafts[userId] || 'Agent'],
         amocrmResponsibleUserId: roleNeedsManagerMapping(roleDrafts[userId] || 'Agent')
           ? (managerDrafts[userId] || undefined)
-          : undefined,
-        utelManagerExternalId: roleNeedsManagerMapping(roleDrafts[userId] || 'Agent')
-          ? (utelDrafts[userId] || undefined)
           : undefined,
         telegramChatId: telegramDrafts[userId] || undefined,
       });
@@ -229,7 +215,7 @@ export default function UsersPage() {
         <div className="flex flex-col gap-3 border-b border-gray-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-xl font-semibold text-gray-900">Foydalanuvchilar</h1>
-            <p className="mt-1 text-sm text-gray-500">Foydalanuvchi yarating, agentni AmoCRM/UTeL menejeriga bog'lang va login/parolni boshqaring.</p>
+            <p className="mt-1 text-sm text-gray-500">Foydalanuvchi yarating, agentni AmoCRM menejeriga bog'lang va login/parolni boshqaring.</p>
           </div>
           <button
             type="button"
@@ -249,11 +235,6 @@ export default function UsersPage() {
               AmoCRM menejerlari topilmadi. Agentlarni bog'lash uchun AmoCRM integratsiyasini ulang.
             </p>
           )}
-          {utelManagersQuery.error && (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              UTeL menejerlari topilmadi. Ro'yxat uchun UTeL qo'ng'iroqlari kelishi kerak.
-            </p>
-          )}
           {telegramRecipientsQuery.error && (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
               Telegram bot foydalanuvchilari topilmadi. Integratsiyalar bo'limida botni ulang va /start yuboring.
@@ -265,7 +246,7 @@ export default function UsersPage() {
             </p>
           )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <input
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
@@ -297,19 +278,6 @@ export default function UsersPage() {
             >
               <option value="">{roleNeedsManagerMapping(newRole) ? 'AmoCRM menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
               {amocrmManagers.map((manager: any) => (
-                <option key={manager.id} value={manager.id}>
-                  {manager.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={newUtelManagerId}
-              onChange={(event) => setNewUtelManagerId(event.target.value)}
-              disabled={!roleNeedsManagerMapping(newRole)}
-              className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-            >
-              <option value="">{roleNeedsManagerMapping(newRole) ? 'UTeL menejerini tanlang' : 'Bu rol uchun shart emas'}</option>
-              {utelManagers.map((manager: any) => (
                 <option key={manager.id} value={manager.id}>
                   {manager.name}
                 </option>
@@ -353,7 +321,7 @@ export default function UsersPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Foydalanuvchi</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Rol + CRM/UTeL/Telegram</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Rol + CRM/Telegram</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Login/Parol</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Holat</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Oxirgi kirish</th>
@@ -399,7 +367,7 @@ export default function UsersPage() {
                         </div>
                       </td>
                       <td className="space-y-2 px-4 py-3 text-sm text-gray-700">
-                        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-[130px_1fr_1fr_1fr_auto]">
+                        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-[130px_1fr_1fr_auto]">
                           <select
                             value={roleDrafts[user.id] || 'Agent'}
                             onChange={(event) =>
@@ -432,25 +400,6 @@ export default function UsersPage() {
                               </option>
                               ))}
                             </select>
-                          <select
-                            value={utelDrafts[user.id] || ''}
-                            onChange={(event) =>
-                              setUtelDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                            disabled={!roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')}
-                            className="min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
-                          >
-                            <option value="">
-                              {roleNeedsManagerMapping(roleDrafts[user.id] || 'Agent')
-                                ? 'UTeL menejerini tanlang'
-                                : 'Bu rol uchun shart emas'}
-                            </option>
-                            {utelManagers.map((manager: any) => (
-                              <option key={manager.id} value={manager.id}>
-                                {manager.name}
-                              </option>
-                            ))}
-                          </select>
                           <select
                             value={telegramDrafts[user.id] || ''}
                             onChange={(event) =>

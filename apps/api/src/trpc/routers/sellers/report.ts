@@ -5,14 +5,14 @@ import { z } from 'zod';
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { resolveTelegramBotTokenForTenant } from '../../../lib/telegram';
-import { getCallsProvider } from '../../../services/calls-source';
+import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { telegramService } from '../../../services/integrations/telegram';
 import { buildStatusFilters, fetchLeadsByStatusFilters, getSelectedPipelines } from '../../../services/sellers/leads';
-import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerExtensionsMap, LOST_STATUS_ID, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
+import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerUserIdsMap, LOST_STATUS_ID, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
 import { buildSellerReportPdf, type SellerReportPayload, TELEGRAM_BOT_TOKEN_OPTIONS } from '../../../services/sellers/report-pdf';
 import { protectedProcedure } from '../../trpc';
 
@@ -95,7 +95,7 @@ export const sellerReportProcedures = {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 
-      const [activeLeads, extensionsByManager, mappedUsers] = await Promise.all([
+      const [activeLeads, userIdsByManager, mappedUsers] = await Promise.all([
         fetchLeadsByStatusFilters(
           amoContext.accessToken,
           amoContext.baseUrl,
@@ -106,7 +106,7 @@ export const sellerReportProcedures = {
           rangeEnd,
           false,
         ),
-        getManagerExtensionsMap(ctx.tenantId, [input.id], ctx.db),
+        getManagerUserIdsMap(ctx.tenantId, [input.id], ctx.db),
         ctx.db.user.findMany({
           where: {
             tenantId: ctx.tenantId,
@@ -117,18 +117,16 @@ export const sellerReportProcedures = {
         }),
       ]);
 
-      const extensions = extensionsByManager.get(input.id) || [];
+      const managerUserIds = userIdsByManager.get(input.id) || [];
       const [callsForMetrics, sellerIncomesRaw, activityMetricsMap] = await Promise.all([
-        extensions.length > 0
+        managerUserIds.length > 0
           ? ctx.db.call.findMany({
               where: {
-                tenantId: ctx.tenantId,
-                provider: await getCallsProvider(ctx.tenantId, ctx.db),
+                ...countedCallsWhere(ctx.tenantId, managerUserIds),
                 startedAt: {
                   gte: rangeStart,
                   lte: rangeEnd,
                 },
-                OR: [{ from: { in: extensions } }, { to: { in: extensions } }],
               },
               select: {
                 duration: true,

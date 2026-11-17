@@ -4,13 +4,13 @@ import { z } from 'zod';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
-import { getCallsProvider } from '../../../services/calls-source';
+import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { buildStatusFilters, computeLeadResponseTimes, fetchLeadsByStatusFilters, getSelectedPipelines } from '../../../services/sellers/leads';
-import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerExtensionsMap, LOST_STATUS_ID, parseAmoDate, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
+import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerUserIdsMap, LOST_STATUS_ID, parseAmoDate, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
 import { protectedProcedure } from '../../trpc';
 
 export const sellerDetailProcedures = {
@@ -97,22 +97,17 @@ export const sellerDetailProcedures = {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 
-      const extensionsByManager = await getManagerExtensionsMap(ctx.tenantId, [input.id], ctx.db);
-      const extensions = extensionsByManager.get(input.id) || [];
+      const userIdsByManager = await getManagerUserIdsMap(ctx.tenantId, [input.id], ctx.db);
+      const managerUserIds = userIdsByManager.get(input.id) || [];
 
-      const callsForMetrics = extensions.length > 0
+      const callsForMetrics = managerUserIds.length > 0
         ? await ctx.db.call.findMany({
             where: {
-              tenantId: ctx.tenantId,
-              provider: await getCallsProvider(ctx.tenantId, ctx.db),
+              ...countedCallsWhere(ctx.tenantId, managerUserIds),
               startedAt: {
                 gte: rangeStart,
                 lte: rangeEnd,
               },
-              OR: [
-                { from: { in: extensions } },
-                { to: { in: extensions } },
-              ],
             },
             select: {
               duration: true,
@@ -123,19 +118,14 @@ export const sellerDetailProcedures = {
           })
       : [];
 
-      const recentCalls = extensions.length > 0
+      const recentCalls = managerUserIds.length > 0
         ? await ctx.db.call.findMany({
             where: {
-              tenantId: ctx.tenantId,
-              provider: await getCallsProvider(ctx.tenantId, ctx.db),
+              ...countedCallsWhere(ctx.tenantId, managerUserIds),
               startedAt: {
                 gte: rangeStart,
                 lte: rangeEnd,
               },
-              OR: [
-                { from: { in: extensions } },
-                { to: { in: extensions } },
-              ],
             },
             select: {
               id: true,

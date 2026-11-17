@@ -1,12 +1,11 @@
-import { reportRangeSchema, AGENT_ROLES, hasAgentRole, normalizeDigits, PRIVILEGED_ROLES } from '@dashboarduz/shared';
+import { reportRangeSchema, AGENT_ROLES, hasAgentRole, PRIVILEGED_ROLES } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { getAgentResponsibleScope } from '../../lib/access';
 import { resolveDateRange } from '../../lib/dates';
 import { textFromScalar } from '../../lib/object';
-import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';
-import { getCallsProvider, getCallsProviderFilter } from '../../services/calls-source';
+import { AMOCRM_CALL_PROVIDER, countedCallsWhere } from '../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../services/corporate-call-durations';
 import { router, protectedProcedure } from '../trpc';
 
@@ -74,7 +73,7 @@ export const callsRouter = router({
 
       const where: any = {
         tenantId: ctx.tenantId,
-        provider: await getCallsProviderFilter(ctx.tenantId, ctx.db),
+        provider: AMOCRM_CALL_PROVIDER,
         ...(scope.isScoped
           ? {
               lead: {
@@ -173,77 +172,39 @@ export const callsRouter = router({
     const roles = ctx.user.roles || [];
     const isAgentOnly = hasAgentRole(roles) && !roles.some((role) => PRIVILEGED_ROLES.has(role));
 
-    const [agentUsers, currentUser] = await Promise.all([
-      ctx.db.user.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          isActive: true,
-          roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
-        },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          name: true,
-          username: true,
-          utelManagerExternalId: true,
-        },
-      }),
-      isAgentOnly
-        ? ctx.db.user.findFirst({
-            where: {
-              id: ctx.user.userId,
-              tenantId: ctx.tenantId,
-            },
-            select: {
-              id: true,
-              utelManagerExternalId: true,
-            },
-          })
-        : Promise.resolve(null),
-    ]);
+    const agentUsers = await ctx.db.user.findMany({
+      where: {
+        tenantId: ctx.tenantId,
+        isActive: true,
+        roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+      },
+    });
 
-    const mappedAgents = agentUsers
-      .map((user) => {
-        const extension = normalizeDigits(user.utelManagerExternalId || '');
-
-        return {
-          id: user.id,
-          name: textFromScalar(user.name) || textFromScalar(user.username) || extension || 'Agent',
-          extension,
-        };
-      })
-      .filter((user) => isAllowedUtelManagerExtension(user.extension));
-
-    const extensionToAgent = new Map<string, { id: string; name: string; extension: string }>();
-
-    for (const agent of mappedAgents) {
-      if (!extensionToAgent.has(agent.extension)) {
-        extensionToAgent.set(agent.extension, agent);
-      }
-    }
-
-    const extensionValues = Array.from(extensionToAgent.keys());
-    const calls = extensionValues.length > 0
+    const mappedAgents = agentUsers.map((user) => ({
+      id: user.id,
+      name: textFromScalar(user.name) || textFromScalar(user.username) || 'Agent',
+    }));
+    const agentIds = mappedAgents.map((agent) => agent.id);
+    const calls = agentIds.length > 0
       ? await ctx.db.call.findMany({
           where: {
-            tenantId: ctx.tenantId,
-            provider: await getCallsProvider(ctx.tenantId, ctx.db),
+            ...countedCallsWhere(ctx.tenantId, agentIds),
             startedAt: {
               gte: rangeStart,
               lte: rangeEnd,
             },
-            OR: [
-              { from: { in: extensionValues } },
-              { to: { in: extensionValues } },
-            ],
           },
           select: {
-            from: true,
-            to: true,
+            managerUserId: true,
             direction: true,
             startedAt: true,
             duration: true,
-            metadata: true,
           },
         })
       : [];
@@ -251,8 +212,8 @@ export const callsRouter = router({
     const todayKey = getTashkentDayKey(new Date());
     const byAgent = new Map<string, AnalyticsAccumulator>();
 
-    for (const agent of extensionToAgent.values()) {
-      byAgent.set(agent.id, {
+    for (const agentId of agentIds) {
+      byAgent.set(agentId, {
         totalCalls: 0,
         incomingCalls: 0,
         outgoingCalls: 0,
@@ -263,24 +224,7 @@ export const callsRouter = router({
     }
 
     for (const call of calls) {
-      const extension = resolveCallExtension({
-        from: call.from,
-        to: call.to,
-        direction: call.direction,
-        metadata: call.metadata,
-      });
-
-      if (!extension) {
-        continue;
-      }
-
-      const mappedAgent = extensionToAgent.get(extension);
-
-      if (!mappedAgent) {
-        continue;
-      }
-
-      const stat = byAgent.get(mappedAgent.id);
+      const stat = call.managerUserId ? byAgent.get(call.managerUserId) : undefined;
 
       if (!stat) {
         continue;
@@ -292,7 +236,7 @@ export const callsRouter = router({
       } else {
         stat.incomingCalls += 1;
       }
-      stat.totalDurationSeconds += resolveCallDuration(call.duration, call.metadata);
+      stat.totalDurationSeconds += Math.max(0, call.duration ?? 0);
 
       const dayKey = getTashkentDayKey(call.startedAt);
 
@@ -322,7 +266,6 @@ export const callsRouter = router({
 
         return {
           userId: agent.id,
-          extension: agent.extension,
           agentName: agent.name,
           totalCalls,
           averageDailyCalls,
@@ -347,9 +290,7 @@ export const callsRouter = router({
       : 0;
 
     if (isAgentOnly) {
-      const scopedExtension = normalizeDigits(currentUser?.utelManagerExternalId || '');
-      const ownRow = rows.find((row) => row.userId === currentUser?.id)
-        || rows.find((row) => row.extension === scopedExtension);
+      const ownRow = rows.find((row) => row.userId === ctx.user.userId);
       const aboveAverage = ownRow ? ownRow.callsToday >= teamAverageTodayCalls : false;
 
       return {

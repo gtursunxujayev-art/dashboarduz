@@ -1,8 +1,7 @@
 import type { DbClient } from '@dashboarduz/db';
-import { normalizeDigits, type sellerRangeSchema } from '@dashboarduz/shared';
+import { type sellerRangeSchema } from '@dashboarduz/shared';
 import type { z } from 'zod';
 
-import { isAllowedUtelManagerExtension } from '../../lib/utel';
 import { classifyIncomeCategory, isRowLinkedToTechnicalSale, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../income-facts';
 import type { AmoCRMLead, AmoCRMUser } from '../integrations/amocrm';
 import type { AmoCRMActivityMetrics } from '../integrations/amocrm-activity';
@@ -317,7 +316,8 @@ export function buildMetrics(
   };
 }
 
-export async function getManagerExtensionsMap(tenantId: string, managerIds: string[], db: DbClient): Promise<Map<string, string[]>> {
+/** amoCRM manager id -> ids of the active users mapped to it (the users whose `calls.managerUserId` counts for it). */
+export async function getManagerUserIdsMap(tenantId: string, managerIds: string[], db: DbClient): Promise<Map<string, string[]>> {
   if (managerIds.length === 0) {
     return new Map();
   }
@@ -327,30 +327,22 @@ export async function getManagerExtensionsMap(tenantId: string, managerIds: stri
       tenantId,
       isActive: true,
       amocrmResponsibleUserId: { in: managerIds },
-      utelManagerExternalId: { not: null },
     },
     select: {
+      id: true,
       amocrmResponsibleUserId: true,
-      utelManagerExternalId: true,
     },
   });
+  const byManager = new Map<string, string[]>();
 
-  const byManager = new Map<string, Set<string>>();
-
-  for (const mappedUser of mappedUsers as Array<{ amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>) {
+  for (const mappedUser of mappedUsers) {
     const managerId = asString(mappedUser.amocrmResponsibleUserId);
-    const extension = normalizeDigits(mappedUser.utelManagerExternalId || '');
 
-    if (!managerId || !isAllowedUtelManagerExtension(extension)) {
+    if (!managerId) {
       continue;
     }
-    const current = byManager.get(managerId) || new Set<string>();
-
-    current.add(extension);
-    byManager.set(managerId, current);
+    byManager.set(managerId, [...(byManager.get(managerId) || []), mappedUser.id]);
   }
 
-  return new Map(
-    Array.from(byManager.entries()).map(([managerId, extensions]) => [managerId, Array.from(extensions)]),
-  );
+  return byManager;
 }

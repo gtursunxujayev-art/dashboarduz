@@ -1,19 +1,18 @@
-import { AGENT_ROLES, isTashkiliyOnly, normalizeDigits, reportRangeSchema } from '@dashboarduz/shared';
+import { AGENT_ROLES, isTashkiliyOnly, reportRangeSchema } from '@dashboarduz/shared';
 
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { withTimeout } from '../../../lib/async';
 import { resolveDateRange } from '../../../lib/dates';
 import { logger } from '../../../lib/logger';
 import { asObject } from '../../../lib/object';
-import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
 import { buildCacheKey, getOrSet } from '../../../services/cache';
-import { getCallsProvider } from '../../../services/calls-source';
+import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { createSummarySourceStatus, runSummarySourceWithRetry } from '../../../services/dashboard/summary-sources';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 
-import { amocrmService, asStringArray, buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, extractUtelManagerKey, getAmoCRMActivityMetrics, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, normalizeTextToken, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, TRPCError, z } from './helpers';
+import { amocrmService, asStringArray, buildFieldLabelMap, classifyCourseCategoryFromField, collectCatalogFieldOptions, createAmoCRMActivityDiagnostics, extractLeadValue, getAmoCRMActivityMetrics, getSystemLeadFieldOptions, getTenantAmoCRMContext, humanizeKey, isMappedValue, protectedProcedure, summarizeAmoCRMActivityMetrics, toPieData, TRPCError, z } from './helpers';
 
 export const summaryProcedures = {
   summary: protectedProcedure
@@ -236,24 +235,15 @@ export const summaryProcedures = {
         }),
         ctx.db.call.findMany({
           where: {
-            tenantId: ctx.tenantId,
-            provider: await getCallsProvider(ctx.tenantId, ctx.db),
+            ...countedCallsWhere(ctx.tenantId),
             startedAt: {
               gte: rangeStart,
               lte: rangeEnd,
             },
           },
           select: {
-            from: true,
-            to: true,
-            direction: true,
+            managerUserId: true,
             duration: true,
-            metadata: true,
-            lead: {
-              select: {
-                responsibleUserId: true,
-              },
-            },
           },
         }),
       ]);
@@ -268,7 +258,6 @@ export const summaryProcedures = {
         name: string | null;
         username: string | null;
         amocrmResponsibleUserId: string | null;
-        utelManagerExternalId: string | null;
       }> = [];
 
       agentUsers = await ctx.db.user.findMany({
@@ -290,7 +279,6 @@ export const summaryProcedures = {
           name: true,
           username: true,
           amocrmResponsibleUserId: true,
-          utelManagerExternalId: true,
         },
       });
 
@@ -500,50 +488,19 @@ export const summaryProcedures = {
       const talkSecondsByAgent = new Map<string, number>();
       const callCountByAgent = new Map<string, number>();
 
+      for (const call of callsForSellers) {
+        if (!call.managerUserId) continue;
+        talkSecondsByAgent.set(call.managerUserId, (talkSecondsByAgent.get(call.managerUserId) || 0) + Math.max(0, call.duration ?? 0));
+        callCountByAgent.set(call.managerUserId, (callCountByAgent.get(call.managerUserId) || 0) + 1);
+      }
       for (const agent of agentUsers) {
-        const keyByUtel = normalizeTextToken(agent.utelManagerExternalId);
-        const extensionByUtel = normalizeDigits(agent.utelManagerExternalId);
-        const keyByAmo = normalizeTextToken(agent.amocrmResponsibleUserId);
-        const hasCallMapping = Boolean(
-          keyByUtel
-          || keyByAmo
-          || (extensionByUtel && isAllowedUtelManagerExtension(extensionByUtel)),
-        );
         const manualDurationSeconds = corporateDurationByUserId.get(agent.id) || 0;
+        // Talk time is shown (0 when silent) for agents linked to amoCRM, where their calls come from.
+        const hasCallSource = Boolean(String(agent.amocrmResponsibleUserId || '').trim());
 
-        if (!hasCallMapping && manualDurationSeconds <= 0) {
-          continue;
+        if (hasCallSource || manualDurationSeconds > 0 || talkSecondsByAgent.has(agent.id)) {
+          talkSecondsByAgent.set(agent.id, (talkSecondsByAgent.get(agent.id) || 0) + manualDurationSeconds);
         }
-
-        let talkSeconds = 0;
-        let callCount = 0;
-
-        for (const call of callsForSellers) {
-          const callLeadResponsibleId = normalizeTextToken(call.lead?.responsibleUserId);
-          const metadataKey = extractUtelManagerKey(call.metadata);
-          const normalizedMetadataKey = normalizeTextToken(metadataKey);
-          const callExtension = resolveCallExtension({
-            from: call.from,
-            to: call.to,
-            direction: call.direction,
-            metadata: call.metadata,
-          });
-          const normalizedCallExtension = normalizeDigits(callExtension);
-          const matched = (keyByAmo && callLeadResponsibleId && keyByAmo === callLeadResponsibleId)
-            || (keyByUtel && normalizedMetadataKey && keyByUtel === normalizedMetadataKey)
-            || (extensionByUtel && normalizedCallExtension && extensionByUtel === normalizedCallExtension);
-
-          if (matched) {
-            callCount += 1;
-            // Same duration rule as the live leaderboard: fall back to the duration stored in call metadata.
-            const callDuration = resolveCallDuration(call.duration, call.metadata);
-
-            talkSeconds += callDuration;
-          }
-        }
-
-        talkSecondsByAgent.set(agent.id, talkSeconds + manualDurationSeconds);
-        callCountByAgent.set(agent.id, callCount);
       }
 
       const scopedTotalCalls = scope.isScoped

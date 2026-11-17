@@ -1,12 +1,11 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { AGENT_ROLES, fromTashkentLocalParts, normalizeDigits, shiftToTashkent, toTashkentDateKey, TASHKENT_TIMEZONE_LABEL, formatAmount, type AmountFormatOptions } from '@dashboarduz/shared';
+import { AGENT_ROLES, fromTashkentLocalParts, shiftToTashkent, toTashkentDateKey, TASHKENT_TIMEZONE_LABEL, formatAmount, type AmountFormatOptions } from '@dashboarduz/shared';
 
 import { isCompletedTask, isLeadTask, taskResponsibleUserId } from '../../lib/amocrm';
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
 import { buildLooseTelegramChatIdCandidates, normalizeTelegramSecret, sendMessageToTelegramChat } from '../../lib/telegram';
-import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../lib/utel';
-import { getCallsProvider } from '../calls-source';
+import { countedCallsWhere } from '../calls-source';
 import { getCorporateCallDurationByManager } from '../corporate-call-durations';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
 import { amocrmService } from '../integrations/amocrm';
@@ -38,7 +37,6 @@ type AgentCandidate = {
   id: string;
   name: string;
   telegramId: string | null;
-  utelExtension: string | null;
   amocrmResponsibleUserId: string | null;
 };
 
@@ -114,7 +112,6 @@ async function collectAgentMetricsForTenant(params: {
       name: true,
       username: true,
       telegramId: true,
-      utelManagerExternalId: true,
       amocrmResponsibleUserId: true,
     },
   });
@@ -124,9 +121,6 @@ async function collectAgentMetricsForTenant(params: {
       id: agent.id,
       name: String(agent.name || agent.username || 'Agent').trim() || 'Agent',
       telegramId: String(agent.telegramId || '').trim() || null,
-      utelExtension: isAllowedUtelManagerExtension(agent.utelManagerExternalId)
-        ? normalizeDigits(agent.utelManagerExternalId)
-        : null,
       amocrmResponsibleUserId: String(agent.amocrmResponsibleUserId || '').trim() || null,
     }));
 
@@ -141,14 +135,6 @@ async function collectAgentMetricsForTenant(params: {
     rangeStart: params.periodStart,
     rangeEnd: params.periodEnd,
   });
-  const extensionToAgentId = new Map<string, string>();
-
-  for (const agent of normalizedAgents) {
-    if (agent.utelExtension) {
-      extensionToAgentId.set(agent.utelExtension, agent.id);
-    }
-  }
-  const extensionValues = Array.from(extensionToAgentId.keys());
 
   const [incomeRowsRaw, calls] = await Promise.all([
     systemPrisma.income.findMany({
@@ -169,29 +155,19 @@ async function collectAgentMetricsForTenant(params: {
         paymentAmount: true,
       },
     }),
-    extensionValues.length > 0
-      ? systemPrisma.call.findMany({
-          where: {
-            tenantId: params.tenantId,
-            provider: await getCallsProvider(params.tenantId),
-            startedAt: {
-              gte: params.periodStart,
-              lte: params.periodEnd,
-            },
-            OR: [
-              { from: { in: extensionValues } },
-              { to: { in: extensionValues } },
-            ],
-          },
-          select: {
-            from: true,
-            to: true,
-            direction: true,
-            duration: true,
-            metadata: true,
-          },
-        })
-      : Promise.resolve([] as Array<{ from: string; to: string; direction: string; duration: number | null; metadata: unknown }>),
+    systemPrisma.call.findMany({
+      where: {
+        ...countedCallsWhere(params.tenantId, agentIds),
+        startedAt: {
+          gte: params.periodStart,
+          lte: params.periodEnd,
+        },
+      },
+      select: {
+        managerUserId: true,
+        duration: true,
+      },
+    }),
   ]);
 
   // Technical sales (agreement == 1) and their repayments are not real income.
@@ -206,23 +182,13 @@ async function collectAgentMetricsForTenant(params: {
   const callDurationByAgentId = new Map<string, number>();
 
   for (const call of calls) {
-    const extension = resolveCallExtension({
-      from: call.from,
-      to: call.to,
-      direction: call.direction,
-      metadata: call.metadata,
-    });
-
-    if (!extension) {
-      continue;
-    }
-    const agentId = extensionToAgentId.get(extension);
+    const agentId = call.managerUserId;
 
     if (!agentId) {
       continue;
     }
     callsCountByAgentId.set(agentId, (callsCountByAgentId.get(agentId) || 0) + 1);
-    callDurationByAgentId.set(agentId, (callDurationByAgentId.get(agentId) || 0) + resolveCallDuration(call.duration, call.metadata));
+    callDurationByAgentId.set(agentId, (callDurationByAgentId.get(agentId) || 0) + Math.max(0, call.duration ?? 0));
   }
 
   const followUpsByAgentId = new Map<string, number>();

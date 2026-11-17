@@ -15,7 +15,6 @@ export const userAccessProcedures = {
         userId: z.string().uuid(),
         roles: z.array(roleSchema).min(1),
         amocrmResponsibleUserId: z.string().optional(),
-        utelManagerExternalId: z.string().optional(),
         telegramChatId: z.string().optional(),
       }),
     )
@@ -35,7 +34,6 @@ export const userAccessProcedures = {
       }
 
       let previousAmoResponsibleUserId: string | null = null;
-      let previousUtelManagerExternalId: string | null = null;
 
       if (rolesNeedManagerMapping(input.roles as UserRole[])) {
         const mappingSource = await ctx.db.user.findFirst({
@@ -45,12 +43,10 @@ export const userAccessProcedures = {
           },
           select: {
             amocrmResponsibleUserId: true,
-            utelManagerExternalId: true,
           },
         });
 
         previousAmoResponsibleUserId = mappingSource?.amocrmResponsibleUserId || null;
-        previousUtelManagerExternalId = mappingSource?.utelManagerExternalId || null;
       }
 
       const updateData: any = {
@@ -59,7 +55,6 @@ export const userAccessProcedures = {
 
       if (rolesNeedManagerMapping(input.roles as UserRole[])) {
         updateData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || previousAmoResponsibleUserId || null;
-        updateData.utelManagerExternalId = input.utelManagerExternalId || previousUtelManagerExternalId || null;
       }
       updateData.telegramId = input.telegramChatId || null;
 
@@ -71,7 +66,6 @@ export const userAccessProcedures = {
         phone: string | null;
         roles: string[];
         amocrmResponsibleUserId: string | null;
-        utelManagerExternalId: string | null;
         telegramId: string | null;
         isActive: boolean;
         lastLoginAt: Date | null;
@@ -90,7 +84,6 @@ export const userAccessProcedures = {
             phone: true,
             roles: true,
             amocrmResponsibleUserId: true,
-            utelManagerExternalId: true,
             telegramId: true,
             isActive: true,
             lastLoginAt: true,
@@ -117,7 +110,6 @@ export const userAccessProcedures = {
           metadata: {
             roles: input.roles,
             amocrmResponsibleUserId: input.amocrmResponsibleUserId || null,
-            utelManagerExternalId: input.utelManagerExternalId || null,
             telegramChatId: input.telegramChatId || null,
           },
         },

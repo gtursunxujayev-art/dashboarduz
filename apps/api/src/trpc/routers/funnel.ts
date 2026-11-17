@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, funnelGroupSchema, normalizeDigits, reportRangeSchema, isTashkiliyOnly } from '@dashboarduz/shared';
+import { AGENT_ROLES, funnelGroupSchema, reportRangeSchema, isTashkiliyOnly } from '@dashboarduz/shared';
 // Tahlil → Voronka: per-manager funnel (leads, calls, sales, plan) and lost-revenue analysis.
 import type { Prisma } from '@prisma/client';
 
@@ -8,9 +8,8 @@ import { withTimeout } from '../../lib/async';
 import { resolveDateRange } from '../../lib/dates';
 import { logger } from '../../lib/logger';
 import { asObject, toFiniteNumber } from '../../lib/object';
-import { isAllowedUtelManagerExtension, resolveCallExtension } from '../../lib/utel';
 import { buildCacheKey, getOrSet } from '../../services/cache';
-import { getCallsProvider } from '../../services/calls-source';
+import { countedCallsWhere } from '../../services/calls-source';
 import {
   AMO_LOST_STATUS_ID,
   AMO_WON_STATUS_ID,
@@ -137,7 +136,6 @@ type FunnelAgent = {
   username: string | null;
   roles: string[];
   amocrmResponsibleUserId: string | null;
-  utelManagerExternalId: string | null;
 };
 
 async function loadFunnelAgents(tenantId: string, group: z.infer<typeof funnelGroupSchema>, db: DbClient): Promise<FunnelAgent[]> {
@@ -155,7 +153,6 @@ async function loadFunnelAgents(tenantId: string, group: z.infer<typeof funnelGr
       username: true,
       roles: true,
       amocrmResponsibleUserId: true,
-      utelManagerExternalId: true,
     },
   });
 
@@ -193,16 +190,6 @@ async function buildFunnelBase(params: {
     calls: { ok: true, reason: null, state: 'ok' },
   };
 
-  const extensionToUserId = new Map<string, string>();
-
-  for (const agent of agents) {
-    const extension = normalizeDigits(agent.utelManagerExternalId);
-
-    if (isAllowedUtelManagerExtension(extension) && !extensionToUserId.has(extension)) {
-      extensionToUserId.set(extension, agent.id);
-    }
-  }
-  const extensions = Array.from(extensionToUserId.keys());
   const responsibleIds = Array.from(new Set(agents
     .map((agent) => (agent.amocrmResponsibleUserId ? String(agent.amocrmResponsibleUserId).trim() : ''))
     .filter(Boolean)));
@@ -374,15 +361,13 @@ async function buildFunnelBase(params: {
     params.taklifStage
       ? loadFunnelPipelines(tenantId, db).catch(() => ({ connected: false, pipelines: [] as FunnelPipeline[] }))
       : Promise.resolve({ connected: true, pipelines: [] as FunnelPipeline[] }),
-    extensions.length
+    agentIds.length
       ? db.call.findMany({
           where: {
-            tenantId,
-            provider: await getCallsProvider(tenantId, db),
+            ...countedCallsWhere(tenantId, agentIds),
             startedAt: { gte: rangeStart, lte: rangeEnd },
-            OR: [{ from: { in: extensions } }, { to: { in: extensions } }],
           },
-          select: { from: true, to: true, direction: true, metadata: true },
+          select: { managerUserId: true },
         })
       : Promise.resolve([]),
     agentIds.length
@@ -417,8 +402,7 @@ async function buildFunnelBase(params: {
   const callsByUserId = new Map<string, number>();
 
   for (const call of calls) {
-    const extension = resolveCallExtension(call);
-    const userId = extension ? extensionToUserId.get(extension) : undefined;
+    const userId = call.managerUserId;
 
     if (userId) callsByUserId.set(userId, (callsByUserId.get(userId) || 0) + 1);
   }

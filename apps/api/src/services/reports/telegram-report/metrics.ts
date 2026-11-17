@@ -1,10 +1,9 @@
 import { systemPrisma } from '@dashboarduz/db';
-import { type ManagerGroup, normalizeDigits } from '@dashboarduz/shared';
+import { type ManagerGroup } from '@dashboarduz/shared';
 
 import { logger } from '../../../lib/logger';
 import { roundPositivePercentage } from '../../../lib/number';
-import { isAllowedUtelManagerExtension } from '../../../lib/utel';
-import { getCallsProvider, getCallsProviderFilter } from '../../calls-source';
+import { AMOCRM_CALL_PROVIDER, countedCallsWhere } from '../../calls-source';
 import { getCorporateCallDurationByManager, getCorporateCallDurationTotal } from '../../corporate-call-durations';
 import { buildTechnicalSaleIdSet, classifyIncomeCategory, excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../income-facts';
 import { amocrmService } from '../../integrations/amocrm';
@@ -85,7 +84,7 @@ export async function collectMetrics(params: {
     systemPrisma.call.aggregate({
       where: {
         tenantId: params.tenantId,
-        provider: await getCallsProviderFilter(params.tenantId),
+        provider: AMOCRM_CALL_PROVIDER,
         startedAt: {
           gte: params.periodStart,
           lte: params.periodEnd,
@@ -137,7 +136,6 @@ export async function collectMetrics(params: {
         username: true,
         roles: true,
         amocrmResponsibleUserId: true,
-        utelManagerExternalId: true,
       },
     }),
     getCorporateCallDurationTotal({
@@ -434,7 +432,6 @@ export async function collectMetrics(params: {
 
   const usersByAmoId = new Map<string, { id: string; name: string; group: ManagerGroup | null }>();
   const usersById = new Map<string, { id: string; name: string; group: ManagerGroup | null }>();
-  const managerByExtension = new Map<string, string>();
 
   for (const user of users) {
     const displayName = (user.name || user.username || user.id).trim();
@@ -444,14 +441,8 @@ export async function collectMetrics(params: {
     if (user.amocrmResponsibleUserId) {
       usersByAmoId.set(String(user.amocrmResponsibleUserId), { id: user.id, name: displayName, group });
     }
-    const extension = normalizeDigits(user.utelManagerExternalId || '');
-
-    if (isAllowedUtelManagerExtension(extension)) {
-      managerByExtension.set(extension, user.id);
-    }
   }
 
-  const extensionValues = Array.from(managerByExtension.keys());
   const managerCallDurationByUserId = new Map<string, number>();
   const corporateDurationByUserId = await getCorporateCallDurationByManager({
     tenantId: params.tenantId,
@@ -460,46 +451,27 @@ export async function collectMetrics(params: {
     rangeEnd: params.periodEnd,
   });
 
-  if (extensionValues.length > 0) {
-    const managerCalls = await systemPrisma.call.findMany({
-      where: {
-        tenantId: params.tenantId,
-        provider: await getCallsProvider(params.tenantId),
-        startedAt: {
-          gte: params.periodStart,
-          lte: params.periodEnd,
-        },
-        OR: [
-          { from: { in: extensionValues } },
-          { to: { in: extensionValues } },
-        ],
+  const managerCalls = await systemPrisma.call.findMany({
+    where: {
+      ...countedCallsWhere(params.tenantId, users.map((user) => user.id)),
+      startedAt: {
+        gte: params.periodStart,
+        lte: params.periodEnd,
       },
-      select: {
-        from: true,
-        to: true,
-        duration: true,
-      },
-    });
+    },
+    select: {
+      managerUserId: true,
+      duration: true,
+    },
+  });
 
-    for (const call of managerCalls) {
-      const fromExtension = normalizeDigits(call.from);
-      const toExtension = normalizeDigits(call.to);
-      const extension = isAllowedUtelManagerExtension(fromExtension)
-        ? fromExtension
-        : (isAllowedUtelManagerExtension(toExtension) ? toExtension : null);
-
-      if (!extension) {
-        continue;
-      }
-      const managerUserId = managerByExtension.get(extension);
-
-      if (!managerUserId) {
-        continue;
-      }
-      const currentDuration = managerCallDurationByUserId.get(managerUserId) || 0;
-
-      managerCallDurationByUserId.set(managerUserId, currentDuration + Math.max(0, Number(call.duration || 0)));
+  for (const call of managerCalls) {
+    if (!call.managerUserId) {
+      continue;
     }
+    const currentDuration = managerCallDurationByUserId.get(call.managerUserId) || 0;
+
+    managerCallDurationByUserId.set(call.managerUserId, currentDuration + Math.max(0, Number(call.duration || 0)));
   }
 
   const managerRowsByUserId = new Map<string, {

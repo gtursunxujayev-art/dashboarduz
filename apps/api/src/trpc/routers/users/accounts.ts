@@ -16,7 +16,6 @@ export const userAccountProcedures = {
         phone: z.string().max(32).optional(),
         role: roleSchema,
         amocrmResponsibleUserId: z.string().optional(),
-        utelManagerExternalId: z.string().optional(),
         telegramChatId: z.string().optional(),
       }),
     )
@@ -64,7 +63,6 @@ export const userAccountProcedures = {
 
       if (roleNeedsManagerMapping(role)) {
         createData.amocrmResponsibleUserId = input.amocrmResponsibleUserId || null;
-        createData.utelManagerExternalId = input.utelManagerExternalId || null;
       }
       createData.telegramId = input.telegramChatId || null;
 
@@ -101,7 +99,6 @@ export const userAccountProcedures = {
             role,
             phone: createData.phone,
             amocrmResponsibleUserId: input.amocrmResponsibleUserId || null,
-            utelManagerExternalId: input.utelManagerExternalId || null,
             telegramChatId: input.telegramChatId || null,
           },
         },
@@ -176,7 +173,6 @@ export const userAccountProcedures = {
           phone: true,
           roles: true,
           amocrmResponsibleUserId: true,
-          utelManagerExternalId: true,
           telegramId: true,
           isActive: true,
           lastLoginAt: true,

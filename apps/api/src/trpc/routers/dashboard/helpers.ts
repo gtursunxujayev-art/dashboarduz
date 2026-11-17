@@ -1,7 +1,7 @@
 import { PLAN_BONUS_PERIOD_MODES, type PlanBonusPeriodMode, SALARY_RULE_MODES, type SalaryBonusMode, type SalaryRuleMode } from '@dashboarduz/shared';
 
 export { dashboardWidgetIdSchema, dashboardCustomSalesWidgetSchema, dashboardLayoutInputSchema, type DashboardCustomSalesWidget, type DashboardUserLayout, normalizeDashboardUserLayout } from '../../../services/dashboard/layout';
-export { PIE_COLORS, normalizeTextToken, extractUtelManagerKey, toPieData, buildFieldLabelMap, collectCatalogFieldOptions, isMappedValue, normalizeCourseCategoryName, classifyCourseCategory, classifyCourseCategoryFromField } from '../../../services/dashboard/catalog-fields';
+export { PIE_COLORS, toPieData, buildFieldLabelMap, collectCatalogFieldOptions, isMappedValue, normalizeCourseCategoryName, classifyCourseCategory, classifyCourseCategoryFromField } from '../../../services/dashboard/catalog-fields';
 export { type DashboardRange, REPORT_MONTH_LABELS_UZ, getDaysInReportLocalMonth, getReportLocalDayOfYear, getReportLocalDaysInYear, getReportLocalDayOfYearForMonthEnd, buildTrend, getCurrentMonthRange } from '../../../services/dashboard/report-dates';
 export { SALARY_CATEGORIES, PLAN_BONUS_CATEGORIES, type SalaryCategory, type SalaryBreakdown, type SalaryRuleTier, type SalaryCategoryBonusRule, type SalaryBonusRules, type PlanBonusCategory, type SalaryPlanBonus, type KpiThreshold, KPI_METRIC_KEYS, type KpiMetricKey, type KpiSettings, type AttendancePenaltySettings, type SalarySettingsSnapshot, createZeroBreakdown, createSimpleBonusRule, normalizeSalaryTier, isValidTierSequence, normalizeCategoryBonusRule, resolveBonusPercent, toPositiveInteger, normalizePlanBonus, extractSalarySettings, getBonusAmount } from '../../../services/dashboard/salary-settings';
 

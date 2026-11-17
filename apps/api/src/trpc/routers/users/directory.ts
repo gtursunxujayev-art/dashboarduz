@@ -1,11 +1,8 @@
-import { normalizeDigits } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
-import { isAllowedUtelManagerExtension } from '../../../lib/utel';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { listTelegramRecipients } from '../../../services/integrations/telegram-recipient-store';
-import { extractUtelManagerFromMetadata, toNormalizedText } from '../../../services/users/accounts';
 import { managerProcedure } from '../../trpc';
 
 export const userDirectoryProcedures = {
@@ -29,62 +26,6 @@ export const userDirectoryProcedures = {
         isActive: user.is_active !== false,
       }))
       .filter((user) => user.id.length > 0)
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }),
-  utelManagers: managerProcedure.query(async ({ ctx }) => {
-    const calls = await ctx.db.call.findMany({
-      where: {
-        tenantId: ctx.tenantId,
-        provider: 'utel',
-      },
-      orderBy: { startedAt: 'desc' },
-      take: 3000,
-      select: {
-        metadata: true,
-      },
-    });
-
-    const uniqueManagers = new Map<string, string>();
-
-    for (const call of calls) {
-      const extracted = extractUtelManagerFromMetadata(call.metadata);
-
-      if (!extracted) {
-        continue;
-      }
-      if (!uniqueManagers.has(extracted.key)) {
-        uniqueManagers.set(extracted.key, extracted.label);
-      }
-    }
-
-    const mappedUsers = await ctx.db.user.findMany({
-      where: {
-        tenantId: ctx.tenantId,
-        utelManagerExternalId: { not: null },
-      },
-      select: {
-        name: true,
-        username: true,
-        utelManagerExternalId: true,
-      },
-      take: 1000,
-    });
-
-    for (const user of mappedUsers) {
-      const extensionDigits = normalizeDigits(user.utelManagerExternalId || '');
-
-      if (!isAllowedUtelManagerExtension(extensionDigits)) {
-        continue;
-      }
-      if (!uniqueManagers.has(extensionDigits)) {
-        const labelSource = toNormalizedText(user.name || user.username || '');
-
-        uniqueManagers.set(extensionDigits, labelSource ? `${labelSource} (${extensionDigits})` : extensionDigits);
-      }
-    }
-
-    return Array.from(uniqueManagers.entries())
-      .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }),
   telegramRecipients: managerProcedure.query(async ({ ctx }) => {
@@ -130,7 +71,6 @@ export const userDirectoryProcedures = {
         phone: true,
         roles: true,
         amocrmResponsibleUserId: true,
-        utelManagerExternalId: true,
         telegramId: true,
         isActive: true,
         lastLoginAt: true,

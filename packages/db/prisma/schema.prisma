@@ -90,6 +90,7 @@ model User {
   createdAttendanceAdjustments AttendanceAdjustment[] @relation("AttendanceAdjustmentCreatedBy")
   attendanceAdjustmentAudits AttendanceAdjustmentAudit[] @relation("AttendanceAdjustmentAuditActor")
   analyticsAiReports AnalyticsAiReport[]
+  managedCalls Call[] @relation("CallManager")
   fallbackManagerImportSessions HistoricalImportSession[] @relation("HistoricalImportFallbackManager")
 
   @@unique([tenantId, email])
@@ -304,6 +305,8 @@ model Call {
   metadata      Json?    // call quality metrics, etc.
   leadId        String?
   contactId     String?
+  // The manager the call is counted for (from the amoCRM responsible user). Calls are attributed by this column only.
+  managerUserId String?
   startedAt     DateTime
   endedAt       DateTime?
   createdAt     DateTime @default(now())
@@ -311,9 +314,11 @@ model Call {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lead   Lead?  @relation(fields: [leadId], references: [id])
   contact Contact? @relation(fields: [contactId], references: [id])
+  manager User?  @relation("CallManager", fields: [managerUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, provider, startedAt])
   @@index([tenantId, startedAt])
+  @@index([tenantId, managerUserId, startedAt])
   @@index([provider])
   @@index([callIdExternal])
   @@index([from])

@@ -4,8 +4,6 @@ import type { DbClient } from '@dashboarduz/db';
 import { normalizeDigits, roleNeedsManagerMapping, type UserRole } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
-import { isAllowedUtelManagerExtension } from '../../lib/utel';
-
 export function rolesNeedManagerMapping(roles: UserRole[]): boolean {
   return roles.some((role) => roleNeedsManagerMapping(role));
 }
@@ -19,10 +17,6 @@ export function isTelegramMappingConflictError(error: unknown): boolean {
     || message.includes('users_telegramid_key')
     || message.includes('telegramid')
   );
-}
-
-export function toNormalizedText(value: unknown): string {
-  return String(value || '').trim();
 }
 
 export function validateNormalizedPhoneOrThrow(rawPhone: string | undefined): string | null {
@@ -39,44 +33,6 @@ export function validateNormalizedPhoneOrThrow(rawPhone: string | undefined): st
   }
 
   return normalized;
-}
-
-export function extractUtelManagerFromMetadata(metadata: unknown): { key: string; label: string } | null {
-  if (!metadata || typeof metadata !== 'object') {
-    return null;
-  }
-
-  const data = metadata as Record<string, unknown>;
-  const managerName = toNormalizedText(
-    data.normalized_manager
-    || data.manager
-    || data.manager_name
-    || data.agent
-    || data.user
-    || data.operator
-    || data.responsible
-    || data.employee,
-  );
-  const extensionRaw = toNormalizedText(
-    data.normalized_extension
-    || data.extension
-    || data.ext
-    || data.internal
-    || data.line,
-  );
-  const extensionDigits = normalizeDigits(extensionRaw);
-
-  if (!isAllowedUtelManagerExtension(extensionDigits)) {
-    return null;
-  }
-
-  const key = extensionDigits;
-  const label = managerName ? `${managerName} (${extensionDigits})` : extensionDigits;
-
-  return {
-    key,
-    label,
-  };
 }
 
 function normalizeLoginSeed(value: string) {

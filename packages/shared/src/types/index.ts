@@ -77,7 +77,7 @@ export function isTashkiliyOnly(roles: readonly string[]): boolean {
     && !roles.includes('Finance');
 }
 
-/** Roles whose users are linked to an amoCRM manager / UTEL extension. */
+/** Roles whose users are linked to an amoCRM manager (their calls and leads are counted through that link). */
 export const MANAGER_MAPPING_ROLES: readonly UserRole[] = [...AGENT_ROLES, 'TeamLeader'];
 
 export function roleNeedsManagerMapping(role: string): boolean {

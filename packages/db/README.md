@@ -89,6 +89,7 @@ Postgres allows it. Each file's header says exactly what it does to data.
 | `20261116106000_drop_redundant_indexes` | Drops 22 indexes that are a left prefix of another index or unique key (list in the file). | Catalog only; brief lock per table. |
 | `20261116107000_drop_user_google_id` | Drops unused `users.googleId` and its two indexes. | **Column values are lost** (expected to be empty; the file has the check query). |
 | `20261116108000_clear_completed_historical_import_rows` | Nulls `incomeRows`/`customerRows` of historical import sessions in status `completed`. | **Deletes the stored raw spreadsheet rows** of completed imports only. |
+| `20261117100000_call_manager_user_id` | Adds `calls.managerUserId` (FK to `users`, ON DELETE SET NULL) and index `(tenantId, managerUserId, startedAt)`; calls are attributed to managers by this column only. | **Backfills `managerUserId`** on existing calls (all providers): from `metadata.manager_user_id` (same tenant), else from `metadata.amocrm_user_id` via the one user mapped to that amoCRM user, else from the old Utel extension rule (100-150) against `users.utelManagerExternalId`. Rows none of these match stay NULL and are not counted. |
 
 ## Tests
 

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { resolveDateRange } from '../../../lib/dates';
 import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthStart, loadSaleClosures, resolveEffectiveBonusPolicy } from '../../../services/bonus-engine';
 import { buildCacheKey, getOrSet } from '../../../services/cache';
-import { getCallsProvider } from '../../../services/calls-source';
+import { countedCallsWhere } from '../../../services/calls-source';
 import { buildRequiredWorkdaysByMonth, calculateProratedFixedSalary, getDayOfWeekFromLocalDateKey, type KpiBreakdownEntry, scoreKpi } from '../../../services/dashboard/salary-helpers';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
@@ -251,8 +251,8 @@ const salarySummary = protectedProcedure
     const kpi = salarySettings.kpiSettings;
 
     if (kpi.enabled && kpi.monthlyBudget > 0) {
-      // Fetch agent -> AmoCRM mapping + extensions
-      let agentAmoMappings: Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }> = [];
+      // Fetch agent -> AmoCRM mapping
+      let agentAmoMappings: Array<{ id: string; amocrmResponsibleUserId: string | null }> = [];
 
       agentAmoMappings = await ctx.db.user.findMany({
         where: {
@@ -263,33 +263,21 @@ const salarySummary = protectedProcedure
         select: {
           id: true,
           amocrmResponsibleUserId: true,
-          utelManagerExternalId: true,
         },
-      }) as Array<{ id: string; amocrmResponsibleUserId: string | null; utelManagerExternalId: string | null }>;
+      }) as Array<{ id: string; amocrmResponsibleUserId: string | null }>;
 
       const agentAmoIdMap = new Map<string, string>(); // agentId -> amoId
       const amoIdToAgentId = new Map<string, string>(); // amoId -> agentId
-      const agentExtensions = new Map<string, string[]>(); // agentId -> extensions
 
       for (const mapping of agentAmoMappings) {
         if (mapping.amocrmResponsibleUserId) {
           agentAmoIdMap.set(mapping.id, mapping.amocrmResponsibleUserId);
           amoIdToAgentId.set(mapping.amocrmResponsibleUserId, mapping.id);
         }
-        if (mapping.utelManagerExternalId) {
-          const ext = mapping.utelManagerExternalId.replace(/[^\d]/g, '');
-
-          if (ext.length >= 2) {
-            const existing = agentExtensions.get(mapping.id) || [];
-
-            existing.push(ext);
-            agentExtensions.set(mapping.id, existing);
-          }
-        }
       }
 
       const amoManagerIds = Array.from(new Set(agentAmoIdMap.values()));
-      const allExtensions = Array.from(new Set(Array.from(agentExtensions.values()).flat()));
+      const activeAgentIds = agentAmoMappings.map((mapping) => mapping.id);
 
       // Parallel fetch: new leads, calls, activity, all incomes for debt collection
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
@@ -307,20 +295,14 @@ const salarySummary = protectedProcedure
               amoContext.baseUrl,
             )
           : Promise.resolve([]),
-        allExtensions.length > 0
+        activeAgentIds.length > 0
           ? ctx.db.call.findMany({
               where: {
-                tenantId: ctx.tenantId,
-                provider: await getCallsProvider(ctx.tenantId, ctx.db),
+                ...countedCallsWhere(ctx.tenantId, activeAgentIds),
                 startedAt: { gte: rangeStart, lte: rangeEnd },
-                OR: [
-                  { from: { in: allExtensions } },
-                  { to: { in: allExtensions } },
-                ],
               },
               select: {
-                from: true,
-                to: true,
+                managerUserId: true,
                 duration: true,
                 startedAt: true,
               },
@@ -371,21 +353,12 @@ const salarySummary = protectedProcedure
       }
 
       // Group calls by agent -> total duration
-      const extensionToAgent = new Map<string, string>();
-
-      for (const [agentId, exts] of agentExtensions.entries()) {
-        for (const ext of exts) {
-          extensionToAgent.set(ext, agentId);
-        }
-      }
       const callDurationByAgent = new Map<string, number>();
       const callCountByAgent = new Map<string, number>();
       const callDaysByAgent = new Map<string, Set<string>>();
 
       for (const call of calls) {
-        const fromExt = (call.from || '').replace(/[^\d]/g, '');
-        const toExt = (call.to || '').replace(/[^\d]/g, '');
-        const agentId = extensionToAgent.get(fromExt) || extensionToAgent.get(toExt);
+        const agentId = call.managerUserId;
 
         if (!agentId) continue;
         callDurationByAgent.set(agentId, (callDurationByAgent.get(agentId) || 0) + (call.duration || 0));

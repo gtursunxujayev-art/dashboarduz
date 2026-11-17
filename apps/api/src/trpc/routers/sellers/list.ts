@@ -5,15 +5,14 @@ import { z } from 'zod';
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { logger } from '../../../lib/logger';
-import { resolveExtensionFromCallParties } from '../../../lib/utel';
-import { getCallsProvider } from '../../../services/calls-source';
+import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { type AmoCRMLead, amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoCRMActivityMetrics, summarizeAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { computeLeadResponseTimes, getSelectedPipelines } from '../../../services/sellers/leads';
 import { buildSellersListCacheKey, SELLERS_ACTIVITY_CACHE_TTL_MS, SELLERS_LIST_CACHE_TTL_MS, sellersListCache } from '../../../services/sellers/list-cache';
-import { asString, buildMetrics, excludeTechnicalSellerIncomes, getLeadResponsibleId, getManagerExtensionsMap, isSchemaCompatibilityError, LOST_STATUS_ID, type SellerIncomeMetricSource, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
+import { asString, buildMetrics, excludeTechnicalSellerIncomes, getLeadResponsibleId, isSchemaCompatibilityError, LOST_STATUS_ID, type SellerIncomeMetricSource, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
 import { protectedProcedure } from '../../trpc';
 
 export const sellerListProcedures = {
@@ -179,8 +178,7 @@ export const sellerListProcedures = {
       cacheTtlMs: SELLERS_ACTIVITY_CACHE_TTL_MS,
     });
 
-    const extensionMappingStartedMs = Date.now();
-    const extensionsByManagerPromise = getManagerExtensionsMap(ctx.tenantId, managerIdList, ctx.db);
+    const userMappingStartedMs = Date.now();
     const userMappingsPromise = (async () => {
       return await ctx.db.user.findMany({
         where: {
@@ -195,17 +193,16 @@ export const sellerListProcedures = {
       });
     })();
 
-    const [activeLeads, newLeadsInRange, activityByManager, extensionsByManager, userMappings] = await Promise.all([
+    const [activeLeads, newLeadsInRange, activityByManager, userMappings] = await Promise.all([
       activeLeadsPromise,
       newLeadsInRangePromise,
       activityPromise,
-      extensionsByManagerPromise,
       userMappingsPromise,
     ]);
 
     timings.amocrmLeadsMs = Date.now() - leadsFetchStartedMs;
     timings.activityFetchMs = Date.now() - activityFetchStartedMs;
-    timings.extensionMappingMs = Date.now() - extensionMappingStartedMs;
+    timings.userMappingMs = Date.now() - userMappingStartedMs;
 
     // Start lead response time computation in parallel (doesn't block other work)
     const leadResponseTimePromise = computeLeadResponseTimes({
@@ -246,14 +243,6 @@ export const sellerListProcedures = {
     }
     timings.leadsGroupingMs = Date.now() - leadsGroupingStartedMs;
 
-    const managerByExtension = new Map<string, string>();
-
-    for (const [managerId, extensions] of extensionsByManager.entries()) {
-      for (const extension of extensions) {
-        managerByExtension.set(extension, managerId);
-      }
-    }
-
     const managerUserIdsByAmoId = new Map<string, string[]>();
 
     for (const mapping of userMappings as Array<{ id: string; amocrmResponsibleUserId: string | null }>) {
@@ -269,27 +258,21 @@ export const sellerListProcedures = {
     }
 
     const callsFetchStartedMs = Date.now();
-    const extensionValues = Array.from(new Set(Array.from(extensionsByManager.values()).flat()));
-    let calls: Array<{ from: string; to: string; duration: number | null; direction: string; status: string; startedAt: Date | null }> = [];
+    const mappedUserIds = Array.from(managerUserIdsByAmoId.values()).flat();
+    let calls: Array<{ managerUserId: string | null; duration: number | null; direction: string; status: string; startedAt: Date | null }> = [];
 
-    if (extensionValues.length > 0) {
+    if (mappedUserIds.length > 0) {
       try {
         calls = await ctx.db.call.findMany({
           where: {
-            tenantId: ctx.tenantId,
-            provider: await getCallsProvider(ctx.tenantId, ctx.db),
+            ...countedCallsWhere(ctx.tenantId, mappedUserIds),
             startedAt: {
               gte: rangeStart,
               lte: rangeEnd,
             },
-            OR: [
-              { from: { in: extensionValues } },
-              { to: { in: extensionValues } },
-            ],
           },
           select: {
-            from: true,
-            to: true,
+            managerUserId: true,
             duration: true,
             direction: true,
             status: true,
@@ -521,17 +504,16 @@ export const sellerListProcedures = {
     const callsGroupingStartedMs = Date.now();
     const callsByManager = new Map<string, Array<{ duration: number | null; direction: string; status: string; startedAt: Date | null }>>();
 
-    for (const call of calls) {
-      const extension = resolveExtensionFromCallParties({
-        from: call.from,
-        to: call.to,
-      });
+    const amoIdByUserId = new Map<string, string>();
 
-      if (!extension) {
-        continue;
+    for (const [managerId, userIds] of managerUserIdsByAmoId.entries()) {
+      for (const userId of userIds) {
+        amoIdByUserId.set(userId, managerId);
       }
+    }
 
-      const managerId = managerByExtension.get(extension);
+    for (const call of calls) {
+      const managerId = call.managerUserId ? amoIdByUserId.get(call.managerUserId) : undefined;
 
       if (!managerId) {
         continue;

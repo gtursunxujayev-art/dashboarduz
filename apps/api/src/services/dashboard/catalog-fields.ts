@@ -16,24 +16,6 @@ export const PIE_COLORS = [
   '#84CC16',
 ] as const;
 
-export function normalizeTextToken(value: unknown): string {
-  return String(value || '').trim().toLowerCase();
-}
-
-export function extractUtelManagerKey(metadata: unknown): string | null {
-  if (!metadata || typeof metadata !== 'object') {
-    return null;
-  }
-
-  const data = metadata as Record<string, unknown>;
-  const extension = normalizeTextToken(data.extension || data.ext || data.internal || data.line);
-  const managerName = normalizeTextToken(
-    data.manager || data.agent || data.user || data.operator || data.responsible || data.employee,
-  );
-
-  return extension || managerName || null;
-}
-
 export function toPieData(input: Map<string, number>) {
   return Array.from(input.entries())
     .sort((a, b) => b[1] - a[1])

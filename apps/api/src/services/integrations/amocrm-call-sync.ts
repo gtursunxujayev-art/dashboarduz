@@ -1,15 +1,14 @@
 // Imports call notes (call_in / call_out) from amoCRM into the `calls` table as provider "amocrm".
-// Each row carries the manager's Utel extension in from/to and metadata.normalized_extension, so every page that
-// attributes calls by extension counts these rows exactly like Utel webhook rows.
+// Each row gets `managerUserId` = the user mapped to the note's amoCRM responsible user; every report counts
+// calls by that column (see services/calls-source.ts).
 import { systemPrisma } from '@dashboarduz/db';
-import { normalizeDigits } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
 import { toNumberOrNull } from '../../lib/object';
 import { getPreviousTashkentMonthStart } from '../bonus-auto-finalize';
-import { AMOCRM_CALL_PROVIDER, readCallsSource } from '../calls-source';
+import { AMOCRM_CALL_PROVIDER } from '../calls-source';
 import { CALL_NOTE_TYPES } from '../funnel-metrics';
 
 import { amocrmService, type AmoCRMNote } from './amocrm';
@@ -34,7 +33,7 @@ export type CallsSyncState = {
   backfillComplete?: boolean;
 };
 
-export type CallManager = { userId: string; extension: string | null };
+export type CallManager = { userId: string };
 
 export function readCallsSyncState(config: unknown): CallsSyncState {
   const raw = config && typeof config === 'object' ? (config as Record<string, unknown>)[CALLS_SYNC_CONFIG_KEY] : null;
@@ -78,7 +77,6 @@ export function noteToCallRow(
     .map((value) => String(value ?? '').trim())
     .find((value) => value && value !== '0') || null;
   const manager = amoUserId ? managersByAmoUserId.get(amoUserId) : undefined;
-  const extension = manager?.extension || '';
   const phone = String(params.phone ?? '').trim();
   const duration = Math.max(0, Math.round(toNumberOrNull(params.duration) ?? 0));
   const direction = noteType === 'call_in' ? 'inbound' : 'outbound';
@@ -89,13 +87,15 @@ export function noteToCallRow(
     tenantId,
     provider: AMOCRM_CALL_PROVIDER,
     callIdExternal: uniq ? `uniq:${uniq}` : `note:${entityType}:${note.id}`,
-    from: direction === 'outbound' ? extension : phone,
-    to: direction === 'outbound' ? phone : extension,
+    // The manager side of the call is not a phone number in amoCRM; it is identified by managerUserId.
+    from: direction === 'outbound' ? '' : phone,
+    to: direction === 'outbound' ? phone : '',
     direction,
     duration,
     status: duration > 0 ? 'completed' : 'missed',
     startedAt,
     endedAt: new Date(startedAt.getTime() + duration * 1000),
+    managerUserId: manager?.userId ?? null,
     metadata: {
       source: 'amocrm_note',
       note_id: String(note.id),
@@ -103,7 +103,6 @@ export function noteToCallRow(
       entity_id: note.entity_id !== undefined ? String(note.entity_id) : null,
       amocrm_user_id: amoUserId,
       manager_user_id: manager?.userId ?? null,
-      normalized_extension: extension || null,
       call_status: params.call_status ?? null,
       call_result: params.call_result ?? null,
       link: typeof params.link === 'string' ? params.link : null,
@@ -114,7 +113,7 @@ export function noteToCallRow(
 async function loadManagersByAmoUserId(tenantId: string): Promise<Map<string, CallManager>> {
   const users = await systemPrisma.user.findMany({
     where: { tenantId, amocrmResponsibleUserId: { not: null } },
-    select: { id: true, amocrmResponsibleUserId: true, utelManagerExternalId: true },
+    select: { id: true, amocrmResponsibleUserId: true },
   });
   const map = new Map<string, CallManager>();
 
@@ -122,38 +121,42 @@ async function loadManagersByAmoUserId(tenantId: string): Promise<Map<string, Ca
     const amoUserId = String(user.amocrmResponsibleUserId || '').trim();
 
     if (!amoUserId) continue;
-    map.set(amoUserId, { userId: user.id, extension: normalizeDigits(user.utelManagerExternalId) || null });
+    map.set(amoUserId, { userId: user.id });
   }
 
   return map;
 }
 
 /**
- * Calls imported before a manager got a Utel extension have an empty extension side; fill it in now so those
- * calls start counting for that manager.
+ * Calls imported before their amoCRM user was mapped to a user have no manager; attach them now so they start
+ * counting for that manager.
  */
-async function attachLateExtensions(tenantId: string, managers: ReadonlyMap<string, CallManager>): Promise<number> {
+async function attachLateManagers(tenantId: string, managers: ReadonlyMap<string, CallManager>): Promise<number> {
   const pending = await systemPrisma.$queryRaw<Array<{ amo_user_id: string | null }>>`
     SELECT DISTINCT metadata->>'amocrm_user_id' AS amo_user_id
     FROM calls
     WHERE "tenantId" = ${tenantId}
       AND provider = ${AMOCRM_CALL_PROVIDER}
-      AND ((direction = 'outbound' AND "from" = '') OR (direction = 'inbound' AND "to" = ''))
+      AND "managerUserId" IS NULL
   `;
   let updated = 0;
 
   for (const row of pending) {
     const amoUserId = row.amo_user_id;
-    const extension = amoUserId ? managers.get(amoUserId)?.extension : null;
+    const manager = amoUserId ? managers.get(amoUserId) : undefined;
 
-    if (!amoUserId || !extension) continue;
-    const base = { tenantId, provider: AMOCRM_CALL_PROVIDER, metadata: { path: ['amocrm_user_id'], equals: amoUserId } };
-    const [outbound, inbound] = await Promise.all([
-      systemPrisma.call.updateMany({ where: { ...base, direction: 'outbound', from: '' }, data: { from: extension } }),
-      systemPrisma.call.updateMany({ where: { ...base, direction: 'inbound', to: '' }, data: { to: extension } }),
-    ]);
+    if (!amoUserId || !manager) continue;
+    const result = await systemPrisma.call.updateMany({
+      where: {
+        tenantId,
+        provider: AMOCRM_CALL_PROVIDER,
+        managerUserId: null,
+        metadata: { path: ['amocrm_user_id'], equals: amoUserId },
+      },
+      data: { managerUserId: manager.userId },
+    });
 
-    updated += outbound.count + inbound.count;
+    updated += result.count;
   }
 
   return updated;
@@ -187,7 +190,7 @@ async function syncTenantAmoCalls(tenantId: string, now = new Date()): Promise<C
   const startedAt = Date.now();
 
   try {
-    await attachLateExtensions(tenantId, managers);
+    await attachLateManagers(tenantId, managers);
     for (const entityType of CALL_NOTE_ENTITY_TYPES) {
       const from = cursors[entityType] ?? backfillFrom;
       let newest = from;
@@ -254,7 +257,7 @@ async function syncTenantAmoCalls(tenantId: string, now = new Date()): Promise<C
 const runningTenants = new Set<string>();
 
 /** Runs a sync for the tenant unless one is already running in this process. */
-export async function triggerTenantAmoCallsSync(tenantId: string): Promise<void> {
+async function triggerTenantAmoCallsSync(tenantId: string): Promise<void> {
   if (runningTenants.has(tenantId)) return;
   runningTenants.add(tenantId);
   try {
@@ -264,15 +267,14 @@ export async function triggerTenantAmoCallsSync(tenantId: string): Promise<void>
   }
 }
 
-/** Syncs every tenant whose amoCRM integration is set to be the calls source. */
+/** Syncs every tenant with an active amoCRM integration. */
 async function syncAllAmoCalls(): Promise<void> {
   const integrations = await systemPrisma.integration.findMany({
     where: { type: 'amocrm', status: 'active' },
-    select: { tenantId: true, config: true },
+    select: { tenantId: true },
   });
 
   for (const integration of integrations) {
-    if (readCallsSource(integration.config) !== 'amocrm') continue;
     await triggerTenantAmoCallsSync(integration.tenantId).catch(() => undefined);
   }
 }

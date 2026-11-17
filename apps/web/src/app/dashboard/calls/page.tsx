@@ -3,13 +3,11 @@
 import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import LoadingBlock from '@/components/dashboard/loading-block';
-import { useAuth } from '@/contexts/auth-context';
 import { getRangeLabel, getTashkentToday } from '@/lib/date-range';
 import { formatDurationShortWords } from '@/lib/format';
 import { type ReportRangePreset as CallsRange } from '@dashboarduz/shared';
 
 const RANGE_OPTIONS: CallsRange[] = ['today', 'week', 'month', 'custom'];
-const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 
 function formatDecimal(value?: number | null): string {
   const safeValue = Number(value || 0);
@@ -17,18 +15,9 @@ function formatDecimal(value?: number | null): string {
 }
 
 export default function CallsPage() {
-  const { user } = useAuth();
   const [range, setRange] = useState<CallsRange>('today');
   const [dateFrom, setDateFrom] = useState(getTashkentToday());
   const [dateTo, setDateTo] = useState(getTashkentToday());
-
-  const isAgentOnly = Boolean(
-    user?.roles?.some((role) => AGENT_ROLES.has(role))
-    && !user?.roles?.includes('Admin')
-    && !user?.roles?.includes('Manager')
-    && !user?.roles?.includes('TeamLeader')
-    && !user?.roles?.includes('Finance'),
-  );
 
   const callsQuery = trpc.calls.analytics.useQuery({
     range,
@@ -136,9 +125,6 @@ export default function CallsPage() {
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">#</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Xodim</th>
-                    {!isAgentOnly && (
-                      <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Ichki raqam</th>
-                    )}
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Barcha qo&apos;ng&apos;iroqlar</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Kuniga o&apos;rtacha qo&apos;ng&apos;iroqlar</th>
                     <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Bugungi qo&apos;ng&apos;iroqlar</th>
@@ -152,9 +138,6 @@ export default function CallsPage() {
                     <tr key={row.userId}>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">{row.rank}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.agentName}</td>
-                      {!isAgentOnly && (
-                        <td className="px-4 py-3 text-sm text-gray-700">{row.extension || '-'}</td>
-                      )}
                       <td className="px-4 py-3 text-sm text-gray-700">{row.totalCalls}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{formatDecimal(row.averageDailyCalls)}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{row.callsToday}</td>

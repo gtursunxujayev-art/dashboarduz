@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { resolveAiProvider } from '../../lib/ai-provider';
 import { resolveDateRange } from '../../lib/dates';
-import { getCallsProviderFilter } from '../../services/calls-source';
+import { AMOCRM_CALL_PROVIDER } from '../../services/calls-source';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
 import { protectedProcedure, router } from '../trpc';
@@ -162,7 +162,7 @@ export async function collectAnalyticsInput(tenantId: string, rangeStart: Date, 
     db.call.findMany({
       where: {
         tenantId,
-        provider: await getCallsProviderFilter(tenantId, db),
+        provider: AMOCRM_CALL_PROVIDER,
         startedAt: { gte: rangeStart, lte: rangeEnd },
       },
       select: {

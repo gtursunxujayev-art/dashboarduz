@@ -9,7 +9,7 @@ export function normalizePhoneKeepPlus(value: string | null | undefined): string
   return value.replace(/[^\d+]/g, '');
 }
 
-/** True when the value holds at least 7 digits, i.e. looks like a customer phone rather than a UTEL extension. */
+/** True when the value holds at least 7 digits, i.e. looks like a customer phone rather than a short internal number. */
 export function isLikelyExternalPhone(value: string | null | undefined): boolean {
   return normalizeDigits(value).length >= 7;
 }
