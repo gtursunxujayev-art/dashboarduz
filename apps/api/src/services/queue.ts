@@ -37,44 +37,16 @@ export class QueueService {
     });
   }
 
-  // Add export job
-  async addExportJob(exportType: 'pdf' | 'xlsx', params: any) {
-    return addJob(QueueName.EXPORTS, {
-      exportType,
-      params,
-      timestamp: new Date().toISOString(),
-    }, {
-      jobId: `export-${Date.now()}-${exportType}`,
-      priority: 5, // Low priority for exports
-    });
-  }
-
-  // Add sync job (for periodic synchronization)
-  async addSyncJob(integrationType: string, tenantId: string) {
-    return addJob(QueueName.SYNC, {
-      integrationType,
-      tenantId,
-      timestamp: new Date().toISOString(),
-    }, {
-      jobId: `sync-${integrationType}-${tenantId}-${Date.now()}`,
-      priority: 2, // Medium-high priority for sync
-    });
-  }
-
   // Get queue statistics
   async getQueueStats() {
-    const [webhookStats, notificationStats, exportStats, syncStats] = await Promise.all([
+    const [webhookStats, notificationStats] = await Promise.all([
       getQueueMetrics(QueueName.WEBHOOK_PROCESSING),
       getQueueMetrics(QueueName.NOTIFICATIONS),
-      getQueueMetrics(QueueName.EXPORTS),
-      getQueueMetrics(QueueName.SYNC),
     ]);
 
     return {
       webhooks: webhookStats,
       notifications: notificationStats,
-      exports: exportStats,
-      sync: syncStats,
       timestamp: new Date().toISOString(),
     };
   }

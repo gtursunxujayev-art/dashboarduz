@@ -24,18 +24,10 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('7d'),
   ENCRYPTION_KEY: z.string().optional(),
   
-  // OTP Provider
-  OTP_PROVIDER: z.enum(['firebase', 'twilio']).default('twilio'),
-  
   // Twilio
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_VERIFY_SERVICE_SID: z.string().optional(),
-  
-  // Firebase
-  FIREBASE_PROJECT_ID: z.string().optional(),
-  FIREBASE_PRIVATE_KEY: z.string().optional(),
-  FIREBASE_CLIENT_EMAIL: z.string().optional(),
   
   // Telegram
   TELEGRAM_BOT_TOKEN: z.string().optional(),
@@ -57,7 +49,6 @@ const envSchema = z.object({
   CORPORATE_GROUP_IDS: z.string().optional(),
   CORPORATE_CALL_GROUP_ID: z.string().optional(),
   CORPORATE_CALL_GROUP_IDS: z.string().optional(),
-  TELEGRAM_DEBUG_KEY: z.string().optional(),
   
   // AmoCRM
   AMOCRM_BASE_URL: z.string().url().default('https://www.amocrm.ru'),
@@ -68,23 +59,9 @@ const envSchema = z.object({
   UTEL_API_TOKEN: z.string().optional(),
   UTEL_WEBHOOK_SECRET: z.string().optional(),
   
-  // AWS S3 Storage
-  AWS_ACCESS_KEY_ID: z.string().optional(),
-  AWS_SECRET_ACCESS_KEY: z.string().optional(),
-  AWS_REGION: z.string().optional(),
-  AWS_S3_BUCKET: z.string().optional(),
-  
-  // Email Service (SendGrid)
-  SENDGRID_API_KEY: z.string().optional(),
-  SENDGRID_FROM_EMAIL: z.string().email().optional(),
-  SENDGRID_FROM_NAME: z.string().optional(),
-  
   // SMS Service (Twilio - additional for SMS notifications)
   TWILIO_PHONE_NUMBER: z.string().optional(),
   TWILIO_SMS_FROM_NUMBER: z.string().optional(),
-  
-  // Firebase (additional)
-  FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
   
   // Database Pool Configuration
   DB_POOL_MIN: z.string().optional(),
@@ -119,13 +96,6 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_REQUESTS_FREE: z.string().optional(),
   RATE_LIMIT_MAX_REQUESTS_PRO: z.string().optional(),
   RATE_LIMIT_MAX_REQUESTS_ENTERPRISE: z.string().optional(),
-  
-  // Feature Flags
-  FEATURE_WEBHOOKS_ENABLED: z.string().optional(),
-  FEATURE_NOTIFICATIONS_ENABLED: z.string().optional(),
-  FEATURE_EXPORTS_ENABLED: z.string().optional(),
-  FEATURE_SYNC_ENABLED: z.string().optional(),
-  FEATURE_ANALYTICS_ENABLED: z.string().optional(),
   
   // Secrets Management
   SECRETS_PROVIDER: z.enum(['aws', 'vault', 'local']).optional(),
@@ -170,7 +140,6 @@ export function validateEnv(): EnvConfig {
     validatedEnv = {
       JWT_SECRET: process.env.JWT_SECRET || 'dummy-secret-for-skip-validation-mode',
       JWT_EXPIRES_IN: '7d',
-      OTP_PROVIDER: 'twilio',
       AMOCRM_BASE_URL: 'https://www.amocrm.ru',
       NODE_ENV: 'development',
       PORT: '3001',
@@ -227,12 +196,9 @@ export function env(): EnvConfig {
 export function validateFeatureRequirements(feature: string): void {
   const requirements: Record<string, string[]> = {
     otp_twilio: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_VERIFY_SERVICE_SID'],
-    otp_firebase: ['FIREBASE_PROJECT_ID', 'FIREBASE_PRIVATE_KEY', 'FIREBASE_CLIENT_EMAIL'],
     telegram: ['TELEGRAM_BOT_TOKEN'],
     amocrm: ['AMOCRM_WEBHOOK_SECRET'],
     utel: [],
-    sendgrid: ['SENDGRID_API_KEY', 'SENDGRID_FROM_EMAIL'],
-    aws_s3: ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET'],
   };
 
   const required = requirements[feature];
@@ -250,50 +216,11 @@ export function validateFeatureRequirements(feature: string): void {
 
 // Validate all features on startup
 export function validateAllFeatures(): void {
-  const currentEnv = env();
+  env();
 
-  if (currentEnv.OTP_PROVIDER === 'twilio') {
-    validateFeatureRequirements('otp_twilio');
-  } else if (currentEnv.OTP_PROVIDER === 'firebase') {
-    validateFeatureRequirements('otp_firebase');
-  }
+  validateFeatureRequirements('otp_twilio');
 
   validateFeatureRequirements('telegram');
   validateFeatureRequirements('amocrm');
   validateFeatureRequirements('utel');
-  validateFeatureRequirements('sendgrid');
-  validateFeatureRequirements('aws_s3');
-}
-
-// Get environment-specific configuration
-export function getEnvConfig() {
-  const currentEnv = env();
-
-  return {
-    isDevelopment: currentEnv.NODE_ENV === 'development',
-    isStaging: currentEnv.NODE_ENV === 'staging',
-    isProduction: currentEnv.NODE_ENV === 'production',
-    isTest: currentEnv.NODE_ENV === 'test',
-    nodeEnv: currentEnv.NODE_ENV,
-    port: parseInt(currentEnv.PORT, 10),
-    apiUrl: currentEnv.API_URL,
-    publicApiUrl: currentEnv.PUBLIC_API_URL,
-    frontendUrl: currentEnv.FRONTEND_URL,
-    corsOrigin: currentEnv.CORS_ORIGIN,
-    sentryEnabled: !!currentEnv.SENTRY_DSN,
-    sentryEnvironment: currentEnv.SENTRY_ENVIRONMENT,
-    logLevel: currentEnv.LOG_LEVEL || 'info',
-    logFormat: currentEnv.LOG_FORMAT || 'json',
-    rateLimitWindowMs: currentEnv.RATE_LIMIT_WINDOW_MS ? parseInt(currentEnv.RATE_LIMIT_WINDOW_MS, 10) : 60000,
-    rateLimitMaxRequestsFree: currentEnv.RATE_LIMIT_MAX_REQUESTS_FREE ? parseInt(currentEnv.RATE_LIMIT_MAX_REQUESTS_FREE, 10) : 100,
-    rateLimitMaxRequestsPro: currentEnv.RATE_LIMIT_MAX_REQUESTS_PRO ? parseInt(currentEnv.RATE_LIMIT_MAX_REQUESTS_PRO, 10) : 500,
-    rateLimitMaxRequestsEnterprise: currentEnv.RATE_LIMIT_MAX_REQUESTS_ENTERPRISE ? parseInt(currentEnv.RATE_LIMIT_MAX_REQUESTS_ENTERPRISE, 10) : 1000,
-    features: {
-      webhooks: currentEnv.FEATURE_WEBHOOKS_ENABLED !== 'false',
-      notifications: currentEnv.FEATURE_NOTIFICATIONS_ENABLED !== 'false',
-      exports: currentEnv.FEATURE_EXPORTS_ENABLED !== 'false',
-      sync: currentEnv.FEATURE_SYNC_ENABLED !== 'false',
-      analytics: currentEnv.FEATURE_ANALYTICS_ENABLED !== 'false',
-    },
-  };
 }

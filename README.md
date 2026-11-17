@@ -33,6 +33,7 @@ npm run dev:web
 - Web: Vercel project root `apps/web`
 - API: Railway service root `apps/api` with start command `npm run start --workspace @dashboarduz/api`
 - Worker: Railway service root `apps/api` with start command `npm run start:worker --workspace @dashboarduz/api`
+- The API is not deployed on Vercel (there is no `apps/api/vercel.json`); a Vercel project pointing at `apps/api` is obsolete.
 - Database: Neon Postgres
 - Queue: managed Redis
 

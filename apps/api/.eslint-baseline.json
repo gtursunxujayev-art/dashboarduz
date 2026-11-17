@@ -1,11 +1,10 @@
 {
   "src/app.ts": {
-    "@typescript-eslint/no-explicit-any": 9,
-    "@typescript-eslint/no-misused-promises": 6,
-    "@typescript-eslint/no-unsafe-argument": 1,
-    "@typescript-eslint/no-unsafe-assignment": 13,
-    "@typescript-eslint/no-unsafe-call": 3,
-    "@typescript-eslint/no-unsafe-member-access": 16,
+    "@typescript-eslint/no-explicit-any": 7,
+    "@typescript-eslint/no-misused-promises": 4,
+    "@typescript-eslint/no-unsafe-assignment": 4,
+    "@typescript-eslint/no-unsafe-call": 1,
+    "@typescript-eslint/no-unsafe-member-access": 7,
     "@typescript-eslint/no-var-requires": 1,
     "@typescript-eslint/require-await": 1,
     "import/no-named-as-default-member": 3
@@ -61,11 +60,9 @@
     "import/order": 2
   },
   "src/services/auth/otp.ts": {
-    "@typescript-eslint/no-explicit-any": 11,
-    "@typescript-eslint/no-unsafe-assignment": 19,
-    "@typescript-eslint/no-unsafe-member-access": 23,
-    "@typescript-eslint/no-unused-vars": 1,
-    "@typescript-eslint/require-await": 4
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-unsafe-assignment": 10,
+    "@typescript-eslint/no-unsafe-member-access": 9
   },
   "src/services/auth/password.ts": {
     "@typescript-eslint/require-await": 2
@@ -156,15 +153,14 @@
     "object-shorthand": 1
   },
   "src/services/queue.ts": {
-    "@typescript-eslint/no-explicit-any": 3,
-    "@typescript-eslint/no-unsafe-assignment": 1,
+    "@typescript-eslint/no-explicit-any": 2,
     "import/no-cycle": 1
   },
   "src/services/queue/queues.ts": {
-    "@typescript-eslint/no-explicit-any": 14,
-    "@typescript-eslint/no-unsafe-argument": 12,
-    "@typescript-eslint/no-unsafe-assignment": 49,
-    "@typescript-eslint/no-unsafe-member-access": 14,
+    "@typescript-eslint/no-explicit-any": 10,
+    "@typescript-eslint/no-unsafe-argument": 6,
+    "@typescript-eslint/no-unsafe-assignment": 27,
+    "@typescript-eslint/no-unsafe-member-access": 10,
     "@typescript-eslint/no-unsafe-return": 1,
     "import/no-cycle": 1
   },
@@ -449,9 +445,6 @@
   "src/workers/processors/faceid-webhook.ts": {
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-member-access": 1
-  },
-  "src/workers/processors/integration-sync.ts": {
-    "@typescript-eslint/require-await": 1
   },
   "src/workers/processors/notification.ts": {
     "@typescript-eslint/no-explicit-any": 3,

@@ -3,7 +3,7 @@
 import { Queue, Worker, Job } from 'bullmq';
 
 import { logger } from '../../lib/logger';
-import { processWebhookEvent, processNotification, processExport, processIntegrationSync } from '../../workers/index';
+import { processWebhookEvent, processNotification } from '../../workers/index';
 import { reportError } from '../observability';
 
 import { getRedisClient } from './redis-client';
@@ -12,8 +12,6 @@ import { getRedisClient } from './redis-client';
 export enum QueueName {
   WEBHOOK_PROCESSING = 'webhook-processing',
   NOTIFICATIONS = 'notifications',
-  EXPORTS = 'exports',
-  SYNC = 'sync',
 }
 
 // Queue configurations with DLQ support
@@ -45,29 +43,6 @@ const queueConfigs = {
         jitter: 0.3,
       },
       removeOnComplete: 1000,
-      removeOnFail: false, // Don't remove failed jobs - they go to DLQ
-    },
-  },
-  [QueueName.EXPORTS]: {
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: {
-        type: 'fixed',
-        delay: 10000, // 10 seconds for exports
-      },
-      removeOnComplete: 50,
-      removeOnFail: false, // Don't remove failed jobs - they go to DLQ
-    },
-  },
-  [QueueName.SYNC]: {
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: {
-        type: 'exponential',
-        delay: 60000, // 60 seconds for sync operations
-        jitter: 0.2,
-      },
-      removeOnComplete: 20,
       removeOnFail: false, // Don't remove failed jobs - they go to DLQ
     },
   },
@@ -253,136 +228,6 @@ export function initializeWorkers() {
     {
       connection: getRedisClient() as any,
       concurrency: 10, // Send 10 notifications concurrently
-    }
-  );
-
-  // Exports worker with DLQ
-  new Worker(
-    QueueName.EXPORTS,
-    async (job: Job) => {
-      const { exportType, idempotencyKey } = job.data;
-      
-      // Check idempotency
-      if (idempotencyKey) {
-        const processed = await checkIdempotency(idempotencyKey);
-
-        if (processed) {
-          logger.warn({ 
-            jobId: job.id, 
-            exportType, 
-            idempotencyKey 
-          }, 'Skipping duplicate export job');
-
-          return;
-        }
-      }
-      
-      logger.info({ 
-        jobId: job.id, 
-        exportType,
-        attempt: job.attemptsMade + 1 
-      }, 'Processing export');
-      
-      try {
-        await processExport(`${job.id}-${exportType}`);
-        
-        // Mark as processed for idempotency
-        if (idempotencyKey) {
-          await markIdempotent(idempotencyKey);
-        }
-        
-        logger.info({ 
-          jobId: job.id, 
-          exportType,
-          attempt: job.attemptsMade + 1 
-        }, 'Export processed successfully');
-      } catch (error: any) {
-        reportError('Export processing failed', { 
-          jobId: job.id, 
-          exportType, 
-          error: error.message,
-          stack: error.stack,
-          attempt: job.attemptsMade + 1
-        });
-        
-        // Move to DLQ if max attempts reached
-        if (job.attemptsMade >= (job.opts.attempts || 3) - 1) {
-          await moveToDLQ(job, QueueName.EXPORTS, error);
-        }
-        
-        throw error;
-      }
-    },
-    {
-      connection: getRedisClient() as any,
-      concurrency: 2, // Only 2 concurrent exports to avoid resource exhaustion
-    }
-  );
-
-  // Sync worker with DLQ
-  new Worker(
-    QueueName.SYNC,
-    async (job: Job) => {
-      const { integrationType, tenantId, idempotencyKey } = job.data;
-      
-      // Check idempotency
-      if (idempotencyKey) {
-        const processed = await checkIdempotency(idempotencyKey);
-
-        if (processed) {
-          logger.warn({ 
-            jobId: job.id, 
-            integrationType, 
-            tenantId,
-            idempotencyKey 
-          }, 'Skipping duplicate sync job');
-
-          return;
-        }
-      }
-      
-      logger.info({ 
-        jobId: job.id, 
-        integrationType,
-        tenantId,
-        attempt: job.attemptsMade + 1 
-      }, 'Processing sync');
-      
-      try {
-        await processIntegrationSync(integrationType, tenantId);
-        
-        // Mark as processed for idempotency
-        if (idempotencyKey) {
-          await markIdempotent(idempotencyKey);
-        }
-        
-        logger.info({ 
-          jobId: job.id, 
-          integrationType,
-          tenantId,
-          attempt: job.attemptsMade + 1 
-        }, 'Sync processed successfully');
-      } catch (error: any) {
-        reportError('Sync processing failed', { 
-          jobId: job.id, 
-          integrationType,
-          tenantId,
-          error: error.message,
-          stack: error.stack,
-          attempt: job.attemptsMade + 1
-        });
-        
-        // Move to DLQ if max attempts reached
-        if (job.attemptsMade >= (job.opts.attempts || 3) - 1) {
-          await moveToDLQ(job, QueueName.SYNC, error);
-        }
-        
-        throw error;
-      }
-    },
-    {
-      connection: getRedisClient() as any,
-      concurrency: 1, // Only 1 concurrent sync to avoid rate limits
     }
   );
 
