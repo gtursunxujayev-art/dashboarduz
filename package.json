@@ -21,6 +21,10 @@
     "check:duplicates": "node scripts/check-duplicate-functions.mjs",
     "db:generate": "npm run generate --workspace @dashboarduz/db",
     "db:migrate": "npm run migrate --workspace @dashboarduz/db",
-    "db:migrate:deploy": "npm run migrate:deploy --workspace @dashboarduz/db"
+    "db:migrate:deploy": "npm run migrate:deploy --workspace @dashboarduz/db",
+    "check:clones": "jscpd apps/api/src packages/shared/src --config .jscpd.json"
+  },
+  "devDependencies": {
+    "jscpd": "^4.3.0"
   }
 }

@@ -42,6 +42,11 @@ jobs:
         # apps/web/src or packages/shared/src (or in more than one of them) and is not allowlisted with a reason.
         run: npm run check:duplicates
 
+      - name: Copy/paste guard (jscpd)
+        # Fails when duplicated lines in apps/api/src + packages/shared/src rise above the threshold in .jscpd.json.
+        # apps/web is not measured yet (its reuse work is deferred while the UI is redesigned).
+        run: npm run check:clones
+
       - name: Build
         run: npm run build
 
