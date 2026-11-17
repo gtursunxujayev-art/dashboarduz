@@ -64,6 +64,7 @@ export type ReportMetrics = {
 export type TelegramIntegrationWithTenant = {
   id: string;
   tenantId: string;
+  status: string;
   tokensEncrypted: string | null;
   config: unknown;
   tenant: {

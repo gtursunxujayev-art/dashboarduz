@@ -4,7 +4,7 @@ import { formatSomAmount } from '@dashboarduz/shared';
 import { logger } from '../../lib/logger';
 import { resolveTelegramBotTokenForTenant, sendMessageToTelegramChat } from '../../lib/telegram';
 
-import { ADJUSTMENT_STATUS_APPROVED, ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, TELEGRAM_BOT_TOKEN_OPTIONS } from './constants';
+import { ADJUSTMENT_STATUS_APPROVED, ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND } from './constants';
 import {
   ADJUSTMENT_INCOME_SELECT,
   customerLines,
@@ -29,7 +29,7 @@ async function resolveRefundGroupDelivery(params: { tenantId: string; db: DbClie
     return null;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, params.db, TELEGRAM_BOT_TOKEN_OPTIONS);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, params.db);
 
   if (!botToken) {
     logger.warn(`[Income][Telegram] Bot token is missing for ${params.kind} message.`);
@@ -185,7 +185,7 @@ export async function notifyFinanceUsersRefundRequested(params: {
 }) {
   const { db } = params;
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
 
   if (!botToken) {
     return;
@@ -248,7 +248,7 @@ export async function notifyRefundRequesterReviewResult(params: {
 }) {
   const { db } = params;
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
 
   if (!botToken) {
     return;

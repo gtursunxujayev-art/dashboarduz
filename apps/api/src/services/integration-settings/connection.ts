@@ -1,7 +1,5 @@
 import { TRPCError } from '@trpc/server';
 
-import { decryptIntegrationTokens } from '../security/encryption';
-
 export function normalizeBaseUrl(url?: string): string | null {
   if (!url) {
     return null;
@@ -54,21 +52,6 @@ export function amoFailureHelp(reason: AmoFailureReason): string | null {
 
 export function telegramRecipientStorageErrorMessage(): string {
   return "Telegram foydalanuvchilari jadvali tayyor emas. Railway'da `npm run db:migrate:deploy` ni ishga tushiring, so'ng API va Worker'ni qayta deploy qiling.";
-}
-
-export function resolveTelegramBotToken(tokensEncrypted: string | null): string {
-  let botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
-
-  if (!tokensEncrypted) return botToken;
-  try {
-    const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(tokensEncrypted);
-
-    return String(tokens.botToken || tokens.token || botToken).trim();
-  } catch (error) {
-    if (!botToken) throw error;
-
-    return botToken;
-  }
 }
 
 export function getPublicApiBaseUrl(): string {

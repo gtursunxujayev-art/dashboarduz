@@ -10,46 +10,50 @@ import { decryptIntegrationTokens } from '../services/security/encryption';
 import { logger } from './logger';
 import { asObject } from './object';
 
-export type NormalizeTelegramSecretOptions = {
-  /** Strip quotes/backticks wrapping the value (as pasted into env files) before trimming. */
-  stripWrappingQuotes?: boolean;
-  /** Remove line breaks inside the trimmed value. */
-  removeNewlines?: boolean;
-};
-
 /**
- * A bot token or similar secret, trimmed, or `null` when blank. The options reproduce the
- * three behaviours the former copies had; see `__tests__/telegram.test.ts`.
+ * A bot token as pasted into an env file or the integration form: wrapping quotes/backticks removed,
+ * trimmed, inner line breaks removed; `null` when nothing is left.
  */
-export function normalizeTelegramSecret(
-  value: string | null | undefined,
-  options: NormalizeTelegramSecretOptions = {},
-): string | null {
-  const raw = String(value || '');
-  const normalized = options.stripWrappingQuotes ? raw.replace(/^['"`]+|['"`]+$/g, '').trim() : raw.trim();
+export function normalizeTelegramBotToken(value: string | null | undefined): string | null {
+  const normalized = String(value || '').trim().replace(/^['"`]+|['"`]+$/g, '').trim().replace(/\r?\n/g, '').trim();
 
-  if (!normalized) {
-    return null;
-  }
-
-  return options.removeNewlines ? normalized.replace(/\r?\n/g, '').trim() : normalized;
+  return normalized || null;
 }
 
-export type ResolveTelegramBotTokenOptions = {
-  /** Only use the tenant's integration token when the integration status is `active`. */
-  requireActiveIntegration: boolean;
-  /** How the env and integration tokens are normalised. */
-  secret: NormalizeTelegramSecretOptions;
-  /** Logged (with `tenantId` and `error`) when the stored integration token cannot be decrypted. */
-  decryptFailureMessage: string;
-};
+export type TelegramIntegrationTokenSource = {
+  tenantId?: string;
+  status: string | null;
+  tokensEncrypted: string | null;
+} | null | undefined;
 
-/** The tenant's Telegram integration bot token, falling back to `TELEGRAM_BOT_TOKEN`. */
-export async function resolveTelegramBotTokenForTenant(
-  tenantId: string,
-  db: DbClient,
-  options: ResolveTelegramBotTokenOptions,
-): Promise<string | null> {
+/**
+ * The one bot-token rule for every router, scheduler and worker: a tenant's own token is used only while its
+ * Telegram integration is `active` (and the token decrypts to something); otherwise `TELEGRAM_BOT_TOKEN`.
+ * `null` when neither is set.
+ */
+export function resolveTelegramBotToken(integration: TelegramIntegrationTokenSource): string | null {
+  const envToken = normalizeTelegramBotToken(process.env.TELEGRAM_BOT_TOKEN);
+
+  if (integration?.status !== 'active' || !integration.tokensEncrypted) {
+    return envToken;
+  }
+
+  try {
+    const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
+
+    return normalizeTelegramBotToken(tokens.botToken || tokens.token) || envToken;
+  } catch (error) {
+    logger.warn(
+      { tenantId: integration.tenantId, error: String((error as Error)?.message || error) },
+      '[Telegram] Integration bot token could not be decrypted; using TELEGRAM_BOT_TOKEN',
+    );
+
+    return envToken;
+  }
+}
+
+/** {@link resolveTelegramBotToken} for a tenant, looking up its Telegram integration. */
+export async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient): Promise<string | null> {
   const integration = await db.integration.findUnique({
     where: {
       tenantId_type: {
@@ -63,21 +67,7 @@ export async function resolveTelegramBotTokenForTenant(
     },
   });
 
-  let botToken = normalizeTelegramSecret(process.env.TELEGRAM_BOT_TOKEN, options.secret);
-  const usable = options.requireActiveIntegration ? integration?.status === 'active' : true;
-
-  if (usable && integration?.tokensEncrypted) {
-    try {
-      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
-      const integrationBotToken = normalizeTelegramSecret(tokens.botToken || tokens.token, options.secret);
-
-      botToken = integrationBotToken || botToken;
-    } catch (error) {
-      logger.warn({ tenantId, error: String((error as Error)?.message || error) }, options.decryptFailureMessage);
-    }
-  }
-
-  return botToken;
+  return resolveTelegramBotToken(integration ? { tenantId, ...integration } : null);
 }
 
 /**

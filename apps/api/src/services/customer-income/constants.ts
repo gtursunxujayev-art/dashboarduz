@@ -1,11 +1,3 @@
-import type { ResolveTelegramBotTokenOptions } from '../../lib/telegram';
-
-export const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
-  requireActiveIntegration: false,
-  secret: { stripWrappingQuotes: true },
-  decryptFailureMessage: '[Income][Telegram] Failed to decrypt integration bot token, using TELEGRAM_BOT_TOKEN fallback if provided.',
-};
-
 const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent'] as const;
 
 export const SALES_MANAGER_ROLE_TOKENS = new Set(
@@ -37,22 +29,6 @@ export const REFUND_CARD_NUMBER_REGEX = /^\d{16}$/;
 export const CUSTOMER_NUMBER_REGEX = /^\d+$/;
 
 export const TELEGRAM_USERNAME_REGEX = /^@?[A-Za-z0-9_]+$/;
-
-const OFFLINE_PAYMENT_GROUP_ENV_KEY = 'OFLINE_GROUP_ID';
-
-const OFFLINE_PAYMENT_GROUP_ENV_KEY_LEGACY = 'OFFLINE_GROUP_ID';
-
-export const OFFLINE_PAYMENT_GROUP_ENV_KEYS = [
-  OFFLINE_PAYMENT_GROUP_ENV_KEY,
-  OFFLINE_PAYMENT_GROUP_ENV_KEY_LEGACY,
-  'OFLINE_GROUP_IDS',
-  'OFFLINE_GROUP_IDS',
-] as const;
-
-export const ONLINE_PAYMENT_GROUP_ENV_KEYS = [
-  'ONLINE_GROUP_ID',
-  'ONLINE_GROUP_IDS',
-] as const;
 
 export const REFUND_PAYMENT_GROUP_ENV_KEYS = [
   'PAYMENT_RETURN_GROUP_ID',

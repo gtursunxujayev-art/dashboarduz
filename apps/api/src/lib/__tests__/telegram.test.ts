@@ -2,7 +2,8 @@ import { sanitizeTelegramUsername } from '@dashboarduz/shared';
 
 import { telegramService } from '../../services/integrations/telegram';
 import {
-  parseCommaSeparatedTelegramGroupIds,
+  getOfflineTelegramGroupIds,
+  getOnlineTelegramGroupIds,
   parseTelegramGroupIds,
   parseTelegramGroupIdsFromEnvKeys,
 } from '../../services/integrations/telegram-groups';
@@ -11,41 +12,27 @@ import { logger } from '../logger';
 import {
   buildLooseTelegramChatIdCandidates,
   buildTelegramChatIdCandidates,
-  normalizeTelegramSecret,
+  normalizeTelegramBotToken,
   parseTelegramDailyReportCourseIds,
+  resolveTelegramBotToken,
   resolveTelegramBotTokenForTenant,
   sendMessageToTelegramChat,
   toHashtag,
 } from '../telegram';
 
-describe('normalizeTelegramSecret', () => {
-  it('trims by default (former agent-performance scheduler copy)', () => {
-    expect(normalizeTelegramSecret('  abc  ')).toBe('abc');
-    expect(normalizeTelegramSecret('"abc"')).toBe('"abc"');
-    expect(normalizeTelegramSecret('   ')).toBeNull();
-    expect(normalizeTelegramSecret(undefined)).toBeNull();
-  });
-
-  it('strips wrapping quotes before trimming (corporate-calls, customer-income, sellers copies)', () => {
-    const options = { stripWrappingQuotes: true };
-
-    expect(normalizeTelegramSecret('"abc"', options)).toBe('abc');
-    // Quotes are stripped before trimming, so a trailing space protects the closing quote (legacy behaviour).
-    expect(normalizeTelegramSecret("'abc' ", options)).toBe("abc'");
-    expect(normalizeTelegramSecret('``', options)).toBeNull();
-    expect(normalizeTelegramSecret('a\nb', options)).toBe('a\nb');
-  });
-
-  it('removes inner line breaks (telegram-bot copy)', () => {
-    const options = { removeNewlines: true };
-
-    expect(normalizeTelegramSecret(' a\r\nb \n', options)).toBe('ab');
-    expect(normalizeTelegramSecret('"abc"', options)).toBe('"abc"');
-    expect(normalizeTelegramSecret('\n', options)).toBeNull();
+describe('normalizeTelegramBotToken', () => {
+  it('strips wrapping quotes, trims and removes line breaks', () => {
+    expect(normalizeTelegramBotToken('  abc  ')).toBe('abc');
+    expect(normalizeTelegramBotToken('"abc"')).toBe('abc');
+    expect(normalizeTelegramBotToken('`abc`\n')).toBe('abc');
+    expect(normalizeTelegramBotToken(' a\r\nb \n')).toBe('ab');
+    expect(normalizeTelegramBotToken('``')).toBeNull();
+    expect(normalizeTelegramBotToken('   ')).toBeNull();
+    expect(normalizeTelegramBotToken(undefined)).toBeNull();
   });
 });
 
-describe('resolveTelegramBotTokenForTenant', () => {
+describe('resolveTelegramBotToken (one rule for every router, scheduler and worker)', () => {
   const originalToken = process.env.TELEGRAM_BOT_TOKEN;
 
   beforeEach(() => {
@@ -65,31 +52,39 @@ describe('resolveTelegramBotTokenForTenant', () => {
     return { integration: { findUnique: jest.fn().mockResolvedValue(integration) } } as never;
   }
 
-  const options = { requireActiveIntegration: true, secret: { stripWrappingQuotes: true }, decryptFailureMessage: 'boom' };
-
-  it('prefers the integration token and falls back to TELEGRAM_BOT_TOKEN', async () => {
+  it('uses an active integration token, otherwise TELEGRAM_BOT_TOKEN', async () => {
     process.env.TELEGRAM_BOT_TOKEN = '"env-token"';
     const tokensEncrypted = JSON.stringify({ botToken: ' tenant-token ' });
 
-    await expect(resolveTelegramBotTokenForTenant('t1', fakeDb({ status: 'active', tokensEncrypted }), options)).resolves.toBe('tenant-token');
-    await expect(resolveTelegramBotTokenForTenant('t1', fakeDb(null), options)).resolves.toBe('env-token');
+    await expect(resolveTelegramBotTokenForTenant('t1', fakeDb({ status: 'active', tokensEncrypted }))).resolves.toBe('tenant-token');
+    await expect(resolveTelegramBotTokenForTenant('t1', fakeDb(null))).resolves.toBe('env-token');
   });
 
-  it('ignores an inactive integration only when requireActiveIntegration is set', async () => {
+  it('never uses the token of an inactive integration (two routers used it regardless of status)', () => {
     process.env.TELEGRAM_BOT_TOKEN = 'env-token';
     const tokensEncrypted = JSON.stringify({ token: 'tenant-token' });
-    const db = fakeDb({ status: 'error', tokensEncrypted });
 
-    await expect(resolveTelegramBotTokenForTenant('t1', db, options)).resolves.toBe('env-token');
-    await expect(resolveTelegramBotTokenForTenant('t1', db, { ...options, requireActiveIntegration: false })).resolves.toBe('tenant-token');
+    for (const status of ['error', 'pending', 'disconnected']) {
+      expect(resolveTelegramBotToken({ status, tokensEncrypted })).toBe('env-token');
+    }
+    expect(resolveTelegramBotToken({ status: 'active', tokensEncrypted })).toBe('tenant-token');
+  });
+
+  it('falls back when the active integration has no usable token, and is null when nothing is set', () => {
+    process.env.TELEGRAM_BOT_TOKEN = 'env-token';
+    expect(resolveTelegramBotToken({ status: 'active', tokensEncrypted: JSON.stringify({ botToken: '  ' }) })).toBe('env-token');
+    expect(resolveTelegramBotToken({ status: 'active', tokensEncrypted: null })).toBe('env-token');
+
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    expect(resolveTelegramBotToken(null)).toBeNull();
   });
 
   it('logs and falls back when the stored token cannot be decrypted', async () => {
     process.env.TELEGRAM_BOT_TOKEN = 'env-token';
     const warn = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
-    await expect(resolveTelegramBotTokenForTenant('t1', fakeDb({ status: 'active', tokensEncrypted: 'garbage' }), options)).resolves.toBe('env-token');
-    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 't1' }), 'boom');
+    await expect(resolveTelegramBotTokenForTenant('t1', fakeDb({ status: 'active', tokensEncrypted: 'garbage' }))).resolves.toBe('env-token');
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 't1' }), expect.stringContaining('could not be decrypted'));
   });
 });
 
@@ -164,8 +159,17 @@ describe('telegram group id parsers', () => {
     expect(parseTelegramGroupIds(undefined)).toEqual([]);
   });
 
-  it('comma-only parser keeps semicolons and inner whitespace', () => {
-    expect(parseCommaSeparatedTelegramGroupIds('-1001; -1002, -1003 ,-1003')).toEqual(['-1001; -1002', '-1003']);
+  it('the online/offline group readers use the same rule (they split on commas only before)', () => {
+    process.env.ONLINE_GROUP_ID = '-1001; -1002\n-1003';
+    process.env.OFLINE_GROUP_ID = '-2001;-2002';
+    process.env.OFFLINE_GROUP_IDS = '-2002, -2003';
+
+    expect(getOnlineTelegramGroupIds()).toEqual(['-1001', '-1002', '-1003']);
+    expect(getOfflineTelegramGroupIds()).toEqual(['-2001', '-2002', '-2003']);
+
+    delete process.env.ONLINE_GROUP_ID;
+    delete process.env.OFLINE_GROUP_ID;
+    delete process.env.OFFLINE_GROUP_IDS;
   });
 
   it('reads several env keys', () => {

@@ -4,12 +4,12 @@ import { formatSomAmount, fromTashkentLocalParts, type ManagerGroup, shiftToTash
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
 import { asObjectOrEmpty } from '../../lib/object';
+import { resolveTelegramBotToken } from '../../lib/telegram';
 import { classifyIncomeCategory, type IncomeCategory } from '../income-facts';
 import { telegramService } from '../integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../integrations/telegram-groups';
 import { reportError } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
-import { decryptIntegrationTokens } from '../security/encryption';
 import { isTechnicalNewSale } from '../technical-income';
 
 const POLL_INTERVAL_MS = 30_000;
@@ -49,6 +49,7 @@ export type SummaryIncomeRow = {
 type TelegramIntegration = {
   id: string;
   tenantId: string;
+  status: string;
   tokensEncrypted: string | null;
   config: unknown;
 };
@@ -216,24 +217,6 @@ async function loadSummaryRows(db: DbClient, tenantId: string, start: Date, end:
   return { rows: rows as SummaryIncomeRow[], ancestors: Array.from(known.values()) };
 }
 
-function resolveBotToken(integration: TelegramIntegration): string {
-  if (integration.tokensEncrypted) {
-    try {
-      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
-      const token = String(tokens.botToken || tokens.token || '').trim();
-
-      if (token) return token;
-    } catch (error: any) {
-      logger.warn({
-        tenantId: integration.tenantId,
-        error: error?.message || String(error),
-      }, 'Telegram integration token could not be decrypted; using environment fallback');
-    }
-  }
-
-  return String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
-}
-
 async function recordDeliveryAudit(
   db: DbClient,
   integration: TelegramIntegration,
@@ -280,7 +263,7 @@ async function sendOneGroup(params: {
   dateKey: string;
 }): Promise<TelegramGroupDeliveryResult> {
   const destinations = params.group === 'online' ? getOnlineTelegramGroupIds() : getOfflineTelegramGroupIds();
-  const token = resolveBotToken(params.integration);
+  const token = resolveTelegramBotToken(params.integration);
 
   if (!destinations.length || !token) {
     const missing = !token ? 'Telegram bot tokeni sozlanmagan.' : `${params.group} Telegram guruh ID si sozlanmagan.`;
@@ -347,7 +330,7 @@ export async function sendTelegramGroupSummariesForTenant(
 ): Promise<{ date: string; schedule: 'manual'; results: TelegramGroupDeliveryResult[] }> {
   const integration = await db.integration.findFirst({
     where: { tenantId, type: 'telegram', status: 'active' },
-    select: { id: true, tenantId: true, tokensEncrypted: true, config: true },
+    select: { id: true, tenantId: true, status: true, tokensEncrypted: true, config: true },
   });
 
   if (!integration) throw new Error('Telegram integration is not connected.');
@@ -415,7 +398,7 @@ const schedulerJob = createIntervalJob({
     if (!cutoffs.length) return;
     const integrations = await systemPrisma.integration.findMany({
       where: { type: 'telegram', status: 'active' },
-      select: { id: true, tenantId: true, tokensEncrypted: true, config: true },
+      select: { id: true, tenantId: true, status: true, tokensEncrypted: true, config: true },
     });
 
     for (const integration of integrations) {

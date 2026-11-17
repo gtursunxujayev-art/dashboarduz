@@ -1,12 +1,15 @@
 /**
- * Telegram group ids configured through environment variables.
- *
- * Two parsers exist on purpose (see the reuse report): the routers and app.ts accept ids separated
- * by commas, semicolons or newlines and strip quotes and whitespace; the group-summary scheduler and
- * the integrations router split on commas only. They read some of the same variables.
+ * Telegram group ids configured through environment variables. Every reader of these settings uses
+ * {@link parseTelegramGroupIds}: ids may be separated by commas, semicolons or new lines.
  */
 
-/** Ids separated by `,`, `;` or newlines; wrapping quotes and all whitespace removed; unique. */
+/** The online sales group (payment messages and the online group summary). */
+export const ONLINE_GROUP_ENV_KEYS = ['ONLINE_GROUP_ID', 'ONLINE_GROUP_IDS'] as const;
+
+/** The offline sales group; `OFLINE_*` is the historical spelling and still read. */
+export const OFFLINE_GROUP_ENV_KEYS = ['OFLINE_GROUP_ID', 'OFFLINE_GROUP_ID', 'OFLINE_GROUP_IDS', 'OFFLINE_GROUP_IDS'] as const;
+
+/** Ids separated by `,`, `;` or new lines; wrapping quotes and all whitespace removed; unique. */
 export function parseTelegramGroupIds(rawValue: string | null | undefined): string[] {
   if (!rawValue) {
     return [];
@@ -28,29 +31,10 @@ export function parseTelegramGroupIdsFromEnvKeys(keys: readonly string[]): strin
   return Array.from(new Set(keys.flatMap((key) => parseTelegramGroupIds(process.env[key]))));
 }
 
-/** Ids separated by commas only, trimmed, unique. */
-export function parseCommaSeparatedTelegramGroupIds(value: string | null | undefined): string[] {
-  return Array.from(new Set(
-    String(value || '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean),
-  ));
-}
-
-function parseFromEnvironment(keys: string[]): string[] {
-  return Array.from(new Set(keys.flatMap((key) => parseCommaSeparatedTelegramGroupIds(process.env[key]))));
-}
-
 export function getOnlineTelegramGroupIds(): string[] {
-  return parseFromEnvironment(['ONLINE_GROUP_ID', 'ONLINE_GROUP_IDS']);
+  return parseTelegramGroupIdsFromEnvKeys(ONLINE_GROUP_ENV_KEYS);
 }
 
 export function getOfflineTelegramGroupIds(): string[] {
-  return parseFromEnvironment([
-    'OFLINE_GROUP_ID',
-    'OFFLINE_GROUP_ID',
-    'OFLINE_GROUP_IDS',
-    'OFFLINE_GROUP_IDS',
-  ]);
+  return parseTelegramGroupIdsFromEnvKeys(OFFLINE_GROUP_ENV_KEYS);
 }

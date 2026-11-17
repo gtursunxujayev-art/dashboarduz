@@ -99,8 +99,7 @@
   },
   "src/services/integration-settings/connection.ts": {
     "@typescript-eslint/no-explicit-any": 2,
-    "@typescript-eslint/no-unsafe-member-access": 2,
-    "prefer-const": 1
+    "@typescript-eslint/no-unsafe-member-access": 2
   },
   "src/services/integrations/__tests__/amocrm-events.test.ts": {
     "@typescript-eslint/require-await": 6
@@ -165,10 +164,10 @@
     "@typescript-eslint/no-unsafe-member-access": 5
   },
   "src/services/reports/telegram-group-summary-scheduler.ts": {
-    "@typescript-eslint/no-explicit-any": 4,
+    "@typescript-eslint/no-explicit-any": 3,
     "@typescript-eslint/no-unsafe-argument": 1,
-    "@typescript-eslint/no-unsafe-assignment": 3,
-    "@typescript-eslint/no-unsafe-member-access": 4
+    "@typescript-eslint/no-unsafe-assignment": 2,
+    "@typescript-eslint/no-unsafe-member-access": 3
   },
   "src/services/reports/telegram-report/dispatch.ts": {
     "@typescript-eslint/no-explicit-any": 1,

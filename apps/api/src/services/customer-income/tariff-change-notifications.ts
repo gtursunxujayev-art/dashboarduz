@@ -5,7 +5,7 @@ import { logger } from '../../lib/logger';
 import { resolveTelegramBotTokenForTenant } from '../../lib/telegram';
 import { parseTelegramGroupIdsFromEnvKeys } from '../integrations/telegram-groups';
 
-import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_TARIFF_CHANGE, TARIFF_CHANGE_GROUP_ENV_KEYS, TELEGRAM_BOT_TOKEN_OPTIONS } from './constants';
+import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_TARIFF_CHANGE, TARIFF_CHANGE_GROUP_ENV_KEYS } from './constants';
 import {
   ADJUSTMENT_INCOME_SELECT,
   customerLines,
@@ -54,7 +54,7 @@ async function resolveTariffChangeDelivery(tenantId: string, db: DbClient) {
     return null;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
+  const botToken = await resolveTelegramBotTokenForTenant(tenantId, db);
 
   return botToken ? { groupIds, botToken } : null;
 }

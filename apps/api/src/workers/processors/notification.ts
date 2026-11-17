@@ -1,8 +1,8 @@
 import { systemPrisma } from '@dashboarduz/db';
 
+import { resolveTelegramBotTokenForTenant } from '../../lib/telegram';
 import { telegramService } from '../../services/integrations/telegram';
 import { queueService } from '../../services/queue';
-import { decryptIntegrationTokens } from '../../services/security/encryption';
 import { rateLimiter } from '../../services/security/rate-limiter';
 
 export async function processNotification(notificationId: string) {
@@ -29,25 +29,13 @@ export async function processNotification(notificationId: string) {
     }
 
     if (notification.type === 'telegram') {
-      const integration = await systemPrisma.integration.findFirst({
-        where: {
-          tenantId: notification.tenantId,
-          type: 'telegram',
-          status: 'active',
-        },
-      });
+      const botToken = await resolveTelegramBotTokenForTenant(notification.tenantId, systemPrisma);
 
-      if (!integration?.tokensEncrypted) {
-        throw new Error('No active Telegram integration found');
-      }
-
-      const tokens = decryptIntegrationTokens<{ botToken?: string }>(integration.tokensEncrypted);
-
-      if (!tokens.botToken) {
+      if (!botToken) {
         throw new Error('Telegram bot token is missing');
       }
 
-      await sendTelegramNotification(notification.payload as any, tokens.botToken);
+      await sendTelegramNotification(notification.payload as any, botToken);
     } else if (notification.type === 'email') {
       throw new Error('Email notification not implemented');
     } else if (notification.type === 'sms') {

@@ -3,12 +3,11 @@ import { toTashkentDateKey } from '@dashboarduz/shared';
 
 import { sleep } from '../../../lib/async';
 import { logger } from '../../../lib/logger';
-import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
+import { parseTelegramDailyReportCourseIds, resolveTelegramBotToken } from '../../../lib/telegram';
 import { telegramService } from '../../integrations/telegram';
 import { listTelegramRecipients } from '../../integrations/telegram-recipient-store';
 import { reportError } from '../../observability';
 import { getRedisClient } from '../../queue/redis-client';
-import { decryptIntegrationTokens } from '../../security/encryption';
 
 import { getReportTenantName } from './format';
 import { collectMetrics, getSelectedPipelineIdsForTenant } from './metrics';
@@ -86,9 +85,9 @@ export async function sendWindowToIntegration(
   const fileName = `dashboard-report-${window.kind}-${window.periodKey}.pdf`;
   const caption = `${window.title}\n${toTashkentDateKey(window.periodStart)} - ${toTashkentDateKey(window.periodEnd)}`;
 
-  const tokens = decryptIntegrationTokens<{ botToken?: string }>(integration.tokensEncrypted || '');
+  const botToken = resolveTelegramBotToken(integration);
 
-  if (!tokens.botToken) {
+  if (!botToken) {
     throw new Error('Telegram bot token is missing');
   }
 
@@ -101,7 +100,7 @@ export async function sendWindowToIntegration(
       continue;
     }
     try {
-      await telegramService.sendDocument(tokens.botToken, recipient.chatId, pdfBuffer, fileName, caption);
+      await telegramService.sendDocument(botToken, recipient.chatId, pdfBuffer, fileName, caption);
       deliveredCount += 1;
       await delivery.onDelivered?.(recipient.chatId);
     } catch (error) {
@@ -127,6 +126,7 @@ export async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promis
       tokensEncrypted: { not: null },
     },
     select: {
+      status: true,
       id: true,
       tenantId: true,
       tokensEncrypted: true,

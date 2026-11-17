@@ -5,7 +5,7 @@ import { isCompletedTask, isLeadTask, taskResponsibleUserId } from '../../lib/am
 import { formatDuration } from '../../lib/duration';
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
-import { buildLooseTelegramChatIdCandidates, normalizeTelegramSecret, sendMessageToTelegramChat } from '../../lib/telegram';
+import { buildLooseTelegramChatIdCandidates, resolveTelegramBotToken, sendMessageToTelegramChat } from '../../lib/telegram';
 import { countedCallsWhere } from '../calls-source';
 import { getCorporateCallDurationByManager } from '../corporate-call-durations';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
@@ -13,7 +13,6 @@ import { fetchSnapshotTasks } from '../integrations/amocrm-activity-snapshot-rea
 import { getTenantAmoCRMContext } from '../integrations/amocrm-live';
 import { reportError } from '../observability';
 import { getRedisClient } from '../queue/redis-client';
-import { decryptIntegrationTokens } from '../security/encryption';
 
 const POLL_INTERVAL_MS = 30_000;
 const LOCK_TTL_SECONDS = 60 * 60 * 24 * 2; // 2 days
@@ -30,6 +29,7 @@ type NoonWindow = {
 type TelegramIntegrationWithTenant = {
   id: string;
   tenantId: string;
+  status: string;
   tokensEncrypted: string | null;
 };
 
@@ -274,6 +274,7 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
       tokensEncrypted: { not: null },
     },
     select: {
+      status: true,
       id: true,
       tenantId: true,
       tokensEncrypted: true,
@@ -295,8 +296,7 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
     }
 
     try {
-      const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted || '');
-      const botToken = normalizeTelegramSecret(tokens.botToken || tokens.token || process.env.TELEGRAM_BOT_TOKEN || undefined);
+      const botToken = resolveTelegramBotToken(integration);
 
       if (!botToken) {
         throw new Error('Telegram bot token is missing');

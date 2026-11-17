@@ -2,16 +2,10 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { resolveTelegramBotTokenForTenant, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
+import { resolveTelegramBotTokenForTenant } from '../../lib/telegram';
 import { telegramService } from '../../services/integrations/telegram';
 import { listTelegramRecipients } from '../../services/integrations/telegram-recipient-store';
 import { managerProcedure, router } from '../trpc';
-
-const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
-  requireActiveIntegration: true,
-  secret: { removeNewlines: true },
-  decryptFailureMessage: '[TelegramBot] Failed to decrypt integration bot token, fallback to TELEGRAM_BOT_TOKEN',
-};
 
 export const telegramBotRouter = router({
   recipients: managerProcedure.query(async ({ ctx }) => {
@@ -98,7 +92,7 @@ export const telegramBotRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db, TELEGRAM_BOT_TOKEN_OPTIONS);
+      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db);
 
       if (!botToken) {
         throw new TRPCError({

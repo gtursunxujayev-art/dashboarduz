@@ -13,7 +13,7 @@ import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-li
 import { telegramService } from '../../../services/integrations/telegram';
 import { buildStatusFilters, fetchLeadsByStatusFilters, getSelectedPipelines } from '../../../services/sellers/leads';
 import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerUserIdsMap, LOST_STATUS_ID, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
-import { buildSellerReportPdf, type SellerReportPayload, TELEGRAM_BOT_TOKEN_OPTIONS } from '../../../services/sellers/report-pdf';
+import { buildSellerReportPdf, type SellerReportPayload } from '../../../services/sellers/report-pdf';
 import { protectedProcedure } from '../../trpc';
 
 export const sellerReportProcedures = {
@@ -32,7 +32,7 @@ export const sellerReportProcedures = {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 
-      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db, TELEGRAM_BOT_TOKEN_OPTIONS);
+      const botToken = await resolveTelegramBotTokenForTenant(ctx.tenantId, ctx.db);
 
       if (!botToken) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram bot token topilmadi.' });

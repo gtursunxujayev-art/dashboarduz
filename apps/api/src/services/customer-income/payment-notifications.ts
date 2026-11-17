@@ -4,9 +4,9 @@ import { formatSomAmount, TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 import { logger } from '../../lib/logger';
 import { resolveTelegramBotTokenForTenant, toHashtag } from '../../lib/telegram';
 import { telegramService } from '../integrations/telegram';
-import { parseTelegramGroupIdsFromEnvKeys } from '../integrations/telegram-groups';
+import { OFFLINE_GROUP_ENV_KEYS, ONLINE_GROUP_ENV_KEYS, parseTelegramGroupIdsFromEnvKeys } from '../integrations/telegram-groups';
 
-import { OFFLINE_PAYMENT_GROUP_ENV_KEYS, ONLINE_PAYMENT_GROUP_ENV_KEYS, REFUND_PAYMENT_GROUP_ENV_KEYS, TELEGRAM_BOT_TOKEN_OPTIONS } from './constants';
+import { REFUND_PAYMENT_GROUP_ENV_KEYS } from './constants';
 
 export function resolveRefundGroupIds(): string[] {
   const preferred = parseTelegramGroupIdsFromEnvKeys(['REFUND_GROUP_ID', 'REFUND_GROUP_IDS']);
@@ -39,10 +39,10 @@ function isOnlineCategory(category: string | null | undefined): boolean {
 
 function resolvePaymentGroupEnvKeysByCategory(category: string | null | undefined): readonly string[] | null {
   if (isOfflineOrIntensive(category)) {
-    return OFFLINE_PAYMENT_GROUP_ENV_KEYS;
+    return OFFLINE_GROUP_ENV_KEYS;
   }
   if (isOnlineCategory(category)) {
-    return ONLINE_PAYMENT_GROUP_ENV_KEYS;
+    return ONLINE_GROUP_ENV_KEYS;
   }
 
   return null;
@@ -65,7 +65,7 @@ export async function sendOfflineOrIntensivePaymentTelegram(params: {
     errors?: string[];
   };
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
 
   if (!botToken) {
     logger.warn('[Income][Telegram] Bot token is missing. Connect Telegram integration or set TELEGRAM_BOT_TOKEN.');

@@ -1,14 +1,6 @@
 import { formatSomAmount } from '@dashboarduz/shared';
 
-import type { ResolveTelegramBotTokenOptions } from '../../lib/telegram';
-
 import type { buildMetrics, SellerSalesMetrics } from './metrics';
-
-export const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
-  requireActiveIntegration: false,
-  secret: { stripWrappingQuotes: true },
-  decryptFailureMessage: 'Failed to decrypt Telegram integration token for sellers report',
-};
 
 type SellerReportSeller = {
   id: string;

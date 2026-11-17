@@ -41,6 +41,7 @@ jest.mock('@dashboarduz/db', () => ({
       findMany: jest.fn(() => Promise.resolve([{
         id: 'integration-1',
         tenantId: 'tenant-1',
+        status: 'active',
         tokensEncrypted: 'encrypted',
         config: {},
         tenant: { name: 'Najot Nur', settings: {} },

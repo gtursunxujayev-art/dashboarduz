@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { formatDuration } from '../../lib/duration';
 import { logger } from '../../lib/logger';
-import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, toHashtag, type ResolveTelegramBotTokenOptions } from '../../lib/telegram';
+import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, toHashtag } from '../../lib/telegram';
 import {
   isTodayOrYesterdayInReportTz,
   parseDurationToSeconds,
@@ -14,12 +14,6 @@ import {
 import { telegramService } from '../../services/integrations/telegram';
 import { parseTelegramGroupIdsFromEnvKeys } from '../../services/integrations/telegram-groups';
 import { protectedProcedure, router } from '../trpc';
-
-const TELEGRAM_BOT_TOKEN_OPTIONS: ResolveTelegramBotTokenOptions = {
-  requireActiveIntegration: true,
-  secret: { stripWrappingQuotes: true },
-  decryptFailureMessage: '[CorporateCalls][Telegram] Failed to decrypt integration token, using TELEGRAM_BOT_TOKEN fallback.',
-};
 
 const MANAGER_LIKE_ROLES = [...AGENT_ROLES, 'Manager', 'TeamLeader'] as const;
 const CORPORATE_GROUP_ENV_KEYS = [
@@ -57,7 +51,7 @@ async function sendCorporateCallAddedTelegram(params: {
     return { sent: false, reason: 'group_missing' as const };
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db, TELEGRAM_BOT_TOKEN_OPTIONS);
+  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
 
   if (!botToken) {
     return { sent: false, reason: 'token_missing' as const };

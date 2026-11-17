@@ -4,8 +4,8 @@ import { telegramBotConnectSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
 import { asObjectOrEmpty } from '../../../lib/object';
-import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
-import { getPublicApiBaseUrl, resolveTelegramBotToken, telegramRecipientStorageErrorMessage } from '../../../services/integration-settings/connection';
+import { parseTelegramDailyReportCourseIds , resolveTelegramBotToken } from '../../../lib/telegram';
+import { getPublicApiBaseUrl, telegramRecipientStorageErrorMessage } from '../../../services/integration-settings/connection';
 import { telegramService } from '../../../services/integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../../../services/integrations/telegram-groups';
 import { importLegacyTelegramRecipients, listTelegramRecipients } from '../../../services/integrations/telegram-recipient-store';
@@ -213,7 +213,7 @@ export const telegramIntegrationProcedures = {
     const storedWebhookUrl = String(config.webhookUrl || '').trim() || null;
 
     try {
-      const botToken = resolveTelegramBotToken(integration.tokensEncrypted);
+      const botToken = resolveTelegramBotToken({ tenantId: ctx.tenantId, status: integration.status, tokensEncrypted: integration.tokensEncrypted });
 
       if (!botToken) throw new Error('Telegram bot token is missing.');
       const live = await telegramService.getWebhookInfo(botToken);
@@ -277,7 +277,7 @@ export const telegramIntegrationProcedures = {
     }
 
     try {
-      const botToken = resolveTelegramBotToken(integration.tokensEncrypted);
+      const botToken = resolveTelegramBotToken({ tenantId: ctx.tenantId, status: integration.status, tokensEncrypted: integration.tokensEncrypted });
 
       if (!botToken) throw new Error('Telegram bot token is missing.');
       const config = asObjectOrEmpty(integration.config);
