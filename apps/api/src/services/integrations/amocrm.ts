@@ -632,7 +632,8 @@ export class AmoCRMService {
 
     const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
     const url = `${resolvedBaseUrl}/api/v4/tasks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    const response = await fetch(url, {
+    // A stalled page used to hang for minutes (no timeout) and hold up the whole paging loop.
+    const response = await this.fetchWithTimeout(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
@@ -778,7 +779,8 @@ export class AmoCRMService {
 
     const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
     const url = `${resolvedBaseUrl}/api/v4/events${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    const response = await fetch(url, {
+    // A stalled page used to hang for minutes (no timeout) and hold up the whole paging loop.
+    const response = await this.fetchWithTimeout(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',

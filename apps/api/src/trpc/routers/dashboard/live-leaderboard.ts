@@ -3,6 +3,7 @@ import { managerGroupSchema, normalizeDigits } from '@dashboarduz/shared';
 import { getRangeStart } from '../../../lib/dates';
 import { isAllowedUtelManagerExtension, resolveCallDuration, resolveCallExtension } from '../../../lib/utel';
 import { calculateBonusRange } from '../../../services/bonus-engine';
+import { buildCacheKey, getOrSet } from '../../../services/cache';
 import { getCallsProvider } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { type AgentGroup, canReadLiveLeaderboard, courseScopedIncomeWhere, getAgentLabel, groupAgentRoles, incomeRowSelect, type LeaderboardAgent, loadAgreementBonusAndDebt, loadPreviousOnlineCourses, pickLeaderboardWinner, projectMonthlyKutilma, resolveAgentGroup, sumCourseBonusByAgent, summarizeLeaderboardAgents } from '../../../services/dashboard/live-leaderboard';
@@ -13,6 +14,14 @@ import { protectedProcedure, TRPCError, z } from './helpers';
 import { loadSelectedReportCourses } from './selected-report-courses';
 
 export { resolveAgentGroup, sumBonusByAgent, sumCourseBonusByAgent, courseScopedIncomeWhere, summarizeLeaderboardAgents, compareLeaderboardAgents, pickLeaderboardWinner, type AgreementSale, summarizeAgreementBonusAndDebt, type OpenSale, projectMonthlyKutilma, pickPreviousCourseIds } from '../../../services/dashboard/live-leaderboard';
+
+// The boards are shown on several screens at once and polled often, and their data depends only on
+// the tenant and the board group (the role check runs before the cache). One computation is shared
+// by every screen for these many seconds; screens arriving during a refresh get the previous result.
+const LEADERBOARD_CACHE_SECONDS = 5;
+const CALL_STATS_CACHE_SECONDS = 15;
+const COURSE_STATS_CACHE_SECONDS = 60;
+const LEADERBOARD_STALE_SECONDS = 120;
 
 export const liveLeaderboardProcedures = {
   liveLeaderboardPreviousMonthWinner: protectedProcedure
@@ -78,6 +87,7 @@ export const liveLeaderboardProcedures = {
       });
     }
 
+    return getOrSet(buildCacheKey('liveLeaderboardCourseStats', { t: ctx.tenantId }), COURSE_STATS_CACHE_SECONDS, async () => {
     const now = new Date();
     const courseIds = (await loadSelectedReportCourses(ctx.tenantId, ctx.db))
       .filter((course) => course.group === 'online')
@@ -131,6 +141,7 @@ export const liveLeaderboardProcedures = {
       previousCourseNames: previousCourses.map((course) => course.name),
       winner,
     };
+    }, { staleTtlSeconds: LEADERBOARD_STALE_SECONDS });
   }),
 
   liveLeaderboardCallStats: protectedProcedure
@@ -145,6 +156,7 @@ export const liveLeaderboardProcedures = {
         });
       }
 
+      return getOrSet(buildCacheKey('liveLeaderboardCallStats', { t: ctx.tenantId, g: requestedGroup }), CALL_STATS_CACHE_SECONDS, async () => {
       const now = new Date();
       const todayStart = getRangeStart('today', now);
       const agents = await ctx.db.user.findMany({
@@ -232,6 +244,7 @@ export const liveLeaderboardProcedures = {
             + (corporateDurationByAgentId.get(agent.id) || 0),
         })),
       };
+      }, { staleTtlSeconds: LEADERBOARD_STALE_SECONDS });
     }),
 
   liveLeaderboard: protectedProcedure
@@ -246,6 +259,7 @@ export const liveLeaderboardProcedures = {
         });
       }
 
+    return getOrSet(buildCacheKey('liveLeaderboard', { t: ctx.tenantId, g: requestedGroup }), LEADERBOARD_CACHE_SECONDS, async () => {
     const now = new Date();
     const todayStart = getRangeStart('today', now);
     const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
@@ -403,5 +417,6 @@ export const liveLeaderboardProcedures = {
           }
         : null,
     };
+    }, { staleTtlSeconds: LEADERBOARD_STALE_SECONDS });
   }),
 };

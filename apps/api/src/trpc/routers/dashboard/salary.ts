@@ -9,6 +9,9 @@ import { buildRequiredWorkdaysByMonth, calculateProratedFixedSalary, getDayOfWee
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { getAmoCRMActivityMetrics } from '../../../services/integrations/amocrm-activity';
+
+/** KPI metrics whose values come from amoCRM tasks and events. */
+const AMO_ACTIVITY_KPI_METRICS = ['followUpCount', 'followUpDonePercent', 'stageChangeCount'] as const;
 import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { computePlanProgressByAgent } from '../../../services/plan-bonus';
@@ -291,6 +294,10 @@ const salarySummary = protectedProcedure
       const amoManagerIds = Array.from(new Set(agentAmoIdMap.values()));
       const allExtensions = Array.from(new Set(Array.from(agentExtensions.values()).flat()));
 
+      // amoCRM activity is paged live from amoCRM (slow over long ranges); fetch it only when a
+      // selected KPI is scored from it.
+      const needsAmoActivity = kpi.selectedMetrics.some((metric) => (AMO_ACTIVITY_KPI_METRICS as readonly string[]).includes(metric));
+
       // Parallel fetch: new leads, calls, activity, all incomes for debt collection
       const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
       const [newLeads, calls, activityByManager, allIncomes] = await Promise.all([
@@ -324,7 +331,7 @@ const salarySummary = protectedProcedure
               },
             })
           : Promise.resolve([]),
-        amoContext && amoManagerIds.length > 0
+        amoContext && amoManagerIds.length > 0 && needsAmoActivity
           ? getAmoCRMActivityMetrics({
               tenantId: ctx.tenantId,
               accessToken: amoContext.accessToken,
