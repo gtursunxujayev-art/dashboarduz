@@ -39,7 +39,8 @@ npm run dev:web
 
 ## Release Path (Canonical)
 1. `npm install`
-2. `npm run db:migrate:deploy` against the production database. This is a deliberate, manual release step:
+2. Take a manual backup first ([docs/backup-restore.md](docs/backup-restore.md)), then
+   `npm run db:migrate:deploy` against the production database. This is a deliberate, manual release step:
    CI does not apply migrations to any real database (it only migrates a throwaway Postgres container for tests).
    Run it from a trusted machine with `DATABASE_URL` set to the target database, and check
    `npm run migrate:status --workspace @dashboarduz/db` first.
