@@ -1,5 +1,4 @@
 import { forTenant } from '@dashboarduz/db';
-import { Prisma } from '@prisma/client';
 import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
 
@@ -30,23 +29,6 @@ function getApproxResponseSize(value: unknown): number | undefined {
   } catch {
     return undefined;
   }
-}
-
-function isPrismaSchemaMismatchError(error: unknown): boolean {
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    if (error.code === 'P2021' || error.code === 'P2022') {
-      return true;
-    }
-  }
-
-  const message = String((error as any)?.message || '').toLowerCase();
-
-  return (
-    message.includes('does not exist in the current database')
-    || (message.includes('column') && message.includes('does not exist'))
-    || (message.includes('table') && message.includes('does not exist'))
-    || (message.includes('relation') && message.includes('does not exist'))
-  );
 }
 
 const performanceMiddleware = t.middleware(async (opts) => {
@@ -96,24 +78,9 @@ const performanceMiddleware = t.middleware(async (opts) => {
   }
 });
 
-const baseProcedure = t.procedure.use(performanceMiddleware).use(async (opts) => {
-  try {
-    return await opts.next();
-  } catch (error) {
-    if (error instanceof TRPCError) {
-      throw error;
-    }
-
-    if (isPrismaSchemaMismatchError(error)) {
-      throw new TRPCError({
-        code: 'PRECONDITION_FAILED',
-        message: 'Database schema is out of date. Run `npx prisma migrate deploy --schema=packages/db/prisma/schema.prisma` and redeploy API/worker.',
-      });
-    }
-
-    throw error;
-  }
-});
+// Database errors (including a missing table or column) surface as they are; nothing translates them into a
+// softer message, so a schema or query problem is visible in logs and to the caller instead of being masked.
+const baseProcedure = t.procedure.use(performanceMiddleware);
 
 export const publicProcedure = baseProcedure;
 

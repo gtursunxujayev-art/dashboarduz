@@ -214,25 +214,6 @@ export function summarizeSellerIncomeMetrics(
   };
 }
 
-export function isSchemaCompatibilityError(error: unknown, hints: string[] = []): boolean {
-  const message = String((error as any)?.message || '').toLowerCase();
-  const isMissingSchema =
-    message.includes('does not exist')
-    || message.includes('unknown column')
-    || message.includes('p2022')
-    || message.includes('relation')
-    || message.includes('column');
-
-  if (!isMissingSchema) {
-    return false;
-  }
-  if (!hints.length) {
-    return true;
-  }
-
-  return hints.some((hint) => message.includes(hint.toLowerCase()));
-}
-
 export function toManagerRole(user: AmoCRMUser): string[] {
   return user.rights?.is_admin ? ['Manager'] : ['Agent'];
 }

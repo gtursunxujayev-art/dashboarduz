@@ -212,10 +212,6 @@
   "src/services/sellers/list-cache.ts": {
     "@typescript-eslint/no-explicit-any": 1
   },
-  "src/services/sellers/metrics.ts": {
-    "@typescript-eslint/no-explicit-any": 1,
-    "@typescript-eslint/no-unsafe-member-access": 1
-  },
   "src/services/users/accounts.ts": {
     "@typescript-eslint/no-explicit-any": 2,
     "@typescript-eslint/no-unsafe-member-access": 2
@@ -355,8 +351,7 @@
     "@typescript-eslint/no-unnecessary-type-assertion": 1
   },
   "src/trpc/routers/sellers/list.ts": {
-    "@typescript-eslint/no-unsafe-return": 1,
-    "max-lines": 1
+    "@typescript-eslint/no-unsafe-return": 1
   },
   "src/trpc/routers/telegram-bot.ts": {
     "@typescript-eslint/no-explicit-any": 1,
@@ -379,10 +374,6 @@
   },
   "src/trpc/server.ts": {
     "import/order": 2
-  },
-  "src/trpc/trpc.ts": {
-    "@typescript-eslint/no-explicit-any": 1,
-    "@typescript-eslint/no-unsafe-member-access": 1
   },
   "src/webhooks/amocrm.ts": {
     "@typescript-eslint/no-explicit-any": 1,

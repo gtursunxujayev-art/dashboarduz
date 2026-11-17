@@ -13,7 +13,7 @@ import { fetchSnapshotLeads } from '../../../services/integrations/amocrm-lead-s
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { computeLeadResponseTimes, getSelectedPipelines } from '../../../services/sellers/leads';
 import { buildSellersListCacheKey, SELLERS_ACTIVITY_CACHE_TTL_MS, SELLERS_LIST_CACHE_TTL_MS, sellersListCache } from '../../../services/sellers/list-cache';
-import { asString, buildMetrics, excludeTechnicalSellerIncomes, getLeadResponsibleId, isSchemaCompatibilityError, LOST_STATUS_ID, type SellerIncomeMetricSource, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
+import { asString, buildMetrics, excludeTechnicalSellerIncomes, getLeadResponsibleId, LOST_STATUS_ID, type SellerIncomeMetricSource, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
 import { protectedProcedure } from '../../trpc';
 
 export const sellerListProcedures = {
@@ -89,22 +89,10 @@ export const sellerListProcedures = {
     timings.managerPreparationMs = Date.now() - managerPreparationStartedMs;
 
     const managerIdList = Array.from(managerIds);
-    let corporateRevision: { _max: { updatedAt: Date | null } } = { _max: { updatedAt: null } };
-
-    try {
-      corporateRevision = await ctx.db.corporateCallDuration.aggregate({
-        where: { tenantId: ctx.tenantId },
-        _max: { updatedAt: true },
-      });
-    } catch (error) {
-      if (!isSchemaCompatibilityError(error, ['corporatecallduration', 'updatedat'])) {
-        throw error;
-      }
-      logger.warn({
-        tenantId: ctx.tenantId,
-        error: String((error as Error)?.message || error),
-      }, 'Sellers list: corporate duration revision fallback applied');
-    }
+    const corporateRevision = await ctx.db.corporateCallDuration.aggregate({
+      where: { tenantId: ctx.tenantId },
+      _max: { updatedAt: true },
+    });
     const corporateRevisionKey = corporateRevision._max.updatedAt
       ? corporateRevision._max.updatedAt.toISOString()
       : '';
@@ -259,33 +247,22 @@ export const sellerListProcedures = {
     let calls: Array<{ managerUserId: string | null; duration: number | null; direction: string; status: string; startedAt: Date | null }> = [];
 
     if (mappedUserIds.length > 0) {
-      try {
-        calls = await ctx.db.call.findMany({
-          where: {
-            ...countedCallsWhere(ctx.tenantId, mappedUserIds),
-            startedAt: {
-              gte: rangeStart,
-              lte: rangeEnd,
-            },
+      calls = await ctx.db.call.findMany({
+        where: {
+          ...countedCallsWhere(ctx.tenantId, mappedUserIds),
+          startedAt: {
+            gte: rangeStart,
+            lte: rangeEnd,
           },
-          select: {
-            managerUserId: true,
-            duration: true,
-            direction: true,
-            status: true,
-            startedAt: true,
-          },
-        });
-      } catch (error) {
-        if (!isSchemaCompatibilityError(error, ['call', 'startedat', 'duration'])) {
-          throw error;
-        }
-        logger.warn({
-          tenantId: ctx.tenantId,
-          error: String((error as Error)?.message || error),
-        }, 'Sellers list: calls fallback applied (empty calls)');
-        calls = [];
-      }
+        },
+        select: {
+          managerUserId: true,
+          duration: true,
+          direction: true,
+          status: true,
+          startedAt: true,
+        },
+      });
     }
     timings.callsFetchMs = Date.now() - callsFetchStartedMs;
 
@@ -294,203 +271,101 @@ export const sellerListProcedures = {
     const [incomesRaw, refundRequests, incomesWithCustomer, incomesWithDeadline] = await Promise.all([
       allManagerUserIds.length > 0
         ? (async () => {
-            try {
-              return await ctx.db.income.findMany({
-                where: {
-                  tenantId: ctx.tenantId,
-                  lifecycleStatus: 'active',
-                  managerUserId: { in: allManagerUserIds },
-                  entryDate: {
-                    gte: rangeStart,
-                    lte: rangeEnd,
-                  },
-                },
-                select: {
-                  managerUserId: true,
-                  type: true,
-                  paymentAmount: true,
-                  coursePriceAmount: true,
-                  debtAmount: true,
-                  id: true,
-                  relatedDebtIncomeId: true,
-                  course: {
-                    select: {
-                      category: true,
-                      name: true,
-                    },
-                  },
-                },
-              });
-            } catch (error) {
-              if (!isSchemaCompatibilityError(error, ['lifestylestatus', 'lifecyclestatus', 'category', 'course'])) {
-                throw error;
-              }
-              logger.warn({
+            return await ctx.db.income.findMany({
+              where: {
                 tenantId: ctx.tenantId,
-                error: String((error as Error)?.message || error),
-              }, 'Sellers list: incomes fallback applied');
-
-              return await ctx.db.income.findMany({
-                where: {
-                  tenantId: ctx.tenantId,
-                  managerUserId: { in: allManagerUserIds },
-                  entryDate: {
-                    gte: rangeStart,
-                    lte: rangeEnd,
+                lifecycleStatus: 'active',
+                managerUserId: { in: allManagerUserIds },
+                entryDate: {
+                  gte: rangeStart,
+                  lte: rangeEnd,
+                },
+              },
+              select: {
+                managerUserId: true,
+                type: true,
+                paymentAmount: true,
+                coursePriceAmount: true,
+                debtAmount: true,
+                id: true,
+                relatedDebtIncomeId: true,
+                course: {
+                  select: {
+                    category: true,
+                    name: true,
                   },
                 },
-                select: {
-                  managerUserId: true,
-                  type: true,
-                  paymentAmount: true,
-                  coursePriceAmount: true,
-                  debtAmount: true,
-                  id: true,
-                  relatedDebtIncomeId: true,
-                  course: {
-                    select: {
-                      name: true,
-                    },
-                  },
-                },
-              });
-            }
+              },
+            });
           })()
         : [],
       // Refund requests by manager in period
       allManagerUserIds.length > 0
         ? (async () => {
-            try {
-              return await ctx.db.incomeAdjustmentRequest.findMany({
-                where: {
-                  tenantId: ctx.tenantId,
-                  type: 'refund',
-                  status: 'approved',
-                  createdAt: {
-                    gte: rangeStart,
-                    lte: rangeEnd,
-                  },
-                  income: {
-                    managerUserId: { in: allManagerUserIds },
-                  },
-                },
-                select: {
-                  income: {
-                    select: { managerUserId: true },
-                  },
-                },
-              });
-            } catch (error) {
-              if (!isSchemaCompatibilityError(error, ['incomeadjustmentrequest'])) {
-                throw error;
-              }
-              logger.warn({
+            return await ctx.db.incomeAdjustmentRequest.findMany({
+              where: {
                 tenantId: ctx.tenantId,
-                error: String((error as Error)?.message || error),
-              }, 'Sellers list: refund requests fallback applied (empty)');
-
-              return [];
-            }
+                type: 'refund',
+                status: 'approved',
+                createdAt: {
+                  gte: rangeStart,
+                  lte: rangeEnd,
+                },
+                income: {
+                  managerUserId: { in: allManagerUserIds },
+                },
+              },
+              select: {
+                income: {
+                  select: { managerUserId: true },
+                },
+              },
+            });
           })()
         : [],
       // Incomes with customerId for new vs repeat
       allManagerUserIds.length > 0
         ? (async () => {
-            try {
-              return await ctx.db.income.findMany({
-                where: {
-                  tenantId: ctx.tenantId,
-                  lifecycleStatus: 'active',
-                  type: 'new_sale',
-                  managerUserId: { in: allManagerUserIds },
-                  entryDate: {
-                    gte: rangeStart,
-                    lte: rangeEnd,
-                  },
-                },
-                select: {
-                  managerUserId: true,
-                  customerId: true,
-                },
-              });
-            } catch (error) {
-              if (!isSchemaCompatibilityError(error, ['lifecyclestatus'])) {
-                throw error;
-              }
-              logger.warn({
+            return await ctx.db.income.findMany({
+              where: {
                 tenantId: ctx.tenantId,
-                error: String((error as Error)?.message || error),
-              }, 'Sellers list: customer split fallback applied');
-
-              return await ctx.db.income.findMany({
-                where: {
-                  tenantId: ctx.tenantId,
-                  type: 'new_sale',
-                  managerUserId: { in: allManagerUserIds },
-                  entryDate: {
-                    gte: rangeStart,
-                    lte: rangeEnd,
-                  },
+                lifecycleStatus: 'active',
+                type: 'new_sale',
+                managerUserId: { in: allManagerUserIds },
+                entryDate: {
+                  gte: rangeStart,
+                  lte: rangeEnd,
                 },
-                select: {
-                  managerUserId: true,
-                  customerId: true,
-                },
-              });
-            }
+              },
+              select: {
+                managerUserId: true,
+                customerId: true,
+              },
+            });
           })()
         : [],
       // Incomes with deadline for payment adherence
       allManagerUserIds.length > 0
         ? (async () => {
-            try {
-              return await ctx.db.income.findMany({
-                where: {
-                  tenantId: ctx.tenantId,
-                  lifecycleStatus: 'active',
-                  managerUserId: { in: allManagerUserIds },
-                  entryDate: {
-                    gte: rangeStart,
-                    lte: rangeEnd,
-                  },
-                  deadline: { not: null },
-                },
-                select: {
-                  managerUserId: true,
-                  entryDate: true,
-                  deadline: true,
-                  paymentAmount: true,
-                  remainingDebtAmount: true,
-                },
-              });
-            } catch (error) {
-              if (!isSchemaCompatibilityError(error, ['lifecyclestatus'])) {
-                throw error;
-              }
-              logger.warn({
+            return await ctx.db.income.findMany({
+              where: {
                 tenantId: ctx.tenantId,
-                error: String((error as Error)?.message || error),
-              }, 'Sellers list: deadline adherence fallback applied');
-
-              return await ctx.db.income.findMany({
-                where: {
-                  tenantId: ctx.tenantId,
-                  managerUserId: { in: allManagerUserIds },
-                  entryDate: {
-                    gte: rangeStart,
-                    lte: rangeEnd,
-                  },
-                  deadline: { not: null },
+                lifecycleStatus: 'active',
+                managerUserId: { in: allManagerUserIds },
+                entryDate: {
+                  gte: rangeStart,
+                  lte: rangeEnd,
                 },
-                select: {
-                  managerUserId: true,
-                  entryDate: true,
-                  deadline: true,
-                  paymentAmount: true,
-                  remainingDebtAmount: true,
-                },
-              });
-            }
+                deadline: { not: null },
+              },
+              select: {
+                managerUserId: true,
+                entryDate: true,
+                deadline: true,
+                paymentAmount: true,
+                remainingDebtAmount: true,
+              },
+            });
           })()
         : [],
     ]);
@@ -537,26 +412,13 @@ export const sellerListProcedures = {
         managerIdByUserId.set(userId, managerId);
       }
     }
-    let corporateDurationByUserId = new Map<string, number>();
-
-    try {
-      corporateDurationByUserId = await getCorporateCallDurationByManager({
-        tenantId: ctx.tenantId,
-        managerUserIds: Array.from(managerIdByUserId.keys()),
-        rangeStart,
-        rangeEnd,
-        db: ctx.db,
-      });
-    } catch (error) {
-      if (!isSchemaCompatibilityError(error, ['corporatecallduration', 'durationseconds', 'calldate'])) {
-        throw error;
-      }
-      logger.warn({
-        tenantId: ctx.tenantId,
-        error: String((error as Error)?.message || error),
-      }, 'Sellers list: corporate call duration fallback applied (empty)');
-      corporateDurationByUserId = new Map<string, number>();
-    }
+    const corporateDurationByUserId = await getCorporateCallDurationByManager({
+      tenantId: ctx.tenantId,
+      managerUserIds: Array.from(managerIdByUserId.keys()),
+      rangeStart,
+      rangeEnd,
+      db: ctx.db,
+    });
     const corporateDurationByManager = new Map<string, number>();
 
     for (const [userId, durationSeconds] of corporateDurationByUserId.entries()) {
