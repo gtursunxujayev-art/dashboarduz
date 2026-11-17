@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Type-check tests against the workspace packages' SOURCE, matching jest.config.js moduleNameMapper.
+    // Without this, '@dashboarduz/db' and '@dashboarduz/shared' resolve to their dist/*.d.ts, which only exist
+    // after a build: on a fresh CI runner every test importing them failed with TS2307 before running.
+    "baseUrl": ".",
+    "paths": {
+      "@dashboarduz/db": ["../../packages/db/src"],
+      "@dashboarduz/shared": ["../../packages/shared/src"]
+    },
+    "rootDir": "../..",
+    "noEmit": false
+  }
+}

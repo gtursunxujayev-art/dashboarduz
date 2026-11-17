@@ -23,7 +23,9 @@ module.exports = {
     'node_modules/(?!(superjson|copy-anything|is-what)/)',
   ],
   transform: {
-    '^.+\\.tsx?$': 'ts-jest',
-    '^.+\\.js$': ['ts-jest', { useESM: false }],
+    // tsconfig.jest.json maps the workspace packages to their source for type checking, as moduleNameMapper does
+    // at runtime, so tests do not depend on a prior build of packages/db or packages/shared.
+    '^.+\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.jest.json' }],
+    '^.+\\.js$': ['ts-jest', { useESM: false, tsconfig: '<rootDir>/tsconfig.jest.json' }],
   },
 };
