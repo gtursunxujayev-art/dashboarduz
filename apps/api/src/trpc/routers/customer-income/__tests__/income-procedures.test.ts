@@ -2,6 +2,7 @@ import type { JWTPayload } from '@dashboarduz/shared';
 
 import type { InMemoryPrisma } from '../../../../__tests__/helpers/in-memory-prisma';
 import { contextFor, createMoneyFixture, dayString, daysAgo, type MoneyFixture, seedCustomer, seedSaleChain } from '../../../../__tests__/helpers/money-fixtures';
+import * as bonusEngine from '../../../../services/bonus-engine';
 import { customerIncomeRouter } from '../index';
 
 let mockStore: InMemoryPrisma;
@@ -219,10 +220,27 @@ describe('updateIncome procedure: sale rows', () => {
     await expect(caller(fixture.adminId, ['Admin']).updateIncome({ incomeId: '00000000-0000-4000-8000-0000000000cc' })).rejects.toThrow('Income entry not found.');
   });
 
-  // Editing a repayment reconciles finalized bonus months (income-update.ts:520), editing a sale does not: the sale
-  // branch returns at income-update.ts:364 without calling reconcileBonusAfterIncomeChange, so a changed payment in a
-  // finalized month gets no bonus adjustment until some other income change triggers the reconcile.
-  it.todo('reconciles finalized bonus months after a sale edit (bug: income-update.ts:364 skips reconcileBonusAfterIncomeChange)');
+  it('reconciles finalized bonus months after a sale edit and clears the reconcile it asked for', async () => {
+    const reconcile = jest.spyOn(bonusEngine, 'reconcileFinalizedBonusMonths').mockResolvedValue(0);
+
+    await caller(fixture.adminId, ['Admin']).updateIncome({ incomeId: saleId, paymentAmount: 1_200_000 });
+
+    expect(reconcile).toHaveBeenCalledWith(expect.objectContaining({ tenantId: fixture.tenantId, actorUserId: fixture.adminId }));
+    expect(fixture.store.rows('BonusReconcileRequest')).toHaveLength(0);
+    reconcile.mockRestore();
+  });
+
+  it('keeps the edit and records a reconcile to retry when reconciling fails', async () => {
+    const reconcile = jest.spyOn(bonusEngine, 'reconcileFinalizedBonusMonths').mockRejectedValue(new Error('bonus db timeout'));
+
+    await caller(fixture.adminId, ['Admin']).updateIncome({ incomeId: saleId, paymentAmount: 1_200_000 });
+
+    expect(income(saleId).paymentAmount).toBe(1_200_000);
+    expect(fixture.store.rows('BonusReconcileRequest')).toEqual([
+      expect.objectContaining({ tenantId: fixture.tenantId, reason: 'updateIncome', attempts: 1, lastError: 'bonus db timeout' }),
+    ]);
+    reconcile.mockRestore();
+  });
 });
 
 describe('updateIncome procedure: repayment rows', () => {

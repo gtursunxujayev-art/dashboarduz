@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { ADJUSTMENT_STATUS_PENDING } from '../../../services/customer-income/constants';
 import { parseDateInput } from '../../../services/customer-income/labels';
 import { assertManagerBelongsToTenantWithOptions } from '../../../services/customer-income/roles';
-import { assertSaleChainDebtInvariant, lockSaleChainUnchanged, normalizeSaleChainChronology, readSaleChainState, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, rowMatchesSaleChainState, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
+import { assertSaleChainDebtInvariant, lockSaleChainUnchanged, normalizeSaleChainChronology, readSaleChainState, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, requestBonusReconcile, rowMatchesSaleChainState, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
 import { extractSaleSubTariffId, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { adminProcedure } from '../../trpc';
 
@@ -113,6 +113,8 @@ export const incomeUpdateProcedures = {
       }
       const lockChainForEdit = async (tx: Prisma.TransactionClient): Promise<void> => {
         await lockSaleChainUnchanged(tx, { tenantId: ctx.tenantId, saleId: chainSaleId, expected: chainStateBefore });
+        // Every edit of a sale or a repayment can move finalized bonus; the marker commits with the edit.
+        await requestBonusReconcile(tx, ctx.tenantId, 'updateIncome');
         const pendingNow = await tx.incomeAdjustmentRequest.count({
           where: { tenantId: ctx.tenantId, incomeId: income.id, status: ADJUSTMENT_STATUS_PENDING },
         });
@@ -360,6 +362,8 @@ export const incomeUpdateProcedures = {
             },
           },
         });
+
+        await reconcileBonusAfterIncomeChange(ctx.tenantId, ctx.user.userId, { action: 'updateIncome' }, ctx.db);
 
         return {
           success: true,

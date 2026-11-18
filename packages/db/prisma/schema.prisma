@@ -51,6 +51,7 @@ model Tenant {
   bonusPolicyVersions BonusPolicyVersion[]
   bonusMonthSnapshots BonusMonthSnapshot[]
   bonusAdjustments BonusAdjustment[]
+  bonusReconcileRequests BonusReconcileRequest[]
   bonusAdjustmentAudits BonusAdjustmentAudit[]
   bonusAdjustmentApplications BonusAdjustmentApplication[]
   amocrmTasks AmocrmTask[]
@@ -786,9 +787,30 @@ model BonusAdjustment {
 
   @@index([tenantId, status, createdAt])
   @@index([tenantId, agentUserId, payoutMonth])
+  // At most one pending adjustment per (snapshotId, groupKey): a partial unique index created in migration
+  // 20261121110000 (WHERE status = 'pending'), which Prisma's schema language cannot express.
   @@index([snapshotId, groupKey])
   @@unique([tenantId, id]) // target of composite tenant-safe foreign keys
   @@map("bonus_adjustments")
+}
+
+/// A finalized-bonus reconciliation still owed to a tenant. Written in the same transaction as the money change that
+/// needs it, deleted once reconcileFinalizedBonusMonths has succeeded; the bonus reconcile sweeper retries what is
+/// left, so a failed or interrupted reconcile is never lost. attempts/lastError show why one is stuck.
+model BonusReconcileRequest {
+  id            String    @id @default(uuid())
+  tenantId      String
+  reason        String
+  attempts      Int       @default(0)
+  lastError     String?
+  lastAttemptAt DateTime?
+  createdAt     DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([createdAt])
+  @@map("bonus_reconcile_requests")
 }
 
 /// Audit trail: actorUserId is a history value without a foreign key.

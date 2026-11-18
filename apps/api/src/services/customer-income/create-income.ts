@@ -11,7 +11,7 @@ import { CUSTOMER_NUMBER_REGEX, TELEGRAM_USERNAME_REGEX } from './constants';
 import { parseDateInput } from './labels';
 import { sendOfflineOrIntensivePaymentTelegram } from './payment-notifications';
 import { assertManagerBelongsToTenantWithOptions, canSelectInactiveManagerForIncome } from './roles';
-import { assertSaleChainDebtInvariant, lockSaleChain, normalizeSaleChainChronology, refreshCustomerProfileFromLatestActiveSale } from './sale-chain';
+import { assertSaleChainDebtInvariant, lockSaleChain, normalizeSaleChainChronology, refreshCustomerProfileFromLatestActiveSale, requestBonusReconcile } from './sale-chain';
 
 export async function createIncomeEntry(params: {
   tenantId: string;
@@ -186,6 +186,7 @@ export async function createIncomeEntry(params: {
     const remainingDebtAmount = Math.max(input.coursePriceAmount - input.paymentAmount, 0);
 
     createdIncome = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+      await requestBonusReconcile(tx, tenantId, 'createIncome');
       const createdSale = await tx.income.create({
         data: {
           tenantId,
@@ -280,6 +281,7 @@ export async function createIncomeEntry(params: {
       // Lock the chain first and read the debt under the lock: two concurrent repayments on one sale then run one
       // after the other, and the second one sees the first one's payment instead of the same old debt.
       await lockSaleChain(tx, { tenantId, saleId: lockedDebtSourceId });
+      await requestBonusReconcile(tx, tenantId, 'createIncome');
 
       const debtSource = await tx.income.findFirst({
         where: {

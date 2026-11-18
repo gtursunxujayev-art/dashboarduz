@@ -335,6 +335,50 @@ describeWithDatabase('money paths (Postgres integration)', () => {
     });
   });
 
+  async function finalizedOnIncomeMonth(label: string): Promise<SaleFixture & { snapshotId: string }> {
+    const fixture = await sale(label);
+    const simple = (simplePercent: number) => ({ mode: 'simple' as const, simplePercent, tiers: [] });
+
+    await fixture.admin.bonus.updateBonusRules({
+      bonusMode: 'on_income',
+      bonusRules: { online: simple(10), offline: simple(0), intensive: simple(0), additional_service: simple(0) },
+    });
+    await fixture.admin.bonus.finalizeBonusMonth({ month: fixture.saleMonth });
+    const snapshot = await loadPrisma().bonusMonthSnapshot.findFirstOrThrow({ where: { tenantId: fixture.tenant.tenantId } });
+
+    return { ...fixture, snapshotId: snapshot.id };
+  }
+
+  it('reconciles a finalized month after a sale edit and leaves no reconcile owed', async () => {
+    const { tenant, admin, saleId, snapshotId } = await finalizedOnIncomeMonth('sale-edit-reconcile');
+    const prisma = loadPrisma();
+
+    await admin.customerIncome.updateIncome({ incomeId: saleId, paymentAmount: 1_500_000 });
+
+    const adjustments = await prisma.bonusAdjustment.findMany({ where: { tenantId: tenant.tenantId } });
+
+    expect(adjustments).toHaveLength(1);
+    expect(adjustments[0]).toMatchObject({ snapshotId, agentUserId: tenant.agentUserId, deltaAmount: 50_000, status: 'pending' });
+    expect(await prisma.bonusReconcileRequest.count({ where: { tenantId: tenant.tenantId } })).toBe(0);
+  });
+
+  it('two reconciles of one month at once leave exactly one pending adjustment per group', async () => {
+    const { tenant, saleId, saleMonth } = await finalizedOnIncomeMonth('reconcile-race');
+    const prisma = loadPrisma();
+    const { forTenant } = await import('@dashboarduz/db');
+    const { reconcileBonusMonth } = await import('../../services/bonus-engine');
+    const month = new Date(`${saleMonth}-15T00:00:00Z`);
+
+    // Change the paid amount behind the app's back, so neither reconcile has run yet.
+    await prisma.income.update({ where: { id: saleId }, data: { paymentAmount: 1_200_000 } });
+    await Promise.all([1, 2, 3].map(() => reconcileBonusMonth({ tenantId: tenant.tenantId, month, db: forTenant(tenant.tenantId) })));
+
+    const pending = await prisma.bonusAdjustment.findMany({ where: { tenantId: tenant.tenantId, status: 'pending' } });
+
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.deltaAmount).toBe(20_000);
+  });
+
   it('never deletes a customer that has a sale, in the API or in the database', async () => {
     const { tenant, admin, saleId } = await sale('delete-customer');
     const prisma = loadPrisma();
@@ -346,7 +390,7 @@ describeWithDatabase('money paths (Postgres integration)', () => {
       deletedIds: [empty.id],
       skipped: [{ id: customerId, reason: 'has_incomes' }],
     });
-    // The database refuses it too (ON DELETE RESTRICT), so no other path can cascade money rows away.
+    // The database refuses it too (ON DELETE NO ACTION), so no other path can cascade money rows away.
     await expect(prisma.customer.delete({ where: { id: customerId } })).rejects.toMatchObject({ code: 'P2003' });
     expect(await prisma.income.count({ where: { customerId } })).toBe(1);
   });

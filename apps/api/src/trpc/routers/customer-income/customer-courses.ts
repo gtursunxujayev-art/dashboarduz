@@ -8,7 +8,7 @@ import { thrownText } from '../../../lib/errors';
 import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, INCOME_LIFECYCLE_PENDING_REFUND } from '../../../services/customer-income/constants';
 import { notifyFinanceUsersRefundRequested, sendRefundRequestedTelegram } from '../../../services/customer-income/refund-notifications';
-import { assertSaleChainDebtInvariant, lockSaleChainUnchanged, normalizeSaleChainChronology, readSaleChainState, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
+import { assertSaleChainDebtInvariant, lockSaleChainUnchanged, normalizeSaleChainChronology, readSaleChainState, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, requestBonusReconcile, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
 import { getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { adminProcedure } from '../../trpc';
 
@@ -126,6 +126,7 @@ export const customerCourseProcedures = {
 
       const resultPayload = await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         await lockSaleChainUnchanged(tx, { tenantId: ctx.tenantId, saleId: saleIncome.id, expected: chainStateBefore });
+        await requestBonusReconcile(tx, ctx.tenantId, 'customerCourseChange');
         if (await tx.incomeAdjustmentRequest.count({
           where: { tenantId: ctx.tenantId, incomeId: { in: saleChainIds }, status: ADJUSTMENT_STATUS_PENDING },
         }) > 0) {
@@ -513,6 +514,7 @@ export const customerCourseProcedures = {
 
       await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         await lockSaleChainUnchanged(tx, { tenantId: ctx.tenantId, saleId: saleIncome.id, expected: chainStateBefore });
+        await requestBonusReconcile(tx, ctx.tenantId, 'customerCourseChange');
         if (await tx.incomeAdjustmentRequest.count({
           where: { tenantId: ctx.tenantId, incomeId: { in: saleChainIds }, status: ADJUSTMENT_STATUS_PENDING },
         }) > 0) {

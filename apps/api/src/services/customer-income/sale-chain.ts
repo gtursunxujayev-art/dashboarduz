@@ -1,4 +1,4 @@
-import type { DbClient } from '@dashboarduz/db';
+import type { DbClient, TenantPrismaClient } from '@dashboarduz/db';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
@@ -332,21 +332,60 @@ export function rowMatchesSaleChainState(
     && recorded.lifecycleStatus === row.lifecycleStatus;
 }
 
+/**
+ * Inside a money transaction: records that this tenant's finalized bonus months must be reconciled. The marker commits
+ * (or rolls back) with the money change, so the reconcile it asks for cannot be lost to a crash or a failed reconcile
+ * after the commit: `reconcileBonusAfterIncomeChange` clears it on success, the bonus reconcile sweeper retries it.
+ */
+export async function requestBonusReconcile(tx: Prisma.TransactionClient, tenantId: string, reason: string): Promise<void> {
+  await tx.bonusReconcileRequest.create({ data: { tenantId, reason } });
+}
+
+/**
+ * Runs the reconciliation the tenant's open markers ask for and clears exactly those markers. On failure the markers
+ * stay, with the attempt and error recorded, for the sweeper to retry; the money change itself is already committed.
+ * Returns false when the reconcile failed.
+ */
+export async function runRequestedBonusReconcile(params: {
+  tenantId: string;
+  actorUserId: string | null;
+  context: Record<string, unknown>;
+  db: TenantPrismaClient;
+}): Promise<boolean> {
+  const { tenantId, db } = params;
+  const requests = await db.bonusReconcileRequest.findMany({ where: { tenantId }, select: { id: true } });
+
+  if (!requests.length) return true;
+  const ids = requests.map((request) => request.id);
+
+  try {
+    await reconcileFinalizedBonusMonths({ tenantId, actorUserId: params.actorUserId, db });
+    await db.bonusReconcileRequest.deleteMany({ where: { tenantId, id: { in: ids } } });
+
+    return true;
+  } catch (error) {
+    const message = thrownText(error);
+
+    logger.error({ tenantId, ...params.context, error: message }, '[Bonus] Finalized month reconciliation failed; queued for retry');
+    await db.bonusReconcileRequest.updateMany({
+      where: { tenantId, id: { in: ids } },
+      data: { attempts: { increment: 1 }, lastError: message.slice(0, 2000), lastAttemptAt: new Date() },
+    }).catch((recordError: unknown) => {
+      logger.error({ tenantId, error: thrownText(recordError) }, '[Bonus] Could not record the failed reconcile attempt');
+    });
+
+    return false;
+  }
+}
+
+/** After a committed money change that called `requestBonusReconcile`: reconcile now; a failure is retried later. */
 export async function reconcileBonusAfterIncomeChange(
   tenantId: string,
   actorUserId: string,
   context: Record<string, unknown>,
-  db: DbClient,
+  db: TenantPrismaClient,
 ): Promise<void> {
-  try {
-    await reconcileFinalizedBonusMonths({ tenantId, actorUserId, db });
-  } catch (error) {
-    logger.error({
-      tenantId,
-      ...context,
-      error: thrownText(error),
-    }, '[Bonus] Finalized month reconciliation failed after income change');
-  }
+  await runRequestedBonusReconcile({ tenantId, actorUserId, context, db });
 }
 
 export async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient, params: {

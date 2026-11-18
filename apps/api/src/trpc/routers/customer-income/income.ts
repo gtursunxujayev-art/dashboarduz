@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { ADJUSTMENT_STATUS_PENDING } from '../../../services/customer-income/constants';
 import { createIncomeEntry } from '../../../services/customer-income/create-income';
 import { isAdminUser, shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
-import { assertSaleChainDebtInvariant, lockSaleChain, reconcileBonusAfterIncomeChange } from '../../../services/customer-income/sale-chain';
+import { assertSaleChainDebtInvariant, lockSaleChain, reconcileBonusAfterIncomeChange, requestBonusReconcile } from '../../../services/customer-income/sale-chain';
 import { adminProcedure, protectedProcedure } from '../../trpc';
 
 export const incomeProcedures = {
@@ -97,6 +97,7 @@ export const incomeProcedures = {
       }
 
       await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await requestBonusReconcile(tx, ctx.tenantId, 'deleteIncome');
         // Repeat the checks above under the chain lock: a repayment or request added meanwhile must stop the delete.
         await lockSaleChain(tx, {
           tenantId: ctx.tenantId,

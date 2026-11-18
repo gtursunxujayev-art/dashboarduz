@@ -182,9 +182,29 @@ async function createBonusMonthSnapshot(params: {
   });
 }
 
-export async function reconcileBonusMonth(params: { tenantId: string; month: Date; actorUserId?: string | null; db: DbClient }): Promise<number> {
-  const { db } = params;
+/**
+ * Compares a finalized month with what the data says now and keeps one pending adjustment per bonus group for the
+ * difference. Runs in one transaction under a per-tenant-and-month advisory lock, so two reconciles of the same month
+ * (two money edits at once, or an edit and the sweeper) cannot both create a pending adjustment for a group or work
+ * from each other's half-written rows; a unique index on pending (snapshotId, groupKey) backs this up.
+ */
+export async function reconcileBonusMonth(params: { tenantId: string; month: Date; actorUserId?: string | null; db: TenantPrismaClient }): Promise<number> {
   const month = getTashkentMonthStart(params.month);
+  const lockKey = `bonus-reconcile:${params.tenantId}:${getTashkentMonthKey(month)}`;
+
+  return params.db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+
+    return reconcileBonusMonthLocked({ tenantId: params.tenantId, month, actorUserId: params.actorUserId, db: tx });
+  }, {
+    // Recalculating a month reads all of its incomes; keep the transaction open longer than the 5s default.
+    maxWait: 15000,
+    timeout: 60000,
+  });
+}
+
+async function reconcileBonusMonthLocked(params: { tenantId: string; month: Date; actorUserId?: string | null; db: Prisma.TransactionClient }): Promise<number> {
+  const { db, month } = params;
   const snapshot = await db.bonusMonthSnapshot.findUnique({
     where: { tenantId_month: { tenantId: params.tenantId, month } },
     include: { lines: true, adjustments: true },
@@ -262,7 +282,7 @@ export async function reconcileBonusMonth(params: { tenantId: string; month: Dat
   return pendingCount;
 }
 
-export async function reconcileFinalizedBonusMonths(params: { tenantId: string; actorUserId?: string | null; db: DbClient }): Promise<number> {
+export async function reconcileFinalizedBonusMonths(params: { tenantId: string; actorUserId?: string | null; db: TenantPrismaClient }): Promise<number> {
   const { db } = params;
   const snapshots = await db.bonusMonthSnapshot.findMany({
     where: { tenantId: params.tenantId },

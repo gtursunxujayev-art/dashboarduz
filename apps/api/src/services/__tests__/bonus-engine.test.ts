@@ -130,6 +130,9 @@ describe('bonus attribution and reconcile', () => {
   ];
 
   beforeEach(() => {
+    // reconcileBonusMonth runs in a transaction under an advisory lock; run it on the spied client itself.
+    jest.spyOn(prisma, '$transaction').mockImplementation(((run: (tx: typeof prisma) => unknown) => Promise.resolve(run(prisma))) as never);
+    jest.spyOn(prisma, '$executeRaw').mockResolvedValue(0 as never);
     jest.spyOn(prisma.user, 'findMany').mockResolvedValue([
       { id: 'agent-a', roles: ['OnlineAgent'] },
       { id: 'agent-b', roles: ['OnlineAgent'] },

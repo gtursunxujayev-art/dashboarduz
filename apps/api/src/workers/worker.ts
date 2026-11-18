@@ -4,6 +4,7 @@
 import { errorMessage, errorStack } from '../lib/errors';
 import { logger } from '../lib/logger';
 import { startBonusAutoFinalizeScheduler, stopBonusAutoFinalizeScheduler } from '../services/bonus-auto-finalize';
+import { startBonusReconcileSweeper, stopBonusReconcileSweeper } from '../services/bonus-reconcile-sweeper';
 import { startAmoActivitySnapshotScheduler, stopAmoActivitySnapshotScheduler } from '../services/integrations/amocrm-activity-snapshot';
 import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from '../services/integrations/amocrm-call-sync';
 import { startAmoLeadSnapshotScheduler, stopAmoLeadSnapshotScheduler } from '../services/integrations/amocrm-lead-snapshot';
@@ -24,6 +25,7 @@ function startWorkerService(): void {
   startTelegramAgentPerformanceScheduler();
   startTelegramGroupSummaryScheduler();
   startBonusAutoFinalizeScheduler();
+  startBonusReconcileSweeper();
   startWebhookEventRetentionScheduler();
   startAmoCallsSyncScheduler();
   startAmoLeadSnapshotScheduler();
@@ -47,6 +49,7 @@ process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
   stopTelegramGroupSummaryScheduler();
   stopBonusAutoFinalizeScheduler();
+  stopBonusReconcileSweeper();
   stopWebhookEventRetentionScheduler();
   stopAmoCallsSyncScheduler();
   stopAmoLeadSnapshotScheduler();
@@ -60,6 +63,7 @@ process.on('SIGINT', () => {
   logger.info('SIGINT received, shutting down gracefully');
   stopTelegramGroupSummaryScheduler();
   stopBonusAutoFinalizeScheduler();
+  stopBonusReconcileSweeper();
   stopWebhookEventRetentionScheduler();
   stopAmoCallsSyncScheduler();
   stopAmoLeadSnapshotScheduler();

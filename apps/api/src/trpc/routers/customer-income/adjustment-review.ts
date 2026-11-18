@@ -7,7 +7,7 @@ import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_APPROVED, ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_STATUS_REJECTED, ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE, INCOME_LIFECYCLE_PENDING_REFUND, INCOME_LIFECYCLE_REFUNDED } from '../../../services/customer-income/constants';
 import { notifyRefundRequesterReviewResult, sendRefundApprovedTelegram } from '../../../services/customer-income/refund-notifications';
 import { canApproveRefundRequest, canApproveTariffChangeRequest } from '../../../services/customer-income/roles';
-import { assertSaleChainDebtInvariant, lockSaleChain, reconcileBonusAfterIncomeChange } from '../../../services/customer-income/sale-chain';
+import { assertSaleChainDebtInvariant, lockSaleChain, reconcileBonusAfterIncomeChange, requestBonusReconcile } from '../../../services/customer-income/sale-chain';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { protectedProcedure } from '../../trpc';
 
@@ -99,6 +99,7 @@ export const adjustmentReviewProcedures = {
           reviewNote: input.reviewNote,
         });
         await lockSaleChain(tx, { tenantId: ctx.tenantId, saleId: request.incomeId });
+        await requestBonusReconcile(tx, ctx.tenantId, 'approveAdjustmentRequest');
 
         if (request.type === ADJUSTMENT_TYPE_REFUND) {
           await tx.income.updateMany({
@@ -317,6 +318,7 @@ export const adjustmentReviewProcedures = {
           reviewNote: input.reviewNote,
         });
         await lockSaleChain(tx, { tenantId: ctx.tenantId, saleId: request.income.id });
+        await requestBonusReconcile(tx, ctx.tenantId, 'rejectAdjustmentRequest');
 
         // Restore every row of the chain that the refund request put on hold, not just the sale row.
         await tx.income.updateMany({
