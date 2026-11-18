@@ -8,7 +8,7 @@ import { extractTelegramRecipientFromPayload } from '../services/integrations/te
 import { rateLimiter } from '../services/security/rate-limiter';
 
 import { telegramWebhookEventType, telegramWebhookUpdateId, webhookPayloadJson } from './payloads';
-import { buildWebhookIdempotencyKey, enqueueWebhookJob, getRawBody, isUniqueViolation } from './shared';
+import { buildWebhookIdempotencyKey, getRawBody, sendWebhookFailure, storeAndEnqueueWebhookEvent } from './shared';
 
 const router = Router();
 
@@ -93,50 +93,31 @@ router.post('/telegram', asyncRoute(async (req: Request, res: Response) => {
       }
     }
 
-    let event;
-
-    try {
-      event = await systemPrisma.webhookEvent.create({
-        data: {
-          tenantId: integration.tenantId,
-          source: 'telegram',
-          eventType,
-          idempotencyKey,
-          rawPayload: webhookPayloadJson(body),
-          processed: false,
-        },
-      });
-    } catch (error: unknown) {
-      if (isUniqueViolation(error)) {
-        logger.info({ msg: 'Duplicate Telegram webhook ignored', idempotencyKey });
-
-        return res.status(200).json({ received: true, duplicate: true });
-      }
-      throw error;
-    }
-
-    await enqueueWebhookJob({
-      jobName: 'process-telegram-webhook',
-      eventId: event.id,
+    const stored = await storeAndEnqueueWebhookEvent({
+      source: 'telegram',
       tenantId: integration.tenantId,
+      eventType,
       idempotencyKey,
+      rawPayload: webhookPayloadJson(body),
     });
+
+    if (stored.duplicate) {
+      return res.status(200).json({ received: true, duplicate: true });
+    }
 
     await systemPrisma.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: 'webhook_received',
         resource: 'webhook',
-        resourceId: event.id,
+        resourceId: stored.eventId,
         metadata: { source: 'telegram', eventType },
       },
     });
 
     return res.status(200).json({ received: true });
   } catch (err) {
-    logger.error({ err }, 'Telegram webhook handler failed');
-
-    return res.status(500).json({ error: 'Internal server error' });
+    return sendWebhookFailure(res, err, 'Telegram webhook handler');
   }
 }));
 

@@ -53,6 +53,7 @@ const integration = { id: 'int-1', tenantId: 'tenant-1' };
 
 let queueAdd: jest.Mock;
 let createEvent: jest.SpyInstance;
+let findEvent: jest.SpyInstance;
 let createAudit: jest.SpyInstance;
 let findIntegration: jest.SpyInstance;
 let isAllowed: jest.SpyInstance;
@@ -63,6 +64,8 @@ beforeEach(() => {
   findIntegration = jest.spyOn(systemPrisma.integration, 'findFirst').mockResolvedValue(integration as never);
   isAllowed = jest.spyOn(rateLimiter, 'isAllowed').mockResolvedValue({ allowed: true } as never);
   createEvent = jest.spyOn(systemPrisma.webhookEvent, 'create').mockResolvedValue({ id: 'evt-1' } as never);
+  // A redelivery of an event that was already processed: acknowledged, not queued again.
+  findEvent = jest.spyOn(systemPrisma.webhookEvent, 'findFirst').mockResolvedValue({ id: 'evt-1', processed: true } as never);
   createAudit = jest.spyOn(systemPrisma.auditLog, 'create').mockResolvedValue({} as never);
 });
 
@@ -175,6 +178,25 @@ describe('POST /webhooks/amocrm', () => {
     });
     expect(queueAdd).toHaveBeenCalledTimes(1);
     expect(createAudit).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers a retryable 503 when the event is stored but cannot be queued, and the retry queues the stored row', async () => {
+    queueAdd.mockRejectedValueOnce(new Error('Redis down'));
+
+    const failed = await fetch(`${baseUrl}/webhooks/amocrm`, { method: 'POST', body: form, headers: formHeaders });
+
+    expect(failed.status).toBe(503);
+    expect(failed.headers.get('retry-after')).toBe('30');
+    expect(createAudit).not.toHaveBeenCalled();
+
+    // The sender retries: the insert hits the unique key, the stored row is still unprocessed, so it is queued now.
+    createEvent.mockRejectedValue(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
+    findEvent.mockResolvedValue({ id: 'evt-1', processed: false } as never);
+
+    await expect(post('/webhooks/amocrm', form, formHeaders)).resolves.toEqual({ status: 200, body: { received: true, duplicate: true } });
+    expect(queueAdd).toHaveBeenCalledTimes(2);
+    expect(queueAdd.mock.calls[1]![1]).toMatchObject({ eventId: 'evt-1', tenantId: 'tenant-1' });
+    expect(queueAdd.mock.calls[1]![2]).toMatchObject({ jobId: queueAdd.mock.calls[0]![2].jobId });
   });
 
   it('answers 500 when storing the event fails for another reason', async () => {

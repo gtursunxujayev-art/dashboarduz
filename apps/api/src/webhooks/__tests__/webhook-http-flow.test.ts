@@ -10,7 +10,7 @@ import { buildWebhookIdempotencyKey, getRawBody, writeWebhookRejectionAudit } fr
 // (a redelivered payload is stored once and enqueued once). Database, queue and rate limiter are mocked.
 const mockDb = {
   integration: { findFirst: jest.fn(), update: jest.fn() },
-  webhookEvent: { create: jest.fn() },
+  webhookEvent: { create: jest.fn(), findFirst: jest.fn() },
   auditLog: { create: jest.fn() },
   telegramRecipient: { upsert: jest.fn() },
 };
@@ -68,6 +68,8 @@ beforeEach(() => {
   mockVerifySignature.mockReturnValue(true);
   mockQueueAdd.mockResolvedValue({});
   mockDb.auditLog.create.mockResolvedValue({});
+  // A redelivery of an event that was already processed: acknowledged, not queued again.
+  mockDb.webhookEvent.findFirst.mockResolvedValue({ id: 'evt-stored', processed: true });
   mockDb.integration.update.mockResolvedValue({});
   mockDb.telegramRecipient.upsert.mockResolvedValue({});
 });

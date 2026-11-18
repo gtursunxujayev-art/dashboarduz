@@ -7,7 +7,7 @@ import { amocrmService } from '../services/integrations/amocrm';
 import { rateLimiter } from '../services/security/rate-limiter';
 
 import { amoWebhookAccountId, amoWebhookEventType, webhookPayloadJson } from './payloads';
-import { buildWebhookIdempotencyKey, enqueueWebhookJob, getRawBody, isUniqueViolation } from './shared';
+import { buildWebhookIdempotencyKey, getRawBody, sendWebhookFailure, storeAndEnqueueWebhookEvent } from './shared';
 
 const router = Router();
 
@@ -62,51 +62,32 @@ router.post('/amocrm', asyncRoute(async (req: Request, res: Response) => {
     const idempotencyKey = buildWebhookIdempotencyKey('amocrm', integration.tenantId, rawBody);
     const eventType = amoWebhookEventType(body);
 
-    let event;
-
-    try {
-      event = await systemPrisma.webhookEvent.create({
-        data: {
-          tenantId: integration.tenantId,
-          source: 'amocrm',
-          eventType,
-          idempotencyKey,
-          rawPayload: webhookPayloadJson(body),
-          signature: signature || null,
-          processed: false,
-        },
-      });
-    } catch (error: unknown) {
-      if (isUniqueViolation(error)) {
-        logger.info({ msg: 'Duplicate AmoCRM webhook ignored', idempotencyKey });
-
-        return res.status(200).json({ received: true, duplicate: true });
-      }
-      throw error;
-    }
-
-    await enqueueWebhookJob({
-      jobName: 'process-amocrm-webhook',
-      eventId: event.id,
+    const stored = await storeAndEnqueueWebhookEvent({
+      source: 'amocrm',
       tenantId: integration.tenantId,
+      eventType,
       idempotencyKey,
+      rawPayload: webhookPayloadJson(body),
+      signature: signature || null,
     });
+
+    if (stored.duplicate) {
+      return res.status(200).json({ received: true, duplicate: true });
+    }
 
     await systemPrisma.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: 'webhook_received',
         resource: 'webhook',
-        resourceId: event.id,
+        resourceId: stored.eventId,
         metadata: { source: 'amocrm', eventType },
       },
     });
 
     return res.status(200).json({ received: true });
   } catch (err) {
-    logger.error({ err }, 'AmoCRM webhook handler failed');
-
-    return res.status(500).json({ error: 'Internal server error' });
+    return sendWebhookFailure(res, err, 'AmoCRM webhook handler');
   }
 }));
 

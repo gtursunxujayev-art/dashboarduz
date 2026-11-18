@@ -2,12 +2,11 @@ import { systemPrisma } from '@dashboarduz/db';
 import { Router, type Request, type Response } from 'express';
 
 import { asyncRoute } from '../lib/express-async';
-import { logger } from '../lib/logger';
 import { hashFaceIdWebhookToken } from '../services/attendance/faceid';
 import { rateLimiter } from '../services/security/rate-limiter';
 
 import { faceIdWebhookEventType, webhookPayloadJson } from './payloads';
-import { buildWebhookIdempotencyKey, enqueueWebhookJob, getRawBody, isUniqueViolation } from './shared';
+import { buildWebhookIdempotencyKey, getRawBody, sendWebhookFailure, storeAndEnqueueWebhookEvent } from './shared';
 
 const router = Router();
 
@@ -118,50 +117,31 @@ router.post('/faceid', asyncRoute(async (req: Request, res: Response) => {
     const idempotencyKey = buildWebhookIdempotencyKey('faceid', integration.tenantId, rawBody);
     const eventType = faceIdWebhookEventType(body);
 
-    let event;
-
-    try {
-      event = await systemPrisma.webhookEvent.create({
-        data: {
-          tenantId: integration.tenantId,
-          source: 'faceid',
-          eventType,
-          idempotencyKey,
-          rawPayload: webhookPayloadJson(body),
-          processed: false,
-        },
-      });
-    } catch (error: unknown) {
-      if (isUniqueViolation(error)) {
-        logger.info({ msg: 'Duplicate Face ID webhook ignored', idempotencyKey });
-
-        return res.status(200).json({ received: true, duplicate: true });
-      }
-      throw error;
-    }
-
-    await enqueueWebhookJob({
-      jobName: 'process-faceid-webhook',
-      eventId: event.id,
+    const stored = await storeAndEnqueueWebhookEvent({
+      source: 'faceid',
       tenantId: integration.tenantId,
+      eventType,
       idempotencyKey,
+      rawPayload: webhookPayloadJson(body),
     });
+
+    if (stored.duplicate) {
+      return res.status(200).json({ received: true, duplicate: true });
+    }
 
     await systemPrisma.auditLog.create({
       data: {
         tenantId: integration.tenantId,
         action: 'webhook_received',
         resource: 'webhook',
-        resourceId: event.id,
+        resourceId: stored.eventId,
         metadata: { source: 'faceid', eventType },
       },
     });
 
     return res.status(200).json({ received: true });
   } catch (err) {
-    logger.error({ err }, 'Face ID webhook handler failed');
-
-    return res.status(500).json({ error: 'Internal server error' });
+    return sendWebhookFailure(res, err, 'Face ID webhook handler');
   }
 }));
 

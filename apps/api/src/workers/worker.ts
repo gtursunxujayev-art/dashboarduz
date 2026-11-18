@@ -13,6 +13,7 @@ import { startTelegramAgentPerformanceScheduler, stopTelegramAgentPerformanceSch
 import { startTelegramGroupSummaryScheduler, stopTelegramGroupSummaryScheduler } from '../services/reports/telegram-group-summary-scheduler';
 import { startTelegramReportScheduler, stopTelegramReportScheduler } from '../services/reports/telegram-report-scheduler';
 import { startWebhookEventRetentionScheduler, stopWebhookEventRetentionScheduler } from '../services/webhook-event-retention';
+import { startWebhookRequeueSweeper, stopWebhookRequeueSweeper } from '../services/webhook-requeue-sweeper';
 
 import { initializeWorkers } from './bullmq-workers';
 
@@ -27,6 +28,7 @@ function startWorkerService(): void {
   startBonusAutoFinalizeScheduler();
   startBonusReconcileSweeper();
   startWebhookEventRetentionScheduler();
+  startWebhookRequeueSweeper();
   startAmoCallsSyncScheduler();
   startAmoLeadSnapshotScheduler();
   startAmoActivitySnapshotScheduler();
@@ -51,6 +53,7 @@ process.on('SIGTERM', () => {
   stopBonusAutoFinalizeScheduler();
   stopBonusReconcileSweeper();
   stopWebhookEventRetentionScheduler();
+  stopWebhookRequeueSweeper();
   stopAmoCallsSyncScheduler();
   stopAmoLeadSnapshotScheduler();
   stopAmoActivitySnapshotScheduler();
@@ -65,6 +68,7 @@ process.on('SIGINT', () => {
   stopBonusAutoFinalizeScheduler();
   stopBonusReconcileSweeper();
   stopWebhookEventRetentionScheduler();
+  stopWebhookRequeueSweeper();
   stopAmoCallsSyncScheduler();
   stopAmoLeadSnapshotScheduler();
   stopAmoActivitySnapshotScheduler();
