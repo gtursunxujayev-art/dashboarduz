@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { asObjectOrEmpty } from '../../../lib/object';
+import { thrownMessageOr } from '../../../lib/thrown';
 import { upsertActiveIntegration } from '../../../services/integration-settings/connection';
 import { normalizeMetaAdAccountId, syncMetaAdInsightsForTenant, validateMetaAdAccount } from '../../../services/integrations/meta-ads';
 import { encryptIntegrationTokens } from '../../../services/security/encryption';
@@ -143,7 +144,7 @@ export const metaAdsIntegrationProcedures = {
         });
 
         return { success: true, ...result };
-      } catch (error: any) {
+      } catch (error) {
         await ctx.db.integration.updateMany({
           where: {
             tenantId: ctx.tenantId,
@@ -151,12 +152,12 @@ export const metaAdsIntegrationProcedures = {
           },
           data: {
             status: 'error',
-            errorMessage: error?.message || 'Meta Ads sync failed',
+            errorMessage: thrownMessageOr(error, 'Meta Ads sync failed'),
           },
         });
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: error?.message || 'Meta Ads sync failed',
+          message: thrownMessageOr(error, 'Meta Ads sync failed'),
         });
       }
     }),
