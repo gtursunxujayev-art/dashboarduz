@@ -1,5 +1,6 @@
-import jwt from 'jsonwebtoken';
 import type { JWTPayload } from '@dashboarduz/shared';
+import { sign, type SignOptions, verify } from 'jsonwebtoken';
+
 import { logger } from '../../lib/logger';
 
 const DEFAULT_JWT_SECRET = 'change-me-in-production';
@@ -11,15 +12,15 @@ if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process
 }
 
 export function signJWT(payload: JWTPayload): string {
-  return jwt.sign(payload as object, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] });
+  return sign(payload as object, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN as SignOptions['expiresIn'] });
 }
 
 export function verifyJWT(token: string): JWTPayload {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+    const decoded = verify(token, JWT_SECRET) as JWTPayload;
 
     return decoded;
-  } catch (error) {
+  } catch {
     throw new Error('Invalid or expired token');
   }
 }

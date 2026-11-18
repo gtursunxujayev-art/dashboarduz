@@ -324,7 +324,6 @@ export async function reviewBonusAdjustment(params: {
 }
 
 export async function getApprovedAdjustmentsForMonth(tenantId: string, month: Date, db: DbClient) {
-  const monthStart = getTashkentMonthStart(month);
   const monthEnd = getTashkentMonthEnd(month);
 
   return db.bonusAdjustment.findMany({

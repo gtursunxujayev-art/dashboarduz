@@ -1,6 +1,8 @@
-import { router, protectedProcedure, adminProcedure } from '../trpc';
-import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
+import { router, protectedProcedure, adminProcedure } from '../trpc';
 
 export const tenantRouter = router({
   get: protectedProcedure.query(async ({ ctx }) => {
@@ -19,7 +21,7 @@ export const tenantRouter = router({
     .input(
       z.object({
         name: z.string().min(2).max(120).optional(),
-        settings: z.record(z.any()).optional(),
+        settings: z.record(z.unknown()).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -42,7 +44,7 @@ export const tenantRouter = router({
         ? { ...baseSettings, ...input.settings }
         : baseSettings;
       const settingsPayload = input.settings
-        ? JSON.parse(JSON.stringify(nextSettings))
+        ? JSON.parse(JSON.stringify(nextSettings)) as Prisma.InputJsonValue
         : undefined;
 
       const updated = await ctx.db.tenant.update({

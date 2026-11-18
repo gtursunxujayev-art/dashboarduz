@@ -3,6 +3,7 @@ import { type CreateIncomeInput, normalizeDigits, sanitizeTelegramUsername } fro
 import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
+import { messageOrStringOfError } from '../../lib/error-text';
 import { logger } from '../../lib/logger';
 import { buildActiveSaleChainMetrics, INCOME_LIFECYCLE_ACTIVE, SALE_SUB_TARIFF_META_KEY } from '../income-chain';
 
@@ -336,7 +337,7 @@ export async function createIncomeEntry(params: {
       const repayment = await tx.income.create({
         data: {
           tenantId,
-          customerId: customer!.id,
+          customerId: customer.id,
           managerUserId: input.managerUserId,
           type: 'repayment',
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -425,7 +426,7 @@ export async function createIncomeEntry(params: {
         logger.error({
           tenantId,
           incomeId: createdIncome.id,
-          error: String((error as any)?.message || error),
+          error: messageOrStringOfError(error),
         }, '[Income][Telegram] Payment notification failed (non-blocking)');
         telegramDispatch = {
           attempted: true,
@@ -433,7 +434,7 @@ export async function createIncomeEntry(params: {
           sentCount: 0,
           failedCount: 0,
           reason: 'send_failed',
-          errors: [String((error as any)?.message || error)],
+          errors: [messageOrStringOfError(error)],
         };
       }
     }

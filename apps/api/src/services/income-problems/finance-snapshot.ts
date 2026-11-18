@@ -1,5 +1,6 @@
 import type { DbClient } from '@dashboarduz/db';
 import { normalizeDigits } from '@dashboarduz/shared';
+import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 import { asObjectOrEmpty } from '../../lib/object';
@@ -147,7 +148,7 @@ export function detectMapping(headers: string[]): SnapshotMapping {
 }
 
 function getCell(row: Array<string | number | boolean | null>, index: number | null): unknown {
-  return index == null ? '' : row[index] ?? '';
+  return index === null || index === undefined ? '' : row[index] ?? '';
 }
 
 export function normalizeFinanceRows(rows: Array<Array<string | number | boolean | null>>, mapping: SnapshotMapping): {
@@ -208,7 +209,7 @@ export async function readTenantSettings(tenantId: string, db: DbClient) {
 export async function writeTenantSettings(tenantId: string, settings: Record<string, unknown>, db: DbClient) {
   await db.tenant.update({
     where: { id: tenantId },
-    data: { settings: JSON.parse(JSON.stringify(settings)) },
+    data: { settings: JSON.parse(JSON.stringify(settings)) as Prisma.InputJsonValue },
   });
 }
 

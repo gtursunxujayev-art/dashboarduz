@@ -4,11 +4,12 @@ import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { messageOrStringOfError } from '../../../lib/error-text';
 import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, INCOME_LIFECYCLE_PENDING_REFUND } from '../../../services/customer-income/constants';
 import { notifyFinanceUsersRefundRequested, sendRefundRequestedTelegram } from '../../../services/customer-income/refund-notifications';
 import { assertSaleChainDebtInvariant, lockSaleChainUnchanged, normalizeSaleChainChronology, readSaleChainState, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
-import { extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
+import { getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { adminProcedure } from '../../trpc';
 
 /** The sale chain as read before a change; CONFLICT when the sale is no longer active. */
@@ -218,15 +219,6 @@ export const customerCourseProcedures = {
             });
           }
 
-          const targetSaleSubTariffId = extractSaleSubTariffId(targetSale.legacyImportMeta);
-          const profileMatchedTargetSubTariffId = (
-            targetSale.customer.profileCourseId === targetSale.courseId
-            && targetSale.customer.profileTariffId === targetSale.tariffId
-          )
-            ? targetSale.customer.profileSubTariffId || null
-            : null;
-          const effectiveTargetSubTariffId = targetSaleSubTariffId || profileMatchedTargetSubTariffId || null;
-
           const targetChainRows = await tx.income.findMany({
             where: {
               tenantId: ctx.tenantId,
@@ -360,7 +352,7 @@ export const customerCourseProcedures = {
           logger.error({
             tenantId: ctx.tenantId,
             requestId: createdRefundRequestId,
-            error: String((error as any)?.message || error),
+            error: messageOrStringOfError(error),
           }, '[Income][Telegram] Refund request notification failed (non-blocking)');
         }
 
@@ -375,7 +367,7 @@ export const customerCourseProcedures = {
           logger.error({
             tenantId: ctx.tenantId,
             requestId: createdRefundRequestId,
-            error: String((error as any)?.message || error),
+            error: messageOrStringOfError(error),
           }, '[Income][Telegram] Finance direct notification for refund request failed (non-blocking)');
         }
       }

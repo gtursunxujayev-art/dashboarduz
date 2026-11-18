@@ -1,4 +1,5 @@
 import { systemPrisma } from '@dashboarduz/db';
+import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -49,7 +50,7 @@ export const userAccessProcedures = {
         previousAmoResponsibleUserId = mappingSource?.amocrmResponsibleUserId || null;
       }
 
-      const updateData: any = {
+      const updateData: Prisma.UserUncheckedUpdateInput = {
         roles: input.roles,
       };
 

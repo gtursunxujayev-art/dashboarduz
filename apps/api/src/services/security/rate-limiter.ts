@@ -1,7 +1,8 @@
 // Rate limiting service per tenant
 
-import { getRedisClient } from '../queue/redis-client';
+import { messagePropertyOfError } from '../../lib/error-text';
 import { logger } from '../../lib/logger';
+import { getRedisClient } from '../queue/redis-client';
 
 export interface RateLimitConfig {
   windowMs: number; // Time window in milliseconds
@@ -120,7 +121,7 @@ export class RateLimiter {
         resetTime,
         limit: finalConfig.maxRequests,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.warnFallback(error, 'isAllowed');
 
       // Redis unavailable: use per-process in-memory sliding window so we still throttle.
@@ -167,7 +168,7 @@ export class RateLimiter {
         resetTime,
         limit: finalConfig.maxRequests,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.warnFallback(error, 'getRateLimitInfo');
 
       const { count } = this.memoryInfo(key, now, finalConfig);
@@ -194,7 +195,7 @@ export class RateLimiter {
     
     try {
       await redis.del(key);
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.warnFallback(error, 'resetRateLimit');
     }
     // Also clear any in-memory fallback entry for the same key.
@@ -238,7 +239,7 @@ export class RateLimiter {
       }
 
       return results;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.warnFallback(error, 'getTenantRateLimits');
 
       return [];
@@ -321,10 +322,10 @@ export class RateLimiter {
       }
       
       return { status: 'healthy' };
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         status: 'unhealthy',
-        error: error.message,
+        error: messagePropertyOfError(error),
       };
     }
   }

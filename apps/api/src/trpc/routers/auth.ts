@@ -1,5 +1,4 @@
-import { router, publicProcedure, protectedProcedure } from '../trpc';
-import { z } from 'zod';
+import { systemPrisma } from '@dashboarduz/db';
 import {
   phoneOtpRequestSchema,
   phoneOtpVerifySchema,
@@ -10,13 +9,16 @@ import {
   USER_ROLES,
   type UserRole,
 } from '@dashboarduz/shared';
-import { systemPrisma } from '@dashboarduz/db';
 import { TRPCError } from '@trpc/server';
-import { rateLimiter } from '../../services/security/rate-limiter';
-import { hashPassword, verifyPassword } from '../../services/auth/password';
-import { signJWT } from '../../services/auth/jwt';
+import { z } from 'zod';
+
+import { messagePropertyOfError } from '../../lib/error-text';
 import { logger, maskPhone } from '../../lib/logger';
 import { isUniqueViolation } from '../../lib/prisma-errors';
+import { signJWT } from '../../services/auth/jwt';
+import { hashPassword, verifyPassword } from '../../services/auth/password';
+import { rateLimiter } from '../../services/security/rate-limiter';
+import { router, publicProcedure, protectedProcedure } from '../trpc';
 
 export const authRouter = router({
   registerWithPassword: publicProcedure
@@ -247,11 +249,11 @@ export const authRouter = router({
           message: 'OTP sent successfully',
           sessionId: result.messageId,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.error({ err: error, phone: maskPhone(input?.phone) }, '[Auth] OTP request error');
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: error.message || 'Failed to send OTP',
+          message: messagePropertyOfError(error) || 'Failed to send OTP',
         });
       }
     }),
@@ -382,7 +384,7 @@ export const authRouter = router({
           user: jwtPayload,
           token,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (error instanceof TRPCError) {
           throw error;
         }
@@ -390,7 +392,7 @@ export const authRouter = router({
         logger.error({ err: error, phone: maskPhone(input?.phone) }, '[Auth] OTP verify error');
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: error.message || 'OTP verification failed',
+          message: messagePropertyOfError(error) || 'OTP verification failed',
         });
       }
     }),
@@ -398,7 +400,7 @@ export const authRouter = router({
   // Telegram Login: Verify and link account
   telegramLogin: publicProcedure
     .input(telegramLoginSchema)
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message: 'Telegram direct login is disabled in MVP. Use Phone OTP or Login + Password and link Telegram in integrations.',

@@ -1,4 +1,5 @@
 import { roleNeedsManagerMapping, USER_ROLES, type UserRole } from '@dashboarduz/shared';
+import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -34,7 +35,7 @@ export const userAccountProcedures = {
         });
       }
 
-      const createData: any = {
+      const createData: Prisma.UserUncheckedCreateInput = {
         tenantId: ctx.tenantId,
         name: input.name?.trim() || null,
         phone: validateNormalizedPhoneOrThrow(input.phone),
