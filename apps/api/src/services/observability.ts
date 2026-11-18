@@ -20,7 +20,7 @@ export function initSentry() {
         if (hint && hint.originalException) {
           event.extra = {
             ...event.extra,
-            originalException: hint.originalException.toString(),
+            originalException: String(hint.originalException),
           };
         }
 
@@ -63,7 +63,7 @@ export interface LogContext {
   tenantId?: string;
   userId?: string;
   requestId?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
@@ -78,7 +78,7 @@ export function reportError(message: string, context?: LogContext) {
 
     error.name = 'LoggedError';
 
-    const sentryContext: Record<string, unknown> = {
+    const sentryContext: { level: 'error'; tags: Record<string, string>; extra?: LogContext } = {
       level: 'error',
       tags: {
         service: 'dashboarduz-api',
@@ -90,7 +90,7 @@ export function reportError(message: string, context?: LogContext) {
     if (context) {
       sentryContext.extra = context;
     }
-    Sentry.captureException(error, sentryContext as any);
+    Sentry.captureException(error, sentryContext);
   }
 }
 
@@ -104,7 +104,7 @@ export function logWithContext(
     requestId?: string;
     operation?: string;
     duration?: number;
-    [key: string]: any;
+    [key: string]: unknown;
   }
 ) {
   const context: LogContext = {
@@ -124,7 +124,7 @@ export function logWithContext(
   if (options?.operation) {
     Metrics.increment('operation_count', {
       operation: options.operation,
-      level: level,
+      level,
       tenant_id: options.tenantId || 'unknown',
     });
   }
@@ -134,6 +134,13 @@ export function logWithContext(
   } else {
     logger[level](context, message);
   }
+}
+
+export interface MetricsSnapshot {
+  counters: Record<string, number>;
+  gauges: Record<string, number>;
+  histograms: Record<string, { sum: number; count: number; values: number[] }>;
+  timestamp: string;
 }
 
 // Metrics (Prometheus-compatible)
@@ -235,7 +242,7 @@ export class Metrics {
   }
 
   // Get metrics as JSON (for API endpoints)
-  static toJSON(): Record<string, any> {
+  static toJSON(): MetricsSnapshot {
     const counters: Record<string, number> = {};
     const gauges: Record<string, number> = {};
     const histograms: Record<string, { sum: number; count: number; values: number[] }> = {};

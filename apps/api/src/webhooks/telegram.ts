@@ -1,16 +1,18 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { Router, type Request, type Response } from 'express';
 
+import { asyncRoute } from '../lib/express-async';
 import { logger } from '../lib/logger';
 import { upsertTelegramRecipientRecord } from '../services/integrations/telegram-recipient-store';
 import { extractTelegramRecipientFromPayload } from '../services/integrations/telegram-update';
 import { rateLimiter } from '../services/security/rate-limiter';
 
+import { telegramWebhookEventType, telegramWebhookUpdateId, webhookPayloadJson } from './payloads';
 import { buildWebhookIdempotencyKey, enqueueWebhookJob, getRawBody, isUniqueViolation } from './shared';
 
 const router = Router();
 
-router.get('/telegram', async (_req: Request, res: Response) => {
+router.get('/telegram', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     endpoint: '/webhooks/telegram',
@@ -20,9 +22,10 @@ router.get('/telegram', async (_req: Request, res: Response) => {
   });
 });
 
-router.post('/telegram', async (req: Request, res: Response) => {
+router.post('/telegram', asyncRoute(async (req: Request, res: Response) => {
   try {
     const rawBody = getRawBody(req);
+    const body: unknown = req.body;
     const secretToken = req.headers['x-telegram-bot-api-secret-token'] as string | undefined;
 
     if (!secretToken) {
@@ -55,12 +58,12 @@ router.post('/telegram', async (req: Request, res: Response) => {
     }
 
     const idempotencyKey = buildWebhookIdempotencyKey('telegram', integration.tenantId, rawBody);
-    const eventType = req.body?.message ? 'message' : req.body?.callback_query ? 'callback_query' : 'update';
-    const recipient = extractTelegramRecipientFromPayload(req.body);
+    const eventType = telegramWebhookEventType(body);
+    const recipient = extractTelegramRecipientFromPayload(body);
 
     if (recipient) {
       try {
-        const updateId = req.body?.update_id ? String(req.body.update_id) : null;
+        const updateId = telegramWebhookUpdateId(body);
         const seenAt = new Date();
 
         await upsertTelegramRecipientRecord({
@@ -99,11 +102,11 @@ router.post('/telegram', async (req: Request, res: Response) => {
           source: 'telegram',
           eventType,
           idempotencyKey,
-          rawPayload: req.body,
+          rawPayload: webhookPayloadJson(body),
           processed: false,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (isUniqueViolation(error)) {
         logger.info({ msg: 'Duplicate Telegram webhook ignored', idempotencyKey });
 
@@ -135,6 +138,6 @@ router.post('/telegram', async (req: Request, res: Response) => {
 
     return res.status(500).json({ error: 'Internal server error' });
   }
-});
+}));
 
 export { router as telegramWebhookRouter };

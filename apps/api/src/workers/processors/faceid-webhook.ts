@@ -1,8 +1,9 @@
 import { systemPrisma } from '@dashboarduz/db';
+import type { WebhookEvent } from '@prisma/client';
 
 import { ingestFaceIdEvent } from '../../services/attendance/faceid';
 
-export async function processFaceIdWebhook(event: any, tenantId: string) {
+export async function processFaceIdWebhook(event: Pick<WebhookEvent, 'rawPayload'>, tenantId: string) {
   const integration = await systemPrisma.integration.findFirst({
     where: {
       tenantId,

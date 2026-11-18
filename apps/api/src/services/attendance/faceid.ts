@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-import { systemPrisma } from '@dashboarduz/db';
+import { type Prisma, systemPrisma } from '@dashboarduz/db';
 
 import { recomputeAttendanceDaySummary } from './day-summary';
 import { parseBranchWhitelist, parseUnmatchedUserPolicy, resolveMatchedUserId } from './faceid-matching';
@@ -88,7 +88,7 @@ export async function ingestFaceIdEvent(params: {
     latitude: parsed.latitude,
     longitude: parsed.longitude,
     lateMinutes: parsed.lateMinutes,
-    rawPayload: rawPayloadWithMatchMeta as any,
+    rawPayload: rawPayloadWithMatchMeta as Prisma.InputJsonValue,
   };
 
   const created = await systemPrisma.attendanceEvent.upsert({
