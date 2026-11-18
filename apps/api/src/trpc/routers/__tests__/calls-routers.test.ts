@@ -145,7 +145,7 @@ describe('calls.analytics', () => {
   });
 });
 
-describe('calls.list / get / clickToCall', () => {
+describe('calls.list / get', () => {
   it('lists amoCRM calls with search, status filter and pagination', async () => {
     mockDb.call.findMany.mockResolvedValue([{ id: 'c1' }, { id: 'c2' }]);
     mockDb.call.count.mockResolvedValue(5);
@@ -189,8 +189,10 @@ describe('calls.list / get / clickToCall', () => {
     expect(mockDb.call.findFirst.mock.calls[0][0].where).toEqual({ id: CALL_ID, tenantId: TENANT_ID, lead: { responsibleUserId: '__unmapped__' } });
     expect(await rejection(callsRouter.createCaller(ctxFor(['Admin'])).get({ id: CALL_ID })))
       .toMatchObject({ code: 'NOT_FOUND', message: 'Call not found' });
-    expect(await rejection(callsRouter.createCaller(ctxFor(['Admin'])).clickToCall({ from: '1001', to: '998901112233' })))
-      .toMatchObject({ code: 'PRECONDITION_FAILED' });
+  });
+
+  it('has no click-to-call procedure (it could only ever throw)', () => {
+    expect(Object.keys(callsRouter._def.procedures)).not.toContain('clickToCall');
   });
 });
 

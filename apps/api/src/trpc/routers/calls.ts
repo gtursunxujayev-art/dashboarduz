@@ -17,13 +17,6 @@ const callsListSchema = z.object({
   status: z.string().optional(),
 });
 
-const clickToCallSchema = z.object({
-  from: z.string().min(3),
-  to: z.string().min(3),
-  callerId: z.string().optional(),
-  recording: z.boolean().optional().default(true),
-});
-
 const AGENT_MOTIVATION_ABOVE = "Bugungi harakatlaringizga baraka bersin, ko'proq suhbat ko'proq savdo degani";
 const AGENT_MOTIVATION_BELOW = "Bugun qolganlardan ortda qolyapsiz, qo'ng'iroqlarni ko'paytiring, ko'proq bonus ko'proq harakat qilganlarga nasib qiladi ";
 
@@ -147,15 +140,6 @@ export const callsRouter = router({
       }
 
       return call;
-    }),
-
-  clickToCall: protectedProcedure
-    .input(clickToCallSchema)
-    .mutation(() => {
-      throw new TRPCError({
-        code: 'PRECONDITION_FAILED',
-        message: 'Click-to-call is disabled in webhook-only VoIP mode.',
-      });
     }),
 
   analytics: protectedProcedure
