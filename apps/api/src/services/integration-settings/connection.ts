@@ -2,8 +2,7 @@ import type { DbClient } from '@dashboarduz/db';
 import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
-import { errorName } from '../../lib/errors';
-import { thrownMessageOr } from '../../lib/thrown';
+import { errorName, thrownMessageOr } from '../../lib/errors';
 
 export function normalizeBaseUrl(url?: string): string | null {
   if (!url) {

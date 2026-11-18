@@ -2,9 +2,9 @@ import { type DbClient, systemPrisma } from '@dashboarduz/db';
 import { toTashkentDateKey } from '@dashboarduz/shared';
 
 import { sleep } from '../../../lib/async';
+import { thrownMessageOr } from '../../../lib/errors';
 import { logger } from '../../../lib/logger';
 import { parseTelegramDailyReportCourseIds, resolveTelegramBotToken } from '../../../lib/telegram';
-import { thrownMessageOr } from '../../../lib/thrown';
 import { telegramService } from '../../integrations/telegram';
 import { listTelegramRecipients } from '../../integrations/telegram-recipient-store';
 import { reportError } from '../../observability';

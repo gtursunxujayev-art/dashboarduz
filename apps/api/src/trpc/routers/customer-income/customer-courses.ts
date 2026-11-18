@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { messageOrStringOfError } from '../../../lib/error-text';
+import { thrownText } from '../../../lib/errors';
 import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, INCOME_LIFECYCLE_PENDING_REFUND } from '../../../services/customer-income/constants';
 import { notifyFinanceUsersRefundRequested, sendRefundRequestedTelegram } from '../../../services/customer-income/refund-notifications';
@@ -352,7 +352,7 @@ export const customerCourseProcedures = {
           logger.error({
             tenantId: ctx.tenantId,
             requestId: createdRefundRequestId,
-            error: messageOrStringOfError(error),
+            error: thrownText(error),
           }, '[Income][Telegram] Refund request notification failed (non-blocking)');
         }
 
@@ -367,7 +367,7 @@ export const customerCourseProcedures = {
           logger.error({
             tenantId: ctx.tenantId,
             requestId: createdRefundRequestId,
-            error: messageOrStringOfError(error),
+            error: thrownText(error),
           }, '[Income][Telegram] Finance direct notification for refund request failed (non-blocking)');
         }
       }

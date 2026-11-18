@@ -3,9 +3,9 @@ import crypto from 'crypto';
 import { telegramBotConnectSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
+import { thrownMessageOr, thrownText } from '../../../lib/errors';
 import { asObjectOrEmpty } from '../../../lib/object';
 import { parseTelegramDailyReportCourseIds, resolveTelegramBotToken } from '../../../lib/telegram';
-import { thrownMessageOr, thrownText } from '../../../lib/thrown';
 import { getPublicApiBaseUrl, telegramRecipientStorageErrorMessage, upsertActiveIntegration } from '../../../services/integration-settings/connection';
 import { telegramService } from '../../../services/integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../../../services/integrations/telegram-groups';

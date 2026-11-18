@@ -4,7 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { messageOrStringOfError } from '../../../lib/error-text';
+import { thrownText } from '../../../lib/errors';
 import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE, INCOME_LIFECYCLE_PENDING_REFUND, REFUND_CARD_NUMBER_REGEX } from '../../../services/customer-income/constants';
 import { getIncomeLifecycleLabel } from '../../../services/customer-income/labels';
@@ -29,7 +29,7 @@ async function notifyNonBlocking(
     logger.error({
       tenantId: params.tenantId,
       requestId: params.requestId,
-      error: messageOrStringOfError(error),
+      error: thrownText(error),
     }, failureLogMessage);
   }
 }

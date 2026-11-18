@@ -29,3 +29,35 @@ export function errorCode(error: unknown): string | undefined {
 
   return undefined;
 }
+
+/*
+ * The two loose readings below reproduce what `catch (error: any)` blocks used to do, so their text stays exactly as
+ * before: unlike {@link errorMessage} they read `message` from any thrown object, and an empty message falls through.
+ */
+
+function thrownMessageProperty(error: unknown): unknown {
+  if (error !== null && (typeof error === 'object' || typeof error === 'function')) {
+    return (error as { message?: unknown }).message;
+  }
+
+  return undefined;
+}
+
+/** `String(error?.message || error)`: the message when it is non-empty, else the thrown value itself as text. */
+export function thrownText(error: unknown): string {
+  return String(thrownMessageProperty(error) || error);
+}
+
+/** `error?.message || fallback`: the message when it is non-empty, else `fallback`. */
+export function thrownMessageOr(error: unknown, fallback: string): string {
+  const message = thrownMessageProperty(error);
+
+  return message ? String(message) : fallback;
+}
+
+/** The `error.message` read: the message when it is a string, else `undefined`. */
+export function messagePropertyOfError(error: unknown): string | undefined {
+  const message = thrownMessageProperty(error);
+
+  return typeof message === 'string' ? message : undefined;
+}

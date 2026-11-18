@@ -1,7 +1,7 @@
 import type { DbClient } from '@dashboarduz/db';
 import { formatSomAmount, TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
-import { messageOrStringOfError } from '../../lib/error-text';
+import { thrownText } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { resolveTelegramBotTokenForTenant, toHashtag } from '../../lib/telegram';
 import { telegramService } from '../integrations/telegram';
@@ -377,7 +377,7 @@ export async function sendOfflineOrIntensivePaymentTelegram(params: {
       }
       sentCount += 1;
     } catch (error) {
-      const errorMessage = messageOrStringOfError(error);
+      const errorMessage = thrownText(error);
 
       sendErrors.push(`${groupId}: ${errorMessage}`);
       logger.error({

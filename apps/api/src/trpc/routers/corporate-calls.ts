@@ -4,9 +4,9 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { formatDuration } from '../../lib/duration';
+import { thrownText } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, toHashtag } from '../../lib/telegram';
-import { thrownText } from '../../lib/thrown';
 import {
   isTodayOrYesterdayInReportTz,
   parseDurationToSeconds,

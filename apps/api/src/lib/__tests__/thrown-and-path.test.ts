@@ -1,4 +1,4 @@
-import { thrownMessageOr, thrownText } from '../thrown';
+import { thrownMessageOr, thrownText } from '../errors';
 import { valueAtPath } from '../unknown-path';
 
 describe('thrownText', () => {

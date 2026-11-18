@@ -2,8 +2,8 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { thrownText } from '../../lib/errors';
 import { resolveTelegramBotTokenForTenant } from '../../lib/telegram';
-import { thrownText } from '../../lib/thrown';
 import { telegramService } from '../../services/integrations/telegram';
 import { listTelegramRecipients } from '../../services/integrations/telegram-recipient-store';
 import { managerProcedure, router } from '../trpc';

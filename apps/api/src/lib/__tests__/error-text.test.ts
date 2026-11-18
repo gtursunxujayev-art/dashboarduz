@@ -1,21 +1,21 @@
-import { messageOrStringOfError, messagePropertyOfError } from '../error-text';
+import { thrownText, messagePropertyOfError } from '../errors';
 
-describe('messageOrStringOfError (the String(error?.message || error) idiom)', () => {
+describe('thrownText (the String(error?.message || error) idiom)', () => {
   it('uses a non-empty message of any thrown object', () => {
-    expect(messageOrStringOfError(new Error('boom'))).toBe('boom');
-    expect(messageOrStringOfError(new TypeError('bad type'))).toBe('bad type');
-    expect(messageOrStringOfError({ message: 'plain object' })).toBe('plain object');
-    expect(messageOrStringOfError({ message: 42 })).toBe('42');
+    expect(thrownText(new Error('boom'))).toBe('boom');
+    expect(thrownText(new TypeError('bad type'))).toBe('bad type');
+    expect(thrownText({ message: 'plain object' })).toBe('plain object');
+    expect(thrownText({ message: 42 })).toBe('42');
   });
 
   it('falls back to String(error) for empty messages and values without one', () => {
-    expect(messageOrStringOfError(new Error(''))).toBe('Error');
-    expect(messageOrStringOfError(new RangeError(''))).toBe('RangeError');
-    expect(messageOrStringOfError({ message: '' })).toBe('[object Object]');
-    expect(messageOrStringOfError('just text')).toBe('just text');
-    expect(messageOrStringOfError(503)).toBe('503');
-    expect(messageOrStringOfError(null)).toBe('null');
-    expect(messageOrStringOfError(undefined)).toBe('undefined');
+    expect(thrownText(new Error(''))).toBe('Error');
+    expect(thrownText(new RangeError(''))).toBe('RangeError');
+    expect(thrownText({ message: '' })).toBe('[object Object]');
+    expect(thrownText('just text')).toBe('just text');
+    expect(thrownText(503)).toBe('503');
+    expect(thrownText(null)).toBe('null');
+    expect(thrownText(undefined)).toBe('undefined');
   });
 });
 

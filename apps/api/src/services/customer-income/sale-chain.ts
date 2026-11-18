@@ -2,7 +2,7 @@ import type { DbClient } from '@dashboarduz/db';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
-import { messageOrStringOfError } from '../../lib/error-text';
+import { thrownText } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { reconcileFinalizedBonusMonths } from '../bonus-engine';
 import { extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE, loadSaleChainConsistency, SALE_SUB_TARIFF_META_KEY } from '../income-chain';
@@ -344,7 +344,7 @@ export async function reconcileBonusAfterIncomeChange(
     logger.error({
       tenantId,
       ...context,
-      error: messageOrStringOfError(error),
+      error: thrownText(error),
     }, '[Bonus] Finalized month reconciliation failed after income change');
   }
 }

@@ -1,6 +1,6 @@
 // Rate limiting service per tenant
 
-import { messagePropertyOfError } from '../../lib/error-text';
+import { messagePropertyOfError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { getRedisClient } from '../queue/redis-client';
 

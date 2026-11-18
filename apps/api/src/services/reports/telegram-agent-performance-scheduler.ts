@@ -3,10 +3,10 @@ import { AGENT_ROLES, formatSomAmount, fromTashkentLocalParts, shiftToTashkent, 
 
 import { isCompletedTask, isLeadTask, taskResponsibleUserId } from '../../lib/amocrm';
 import { formatDuration } from '../../lib/duration';
+import { thrownText } from '../../lib/errors';
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
 import { buildLooseTelegramChatIdCandidates, resolveTelegramBotToken, sendMessageToTelegramChat } from '../../lib/telegram';
-import { thrownText } from '../../lib/thrown';
 import { countedCallsWhere } from '../calls-source';
 import { getCorporateCallDurationByManager } from '../corporate-call-durations';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';

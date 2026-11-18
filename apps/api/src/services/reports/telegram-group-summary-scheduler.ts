@@ -1,11 +1,11 @@
 import { type DbClient, systemPrisma } from '@dashboarduz/db';
 import { courseCategoryLabel, formatSomAmount, fromTashkentLocalParts, type ManagerGroup, shiftToTashkent } from '@dashboarduz/shared';
 
+import { thrownText } from '../../lib/errors';
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
 import { asObjectOrEmpty } from '../../lib/object';
 import { resolveTelegramBotToken } from '../../lib/telegram';
-import { thrownText } from '../../lib/thrown';
 import { classifyIncomeCategory, type IncomeCategory } from '../income-facts';
 import { telegramService } from '../integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../integrations/telegram-groups';

@@ -12,7 +12,7 @@ import {
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { messagePropertyOfError } from '../../lib/error-text';
+import { messagePropertyOfError } from '../../lib/errors';
 import { logger, maskPhone } from '../../lib/logger';
 import { isUniqueViolation } from '../../lib/prisma-errors';
 import { signJWT } from '../../services/auth/jwt';

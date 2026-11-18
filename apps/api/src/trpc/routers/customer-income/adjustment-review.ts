@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { messageOrStringOfError } from '../../../lib/error-text';
+import { thrownText } from '../../../lib/errors';
 import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_APPROVED, ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_STATUS_REJECTED, ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE, INCOME_LIFECYCLE_PENDING_REFUND, INCOME_LIFECYCLE_REFUNDED } from '../../../services/customer-income/constants';
 import { notifyRefundRequesterReviewResult, sendRefundApprovedTelegram } from '../../../services/customer-income/refund-notifications';
@@ -244,7 +244,7 @@ export const adjustmentReviewProcedures = {
           logger.error({
             tenantId: ctx.tenantId,
             requestId: request.id,
-            error: messageOrStringOfError(error),
+            error: thrownText(error),
           }, '[Income][Telegram] Refund notification failed (non-blocking)');
         }
 
@@ -259,7 +259,7 @@ export const adjustmentReviewProcedures = {
           logger.error({
             tenantId: ctx.tenantId,
             requestId: request.id,
-            error: messageOrStringOfError(error),
+            error: thrownText(error),
           }, '[Income][Telegram] Requester approved-refund notification failed (non-blocking)');
         }
       }
@@ -380,7 +380,7 @@ export const adjustmentReviewProcedures = {
           logger.error({
             tenantId: ctx.tenantId,
             requestId: request.id,
-            error: messageOrStringOfError(error),
+            error: thrownText(error),
           }, '[Income][Telegram] Requester rejected-refund notification failed (non-blocking)');
         }
       }

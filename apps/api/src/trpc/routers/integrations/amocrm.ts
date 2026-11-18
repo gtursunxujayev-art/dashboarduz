@@ -2,8 +2,8 @@ import { amocrmConnectSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { thrownMessageOr, thrownText } from '../../../lib/errors';
 import { logger } from '../../../lib/logger';
-import { thrownMessageOr, thrownText } from '../../../lib/thrown';
 import { amoFailureHelp, amoFailureMessage, detectAmoFailureReason, fetchAmoCRMAccountByToken, normalizeBaseUrl, upsertActiveIntegration } from '../../../services/integration-settings/connection';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoReference, refreshAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';

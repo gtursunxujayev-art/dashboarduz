@@ -2,8 +2,8 @@ import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { thrownMessageOr, thrownText } from '../../../lib/errors';
 import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
-import { thrownMessageOr, thrownText } from '../../../lib/thrown';
 import { telegramRecipientStorageErrorMessage } from '../../../services/integration-settings/connection';
 import { listTelegramRecipients, updateTelegramRecipientSelection } from '../../../services/integrations/telegram-recipient-store';
 import { applyTelegramRecipientsToConfig } from '../../../services/integrations/telegram-recipients';

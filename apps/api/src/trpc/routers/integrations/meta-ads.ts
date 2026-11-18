@@ -2,8 +2,8 @@ import { dateKeyRangeInput, metaAdsConnectSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { thrownMessageOr } from '../../../lib/errors';
 import { asObjectOrEmpty } from '../../../lib/object';
-import { thrownMessageOr } from '../../../lib/thrown';
 import { upsertActiveIntegration } from '../../../services/integration-settings/connection';
 import { normalizeMetaAdAccountId, syncMetaAdInsightsForTenant, validateMetaAdAccount } from '../../../services/integrations/meta-ads';
 import { encryptIntegrationTokens } from '../../../services/security/encryption';

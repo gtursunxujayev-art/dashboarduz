@@ -2,7 +2,7 @@
 
 import crypto from 'crypto';
 
-import { messagePropertyOfError } from '../../lib/error-text';
+import { messagePropertyOfError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { asObjectOrEmpty } from '../../lib/object';
 
