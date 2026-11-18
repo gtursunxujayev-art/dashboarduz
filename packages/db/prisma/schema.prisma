@@ -552,7 +552,7 @@ model Income {
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   // Composite (tenantId, ...) keys: a row can only point at a parent of its own tenant.
-  customer Customer @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
+  customer Customer @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: NoAction)
   manager  User     @relation("IncomeManager", fields: [tenantId, managerUserId], references: [tenantId, id], onDelete: Restrict)
   course   Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   tariff   Tariff?  @relation(fields: [tariffId], references: [id], onDelete: SetNull)
@@ -641,7 +641,7 @@ model IncomeAdjustmentRequest {
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   // Composite (tenantId, ...) keys: a request can only point at rows of its own tenant.
   income      Income   @relation(fields: [tenantId, incomeId], references: [tenantId, id], onDelete: Cascade)
-  customer    Customer @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
+  customer    Customer @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: NoAction)
   requestedBy User     @relation("IncomeAdjustmentRequestedBy", fields: [tenantId, requestedByUserId], references: [tenantId, id], onDelete: Restrict)
   reviewedBy  User?    @relation("IncomeAdjustmentReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   newCourse   Course?  @relation("IncomeAdjustmentNewCourse", fields: [newCourseId], references: [id], onDelete: SetNull)

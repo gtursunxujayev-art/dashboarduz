@@ -335,6 +335,22 @@ describeWithDatabase('money paths (Postgres integration)', () => {
     });
   });
 
+  it('never deletes a customer that has a sale, in the API or in the database', async () => {
+    const { tenant, admin, saleId } = await sale('delete-customer');
+    const prisma = loadPrisma();
+    const { customerId } = await prisma.income.findUniqueOrThrow({ where: { id: saleId }, select: { customerId: true } });
+    const empty = await prisma.customer.create({ data: { tenantId: tenant.tenantId, customerNumber: '998900001111', name: 'No sales' } });
+
+    await expect(admin.customerIncome.deleteCustomers({ customerIds: [customerId, empty.id] })).resolves.toEqual({
+      deletedCount: 1,
+      deletedIds: [empty.id],
+      skipped: [{ id: customerId, reason: 'has_incomes' }],
+    });
+    // The database refuses it too (ON DELETE RESTRICT), so no other path can cascade money rows away.
+    await expect(prisma.customer.delete({ where: { id: customerId } })).rejects.toMatchObject({ code: 'P2003' });
+    expect(await prisma.income.count({ where: { customerId } })).toBe(1);
+  });
+
   it('keeps tenants isolated: another tenant cannot see or refund the sale', async () => {
     const { saleId, customerNumber } = await sale('isolation-owner');
     const other = await createTestTenant('isolation-other');

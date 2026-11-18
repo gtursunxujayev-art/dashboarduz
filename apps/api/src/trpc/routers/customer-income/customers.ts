@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { isForeignKeyViolation } from '../../../lib/prisma-errors';
 import { fetchCoursesWithTariffsSafe, toCourseOptions } from '../../../services/customer-income/catalog';
 import { CUSTOMER_NUMBER_REGEX, TELEGRAM_USERNAME_REGEX } from '../../../services/customer-income/constants';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
@@ -30,6 +31,9 @@ function normalizeCustomerIdentity(rawCustomerNumber: string, rawName: string): 
 
   return { customerNumber, name };
 }
+
+/** Why a customer was left in place by `deleteCustomers`: it still has money rows. */
+type DeleteCustomerSkip = { id: string; reason: 'has_incomes' | 'has_adjustment_requests' };
 
 export const customerProcedures = {
   customerEditorOptions: adminProcedure.query(async ({ ctx }) => {
@@ -393,6 +397,12 @@ export const customerProcedures = {
         updatedRepaymentsCount: updateResult.updatedRepaymentsCount,
       };
     }),
+  /**
+   * Deletes customers that have no money rows. A customer with incomes or adjustment requests is never deleted (the
+   * database refuses it too); its id comes back in `skipped` with the reason, so the page can say why. The check,
+   * the delete and the audit row run in one transaction; a sale created for one of these customers in the meantime
+   * makes the database refuse the delete, which is reported as a conflict to retry.
+   */
   deleteCustomers: adminProcedure
     .input(
       z.object({
@@ -401,44 +411,59 @@ export const customerProcedures = {
     )
     .mutation(async ({ ctx, input }) => {
       const customerIds = Array.from(new Set(input.customerIds));
-      const customers = await ctx.db.customer.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          id: { in: customerIds },
-        },
-        select: {
-          id: true,
-          customerNumber: true,
-        },
-      });
 
-      if (!customers.length) {
-        return { deletedCount: 0 };
+      try {
+        return await ctx.db.$transaction(async (tx) => {
+          const customers = await tx.customer.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: customerIds } },
+            select: { id: true },
+          });
+          const existingIds = customers.map((customer) => customer.id);
+
+          if (!existingIds.length) {
+            return { deletedCount: 0, deletedIds: [] as string[], skipped: [] as DeleteCustomerSkip[] };
+          }
+
+          const [incomeOwners, requestOwners] = await Promise.all([
+            tx.income.groupBy({ by: ['customerId'], where: { tenantId: ctx.tenantId, customerId: { in: existingIds } } }),
+            tx.incomeAdjustmentRequest.groupBy({ by: ['customerId'], where: { tenantId: ctx.tenantId, customerId: { in: existingIds } } }),
+          ]);
+          const withIncomes = new Set(incomeOwners.map((row) => row.customerId));
+          const withRequests = new Set(requestOwners.map((row) => row.customerId));
+          const skipped: DeleteCustomerSkip[] = existingIds
+            .filter((id) => withIncomes.has(id) || withRequests.has(id))
+            .map((id) => ({ id, reason: withIncomes.has(id) ? 'has_incomes' : 'has_adjustment_requests' }));
+          const skippedIds = new Set(skipped.map((skip) => skip.id));
+          const deletableIds = existingIds.filter((id) => !skippedIds.has(id));
+          const deleteResult = deletableIds.length
+            ? await tx.customer.deleteMany({ where: { tenantId: ctx.tenantId, id: { in: deletableIds } } })
+            : { count: 0 };
+
+          await tx.auditLog.create({
+            data: {
+              tenantId: ctx.tenantId,
+              userId: ctx.user.userId,
+              action: 'customer_bulk_delete',
+              resource: 'customer',
+              metadata: {
+                deletedCount: deleteResult.count,
+                requestedCount: customerIds.length,
+                deletedIds: deletableIds,
+                skipped,
+              },
+            },
+          });
+
+          return { deletedCount: deleteResult.count, deletedIds: deletableIds, skipped };
+        });
+      } catch (error: unknown) {
+        if (isForeignKeyViolation(error)) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'A sale or request was just added for one of these customers. Refresh and try again.',
+          });
+        }
+        throw error;
       }
-
-      const existingCustomerIds = customers.map((customer) => customer.id);
-      const deleteResult = await ctx.db.customer.deleteMany({
-        where: {
-          tenantId: ctx.tenantId,
-          id: { in: existingCustomerIds },
-        },
-      });
-
-      await ctx.db.auditLog.create({
-        data: {
-          tenantId: ctx.tenantId,
-          userId: ctx.user.userId,
-          action: 'customer_bulk_delete',
-          resource: 'customer',
-          metadata: {
-            deletedCount: deleteResult.count,
-            requestedCount: customerIds.length,
-          },
-        },
-      });
-
-      return {
-        deletedCount: deleteResult.count,
-      };
     }),
 };

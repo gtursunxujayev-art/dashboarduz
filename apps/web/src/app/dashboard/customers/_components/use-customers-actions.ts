@@ -132,7 +132,10 @@ export function useCustomersActions(base: ReturnType<typeof useCustomersState>) 
       const result = await deleteCustomersMutation.mutateAsync({
         customerIds: selectedCustomerIds,
       });
-      setPageSuccess(`${result.deletedCount} ta mijoz o'chirildi.`);
+      const skippedNote = result.skipped.length
+        ? ` ${result.skipped.length} ta mijoz o'chirilmadi: ularda to'lovlar yoki so'rovlar bor.`
+        : '';
+      setPageSuccess(`${result.deletedCount} ta mijoz o'chirildi.${skippedNote}`);
       await handleRefresh();
       setSelectedCustomerIds([]);
     } catch (error: any) {

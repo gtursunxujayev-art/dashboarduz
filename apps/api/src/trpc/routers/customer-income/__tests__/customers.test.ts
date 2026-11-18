@@ -126,10 +126,28 @@ describe('deleteCustomers and editor options', () => {
   it('deletes only existing customers of the tenant and reports the count', async () => {
     const ali = seedCustomer(fixture, '998900000001');
 
-    await expect(admin().deleteCustomers({ customerIds: [ali, '00000000-0000-4000-8000-000000000001'] })).resolves.toEqual({ deletedCount: 1 });
-    expect(fixture.store.rows('AuditLog')[0]!.metadata).toEqual({ deletedCount: 1, requestedCount: 2 });
-    await expect(admin().deleteCustomers({ customerIds: [ali] })).resolves.toEqual({ deletedCount: 0 });
+    await expect(admin().deleteCustomers({ customerIds: [ali, '00000000-0000-4000-8000-000000000001'] })).resolves.toEqual({ deletedCount: 1, deletedIds: [ali], skipped: [] });
+    expect(fixture.store.rows('AuditLog')[0]!.metadata).toEqual({ deletedCount: 1, requestedCount: 2, deletedIds: [ali], skipped: [] });
+    await expect(admin().deleteCustomers({ customerIds: [ali] })).resolves.toEqual({ deletedCount: 0, deletedIds: [], skipped: [] });
     await expect(caller(fixture.agentId, ['Agent']).deleteCustomers({ customerIds: [ali] })).rejects.toThrow('Admin access required');
+  });
+
+  it('never deletes a customer with incomes or adjustment requests and says which were skipped', async () => {
+    const empty = seedCustomer(fixture, '998900000001');
+    const paying = seedCustomer(fixture, '998900000002');
+    const requested = seedCustomer(fixture, '998900000003');
+    const { saleId } = seedSaleChain(fixture, { customerId: paying, agreementAmount: 1_000_000, firstPayment: 400_000, entryDate: daysAgo(3) });
+
+    fixture.store.seed('IncomeAdjustmentRequest', [{ tenantId: fixture.tenantId, incomeId: saleId, customerId: requested, type: 'refund', status: 'pending', requestedByUserId: fixture.adminId }]);
+
+    await expect(admin().deleteCustomers({ customerIds: [empty, paying, requested] })).resolves.toEqual({
+      deletedCount: 1,
+      deletedIds: [empty],
+      skipped: [{ id: paying, reason: 'has_incomes' }, { id: requested, reason: 'has_adjustment_requests' }],
+    });
+    expect(fixture.store.rows('Customer').map((row) => row.id).sort()).toEqual([paying, requested].sort());
+    expect(fixture.store.rows('Income')).toHaveLength(1);
+    expect(fixture.store.rows('AuditLog')[0]!.metadata).toMatchObject({ deletedIds: [empty], skipped: [{ id: paying }, { id: requested }] });
   });
 
   it('lists active courses with their active sub-tariffs for the editor', async () => {
