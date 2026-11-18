@@ -1,15 +1,17 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { Router, type Request, type Response } from 'express';
 
+import { asyncRoute } from '../lib/express-async';
 import { logger } from '../lib/logger';
 import { amocrmService } from '../services/integrations/amocrm';
 import { rateLimiter } from '../services/security/rate-limiter';
 
+import { amoWebhookAccountId, amoWebhookEventType, webhookPayloadJson } from './payloads';
 import { buildWebhookIdempotencyKey, enqueueWebhookJob, getRawBody, isUniqueViolation } from './shared';
 
 const router = Router();
 
-router.post('/amocrm', async (req: Request, res: Response) => {
+router.post('/amocrm', asyncRoute(async (req: Request, res: Response) => {
   try {
     const signature = (req.headers['x-signature'] || req.headers['x-amocrm-signature']) as string | undefined;
     const rawBody = getRawBody(req);
@@ -22,7 +24,8 @@ router.post('/amocrm', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Invalid signature' });
     }
 
-    const accountIdRaw = req.body?.account?.id ?? req.body?.account_id;
+    const body: unknown = req.body;
+    const accountIdRaw = amoWebhookAccountId(body);
 
     if (!accountIdRaw) {
       return res.status(400).json({ error: 'Missing AmoCRM account id' });
@@ -57,8 +60,7 @@ router.post('/amocrm', async (req: Request, res: Response) => {
     }
 
     const idempotencyKey = buildWebhookIdempotencyKey('amocrm', integration.tenantId, rawBody);
-    const eventType = req.body?.event_type
-      || (req.body?.leads ? 'leads' : req.body?.contacts ? 'contacts' : 'unknown');
+    const eventType = amoWebhookEventType(body);
 
     let event;
 
@@ -69,12 +71,12 @@ router.post('/amocrm', async (req: Request, res: Response) => {
           source: 'amocrm',
           eventType,
           idempotencyKey,
-          rawPayload: req.body,
+          rawPayload: webhookPayloadJson(body),
           signature: signature || null,
           processed: false,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (isUniqueViolation(error)) {
         logger.info({ msg: 'Duplicate AmoCRM webhook ignored', idempotencyKey });
 
@@ -106,6 +108,6 @@ router.post('/amocrm', async (req: Request, res: Response) => {
 
     return res.status(500).json({ error: 'Internal server error' });
   }
-});
+}));
 
 export { router as amocrmWebhookRouter };

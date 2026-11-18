@@ -2,6 +2,7 @@
 
 import Redis from 'ioredis';
 
+import { errorMessage } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 
 let redisClient: Redis | null = null;
@@ -67,10 +68,10 @@ export async function checkRedisHealth(): Promise<{
       status: 'healthy',
       latency,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       status: 'unhealthy',
-      error: error.message,
+      error: errorMessage(error),
     };
   }
 }

@@ -1,7 +1,9 @@
 import { systemPrisma } from '@dashboarduz/db';
 
+import { errorMessage, errorStack } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { reportError } from '../../services/observability';
+import { amoWebhookAccountId } from '../../webhooks/payloads';
 
 import { processAmoCRMWebhook } from './amocrm-webhook';
 import { processFaceIdWebhook } from './faceid-webhook';
@@ -27,7 +29,7 @@ export async function processWebhookEvent(eventId: string) {
     let tenantId = event.tenantId;
 
     if (!tenantId && event.source === 'amocrm') {
-      const accountId = (event.rawPayload as any)?.account?.id ?? (event.rawPayload as any)?.account_id;
+      const accountId = amoWebhookAccountId(event.rawPayload);
 
       if (accountId) {
         const integration = await systemPrisma.integration.findFirst({
@@ -90,11 +92,11 @@ export async function processWebhookEvent(eventId: string) {
         metadata: { source: event.source, eventType: event.eventType },
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     await systemPrisma.webhookEvent.update({
       where: { id: eventId },
       data: {
-        errorMessage: error.message,
+        errorMessage: errorMessage(error),
         retryCount: { increment: 1 },
       },
     });
@@ -106,15 +108,15 @@ export async function processWebhookEvent(eventId: string) {
           action: 'webhook_failed',
           resource: 'webhook',
           resourceId: eventId,
-          metadata: { error: error.message },
+          metadata: { error: errorMessage(error) },
         },
       });
     }
 
     reportError('Webhook processing failed', {
       eventId,
-      error: error.message,
-      stack: error.stack,
+      error: errorMessage(error),
+      stack: errorStack(error),
     });
     throw error;
   }

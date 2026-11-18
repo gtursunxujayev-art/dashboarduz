@@ -1,9 +1,15 @@
+import type { IncomingMessage } from 'http';
+
 import { systemPrisma } from '@dashboarduz/db';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import express from 'express';
+import { config as loadDotenv } from 'dotenv';
+import express, { json, urlencoded, type NextFunction, type Request, type Response } from 'express';
 
+import { validateAllFeatures } from './config/env-validator';
+import { errorMessage } from './lib/errors';
+import { asyncRoute } from './lib/express-async';
 import { logger } from './lib/logger';
+import { asObject } from './lib/object';
 import { applyObservabilityMiddleware } from './middleware/observability';
 import { startAmoActivitySnapshotScheduler, stopAmoActivitySnapshotScheduler } from './services/integrations/amocrm-activity-snapshot';
 import { startAmoCallsSyncScheduler, stopAmoCallsSyncScheduler } from './services/integrations/amocrm-call-sync';
@@ -16,16 +22,14 @@ import { startTelegramReportScheduler, stopTelegramReportScheduler } from './ser
 import { trpcMiddleware } from './trpc/server';
 import webhookRouter from './webhooks';
 
-dotenv.config();
+loadDotenv();
 
 if (process.env.SKIP_ENV_VALIDATION !== 'true') {
   try {
-    const { validateAllFeatures } = require('./config/env-validator');
-
     validateAllFeatures();
     logger.info('[Config] Environment variables validated successfully');
-  } catch (error: any) {
-    logger.error({ error: (error as Error).message }, '[Config] Environment validation failed:');
+  } catch (error: unknown) {
+    logger.error({ error: errorMessage(error) }, '[Config] Environment validation failed:');
     process.exit(1);
   }
 } else {
@@ -73,6 +77,9 @@ if (schedulerEnabledInApi) {
 
 const app = express();
 
+/** The body parsers keep the body exactly as received for webhook signature checks (webhooks/shared.ts getRawBody). */
+type RawBodyRequest = IncomingMessage & { rawBody?: string };
+
 applyObservabilityMiddleware(app);
 
 const allowedOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:3000')
@@ -96,25 +103,25 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({
+app.use(json({
   limit: process.env.JSON_BODY_LIMIT || '10mb',
-  verify: (req: any, _res, buf) => {
+  verify: (req: RawBodyRequest, _res, buf) => {
     req.rawBody = buf.toString('utf8');
   },
 }));
 
-app.use(express.urlencoded({
+app.use(urlencoded({
   extended: true,
   limit: process.env.JSON_BODY_LIMIT || '10mb',
-  verify: (req: any, _res, buf) => {
+  verify: (req: RawBodyRequest, _res, buf) => {
     if (!req.rawBody) {
       req.rawBody = buf.toString('utf8');
     }
   },
 }));
 
-app.use((error: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (error?.type === 'entity.too.large') {
+app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (asObject(error)?.type === 'entity.too.large') {
     return res.status(413).json({
       error: 'Request payload is too large. Split the upload into smaller batches.',
     });
@@ -129,7 +136,7 @@ app.use((error: any, _req: express.Request, res: express.Response, next: express
   return next(error);
 });
 
-app.get('/health', async (_req, res) => {
+app.get('/health', asyncRoute(async (_req, res) => {
   try {
     const [redisHealth, dbHealth] = await Promise.all([
       checkRedisHealth(),
@@ -149,16 +156,16 @@ app.get('/health', async (_req, res) => {
     const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
 
     res.status(statusCode).json(healthStatus);
-  } catch (error: any) {
+  } catch (error: unknown) {
     res.status(503).json({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
-      error: error.message,
+      error: errorMessage(error),
     });
   }
-});
+}));
 
-app.get('/health/ready', async (_req, res) => {
+app.get('/health/ready', asyncRoute(async (_req, res) => {
   try {
     const [redisHealth, queueHealth] = await Promise.all([
       checkRedisHealth(),
@@ -185,30 +192,30 @@ app.get('/health/ready', async (_req, res) => {
       redis: redisHealth,
       queues: queueHealth,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return res.status(503).json({
       status: 'not_ready',
-      error: error.message,
+      error: errorMessage(error),
       timestamp: new Date().toISOString(),
     });
   }
-});
+}));
 
-app.get('/health/queues', async (_req, res) => {
+app.get('/health/queues', asyncRoute(async (_req, res) => {
   try {
     const { queueService } = await import('./services/queue');
     const health = await queueService.healthCheck();
 
     res.json(health);
-  } catch (error: any) {
+  } catch (error: unknown) {
     res.status(500).json({
-      error: error.message,
+      error: errorMessage(error),
       timestamp: new Date().toISOString(),
     });
   }
-});
+}));
 
-app.get('/health/schedulers', async (_req, res) => {
+app.get('/health/schedulers', (_req, res) => {
   return res.json({
     status: 'ok',
     schedulersEnabledInApi: schedulerEnabledInApi,

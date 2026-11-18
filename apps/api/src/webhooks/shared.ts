@@ -6,14 +6,17 @@ import type { Request } from 'express';
 import { logger } from '../lib/logger';
 import { getQueue, QueueName } from '../services/queue/queues';
 
+/** The body exactly as received (captured by the body parsers in app.ts), else the parsed body re-serialized. */
 export function getRawBody(req: Request): string {
-  const rawBody = (req as any).rawBody;
+  const rawBody: unknown = 'rawBody' in req ? req.rawBody : undefined;
 
   if (typeof rawBody === 'string') {
     return rawBody;
   }
 
-  return JSON.stringify(req.body ?? {});
+  const body: unknown = req.body;
+
+  return JSON.stringify(body ?? {});
 }
 
 export function buildWebhookIdempotencyKey(source: string, tenantId: string, payload: string): string {
@@ -63,7 +66,7 @@ export async function writeWebhookRejectionAudit(params: {
         },
       },
     });
-  } catch (auditError: any) {
+  } catch (auditError: unknown) {
     logger.warn({ err: auditError, msg: 'Failed to write webhook rejection audit log' });
   }
 }

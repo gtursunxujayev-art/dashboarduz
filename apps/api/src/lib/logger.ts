@@ -1,5 +1,5 @@
 // src/lib/logger.ts
-import pino, { type LoggerOptions } from 'pino';
+import { pino, stdTimeFunctions, type LoggerOptions } from 'pino';
 
 const loggerOptions: LoggerOptions = {
   level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
@@ -33,7 +33,7 @@ const loggerOptions: LoggerOptions = {
       return { level: label.toUpperCase() };
     },
   },
-  timestamp: pino.stdTimeFunctions.isoTime,
+  timestamp: stdTimeFunctions.isoTime,
   // Every line names the service (the former observability log() helper added this field).
   mixin: () => ({ service: 'dashboarduz-api' }),
 };

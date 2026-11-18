@@ -1,5 +1,7 @@
 import { systemPrisma } from '@dashboarduz/db';
 
+import { errorMessage } from '../../lib/errors';
+import { asObject } from '../../lib/object';
 import { resolveTelegramBotTokenForTenant } from '../../lib/telegram';
 import { telegramService } from '../../services/integrations/telegram';
 import { queueService } from '../../services/queue';
@@ -35,7 +37,7 @@ export async function processNotification(notificationId: string) {
         throw new Error('Telegram bot token is missing');
       }
 
-      await sendTelegramNotification(notification.payload as any, botToken);
+      await sendTelegramNotification(notification.payload, botToken);
     } else if (notification.type === 'email') {
       throw new Error('Email notification not implemented');
     } else if (notification.type === 'sms') {
@@ -53,7 +55,7 @@ export async function processNotification(notificationId: string) {
         errorMessage: null,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     const notification = await systemPrisma.notification.findUnique({
       where: { id: notificationId },
     });
@@ -72,7 +74,7 @@ export async function processNotification(notificationId: string) {
       where: { id: notificationId },
       data: {
         attempts: { increment: 1 },
-        errorMessage: error.message,
+        errorMessage: errorMessage(error),
         status: shouldRetry ? 'retrying' : 'failed',
         nextRetryAt,
       },
@@ -88,15 +90,18 @@ export async function processNotification(notificationId: string) {
   }
 }
 
-async function sendTelegramNotification(payload: any, botToken: string) {
-  if (!payload?.chatId || !payload?.text) {
+/** A stored telegram notification payload: `{ chatId, text, options? }` (options go to sendMessage as they are). */
+async function sendTelegramNotification(payload: unknown, botToken: string) {
+  const message = asObject(payload);
+
+  if (!message?.chatId || !message.text) {
     throw new Error('Telegram payload must include chatId and text');
   }
 
   await telegramService.sendMessage(
     botToken,
-    String(payload.chatId),
-    String(payload.text),
-    payload.options,
+    String(message.chatId),
+    String(message.text),
+    message.options,
   );
 }

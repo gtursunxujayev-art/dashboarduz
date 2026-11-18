@@ -1,11 +1,13 @@
 import { systemPrisma } from '@dashboarduz/db';
+import type { WebhookEvent } from '@prisma/client';
 
 import { logger } from '../../lib/logger';
 import { upsertTelegramRecipientRecord } from '../../services/integrations/telegram-recipient-store';
 import { extractTelegramRecipientFromPayload } from '../../services/integrations/telegram-update';
+import { telegramWebhookUpdateId } from '../../webhooks/payloads';
 
-export async function processTelegramWebhook(event: any, tenantId: string) {
-  const payload = event.rawPayload as any;
+export async function processTelegramWebhook(event: Pick<WebhookEvent, 'rawPayload'>, tenantId: string) {
+  const payload = event.rawPayload;
   const integration = await systemPrisma.integration.findFirst({
     where: { tenantId, type: 'telegram' },
   });
@@ -15,7 +17,7 @@ export async function processTelegramWebhook(event: any, tenantId: string) {
   }
 
   const recipient = extractTelegramRecipientFromPayload(payload);
-  const updateId = payload?.update_id ? String(payload.update_id) : null;
+  const updateId = telegramWebhookUpdateId(payload);
 
   if (recipient) {
     const seenAt = new Date();

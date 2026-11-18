@@ -1,11 +1,11 @@
-import express from 'express';
+import { Router } from 'express';
 
 import { amocrmWebhookRouter } from './amocrm';
 import { faceIdWebhookRouter } from './faceid';
 import { telegramWebhookRouter } from './telegram';
 
 // One router per webhook source, mounted in the order the routes were registered before the split.
-const router = express.Router();
+const router = Router();
 
 router.use(amocrmWebhookRouter);
 router.use(telegramWebhookRouter);

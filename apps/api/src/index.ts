@@ -1,10 +1,11 @@
-import dotenv from 'dotenv';
+import { config as loadDotenv } from 'dotenv';
 
 import app from './app';
+import { errorMessage } from './lib/errors';
 import { logger } from './lib/logger';
 import { reportError } from './services/observability';
 
-dotenv.config();
+loadDotenv();
 
 const PORT = process.env.PORT || 3001;
 const HOST = '0.0.0.0';
@@ -23,9 +24,9 @@ function startApiServer(): void {
   });
 }
 
-Promise.resolve().then(startApiServer).catch((error: any) => {
+Promise.resolve().then(startApiServer).catch((error: unknown) => {
   reportError('Failed to start API server', {
-    error: error?.message || String(error),
+    error: errorMessage(error) || String(error),
   });
   process.exit(1);
 });

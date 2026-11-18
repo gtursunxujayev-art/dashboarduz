@@ -1,10 +1,12 @@
 import { systemPrisma } from '@dashboarduz/db';
 import { Router, type Request, type Response } from 'express';
 
+import { asyncRoute } from '../lib/express-async';
 import { logger } from '../lib/logger';
 import { hashFaceIdWebhookToken } from '../services/attendance/faceid';
 import { rateLimiter } from '../services/security/rate-limiter';
 
+import { faceIdWebhookEventType, webhookPayloadJson } from './payloads';
 import { buildWebhookIdempotencyKey, enqueueWebhookJob, getRawBody, isUniqueViolation } from './shared';
 
 const router = Router();
@@ -25,7 +27,7 @@ function extractBearerToken(req: Request): string | null {
   return token || null;
 }
 
-function extractFaceIdToken(req: Request): string | null {
+export function extractFaceIdToken(req: Request): string | null {
   const bearer = extractBearerToken(req);
 
   if (bearer) {
@@ -63,7 +65,7 @@ function extractFaceIdToken(req: Request): string | null {
   return null;
 }
 
-router.get('/faceid', async (_req: Request, res: Response) => {
+router.get('/faceid', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     endpoint: '/webhooks/faceid',
@@ -74,9 +76,10 @@ router.get('/faceid', async (_req: Request, res: Response) => {
   });
 });
 
-router.post('/faceid', async (req: Request, res: Response) => {
+router.post('/faceid', asyncRoute(async (req: Request, res: Response) => {
   try {
     const rawBody = getRawBody(req);
+    const body: unknown = req.body;
     const webhookToken = extractFaceIdToken(req);
 
     if (!webhookToken) {
@@ -113,7 +116,7 @@ router.post('/faceid', async (req: Request, res: Response) => {
     }
 
     const idempotencyKey = buildWebhookIdempotencyKey('faceid', integration.tenantId, rawBody);
-    const eventType = String(req.body?.event_type || req.body?.request?.event_type || 'check_in_out');
+    const eventType = faceIdWebhookEventType(body);
 
     let event;
 
@@ -124,11 +127,11 @@ router.post('/faceid', async (req: Request, res: Response) => {
           source: 'faceid',
           eventType,
           idempotencyKey,
-          rawPayload: req.body,
+          rawPayload: webhookPayloadJson(body),
           processed: false,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (isUniqueViolation(error)) {
         logger.info({ msg: 'Duplicate Face ID webhook ignored', idempotencyKey });
 
@@ -160,6 +163,6 @@ router.post('/faceid', async (req: Request, res: Response) => {
 
     return res.status(500).json({ error: 'Internal server error' });
   }
-});
+}));
 
 export { router as faceIdWebhookRouter };

@@ -1,8 +1,18 @@
 // Observability middleware for Express
 
-import { Request, Response, NextFunction } from 'express';
-import { LogLevel, logWithContext, setSentryUserContext, clearSentryUserContext } from '../services/observability';
 import { randomUUID } from 'crypto';
+
+import type { Express, NextFunction, Request, Response } from 'express';
+
+import { asObjectOrEmpty } from '../lib/object';
+import {
+  LogLevel,
+  logWithContext,
+  Metrics,
+  setSentryUserContext,
+  clearSentryUserContext,
+} from '../services/observability';
+import { checkRedisHealth } from '../services/queue/redis-client';
 
 export interface RequestContext {
   requestId: string;
@@ -11,19 +21,20 @@ export interface RequestContext {
   startTime: number;
 }
 
-// Add request context to Express request
-declare global {
-  namespace Express {
-    interface Request {
-      context: RequestContext;
-    }
+// Add request context to Express request (`Request` in 'express' extends this interface).
+declare module 'express-serve-static-core' {
+  interface Request {
+    context: RequestContext;
+    /** Set by tenant-aware middleware when present; read here for the Sentry user context. */
+    userId?: string;
+    tenantId?: string;
   }
 }
 
 // Generate request ID middleware
 function requestIdMiddleware(req: Request, res: Response, next: NextFunction) {
   const requestId = req.headers['x-request-id'] as string || randomUUID();
-  
+
   req.context = {
     requestId,
     startTime: Date.now(),
@@ -36,7 +47,7 @@ function requestIdMiddleware(req: Request, res: Response, next: NextFunction) {
 // Request logging middleware
 function requestLoggingMiddleware(req: Request, res: Response, next: NextFunction) {
   const { requestId, startTime } = req.context;
-  
+
   // Log request start
   logWithContext(LogLevel.INFO, 'Request started', {
     requestId,
@@ -50,9 +61,9 @@ function requestLoggingMiddleware(req: Request, res: Response, next: NextFunctio
   // Capture response details
   const originalSend = res.send;
 
-  res.send = function(body: any) {
+  res.send = function (this: Response, body?: unknown) {
     const duration = Date.now() - startTime;
-    
+
     // Log request completion
     logWithContext(
       res.statusCode >= 400 ? LogLevel.WARN : LogLevel.INFO,
@@ -68,14 +79,12 @@ function requestLoggingMiddleware(req: Request, res: Response, next: NextFunctio
     );
 
     // Record metrics
-    const { Metrics } = require('../services/observability');
-
     Metrics.increment('http_requests_total', {
       method: req.method,
       path: req.path,
-      status: res.statusCode.toString().charAt(0) + 'xx', // 2xx, 4xx, 5xx
+      status: `${res.statusCode.toString().charAt(0)}xx`, // 2xx, 4xx, 5xx
     });
-    
+
     Metrics.recordHistogram('http_request_duration_ms', duration, {
       method: req.method,
       path: req.path,
@@ -89,32 +98,31 @@ function requestLoggingMiddleware(req: Request, res: Response, next: NextFunctio
 
 // Error logging middleware
 function errorLoggingMiddleware(
-  error: any,
+  error: unknown,
   req: Request,
   _res: Response,
   next: NextFunction
 ) {
   const { requestId, startTime } = req.context;
   const duration = Date.now() - startTime;
+  const details = asObjectOrEmpty(error);
 
   logWithContext(LogLevel.ERROR, 'Request failed', {
     requestId,
     method: req.method,
     url: req.url,
-    statusCode: error.statusCode || 500,
+    statusCode: details.statusCode || 500,
     duration,
-    error: error.message,
-    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+    error: details.message,
+    stack: process.env.NODE_ENV === 'development' ? details.stack : undefined,
     operation: `${req.method} ${req.path}`,
   });
 
   // Record error metric
-  const { Metrics } = require('../services/observability');
-
   Metrics.increment('http_errors_total', {
     method: req.method,
     path: req.path,
-    error_type: error.name || 'UnknownError',
+    error_type: details.name ? String(details.name) : 'UnknownError',
   });
 
   next(error);
@@ -123,8 +131,7 @@ function errorLoggingMiddleware(
 // User context middleware (sets Sentry user context)
 function userContextMiddleware(req: Request, _res: Response, next: NextFunction) {
   // Use tenantId and userId from request (set by tenant middleware)
-  const userId = (req as any).userId;
-  const tenantId = (req as any).tenantId;
+  const { userId, tenantId } = req;
 
   // Update request context
   if (userId) req.context.userId = userId;
@@ -147,8 +154,6 @@ function cleanupMiddleware(_req: Request, res: Response, next: NextFunction) {
 // Metrics endpoint middleware
 function metricsMiddleware(req: Request, res: Response, next: NextFunction) {
   if (req.path === '/metrics') {
-    const { Metrics } = require('../services/observability');
-    
     res.setHeader('Content-Type', 'text/plain; version=0.0.4');
     res.send(Metrics.export());
 
@@ -160,14 +165,11 @@ function metricsMiddleware(req: Request, res: Response, next: NextFunction) {
 // Health check endpoint with detailed metrics
 function healthCheckMiddleware(req: Request, res: Response, next: NextFunction) {
   if (req.path === '/health/detailed') {
-    const { Metrics } = require('../services/observability');
-    const { checkRedisHealth } = require('../services/queue/redis-client');
-    
     Promise.all([
       checkRedisHealth(),
     ]).then(([redisHealth]) => {
       const metrics = Metrics.toJSON();
-      
+
       res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
@@ -196,7 +198,7 @@ function healthCheckMiddleware(req: Request, res: Response, next: NextFunction) 
 }
 
 // Apply all observability middleware
-export function applyObservabilityMiddleware(app: any) {
+export function applyObservabilityMiddleware(app: Express) {
   app.use(requestIdMiddleware);
   app.use(userContextMiddleware);
   app.use(requestLoggingMiddleware);
