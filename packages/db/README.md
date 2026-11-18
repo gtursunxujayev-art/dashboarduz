@@ -102,6 +102,17 @@ Postgres allows it. Each file's header says exactly what it does to data.
 | `20261120130000_bonus_applied_percent_decimal` | `appliedPercent` of bonus snapshot lines/items: `double precision` → `NUMERIC(7,4)`. | **Rounds stored percents to 4 decimals** (bonus amounts are separate integers, unchanged). **Table rewrite** of both snapshot tables under an exclusive lock (small tables). |
 | `20261120140000_status_check_constraints` | CHECKs: `calls.direction` ∈ inbound/outbound; `calls.status` ∈ completed/missed for provider `amocrm` (Utel history keeps its raw external status); `tenants.plan` ∈ free/pro/enterprise. | No data change. **Fails** (rolls back, naming the offending rows) if existing data does not fit, instead of skipping like 20261116104000. NOT VALID + VALIDATE: no write blocking. |
 | `20261120150000_leads_tenant_created_at_index` | Index `leads(tenantId, createdAt)`. | `CREATE INDEX CONCURRENTLY` (single-statement file): writes are not blocked. |
+| `20261121100000_customer_money_rows_restrict` | `incomes.customerId` and `income_adjustment_requests.customerId` go from ON DELETE CASCADE to NO ACTION: deleting a customer that still has incomes or adjustment requests is refused (the API skips such customers too). | No data change. Brief SHARE ROW EXCLUSIVE locks while the keys are swapped; added NOT VALID and validated without blocking writes. |
+| `20261121110000_bonus_reconcile_safety` | Partial unique index: at most one `pending` bonus adjustment per `(snapshotId, groupKey)`; new table `bonus_reconcile_requests` (durable "reconcile owed" markers, tenant RLS). | **Merges duplicate pending bonus adjustments** (keeps the most recently updated per group, moves its audit rows to it, deletes the others; a NOTICE gives the count). Index build holds a SHARE lock on `bonus_adjustments` (writes wait; small table). |
+| `20261121120000_enforce_skipped_check_constraints` | Re-checks the seven CHECKs of 20261116104000 (`integrations_type_check` as redefined by 20261118110000): validates one that is NOT VALID, re-adds one that is missing. | No data change. **Fails** (rolls back, naming the offending rows) if existing data does not fit; does nothing where all seven are already in place. NOT VALID + VALIDATE: no write blocking. |
+
+**20261116104000 may have skipped constraints.** That migration (and the `integrations_type_check` part of
+20261118110000) dropped a CHECK again with only a `WARNING` when existing rows did not fit, and still succeeded. Look
+for such warnings in the deploy log, or list what is missing with
+`SELECT conname, convalidated FROM pg_constraint WHERE conname LIKE '%_check';`.
+`20261121120000_enforce_skipped_check_constraints` closes the gap and fails loudly instead: if it stops with
+`Cannot enforce <constraint>: ... First offending rows: ...`, fix those rows, run
+`npx prisma migrate resolve --rolled-back 20261121120000_enforce_skipped_check_constraints` and deploy again.
 
 ## Tests
 
