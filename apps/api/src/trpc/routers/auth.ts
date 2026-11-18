@@ -20,6 +20,9 @@ import { hashPassword, verifyPassword } from '../../services/auth/password';
 import { rateLimiter } from '../../services/security/rate-limiter';
 import { router, publicProcedure, protectedProcedure } from '../trpc';
 
+/** The user fields an OTP login needs. */
+const otpUserSelect = { id: true, tenantId: true, roles: true, phone: true, isActive: true } as const;
+
 export const authRouter = router({
   registerWithPassword: publicProcedure
     .input(registerWithPasswordSchema)
@@ -297,21 +300,20 @@ export const authRouter = router({
         // Find or create user
         let user = await systemPrisma.user.findFirst({
           where: { phone: input.phone },
-          select: {
-            id: true,
-            tenantId: true,
-            roles: true,
-            phone: true,
-            isActive: true,
-          },
+          select: otpUserSelect,
         });
 
-        let tenantId: string;
-        
         if (!user) {
           // Create tenant and user for first signup
           // Tenant and its first user are created together, so a failed signup leaves no empty tenant.
+          // Phone is unique only per tenant, so nothing in the schema stops two simultaneous first logins of one
+          // phone from creating two tenants: a transaction-scoped advisory lock on the phone serializes them, and
+          // the second one finds the user the first one created.
           user = await systemPrisma.$transaction(async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`otp-first-login:${input.phone}`}, 0))`;
+            const existing = await tx.user.findFirst({ where: { phone: input.phone }, select: otpUserSelect });
+
+            if (existing) return existing;
             const tenant = await tx.tenant.create({
               data: {
                 name: `Tenant ${input.phone}`,
@@ -326,31 +328,17 @@ export const authRouter = router({
                 roles: ['Admin'],
                 authProvider: 'phone',
               },
-              select: {
-                id: true,
-                tenantId: true,
-                roles: true,
-                phone: true,
-                isActive: true,
-              },
+              select: otpUserSelect,
             });
           });
-
-          tenantId = user.tenantId;
-        } else {
-          tenantId = user.tenantId;
-          if (!user.isActive) {
-            throw new TRPCError({
-              code: 'UNAUTHORIZED',
-              message: 'User is deactivated',
-            });
-          }
         }
+        const tenantId = user.tenantId;
 
-        if (!user) {
+        // Also when the locked re-read above found a user created meanwhile.
+        if (!user.isActive) {
           throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'Failed to resolve user for OTP login',
+            code: 'UNAUTHORIZED',
+            message: 'User is deactivated',
           });
         }
 

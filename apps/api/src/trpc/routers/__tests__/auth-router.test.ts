@@ -14,6 +14,7 @@ const mockDb = {
   auditLog: { create: jest.fn() },
   userAuthLink: { create: jest.fn() },
   $transaction: jest.fn(),
+  $executeRaw: jest.fn(),
 };
 const mockIsAllowed = jest.fn();
 const mockSendOtp = jest.fn();
@@ -272,6 +273,23 @@ describe('auth.verifyOtp', () => {
       tenantId: TENANT_ID, phone: input.phone, roles: ['Admin'], authProvider: 'phone',
     });
     expect(result).toMatchObject({ success: true, user: { userId: USER_ID, tenantId: TENANT_ID, roles: ['Admin'] } });
+  });
+
+  it('serializes first OTP sign-ins of one phone: the second one, after the lock, uses the user the first created', async () => {
+    mockVerifyOtp.mockResolvedValue({ success: true, verified: true });
+    // Not found before the lock; found once the lock is held (the concurrent first sign-in created it).
+    mockDb.user.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: USER_ID, tenantId: TENANT_ID, roles: ['Admin'], phone: input.phone, isActive: true });
+    mockDb.user.update.mockResolvedValue({ id: USER_ID });
+
+    const result = await publicCaller().verifyOtp(input);
+
+    expect(mockDb.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(mockDb.$executeRaw.mock.calls[0].slice(1)).toEqual([`otp-first-login:${input.phone}`]);
+    expect(mockDb.tenant.create).not.toHaveBeenCalled();
+    expect(mockDb.user.create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ success: true, user: { userId: USER_ID, tenantId: TENANT_ID } });
   });
 
   it('rejects a wrong code, a provider error, a deactivated user and too many attempts', async () => {
