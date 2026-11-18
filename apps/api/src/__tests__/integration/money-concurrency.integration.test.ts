@@ -219,4 +219,30 @@ describeWithDatabase('money paths under concurrency (Postgres integration)', () 
     expect(outcome(result)).toEqual({ fulfilled: 2, rejected: [] });
     expect(await prisma.bonusMonthSnapshot.count({ where: { tenantId: tenant.tenantId } })).toBe(1);
   });
+
+  it('two first sales for the same new customer number at once both succeed on one customer', async () => {
+    const { tenant, admin, agent, saleId, saleDate } = await sale('race-new-customer');
+    const prisma = loadPrisma();
+    const { courseId, tariffId } = await prisma.income.findUniqueOrThrow({ where: { id: saleId }, select: { courseId: true, tariffId: true } });
+    const customerNumber = String(800_000_000 + Math.floor(Math.random() * 99_999_999));
+    const newSale = (caller: Caller) => caller.customerIncome.createIncome({
+      entryDate: saleDate,
+      managerUserId: tenant.agentUserId,
+      customerNumber,
+      customerName: 'Raced Customer',
+      type: 'new_sale',
+      courseId: courseId!,
+      tariffId: tariffId!,
+      coursePriceAmount: COURSE_PRICE,
+      paymentAmount: FIRST_PAYMENT,
+    });
+
+    const result = await Promise.allSettled([newSale(agent), newSale(admin), newSale(agent)]);
+
+    expect(outcome(result)).toEqual({ fulfilled: 3, rejected: [] });
+    const customers = await prisma.customer.findMany({ where: { tenantId: tenant.tenantId, customerNumber } });
+
+    expect(customers).toHaveLength(1);
+    expect(await prisma.income.count({ where: { customerId: customers[0]!.id, type: 'new_sale' } })).toBe(3);
+  });
 });

@@ -55,6 +55,20 @@ describe('createIncome procedure', () => {
     expect(result.telegramDispatch?.reason).not.toBe('skipped_by_admin');
   });
 
+  it('creates a new customer inside the sale transaction, so a failed sale leaves no customer behind', async () => {
+    fixture.store.beforeOperation = (modelName, operation) => {
+      if (modelName === 'Income' && operation === 'create') throw new Error('disk full');
+    };
+
+    await expect(caller(fixture.agentId, ['Agent']).createIncome({ ...sale(), customerNumber: '998905556677', customerName: 'Nodir' })).rejects.toThrow('disk full');
+    expect(fixture.store.rows('Customer', { customerNumber: '998905556677' })).toEqual([]);
+
+    fixture.store.beforeOperation = null;
+    const result = await caller(fixture.agentId, ['Agent']).createIncome({ ...sale(), customerNumber: '998905556677', customerName: 'Nodir' });
+
+    expect(fixture.store.rows('Customer', { customerNumber: '998905556677' })).toEqual([expect.objectContaining({ id: result.income.customerId, name: 'Nodir' })]);
+  });
+
   it('refuses an agent recording a sale for another agent', async () => {
     await expect(caller(fixture.agentId, ['Agent']).createIncome({ ...sale(), managerUserId: fixture.otherAgentId })).rejects.toThrow(
       'You can create income records only for yourself.',

@@ -5,6 +5,7 @@ import { TRPCError } from '@trpc/server';
 
 import { thrownText } from '../../lib/errors';
 import { logger } from '../../lib/logger';
+import { isUniqueViolation } from '../../lib/prisma-errors';
 import { buildActiveSaleChainMetrics, INCOME_LIFECYCLE_ACTIVE, SALE_SUB_TARIFF_META_KEY } from '../income-chain';
 
 import { CUSTOMER_NUMBER_REGEX, TELEGRAM_USERNAME_REGEX } from './constants';
@@ -71,16 +72,17 @@ export async function createIncomeEntry(params: {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Payment amount cannot be negative.' });
   }
 
-  let customer = await db.customer.findUnique({
+  const existingCustomer = await db.customer.findUnique({
     where: {
       tenantId_customerNumber: {
         tenantId,
         customerNumber,
       },
     },
+    select: { id: true },
   });
 
-  if (!customer) {
+  if (!existingCustomer) {
     if (input.type === 'repayment') {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -94,16 +96,32 @@ export async function createIncomeEntry(params: {
         message: 'Customer name is required for a new customer number.',
       });
     }
+  }
 
-    customer = await db.customer.create({
+  /**
+   * The sale's customer, created inside the sale transaction when the number is new, so a failed sale leaves no
+   * orphan customer behind. A concurrent create of the same number makes this transaction fail on the unique key;
+   * the caller then runs it once more and this read finds the other request's customer.
+   */
+  const resolveSaleCustomerId = async (tx: Prisma.TransactionClient): Promise<string> => {
+    const found = await tx.customer.findUnique({
+      where: { tenantId_customerNumber: { tenantId, customerNumber } },
+      select: { id: true },
+    });
+
+    if (found) return found.id;
+    const created = await tx.customer.create({
       data: {
         tenantId,
         customerNumber,
-        name: input.customerName.trim(),
+        name: input.customerName!.trim(),
         telegramUsername: normalizedTelegramUsername || null,
       },
+      select: { id: true },
     });
-  }
+
+    return created.id;
+  };
 
   let createdIncome;
   let chronologyReordered = false;
@@ -185,12 +203,13 @@ export async function createIncomeEntry(params: {
 
     const remainingDebtAmount = Math.max(input.coursePriceAmount - input.paymentAmount, 0);
 
-    createdIncome = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const runSaleTransaction = () => db.$transaction(async (tx: Prisma.TransactionClient) => {
       await requestBonusReconcile(tx, tenantId, 'createIncome');
+      const customerId = await resolveSaleCustomerId(tx);
       const createdSale = await tx.income.create({
         data: {
           tenantId,
-          customerId: customer.id,
+          customerId,
           managerUserId: input.managerUserId,
           type: 'new_sale',
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
@@ -209,7 +228,7 @@ export async function createIncomeEntry(params: {
       });
 
       await tx.customer.update({
-        where: { id: customer.id },
+        where: { id: customerId },
         data: {
           profileSubTariffId: selectedSubTariffId || null,
         },
@@ -217,7 +236,7 @@ export async function createIncomeEntry(params: {
 
       await refreshCustomerProfileFromLatestActiveSale(tx, {
         tenantId,
-        customerId: customer.id,
+        customerId,
       });
       await assertSaleChainDebtInvariant(tx, {
         tenantId,
@@ -230,7 +249,18 @@ export async function createIncomeEntry(params: {
       maxWait: 10_000,
       timeout: 30_000,
     });
+
+    try {
+      createdIncome = await runSaleTransaction();
+    } catch (error: unknown) {
+      // Another request created this customer number first: run again, the read inside now finds that customer.
+      if (!isUniqueViolation(error)) throw error;
+      createdIncome = await runSaleTransaction();
+    }
   } else {
+    // A repayment needs an existing customer (checked above).
+    const customer = existingCustomer!;
+
     let debtSourceId = input.debtSourceIncomeId;
 
     if (!debtSourceId) {
@@ -397,7 +427,7 @@ export async function createIncomeEntry(params: {
         resourceId: createdIncome.id,
         metadata: {
           type: input.type,
-          customerNumber: customer.customerNumber,
+          customerNumber,
           ...(chronologyReordered
             ? {
                 mode: 'income_chain_reordered_by_date',
@@ -444,7 +474,7 @@ export async function createIncomeEntry(params: {
 
   return {
     income: createdIncome,
-    customerNumber: customer.customerNumber,
+    customerNumber,
     telegramDispatch,
     chronologyDebug: {
       incomeChainReorderedByDate: chronologyReordered,
