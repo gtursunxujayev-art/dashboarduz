@@ -67,7 +67,8 @@
     
     // General rules
     // Keep files small enough to review; split by topic (see trpc/routers/<name>/ and services/<domain>/).
-    "max-lines": ["warn", { "max": 600, "skipBlankLines": true, "skipComments": true }],
+    // Counts every line (as `wc -l` does). Test files are exempt (see overrides).
+    "max-lines": ["error", { "max": 600 }],
     "eqeqeq": ["error", "always"],
     "no-var": "error",
     "prefer-const": "error",
@@ -99,6 +100,7 @@
         "@typescript-eslint/no-unsafe-call": "off",
         "@typescript-eslint/no-unsafe-member-access": "off",
         "@typescript-eslint/no-unsafe-return": "off",
+        "max-lines": "off",
         "no-console": "off"
       }
     },
