@@ -2,6 +2,8 @@ import type { JWTPayload } from '@dashboarduz/shared';
 
 import type { InMemoryPrisma } from '../../../../__tests__/helpers/in-memory-prisma';
 import { contextFor, createMoneyFixture, daysAgo, type MoneyFixture, seedCustomer, seedSaleChain } from '../../../../__tests__/helpers/money-fixtures';
+import * as bonusEngine from '../../../../services/bonus-engine';
+import { getTashkentMonthKey, getTashkentMonthStart } from '../../../../services/bonus-engine';
 import { customerIncomeRouter } from '../index';
 
 let mockStore: InMemoryPrisma;
@@ -123,31 +125,90 @@ describe('updateCustomersCourseAssignment', () => {
 });
 
 describe('deleteCustomers and editor options', () => {
-  it('deletes only existing customers of the tenant and reports the count', async () => {
-    const ali = seedCustomer(fixture, '998900000001');
+  const empty = { deletedCount: 0, deletedIds: [], deletedIncomeCount: 0, deletedRequestCount: 0 };
 
-    await expect(admin().deleteCustomers({ customerIds: [ali, '00000000-0000-4000-8000-000000000001'] })).resolves.toEqual({ deletedCount: 1, deletedIds: [ali], skipped: [] });
-    expect(fixture.store.rows('AuditLog')[0]!.metadata).toEqual({ deletedCount: 1, requestedCount: 2, deletedIds: [ali], skipped: [] });
-    await expect(admin().deleteCustomers({ customerIds: [ali] })).resolves.toEqual({ deletedCount: 0, deletedIds: [], skipped: [] });
+  it('deletes only existing customers of this tenant and reports the counts', async () => {
+    const ali = seedCustomer(fixture, '998900000001');
+    const [otherTenant] = fixture.store.seed('Tenant', [{ name: 'Other' }]);
+    const foreign = String(fixture.store.seed('Customer', [{ tenantId: otherTenant!.id, customerNumber: '998900000009', name: 'Foreign' }])[0]!.id);
+
+    await expect(admin().deleteCustomers({ customerIds: [ali, foreign, '00000000-0000-4000-8000-000000000001'] }))
+      .resolves.toEqual({ deletedCount: 1, deletedIds: [ali], deletedIncomeCount: 0, deletedRequestCount: 0 });
+    expect(fixture.store.rows('Customer', { id: foreign })).toHaveLength(1);
+    expect(fixture.store.rows('AuditLog')[0]!.metadata).toMatchObject({ requestedCount: 3, deletedCount: 1, deletedIds: [ali] });
+    await expect(admin().deleteCustomers({ customerIds: [ali] })).resolves.toEqual(empty);
     await expect(caller(fixture.agentId, ['Agent']).deleteCustomers({ customerIds: [ali] })).rejects.toThrow('Admin access required');
   });
 
-  it('never deletes a customer with incomes or adjustment requests and says which were skipped', async () => {
-    const empty = seedCustomer(fixture, '998900000001');
+  it('deletes a customer with its sales, repayments and requests, and audits ids and totals per customer', async () => {
     const paying = seedCustomer(fixture, '998900000002');
-    const requested = seedCustomer(fixture, '998900000003');
-    const { saleId } = seedSaleChain(fixture, { customerId: paying, agreementAmount: 1_000_000, firstPayment: 400_000, entryDate: daysAgo(3) });
-
-    fixture.store.seed('IncomeAdjustmentRequest', [{ tenantId: fixture.tenantId, incomeId: saleId, customerId: requested, type: 'refund', status: 'pending', requestedByUserId: fixture.adminId }]);
-
-    await expect(admin().deleteCustomers({ customerIds: [empty, paying, requested] })).resolves.toEqual({
-      deletedCount: 1,
-      deletedIds: [empty],
-      skipped: [{ id: paying, reason: 'has_incomes' }, { id: requested, reason: 'has_adjustment_requests' }],
+    const other = seedCustomer(fixture, '998900000003');
+    const { saleId, repaymentIds } = seedSaleChain(fixture, {
+      customerId: paying, agreementAmount: 1_000_000, firstPayment: 400_000, entryDate: daysAgo(10), repayments: [{ amount: 250_000, entryDate: daysAgo(5) }],
     });
-    expect(fixture.store.rows('Customer').map((row) => row.id).sort()).toEqual([paying, requested].sort());
-    expect(fixture.store.rows('Income')).toHaveLength(1);
-    expect(fixture.store.rows('AuditLog')[0]!.metadata).toMatchObject({ deletedIds: [empty], skipped: [{ id: paying }, { id: requested }] });
+    const kept = seedSaleChain(fixture, { customerId: other, agreementAmount: 500_000, firstPayment: 500_000, entryDate: daysAgo(4) });
+
+    fixture.store.seed('IncomeAdjustmentRequest', [{ tenantId: fixture.tenantId, incomeId: saleId, customerId: paying, type: 'refund', status: 'pending', requestedByUserId: fixture.adminId }]);
+
+    await expect(admin().deleteCustomers({ customerIds: [paying] }))
+      .resolves.toEqual({ deletedCount: 1, deletedIds: [paying], deletedIncomeCount: 2, deletedRequestCount: 1 });
+    expect(fixture.store.rows('Customer').map((row) => row.id)).toEqual([other]);
+    expect(fixture.store.rows('Income').map((row) => row.id)).toEqual([kept.saleId]);
+    expect(fixture.store.rows('Income', { id: { in: [saleId, ...repaymentIds] } })).toEqual([]);
+    expect(fixture.store.rows('IncomeAdjustmentRequest')).toEqual([]);
+    expect(fixture.store.rows('AuditLog')[0]!.metadata).toMatchObject({
+      deletedIds: [paying],
+      deletedIncomeCount: 2,
+      deletedRequestCount: 1,
+      paymentTotal: 650_000,
+      customers: [{ id: paying, incomeCount: 2, requestCount: 1, paymentTotal: 650_000 }],
+    });
+  });
+
+  it('writes a bonus reconcile marker for a finalized month that lost incomes, kept for retry when reconciling fails', async () => {
+    const reconcile = jest.spyOn(bonusEngine, 'reconcileFinalizedBonusMonths').mockRejectedValue(new Error('bonus busy'));
+    const paying = seedCustomer(fixture, '998900000004');
+    const entryDate = daysAgo(40);
+
+    seedSaleChain(fixture, { customerId: paying, agreementAmount: 1_000_000, firstPayment: 1_000_000, entryDate });
+    fixture.store.seed('BonusMonthSnapshot', [{ tenantId: fixture.tenantId, month: getTashkentMonthStart(entryDate), policy: {}, sourceDigest: 'd', totalBonusAmount: 0, finalizedByUserId: fixture.adminId }]);
+
+    await admin().deleteCustomers({ customerIds: [paying] });
+
+    expect(reconcile).toHaveBeenCalledWith(expect.objectContaining({ tenantId: fixture.tenantId }));
+    expect(fixture.store.rows('BonusReconcileRequest')).toEqual([
+      expect.objectContaining({ reason: `deleteCustomers:${getTashkentMonthKey(entryDate)}`, attempts: 1, lastError: 'bonus busy' }),
+    ]);
+    expect(fixture.store.rows('AuditLog')[0]!.metadata).toMatchObject({ finalizedMonthsAffected: [getTashkentMonthKey(entryDate)] });
+    reconcile.mockRestore();
+  });
+
+  it('rolls everything back when a step fails mid-way', async () => {
+    const paying = seedCustomer(fixture, '998900000005');
+
+    seedSaleChain(fixture, { customerId: paying, agreementAmount: 1_000_000, firstPayment: 400_000, entryDate: daysAgo(3), repayments: [{ amount: 100_000, entryDate: daysAgo(2) }] });
+    fixture.store.beforeOperation = (modelName, operation) => {
+      if (modelName === 'Customer' && operation === 'deleteMany') throw new Error('connection lost');
+    };
+
+    await expect(admin().deleteCustomers({ customerIds: [paying] })).rejects.toThrow('connection lost');
+    fixture.store.beforeOperation = null;
+    expect(fixture.store.rows('Customer', { id: paying })).toHaveLength(1);
+    expect(fixture.store.rows('Income', { customerId: paying })).toHaveLength(2);
+    expect(fixture.store.rows('AuditLog')).toEqual([]);
+  });
+
+  it('refuses when a payment of another customer is linked to one of these sales', async () => {
+    const paying = seedCustomer(fixture, '998900000006');
+    const other = seedCustomer(fixture, '998900000007');
+    const { repaymentIds } = seedSaleChain(fixture, { customerId: paying, agreementAmount: 1_000_000, firstPayment: 400_000, entryDate: daysAgo(3), repayments: [{ amount: 100_000, entryDate: daysAgo(2) }] });
+
+    fixture.store.tables.get('Income')!.forEach((row) => {
+      if (row.id === repaymentIds[0]) row.customerId = other;
+    });
+
+    await expect(admin().deleteCustomers({ customerIds: [paying] })).rejects.toThrow("1 ta boshqa mijozning to'lovi shu sotuvlarga bog'langan.");
+    expect(fixture.store.rows('Income')).toHaveLength(2);
   });
 
   it('lists active courses with their active sub-tariffs for the editor', async () => {

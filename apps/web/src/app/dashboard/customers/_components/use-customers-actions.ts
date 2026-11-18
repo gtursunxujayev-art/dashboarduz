@@ -122,7 +122,7 @@ export function useCustomersActions(base: ReturnType<typeof useCustomersState>) 
     }
 
     const confirmed = window.confirm(
-      `Tanlangan ${selectedCustomerIds.length} ta mijozni o'chirmoqchimisiz? Bu amal qaytarilmaydi.`,
+      `Tanlangan ${selectedCustomerIds.length} ta mijozni o'chirmoqchimisiz? Ularning barcha to'lovlari va so'rovlari ham o'chiriladi. Bu amal qaytarilmaydi.`,
     );
     if (!confirmed) {
       return;
@@ -132,10 +132,7 @@ export function useCustomersActions(base: ReturnType<typeof useCustomersState>) 
       const result = await deleteCustomersMutation.mutateAsync({
         customerIds: selectedCustomerIds,
       });
-      const skippedNote = result.skipped.length
-        ? ` ${result.skipped.length} ta mijoz o'chirilmadi: ularda to'lovlar yoki so'rovlar bor.`
-        : '';
-      setPageSuccess(`${result.deletedCount} ta mijoz o'chirildi.${skippedNote}`);
+      setPageSuccess(`${result.deletedCount} ta mijoz o'chirildi (${result.deletedIncomeCount} ta to'lov, ${result.deletedRequestCount} ta so'rov bilan).`);
       await handleRefresh();
       setSelectedCustomerIds([]);
     } catch (error: any) {
