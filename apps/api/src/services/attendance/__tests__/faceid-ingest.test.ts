@@ -260,15 +260,15 @@ describe('attendance day summaries', () => {
     expect(update).toMatchObject({ workedSeconds: 7 * 3600, anomalyCount: 3 });
   });
 
-  // BUG (apps/api/src/services/attendance/day-summary.ts:151): `userId: { not: null }` is spread after the
-  // optional `userId` filter and overwrites it, so a recompute requested for one user (attendance corrections,
-  // trpc/routers/attendance/corrections.ts:302) recomputes every user's days in the range.
-  it.skip('limits a range recompute to the requested user', async () => {
+  it('limits a range recompute to the requested user', async () => {
     mockDb.attendanceEvent.findMany.mockResolvedValue([]);
 
     await recomputeAttendanceSummariesForRange({ tenantId: TENANT_ID, dateFrom: '2026-11-18', dateTo: '2026-11-18', userId: 'u1', db: systemPrisma });
 
     expect(mockDb.attendanceEvent.findMany.mock.calls[0][0].where.userId).toBe('u1');
+
+    await recomputeAttendanceSummariesForRange({ tenantId: TENANT_ID, dateFrom: '2026-11-18', dateTo: '2026-11-18', db: systemPrisma });
+    expect(mockDb.attendanceEvent.findMany.mock.calls[1][0].where.userId).toEqual({ not: null });
   });
 
   it('requires nothing on Sunday and marks an empty working day absent', async () => {

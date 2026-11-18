@@ -143,12 +143,13 @@ export async function recomputeAttendanceSummariesForRange(params: {
   const events = await db.attendanceEvent.findMany({
     where: {
       tenantId: params.tenantId,
-      ...(params.userId ? { userId: params.userId } : {}),
+      // One filter on userId: the requested user, or every matched user. (A later `userId: { not: null }` used to
+      // overwrite the requested user, so a one-user recompute recomputed everyone.)
+      userId: params.userId ?? { not: null },
       localDate: {
         gte: params.dateFrom,
         lte: params.dateTo,
       },
-      userId: { not: null },
     },
     select: {
       userId: true,
