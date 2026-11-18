@@ -203,10 +203,7 @@ describe('adjustment request lists', () => {
     expect(await caller(fixture.otherAgentId, ['Agent']).adjustmentBadgeCount()).toEqual({ pendingTotal: 1, pendingRefund: 0, pendingTariffChange: 1, scopedToApproverQueue: false });
   });
 
-  // Bug (adjustments.ts:236-247): the per-type counts spread `type: refund|tariff_change` over the base filter and so
-  // replace the role's type guard. Finance (refunds only) gets pendingTariffChange = 1 next to pendingTotal = 1, i.e.
-  // a badge for requests it cannot list or review; a tariff-only Manager gets the same for refunds.
-  it.skip('keeps the per-type badge counts inside the role type guard (bug: adjustments.ts:236-247)', async () => {
+  it('keeps the per-type badge counts inside the role type guard', async () => {
     expect(await caller(fixture.financeId, ['Finance']).adjustmentBadgeCount()).toEqual({ pendingTotal: 1, pendingRefund: 1, pendingTariffChange: 0, scopedToApproverQueue: true });
   });
 });

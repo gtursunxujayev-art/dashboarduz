@@ -233,15 +233,17 @@ export const adjustmentProcedures = {
         where: pendingWhereBase,
       }),
       ctx.db.incomeAdjustmentRequest.count({
+        // AND keeps the role's type guard in pendingWhereBase; a plain `type` would replace it.
         where: {
           ...pendingWhereBase,
-          type: ADJUSTMENT_TYPE_REFUND,
+          AND: [{ type: ADJUSTMENT_TYPE_REFUND }],
         },
       }),
       ctx.db.incomeAdjustmentRequest.count({
+        // AND keeps the role's type guard in pendingWhereBase; a plain `type` would replace it.
         where: {
           ...pendingWhereBase,
-          type: ADJUSTMENT_TYPE_TARIFF_CHANGE,
+          AND: [{ type: ADJUSTMENT_TYPE_TARIFF_CHANGE }],
         },
       }),
     ]);
