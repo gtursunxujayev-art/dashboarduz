@@ -1,4 +1,6 @@
 import { trimmedString } from '../../lib/object';
+import { valueAtPath } from '../../lib/unknown-path';
+
 export type TelegramRecipientFromUpdate = {
   chatId: string;
   username: string | null;
@@ -7,36 +9,63 @@ export type TelegramRecipientFromUpdate = {
   started: boolean;
 };
 
-export function extractTelegramRecipientFromPayload(payload: any): TelegramRecipientFromUpdate | null {
-  const message = payload?.message
-    || payload?.edited_message
-    || payload?.channel_post
-    || payload?.edited_channel_post
-    || payload?.callback_query?.message
-    || null;
-  const chat = message?.chat || null;
+/** The update keys that carry a message, in the order the recipient is looked for. */
+const MESSAGE_PATHS: ReadonlyArray<ReadonlyArray<string>> = [
+  ['message'],
+  ['edited_message'],
+  ['channel_post'],
+  ['edited_channel_post'],
+  ['callback_query', 'message'],
+];
 
-  if (!chat || chat.id === null || chat.id === undefined) return null;
+/** The update keys that carry the sender, in the order the sender is looked for. */
+const SENDER_PATHS: ReadonlyArray<ReadonlyArray<string>> = [
+  ['message', 'from'],
+  ['edited_message', 'from'],
+  ['callback_query', 'from'],
+  ['channel_post', 'from'],
+  ['edited_channel_post', 'from'],
+];
 
-  const chatType = trimmedString(chat.type || 'private').toLowerCase();
+/** The first truthy value at one of `paths` in a Telegram update, else `null`. */
+function firstTruthyAtPaths(payload: unknown, paths: ReadonlyArray<ReadonlyArray<string>>): unknown {
+  for (const path of paths) {
+    const value = valueAtPath(payload, ...path);
+
+    if (value) return value;
+  }
+
+  return null;
+}
+
+/**
+ * The private-chat recipient of a Telegram Bot API update (`message`, `edited_message`, `channel_post`,
+ * `edited_channel_post` or `callback_query`), or `null` for group chats and updates without a chat.
+ */
+export function extractTelegramRecipientFromPayload(payload: unknown): TelegramRecipientFromUpdate | null {
+  const message = firstTruthyAtPaths(payload, MESSAGE_PATHS);
+  const chat = valueAtPath(message, 'chat') || null;
+  const chatId = valueAtPath(chat, 'id');
+
+  if (!chat || chatId === null || chatId === undefined) return null;
+
+  const chatType = trimmedString(valueAtPath(chat, 'type') || 'private').toLowerCase();
 
   if (chatType && chatType !== 'private') return null;
 
-  const from = payload?.message?.from
-    || payload?.edited_message?.from
-    || payload?.callback_query?.from
-    || payload?.channel_post?.from
-    || payload?.edited_channel_post?.from
-    || null;
+  const from = firstTruthyAtPaths(payload, SENDER_PATHS);
   const messageText = trimmedString(
-    message?.text || message?.caption || payload?.callback_query?.data || '',
+    valueAtPath(message, 'text') || valueAtPath(message, 'caption') || valueAtPath(payload, 'callback_query', 'data') || '',
+  );
+  const nameField = (key: string): string | null => (
+    trimmedString(valueAtPath(from, key) || valueAtPath(chat, key) || '') || null
   );
 
   return {
-    chatId: String(chat.id),
-    username: trimmedString(from?.username || chat.username || '') || null,
-    firstName: trimmedString(from?.first_name || chat.first_name || '') || null,
-    lastName: trimmedString(from?.last_name || chat.last_name || '') || null,
+    chatId: String(chatId),
+    username: nameField('username'),
+    firstName: nameField('first_name'),
+    lastName: nameField('last_name'),
     started: /^\/start\b/i.test(messageText) || Boolean(from || message),
   };
 }

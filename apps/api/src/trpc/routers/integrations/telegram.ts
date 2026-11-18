@@ -5,6 +5,7 @@ import { TRPCError } from '@trpc/server';
 
 import { asObjectOrEmpty } from '../../../lib/object';
 import { parseTelegramDailyReportCourseIds, resolveTelegramBotToken } from '../../../lib/telegram';
+import { thrownMessageOr, thrownText } from '../../../lib/thrown';
 import { getPublicApiBaseUrl, telegramRecipientStorageErrorMessage, upsertActiveIntegration } from '../../../services/integration-settings/connection';
 import { telegramService } from '../../../services/integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../../../services/integrations/telegram-groups';
@@ -220,7 +221,7 @@ export const telegramIntegrationProcedures = {
         schedulerReady: Boolean(botToken && onlineGroupCount > 0 && offlineGroupCount > 0),
         error: null,
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         connected: true,
         healthy: false,
@@ -239,7 +240,7 @@ export const telegramIntegrationProcedures = {
         onlineGroupCount,
         offlineGroupCount,
         schedulerReady: false,
-        error: String(error?.message || error),
+        error: thrownText(error),
       };
     }
   }),
@@ -292,10 +293,10 @@ export const telegramIntegrationProcedures = {
       });
 
       return { success: true, webhookUrl, repairedAt: repairedAt.toISOString() };
-    } catch (error: any) {
+    } catch (error) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: error?.message || 'Telegram webhookni qayta ulashda xatolik',
+        message: thrownMessageOr(error, 'Telegram webhookni qayta ulashda xatolik'),
       });
     }
   }),

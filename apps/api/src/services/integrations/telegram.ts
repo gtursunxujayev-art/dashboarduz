@@ -1,5 +1,7 @@
 import { sleep } from '../../lib/async';
 import { logger } from '../../lib/logger';
+
+import type { TelegramApiEnvelope, TelegramBotIdentity, TelegramSendMessageOptions, TelegramWebhookInfo } from './telegram-bot-api';
 // Telegram Bot integration service
 
 const TELEGRAM_REQUEST_TIMEOUT_MS = 6_000;
@@ -75,45 +77,54 @@ export class TelegramService {
     throw new Error(`Telegram network error after ${TELEGRAM_REQUEST_ATTEMPTS} attempts: ${describeNetworkError(lastError)}`);
   }
 
-  async getBotInfo(botToken: string): Promise<{ id: number; username?: string; first_name?: string }> {
+  async getBotInfo(botToken: string): Promise<TelegramBotIdentity> {
     const response = await fetch(`${this.apiUrl}${botToken}/getMe`);
 
     if (!response.ok) {
       throw new Error('Invalid Telegram bot token');
     }
 
-    const data = await response.json();
+    const data = await response.json() as TelegramApiEnvelope<TelegramBotIdentity>;
 
     if (!data.ok || !data.result) {
       throw new Error('Failed to fetch Telegram bot info');
     }
 
-    return data.result as { id: number; username?: string; first_name?: string };
+    return data.result;
   }
 
   // Send message via bot
-  async sendMessage(botToken: string, chatId: string, text: string, options?: any) {
+  async sendMessage(
+    botToken: string,
+    chatId: string,
+    text: string,
+    /**
+     * Extra parameters spread into the request body ({@link TelegramSendMessageOptions}). Typed `unknown` because
+     * queued notification payloads pass them through untyped.
+     */
+    options?: unknown,
+  ): Promise<TelegramApiEnvelope> {
     const response = await this.fetchWithRetry(`${this.apiUrl}${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        ...options,
+        ...(options as TelegramSendMessageOptions | undefined),
       }),
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json() as TelegramApiEnvelope;
 
       throw new Error(`Telegram API error: ${error.description || 'Unknown error'}`);
     }
 
-    return await response.json();
+    return await response.json() as TelegramApiEnvelope;
   }
 
   // Verify bot token
-  async verifyBotToken(botToken: string): Promise<{ isValid: boolean; bot?: { id: number; username?: string; first_name?: string } }> {
+  async verifyBotToken(botToken: string): Promise<{ isValid: boolean; bot?: TelegramBotIdentity }> {
     try {
       const bot = await this.getBotInfo(botToken);
 
@@ -123,16 +134,9 @@ export class TelegramService {
     }
   }
 
-  async getWebhookInfo(botToken: string): Promise<{
-    url: string;
-    pending_update_count: number;
-    last_error_date?: number;
-    last_error_message?: string;
-    max_connections?: number;
-    ip_address?: string;
-  }> {
+  async getWebhookInfo(botToken: string): Promise<TelegramWebhookInfo> {
     const response = await this.fetchWithRetry(`${this.apiUrl}${botToken}/getWebhookInfo`, { method: 'GET' });
-    const data = await response.json() as { ok?: boolean; result?: any; description?: string };
+    const data = await response.json() as TelegramApiEnvelope<TelegramWebhookInfo>;
 
     if (!response.ok || !data.ok || !data.result) {
       throw new Error(`Telegram API error: ${data.description || `HTTP ${response.status}`}`);
@@ -142,7 +146,7 @@ export class TelegramService {
   }
 
   // Set webhook for bot
-  async setWebhook(botToken: string, webhookUrl: string, secretToken?: string) {
+  async setWebhook(botToken: string, webhookUrl: string, secretToken?: string): Promise<TelegramApiEnvelope<boolean>> {
     const response = await fetch(`${this.apiUrl}${botToken}/setWebhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -152,7 +156,7 @@ export class TelegramService {
       }),
     });
 
-    return await response.json();
+    return await response.json() as TelegramApiEnvelope<boolean>;
   }
 
   async sendDocument(
@@ -161,7 +165,7 @@ export class TelegramService {
     documentBuffer: Buffer,
     fileName: string,
     caption?: string,
-  ) {
+  ): Promise<TelegramApiEnvelope> {
     const formData = new FormData();
 
     formData.append('chat_id', chatId);
@@ -190,7 +194,7 @@ export class TelegramService {
       throw new Error(`Telegram API error: ${errorDescription}`);
     }
 
-    return await response.json();
+    return await response.json() as TelegramApiEnvelope;
   }
 }
 

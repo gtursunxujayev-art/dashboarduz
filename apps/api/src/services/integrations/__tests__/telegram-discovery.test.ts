@@ -1,4 +1,5 @@
 import { systemPrisma as prisma } from '@dashboarduz/db';
+
 import { TelegramService } from '../telegram';
 import { upsertTelegramRecipientRecord } from '../telegram-recipient-store';
 import { extractTelegramRecipientFromPayload } from '../telegram-update';
@@ -53,8 +54,8 @@ describe('Telegram recipient discovery', () => {
     ]);
 
     expect(upsert).toHaveBeenCalledTimes(2);
-    expect(upsert.mock.calls.map(([args]: any[]) => args.where.integrationId_chatId.chatId).sort()).toEqual(['201', '202']);
-    for (const [args] of upsert.mock.calls as any[]) {
+    expect(upsert.mock.calls.map(([args]) => args.where.integrationId_chatId?.chatId).sort()).toEqual(['201', '202']);
+    for (const [args] of upsert.mock.calls) {
       expect(args.create.tenantId).toBe('tenant-1');
       expect(args.create.integrationId).toBe('integration-1');
     }
@@ -62,7 +63,7 @@ describe('Telegram recipient discovery', () => {
 
   it('does not discard pending updates when registering the webhook', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
-      json: async () => ({ ok: true, result: true }),
+      json: () => Promise.resolve({ ok: true, result: true }),
     } as Response);
     const service = new TelegramService();
 
@@ -82,7 +83,7 @@ describe('Telegram recipient discovery', () => {
     jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({
+      json: () => Promise.resolve({
         ok: true,
         result: {
           url: 'https://api.example.com/webhooks/telegram',
