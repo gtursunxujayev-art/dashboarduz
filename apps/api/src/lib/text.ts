@@ -21,11 +21,3 @@ export function normalizeMatchText(value: unknown, options: MatchTextOptions = {
 
   return text;
 }
-
-/** Lower-case ASCII letters and digits only (quotes dropped): `"O'Brien Ltd."` -> `'obrienltd'`. */
-export function normalizeKey(value: string): string {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/['"`’]/g, '')
-    .replace(/[^a-z0-9]+/g, '');
-}

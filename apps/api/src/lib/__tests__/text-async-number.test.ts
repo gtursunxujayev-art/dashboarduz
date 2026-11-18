@@ -1,6 +1,6 @@
 import { sleep, withTimeout } from '../async';
 import { normalizePercentage, roundPositivePercentage } from '../number';
-import { normalizeKey, normalizeMatchText } from '../text';
+import { normalizeMatchText } from '../text';
 
 describe('normalizeMatchText (replaces four normalizeName/normalizeText copies)', () => {
   const input = "  O’Brien   Smith-Jones ";
@@ -24,13 +24,6 @@ describe('normalizeMatchText (replaces four normalizeName/normalizeText copies)'
   it('treats null and undefined as empty', () => {
     expect(normalizeMatchText(null)).toBe('');
     expect(normalizeMatchText(undefined, { collapseWhitespace: true })).toBe('');
-  });
-});
-
-describe('normalizeKey', () => {
-  it('keeps lower-case ASCII letters and digits', () => {
-    expect(normalizeKey(`O'Brien "Ltd." №2`)).toBe('obrienltd2');
-    expect(normalizeKey('')).toBe('');
   });
 });
 

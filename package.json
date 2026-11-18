@@ -16,7 +16,7 @@
     "build:worker:railway": "npm ci --include=dev -w @dashboarduz/api -w @dashboarduz/db -w @dashboarduz/shared --include-workspace-root=false && npm run generate --workspace @dashboarduz/db && npm run build --workspace @dashboarduz/api",
     "build": "npm run build --workspace @dashboarduz/shared && npm run build --workspace @dashboarduz/db && npm run build --workspace @dashboarduz/api && npm run build --workspace @dashboarduz/web",
     "type-check": "npm run build --workspace @dashboarduz/shared && npm run build --workspace @dashboarduz/db && npm run build --workspace @dashboarduz/api && npm run type-check --workspace @dashboarduz/web",
-    "lint": "npm run lint --workspace @dashboarduz/api && npm run lint --workspace @dashboarduz/web",
+    "lint": "npm run lint --workspace @dashboarduz/api && npm run lint --workspace @dashboarduz/shared && npm run lint --workspace @dashboarduz/web",
     "audit:tenant-filter": "tsx scripts/audit-tenant-filter.ts --baseline",
     "check:duplicates": "node scripts/check-duplicate-functions.mjs",
     "db:generate": "npm run generate --workspace @dashboarduz/db",

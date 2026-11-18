@@ -138,18 +138,6 @@
     "@typescript-eslint/no-unsafe-argument": 1,
     "object-shorthand": 1
   },
-  "src/services/queue.ts": {
-    "@typescript-eslint/no-explicit-any": 2,
-    "import/no-cycle": 1
-  },
-  "src/services/queue/queues.ts": {
-    "@typescript-eslint/no-explicit-any": 10,
-    "@typescript-eslint/no-unsafe-argument": 6,
-    "@typescript-eslint/no-unsafe-assignment": 27,
-    "@typescript-eslint/no-unsafe-member-access": 10,
-    "@typescript-eslint/no-unsafe-return": 1,
-    "import/no-cycle": 1
-  },
   "src/services/queue/redis-client.ts": {
     "@typescript-eslint/no-explicit-any": 1,
     "@typescript-eslint/no-unsafe-assignment": 1,
@@ -360,15 +348,11 @@
     "@typescript-eslint/no-unsafe-member-access": 4,
     "@typescript-eslint/require-await": 1
   },
-  "src/workers/index.ts": {
-    "import/no-cycle": 1
-  },
   "src/workers/processors/amocrm-webhook.ts": {
     "@typescript-eslint/no-explicit-any": 6,
     "@typescript-eslint/no-unsafe-assignment": 16,
     "@typescript-eslint/no-unsafe-call": 1,
-    "@typescript-eslint/no-unsafe-member-access": 26,
-    "import/no-cycle": 1
+    "@typescript-eslint/no-unsafe-member-access": 26
   },
   "src/workers/processors/faceid-webhook.ts": {
     "@typescript-eslint/no-explicit-any": 1,
@@ -377,8 +361,7 @@
   "src/workers/processors/notification.ts": {
     "@typescript-eslint/no-explicit-any": 3,
     "@typescript-eslint/no-unsafe-assignment": 1,
-    "@typescript-eslint/no-unsafe-member-access": 6,
-    "import/no-cycle": 1
+    "@typescript-eslint/no-unsafe-member-access": 6
   },
   "src/workers/processors/telegram-webhook.ts": {
     "@typescript-eslint/no-explicit-any": 2,
@@ -389,12 +372,6 @@
   "src/workers/processors/webhook-event.ts": {
     "@typescript-eslint/no-explicit-any": 3,
     "@typescript-eslint/no-unsafe-assignment": 5,
-    "@typescript-eslint/no-unsafe-member-access": 6,
-    "import/no-cycle": 1
-  },
-  "src/workers/worker.ts": {
-    "@typescript-eslint/no-explicit-any": 1,
-    "@typescript-eslint/no-unsafe-assignment": 2,
-    "@typescript-eslint/no-unsafe-member-access": 2
+    "@typescript-eslint/no-unsafe-member-access": 6
   }
 }

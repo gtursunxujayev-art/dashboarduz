@@ -1,8 +1,14 @@
 // Queue service abstraction for BullMQ / Redis
 
-import { QueueName, addJob, getQueueMetrics } from './queue/queues';
+import { QueueName, addJob, getQueueMetrics, type QueueMetrics } from './queue/queues';
 
-export interface QueueJob<T = any> {
+export interface QueueStats {
+  webhooks: QueueMetrics;
+  notifications: QueueMetrics;
+  timestamp: string;
+}
+
+export interface QueueJob<T = unknown> {
   id: string;
   data: T;
   attempts: number;
@@ -38,7 +44,7 @@ export class QueueService {
   }
 
   // Get queue statistics
-  async getQueueStats() {
+  async getQueueStats(): Promise<QueueStats> {
     const [webhookStats, notificationStats] = await Promise.all([
       getQueueMetrics(QueueName.WEBHOOK_PROCESSING),
       getQueueMetrics(QueueName.NOTIFICATIONS),
@@ -54,7 +60,7 @@ export class QueueService {
   // Health check
   async healthCheck(): Promise<{
     status: 'healthy' | 'degraded' | 'unhealthy';
-    queues: Record<string, any>;
+    queues: QueueStats;
     issues?: string[];
   }> {
     const stats = await this.getQueueStats();

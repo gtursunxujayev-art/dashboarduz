@@ -2,6 +2,7 @@ import type { DbClient } from '@dashboarduz/db';
 import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
 import { isCompletedTask, isLeadTask, taskResponsibleUserId, toStringId } from '../../lib/amocrm';
+import { errorMessage } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 
 import { type AmoCRMEvent, type AmoCRMTask } from './amocrm';
@@ -52,10 +53,6 @@ function failureReason(error: unknown): string {
   if (message.includes('network') || message.includes('fetch failed')) return 'network_error';
 
   return 'fetch_failed';
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function copyDiagnostics(target: AmoCRMActivityDiagnostics | undefined, source: AmoCRMActivityDiagnostics) {
