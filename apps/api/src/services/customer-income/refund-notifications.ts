@@ -3,7 +3,7 @@ import { formatSomAmount } from '@dashboarduz/shared';
 
 import { thrownText } from '../../lib/errors';
 import { logger } from '../../lib/logger';
-import { resolveTelegramBotTokenForTenant, sendMessageToTelegramChat } from '../../lib/telegram';
+import { resolveTenantNotificationBotToken, sendMessageToTelegramChat } from '../../lib/telegram';
 
 import { ADJUSTMENT_STATUS_APPROVED, ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND } from './constants';
 import {
@@ -30,10 +30,10 @@ async function resolveRefundGroupDelivery(params: { tenantId: string; db: DbClie
     return null;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, params.db);
+  const botToken = await resolveTenantNotificationBotToken(params.tenantId, params.db);
 
   if (!botToken) {
-    logger.warn(`[Income][Telegram] Bot token is missing for ${params.kind} message.`);
+    logger.info({ tenantId: params.tenantId }, `[Income][Telegram] No active Telegram integration; ${params.kind} message not sent.`);
 
     return null;
   }
@@ -186,7 +186,7 @@ export async function notifyFinanceUsersRefundRequested(params: {
 }) {
   const { db } = params;
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTenantNotificationBotToken(params.tenantId, db);
 
   if (!botToken) {
     return;
@@ -249,7 +249,7 @@ export async function notifyRefundRequesterReviewResult(params: {
 }) {
   const { db } = params;
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTenantNotificationBotToken(params.tenantId, db);
 
   if (!botToken) {
     return;

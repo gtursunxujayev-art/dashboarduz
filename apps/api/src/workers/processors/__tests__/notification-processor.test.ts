@@ -1,14 +1,14 @@
 import { systemPrisma } from '@dashboarduz/db';
 
-import { resolveTelegramBotTokenForTenant } from '../../../lib/telegram';
+import { resolveTenantNotificationBotToken } from '../../../lib/telegram';
 import { telegramService } from '../../../services/integrations/telegram';
 import { queueService } from '../../../services/queue';
 import { rateLimiter } from '../../../services/security/rate-limiter';
 import { processNotification } from '../notification';
 
-jest.mock('../../../lib/telegram', () => ({ resolveTelegramBotTokenForTenant: jest.fn() }));
+jest.mock('../../../lib/telegram', () => ({ resolveTenantNotificationBotToken: jest.fn() }));
 
-const resolveToken = jest.mocked(resolveTelegramBotTokenForTenant);
+const resolveToken = jest.mocked(resolveTenantNotificationBotToken);
 
 type StoredNotification = {
   id: string;
@@ -100,13 +100,32 @@ describe('processNotification', () => {
 
   it('marks the notification failed on its last attempt', async () => {
     findNotification.mockResolvedValue(storedNotification({ attempts: 2 }));
-    resolveToken.mockResolvedValue(null);
+    sendMessage.mockRejectedValue(new Error('Telegram is down'));
 
-    await expect(processNotification('n-1')).rejects.toThrow('Telegram bot token is missing');
+    await expect(processNotification('n-1')).rejects.toThrow('Telegram is down');
 
     expect(updateNotification).toHaveBeenCalledWith({
       where: { id: 'n-1' },
-      data: { attempts: { increment: 1 }, errorMessage: 'Telegram bot token is missing', status: 'failed', nextRetryAt: null },
+      data: { attempts: { increment: 1 }, errorMessage: 'Telegram is down', status: 'failed', nextRetryAt: null },
+    });
+    expect(addNotificationJob).not.toHaveBeenCalled();
+  });
+
+  it('closes the notification without a send, error or retry when the tenant has no active Telegram integration', async () => {
+    resolveToken.mockResolvedValue(null);
+
+    await expect(processNotification('n-1')).resolves.toBeUndefined();
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(updateNotification).toHaveBeenCalledTimes(1);
+    expect(updateNotification).toHaveBeenCalledWith({
+      where: { id: 'n-1' },
+      data: {
+        status: 'failed',
+        attempts: { increment: 1 },
+        errorMessage: 'No active Telegram integration; not sent',
+        nextRetryAt: null,
+      },
     });
     expect(addNotificationJob).not.toHaveBeenCalled();
   });

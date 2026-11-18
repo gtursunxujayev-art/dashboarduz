@@ -3,7 +3,7 @@ import { formatSomAmount, TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
 import { thrownText } from '../../lib/errors';
 import { logger } from '../../lib/logger';
-import { resolveTelegramBotTokenForTenant, toHashtag } from '../../lib/telegram';
+import { resolveTenantNotificationBotToken, toHashtag } from '../../lib/telegram';
 import { telegramService } from '../integrations/telegram';
 import { OFFLINE_GROUP_ENV_KEYS, ONLINE_GROUP_ENV_KEYS, parseTelegramGroupIdsFromEnvKeys } from '../integrations/telegram-groups';
 
@@ -66,10 +66,10 @@ export async function sendOfflineOrIntensivePaymentTelegram(params: {
     errors?: string[];
   };
 
-  const botToken = await resolveTelegramBotTokenForTenant(params.tenantId, db);
+  const botToken = await resolveTenantNotificationBotToken(params.tenantId, db);
 
   if (!botToken) {
-    logger.warn('[Income][Telegram] Bot token is missing. Connect Telegram integration or set TELEGRAM_BOT_TOKEN.');
+    logger.info({ tenantId: params.tenantId }, '[Income][Telegram] No active Telegram integration; payment message not sent.');
 
     return {
       attempted: false,

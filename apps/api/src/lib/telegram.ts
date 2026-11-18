@@ -27,33 +27,56 @@ export type TelegramIntegrationTokenSource = {
 } | null | undefined;
 
 /**
- * The one bot-token rule for every router, scheduler and worker: a tenant's own token is used only while its
- * Telegram integration is `active` (and the token decrypts to something); otherwise `TELEGRAM_BOT_TOKEN`.
- * `null` when neither is set.
+ * Where a send goes when the tenant has no usable token of its own:
+ * - `platform`: the platform bot (`TELEGRAM_BOT_TOKEN`), for platform-level sends;
+ * - `none`: nowhere. Tenant notifications (payments, refunds, tariff changes, the notification worker) use this, so a
+ *   tenant without an active Telegram integration receives nothing.
  */
-export function resolveTelegramBotToken(integration: TelegramIntegrationTokenSource): string | null {
-  const envToken = normalizeTelegramBotToken(process.env.TELEGRAM_BOT_TOKEN);
+export type TelegramBotTokenFallback = 'platform' | 'none';
+
+export type ResolveTelegramBotTokenOptions = {
+  /** Default `platform`. */
+  fallback?: TelegramBotTokenFallback;
+};
+
+/**
+ * The one bot-token rule for every router, scheduler and worker: a tenant's own token is used only while its
+ * Telegram integration is `active` (and the token decrypts to something); otherwise the fallback
+ * (`TELEGRAM_BOT_TOKEN` by default, nothing with `fallback: 'none'`). `null` when there is no token.
+ */
+export function resolveTelegramBotToken(
+  integration: TelegramIntegrationTokenSource,
+  options: ResolveTelegramBotTokenOptions = {},
+): string | null {
+  const usePlatformBot = (options.fallback ?? 'platform') === 'platform';
+  const fallbackToken = usePlatformBot ? normalizeTelegramBotToken(process.env.TELEGRAM_BOT_TOKEN) : null;
 
   if (integration?.status !== 'active' || !integration.tokensEncrypted) {
-    return envToken;
+    return fallbackToken;
   }
 
   try {
     const tokens = decryptIntegrationTokens<{ botToken?: string; token?: string }>(integration.tokensEncrypted);
 
-    return normalizeTelegramBotToken(tokens.botToken || tokens.token) || envToken;
+    return normalizeTelegramBotToken(tokens.botToken || tokens.token) || fallbackToken;
   } catch (error) {
     logger.warn(
       { tenantId: integration.tenantId, error: String((error as Error)?.message || error) },
-      '[Telegram] Integration bot token could not be decrypted; using TELEGRAM_BOT_TOKEN',
+      usePlatformBot
+        ? '[Telegram] Integration bot token could not be decrypted; using TELEGRAM_BOT_TOKEN'
+        : '[Telegram] Integration bot token could not be decrypted; not sending',
     );
 
-    return envToken;
+    return fallbackToken;
   }
 }
 
 /** {@link resolveTelegramBotToken} for a tenant, looking up its Telegram integration. */
-export async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbClient): Promise<string | null> {
+export async function resolveTelegramBotTokenForTenant(
+  tenantId: string,
+  db: DbClient,
+  options: ResolveTelegramBotTokenOptions = {},
+): Promise<string | null> {
   const integration = await db.integration.findUnique({
     where: {
       tenantId_type: {
@@ -67,7 +90,15 @@ export async function resolveTelegramBotTokenForTenant(tenantId: string, db: DbC
     },
   });
 
-  return resolveTelegramBotToken(integration ? { tenantId, ...integration } : null);
+  return resolveTelegramBotToken(integration ? { tenantId, ...integration } : null, options);
+}
+
+/**
+ * The bot token for a tenant notification: the tenant's own token while its Telegram integration is active, else
+ * `null` (never the platform bot). Callers skip the send on `null`.
+ */
+export function resolveTenantNotificationBotToken(tenantId: string, db: DbClient): Promise<string | null> {
+  return resolveTelegramBotTokenForTenant(tenantId, db, { fallback: 'none' });
 }
 
 /**

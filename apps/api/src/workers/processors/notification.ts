@@ -1,11 +1,15 @@
 import { systemPrisma } from '@dashboarduz/db';
 
 import { errorMessage } from '../../lib/errors';
+import { logger } from '../../lib/logger';
 import { asObject } from '../../lib/object';
-import { resolveTelegramBotTokenForTenant } from '../../lib/telegram';
+import { resolveTenantNotificationBotToken } from '../../lib/telegram';
 import { telegramService } from '../../services/integrations/telegram';
 import { queueService } from '../../services/queue';
 import { rateLimiter } from '../../services/security/rate-limiter';
+
+/** Stored on a telegram notification that was not sent because its tenant has no active Telegram integration. */
+export const NO_ACTIVE_TELEGRAM_INTEGRATION = 'No active Telegram integration; not sent';
 
 export async function processNotification(notificationId: string) {
   try {
@@ -31,10 +35,26 @@ export async function processNotification(notificationId: string) {
     }
 
     if (notification.type === 'telegram') {
-      const botToken = await resolveTelegramBotTokenForTenant(notification.tenantId, systemPrisma);
+      // Tenant notifications go out only through the tenant's own active Telegram integration (never the
+      // platform bot). Without one the notification is closed without a send, a retry or an error.
+      const botToken = await resolveTenantNotificationBotToken(notification.tenantId, systemPrisma);
 
       if (!botToken) {
-        throw new Error('Telegram bot token is missing');
+        logger.info(
+          { notificationId, tenantId: notification.tenantId },
+          '[Notification] No active Telegram integration for tenant; not sent',
+        );
+        await systemPrisma.notification.update({
+          where: { id: notificationId },
+          data: {
+            status: 'failed',
+            attempts: { increment: 1 },
+            errorMessage: NO_ACTIVE_TELEGRAM_INTEGRATION,
+            nextRetryAt: null,
+          },
+        });
+
+        return;
       }
 
       await sendTelegramNotification(notification.payload, botToken);

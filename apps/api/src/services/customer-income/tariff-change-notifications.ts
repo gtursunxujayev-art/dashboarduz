@@ -2,7 +2,7 @@ import type { DbClient } from '@dashboarduz/db';
 import { formatSomAmount } from '@dashboarduz/shared';
 
 import { logger } from '../../lib/logger';
-import { resolveTelegramBotTokenForTenant } from '../../lib/telegram';
+import { resolveTenantNotificationBotToken } from '../../lib/telegram';
 import { parseTelegramGroupIdsFromEnvKeys } from '../integrations/telegram-groups';
 
 import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_TARIFF_CHANGE, TARIFF_CHANGE_GROUP_ENV_KEYS } from './constants';
@@ -54,9 +54,15 @@ async function resolveTariffChangeDelivery(tenantId: string, db: DbClient) {
     return null;
   }
 
-  const botToken = await resolveTelegramBotTokenForTenant(tenantId, db);
+  const botToken = await resolveTenantNotificationBotToken(tenantId, db);
 
-  return botToken ? { groupIds, botToken } : null;
+  if (!botToken) {
+    logger.info({ tenantId }, '[Income][Telegram] No active Telegram integration; tariff change message not sent.');
+
+    return null;
+  }
+
+  return { groupIds, botToken };
 }
 
 /** Tariff-change messages go to each group id exactly as configured. */

@@ -14,9 +14,15 @@ const income = {
   tariff: { name: 'VIP' },
 };
 
-function fakeDb(request: Record<string, unknown>) {
+// Tenant messages go out only with the tenant's own active Telegram integration token (never TELEGRAM_BOT_TOKEN).
+jest.mock('../../security/encryption', () => ({
+  ...jest.requireActual<typeof import('../../security/encryption')>('../../security/encryption'),
+  decryptIntegrationTokens: jest.fn(() => ({ botToken: 'tenant-token' })),
+}));
+
+function fakeDb(request: Record<string, unknown>, integration: unknown = { status: 'active', tokensEncrypted: 'encrypted' }) {
   return {
-    integration: { findUnique: jest.fn().mockResolvedValue(null) },
+    integration: { findUnique: jest.fn().mockResolvedValue(integration) },
     incomeAdjustmentRequest: { findFirst: jest.fn().mockResolvedValue(request) },
     user: { findMany: jest.fn().mockResolvedValue([]) },
   } as unknown as DbClient;
@@ -55,7 +61,7 @@ describe('refund and tariff-change Telegram messages', () => {
     await sendRefundRequestedTelegram({ tenantId: 't1', requestId: 'r1', requestedByUserId: 'u1', db });
 
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][0]).toBe('env-token');
+    expect(send.mock.calls[0][0]).toBe('tenant-token');
     expect(send.mock.calls[0][1]).toBe('-100123');
     expect(send.mock.calls[0][2]).toBe([
       "#Pul_qaytarish_so'rovi",
@@ -147,5 +153,20 @@ describe('refund and tariff-change Telegram messages', () => {
       "Yangi kelishuv: 3 000 000 so'm",
       "So'rov yuborgan: Sardor\nSo'rov vaqti: 05.03.2026",
     ].join('\n\n'));
+  });
+
+  it.each([
+    ['no Telegram integration', null],
+    ['an inactive Telegram integration', { status: 'inactive', tokensEncrypted: 'encrypted' }],
+  ])('sends nothing for a tenant with %s, even when TELEGRAM_BOT_TOKEN is set', async (_label, integration) => {
+    const db = fakeDb({
+      id: 'r2', reason: null, newAgreementAmount: 3000000, createdAt: new Date('2026-03-05T09:00:00+05:00'),
+      requestedBy: { id: 'u1', name: 'Sardor', username: null },
+      income, newCourse: { name: 'IELTS', category: 'online' }, newTariff: null,
+    }, integration);
+
+    await sendTariffChangeRequestedTelegram({ tenantId: 't1', requestId: 'r2', requestedByUserId: 'u1', db });
+
+    expect(send).not.toHaveBeenCalled();
   });
 });
