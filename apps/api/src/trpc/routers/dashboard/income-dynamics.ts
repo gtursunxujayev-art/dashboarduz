@@ -61,6 +61,7 @@ function bucketLabel(start: Date, granularity: DynamicsGranularity): string {
  */
 export function resolveIncomeInstant(row: { entryDate: Date; createdAt?: Date | null }): Date {
   const { entryDate, createdAt } = row;
+
   if (!createdAt) return entryDate;
 
   const entryLocal = shiftToTashkent(entryDate);
@@ -68,6 +69,7 @@ export function resolveIncomeInstant(row: { entryDate: Date; createdAt?: Date | 
     && entryLocal.getUTCMinutes() === 0
     && entryLocal.getUTCSeconds() === 0
     && entryLocal.getUTCMilliseconds() === 0;
+
   if (!isDateOnly) return entryDate;
 
   const createdLocal = shiftToTashkent(createdAt);
