@@ -54,12 +54,36 @@ function bucketLabel(start: Date, granularity: DynamicsGranularity): string {
   return `${String(local.getUTCHours()).padStart(2, '0')}:00`;
 }
 
+/**
+ * The instant to chart a row at. Incomes from the Telegram sales report carry only a date (Tashkent
+ * midnight), which piled a whole day into the 00:00 bucket; such rows take their time of day from
+ * `createdAt` when they were recorded on that same Tashkent day.
+ */
+export function resolveIncomeInstant(row: { entryDate: Date; createdAt?: Date | null }): Date {
+  const { entryDate, createdAt } = row;
+  if (!createdAt) return entryDate;
+
+  const entryLocal = shiftToTashkent(entryDate);
+  const isDateOnly = entryLocal.getUTCHours() === 0
+    && entryLocal.getUTCMinutes() === 0
+    && entryLocal.getUTCSeconds() === 0
+    && entryLocal.getUTCMilliseconds() === 0;
+  if (!isDateOnly) return entryDate;
+
+  const createdLocal = shiftToTashkent(createdAt);
+  const sameDay = createdLocal.getUTCFullYear() === entryLocal.getUTCFullYear()
+    && createdLocal.getUTCMonth() === entryLocal.getUTCMonth()
+    && createdLocal.getUTCDate() === entryLocal.getUTCDate();
+
+  return sameDay ? createdAt : entryDate;
+}
+
 /** Sums income rows into consecutive Tashkent hour, day or month buckets covering the whole range. */
 export function buildIncomeBuckets(params: {
   rangeStart: Date;
   rangeEnd: Date;
   granularity: DynamicsGranularity;
-  rows: Array<{ entryDate: Date; amount: number }>;
+  rows: Array<{ entryDate: Date; createdAt?: Date | null; amount: number }>;
 }): DynamicsBucket[] {
   const { rangeStart, rangeEnd, granularity } = params;
   const buckets: DynamicsBucket[] = [];
@@ -74,7 +98,8 @@ export function buildIncomeBuckets(params: {
 
   for (const row of params.rows) {
     if (row.entryDate < rangeStart || row.entryDate > rangeEnd) continue;
-    const index = indexByKey.get(bucketStart(row.entryDate, granularity).toISOString());
+    const instant = granularity === 'hour' ? resolveIncomeInstant(row) : row.entryDate;
+    const index = indexByKey.get(bucketStart(instant, granularity).toISOString());
     const bucket = index === undefined ? undefined : buckets[index];
 
     if (bucket) bucket.amount += row.amount;

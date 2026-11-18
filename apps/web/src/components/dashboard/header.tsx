@@ -2,10 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { IconBell, IconChevronRight, IconLayoutSidebar, IconMoon, IconSun } from '@tabler/icons-react';
+import { IconBell, IconLayoutSidebar, IconMoon, IconSun } from '@tabler/icons-react';
 import { useAuth } from '@/contexts/auth-context';
-import { getNavigationTrail } from '@/components/dashboard/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
 
 type ThemeMode = 'light' | 'dark';
@@ -14,6 +12,8 @@ const THEME_STORAGE_KEY = 'dashboarduz-theme';
 type HeaderProps = {
   pendingAdjustmentCount?: number;
   onToggleSidebar?: () => void;
+  /** Receives the element that holds the page title. */
+  titleSlotRef?: (element: HTMLDivElement | null) => void;
 };
 
 function applyTheme(theme: ThemeMode) {
@@ -21,30 +21,9 @@ function applyTheme(theme: ThemeMode) {
   document.documentElement.setAttribute('data-theme', theme);
 }
 
-const UZ_WEEKDAYS = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
-const UZ_MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
-
-// Browsers ship no Uzbek locale data, so the date is assembled by hand (Tashkent time).
-function todayLabel() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
-  const year = pick('year');
-  const month = pick('month');
-  const day = pick('day');
-  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-  return `${UZ_WEEKDAYS[weekday]}, ${day}-${UZ_MONTHS[month - 1]}`;
-}
-
-export default function Header({ pendingAdjustmentCount = 0, onToggleSidebar }: HeaderProps) {
+export default function Header({ pendingAdjustmentCount = 0, onToggleSidebar, titleSlotRef }: HeaderProps) {
   const { user } = useAuth();
   const [theme, setTheme] = useState<ThemeMode>('light');
-  const [today, setToday] = useState('');
-  const pathname = usePathname();
 
   useEffect(() => {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -53,7 +32,6 @@ export default function Header({ pendingAdjustmentCount = 0, onToggleSidebar }: 
       : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     setTheme(initialTheme);
     applyTheme(initialTheme);
-    setToday(todayLabel());
   }, []);
 
   const handleThemeChange = (nextTheme: ThemeMode) => {
@@ -67,8 +45,6 @@ export default function Header({ pendingAdjustmentCount = 0, onToggleSidebar }: 
     || user?.email?.split('@')[0]
     || user?.phone
     || 'Akkaunt';
-  const trail = getNavigationTrail(pathname);
-  const crumbs = trail.length ? trail : [{ name: 'Boshqaruv paneli' }];
 
   const themeOptions: Array<{ mode: ThemeMode; label: string; Icon: typeof IconSun }> = [
     { mode: 'light', label: "Yorug' mavzu", Icon: IconSun },
@@ -78,7 +54,7 @@ export default function Header({ pendingAdjustmentCount = 0, onToggleSidebar }: 
 
   return (
     <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:px-10">
+      <div className="mx-auto flex h-[72px] max-w-[1600px] items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:px-10">
         <button type="button" onClick={onToggleSidebar} className={`${iconButton} -ml-2 lg:hidden`}>
           <span className="sr-only">Menyuni ochish yoki yopish</span>
           <IconLayoutSidebar className="h-5 w-5" stroke={1.6} />
@@ -87,26 +63,8 @@ export default function Header({ pendingAdjustmentCount = 0, onToggleSidebar }: 
           ) : null}
         </button>
 
-        <nav aria-label="Joylashuv" className="flex min-w-0 flex-1 items-center gap-3">
-          <ol className="flex min-w-0 items-center gap-1.5 text-sm">
-            {crumbs.map((crumb, index) => {
-              const last = index === crumbs.length - 1;
-              return (
-                <li key={`${crumb.name}-${index}`} className={`flex min-w-0 items-center gap-1.5 ${last ? '' : 'hidden sm:flex'}`}>
-                  {index > 0 ? <IconChevronRight className="hidden h-4 w-4 flex-shrink-0 text-gray-300 sm:block" stroke={1.6} aria-hidden="true" /> : null}
-                  {last ? (
-                    <span aria-current="page" className="truncate font-medium text-gray-900">{crumb.name}</span>
-                  ) : crumb.href ? (
-                    <Link href={crumb.href} className="truncate text-gray-500 hover:text-gray-900">{crumb.name}</Link>
-                  ) : (
-                    <span className="truncate text-gray-500">{crumb.name}</span>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-          {today ? <span className="hidden flex-shrink-0 text-[13px] text-gray-400 xl:inline">{today}</span> : null}
-        </nav>
+        {/* The current page title (rendered here by PageHeader through a portal). */}
+        <div ref={titleSlotRef} className="flex min-w-0 flex-1 items-center" />
 
         <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2">
           <div className="inline-flex h-10 items-center gap-0.5 rounded-full bg-white p-1 shadow" role="group" aria-label="Mavzu">

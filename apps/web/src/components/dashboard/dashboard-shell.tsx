@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Sidebar, { SIDEBAR_OPEN_WIDTH, SIDEBAR_RAIL_WIDTH } from '@/components/dashboard/sidebar';
 import Header from '@/components/dashboard/header';
 import DashboardAiShell from '@/components/dashboard/dashboard-ai-shell';
+import { PageTitleSlotContext } from '@/components/ui/page-title-slot';
 import { trpc } from '@/lib/trpc';
 
 const LIVE_LEADERBOARD_PATH = '/dashboard/live-leaderboard';
@@ -17,6 +18,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const isLeaderboardRoute = pathname === LIVE_LEADERBOARD_PATH || pathname === OFFLINE_LEADERBOARD_PATH;
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(false);
+  const [titleSlot, setTitleSlot] = useState<HTMLDivElement | null>(null);
+  const titleSlotValue = useMemo(() => ({ available: true, element: titleSlot }), [titleSlot]);
   const tenantQuery = trpc.tenant.get.useQuery(undefined, {
     enabled: !isLeaderboardRoute,
     retry: 1,
@@ -82,16 +85,18 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         onTogglePinned={togglePinned}
         onMobileClose={closeMobileSidebar}
       />
+      <PageTitleSlotContext.Provider value={titleSlotValue}>
       <div className="flex min-h-[100dvh] min-w-0 flex-col">
-        <Header pendingAdjustmentCount={pendingAdjustmentCount} onToggleSidebar={toggleSidebar} />
+        <Header pendingAdjustmentCount={pendingAdjustmentCount} onToggleSidebar={toggleSidebar} titleSlotRef={setTitleSlot} />
         <main className="relative flex-1 focus:outline-none">
-          <div className="mx-auto w-full max-w-[1600px] px-4 pb-12 pt-3 sm:px-6 lg:px-10">
+          <div className="mx-auto w-full max-w-[1600px] px-4 pb-12 pt-1 sm:px-6 lg:px-10">
             <DashboardAiShell>
               {children}
             </DashboardAiShell>
           </div>
         </main>
       </div>
+      </PageTitleSlotContext.Provider>
     </div>
   );
 }

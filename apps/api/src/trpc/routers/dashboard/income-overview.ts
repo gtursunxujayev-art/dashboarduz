@@ -21,6 +21,8 @@ type IncomeRowQuery = {
 
 export type CountedIncomeRow = {
   entryDate: Date;
+  /** When the row was recorded; gives the time of day for date-only entries. */
+  createdAt?: Date;
   amount: number;
   category: ReturnType<typeof classifyCourseCategoryFromField>;
 };
@@ -63,6 +65,7 @@ export async function loadCountedIncomeRows(params: IncomeRowQuery): Promise<Cou
     select: {
       id: true,
       entryDate: true,
+      createdAt: true,
       type: true,
       relatedDebtIncomeId: true,
       paymentAmount: true,
@@ -101,7 +104,7 @@ export async function loadCountedIncomeRows(params: IncomeRowQuery): Promise<Cou
       ? classifyCourseCategoryFromField(course.category)
       : classifyCourseCategoryFromField(course?.name);
 
-    counted.push({ entryDate: row.entryDate, amount: row.paymentAmount ?? 0, category });
+    counted.push({ entryDate: row.entryDate, createdAt: row.createdAt, amount: row.paymentAmount ?? 0, category });
   }
 
   return counted;

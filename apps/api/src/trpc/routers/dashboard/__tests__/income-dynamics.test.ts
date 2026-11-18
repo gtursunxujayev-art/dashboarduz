@@ -1,4 +1,4 @@
-import { buildIncomeBuckets, percentChange, pickGranularity, previousPeriod } from '../income-dynamics';
+import { buildIncomeBuckets, percentChange, pickGranularity, previousPeriod, resolveIncomeInstant } from '../income-dynamics';
 
 // Tashkent is UTC+5: local midnight of 1 November 2026 is 2026-10-31T19:00:00Z.
 const NOV_1 = new Date('2026-10-31T19:00:00.000Z');
@@ -28,6 +28,31 @@ describe('dashboard income dynamics', () => {
       ['2-noy', 0],
       ['3-noy', 2_000_000],
     ]);
+  });
+
+  it('places date-only incomes at the hour they were recorded that day', () => {
+    const buckets = buildIncomeBuckets({
+      rangeStart: NOV_1,
+      rangeEnd: new Date('2026-11-01T10:30:00.000Z'),
+      granularity: 'hour',
+      rows: [
+        // Date-only entry recorded at 14:09 Tashkent (09:09Z).
+        { entryDate: NOV_1, createdAt: new Date('2026-11-01T09:09:00.000Z'), amount: 100_000 },
+        // Date-only entry for 1 Nov recorded on a later day stays at 00:00.
+        { entryDate: NOV_1, createdAt: new Date('2026-11-03T09:00:00.000Z'), amount: 200_000 },
+        // An entry with its own time keeps it (10:30 Tashkent).
+        { entryDate: new Date('2026-11-01T05:30:00.000Z'), createdAt: new Date('2026-11-01T09:00:00.000Z'), amount: 300_000 },
+      ],
+    });
+    const amountAt = (label: string) => buckets.find((bucket) => bucket.label === label)?.amount;
+
+    expect(amountAt('00:00')).toBe(200_000);
+    expect(amountAt('10:00')).toBe(300_000);
+    expect(amountAt('14:00')).toBe(100_000);
+  });
+
+  it('keeps entryDate when there is no createdAt', () => {
+    expect(resolveIncomeInstant({ entryDate: NOV_1 })).toBe(NOV_1);
   });
 
   it('labels hourly buckets in Tashkent time', () => {
