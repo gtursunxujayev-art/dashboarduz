@@ -1,7 +1,9 @@
-import { adminProcedure, router } from '../trpc';
-import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
 import { queueService } from '../../services/queue';
+import { adminProcedure, router } from '../trpc';
 
 const notificationsListSchema = z.object({
   page: z.number().int().positive().default(1),
@@ -17,7 +19,7 @@ export const notificationsRouter = router({
       const { page, limit, status, type } = input;
       const skip = (page - 1) * limit;
 
-      const where: any = { tenantId: ctx.tenantId };
+      const where: Prisma.NotificationWhereInput = { tenantId: ctx.tenantId };
 
       if (status) {
         where.status = status;

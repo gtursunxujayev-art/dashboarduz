@@ -226,7 +226,7 @@ export const leadsRouter = router({
 
   create: protectedProcedure
     .input(createLeadSchema)
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message: 'Manual lead creation is disabled. Leads are managed in AmoCRM.',
@@ -238,7 +238,7 @@ export const leadsRouter = router({
       id: z.string().min(1),
       data: updateLeadSchema,
     }))
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message: 'Manual lead updates are disabled. Leads are managed in AmoCRM.',
@@ -247,7 +247,7 @@ export const leadsRouter = router({
 
   delete: protectedProcedure
     .input(z.object({ id: z.string().min(1) }))
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message: 'Manual lead deletion is disabled. Leads are managed in AmoCRM.',
