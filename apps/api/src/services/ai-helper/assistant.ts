@@ -6,6 +6,8 @@ import { TRPCError } from '@trpc/server';
 import type { AiProviderConfig } from '../../lib/ai-provider';
 import { logger } from '../../lib/logger';
 
+import { aiChatCompletionText, aiProviderErrorText, aiResponsesOutputText, readAiProviderBody } from './provider-response';
+
 let promptCache: { value: string; loadedAt: number } | null = null;
 
 const PROMPT_CACHE_TTL_MS = 60_000;
@@ -34,27 +36,6 @@ Format:
 - Qisqa va tushunarli javob.
 - Kerak bo'lsa bulletlardan foydalaning.
 `;
-
-function extractOpenAiText(body: any): string {
-  if (typeof body?.output_text === 'string') {
-    return body.output_text;
-  }
-  const chunks: string[] = [];
-
-  for (const block of body?.output || []) {
-    for (const part of block?.content || []) {
-      if (typeof part?.text === 'string') {
-        chunks.push(part.text);
-      }
-    }
-  }
-
-  return chunks.join('\n').trim();
-}
-
-function extractDeepSeekText(body: any): string {
-  return String(body?.choices?.[0]?.message?.content || '').trim();
-}
 
 export async function loadHelperPrompt(): Promise<string> {
   const now = Date.now();
@@ -150,16 +131,16 @@ export async function generateAssistantText(
       }),
     });
 
-    const body = await response.json().catch(() => ({}));
+    const body = await readAiProviderBody(response);
 
     if (!response.ok) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: String(body?.error?.message || `DeepSeek so'rovida xatolik: ${response.status}`),
+        message: aiProviderErrorText(body, `DeepSeek so'rovida xatolik: ${response.status}`),
       });
     }
 
-    return extractDeepSeekText(body);
+    return aiChatCompletionText(body);
   }
 
   const response = await fetch('https://api.openai.com/v1/responses', {
@@ -184,14 +165,14 @@ export async function generateAssistantText(
       ],
     }),
   });
-  const body = await response.json().catch(() => ({}));
+  const body = await readAiProviderBody(response);
 
   if (!response.ok) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: String(body?.error?.message || `OpenAI so'rovida xatolik: ${response.status}`),
+      message: aiProviderErrorText(body, `OpenAI so'rovida xatolik: ${response.status}`),
     });
   }
 
-  return extractOpenAiText(body);
+  return aiResponsesOutputText(body);
 }

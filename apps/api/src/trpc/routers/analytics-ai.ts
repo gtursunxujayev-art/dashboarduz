@@ -1,10 +1,12 @@
 import type { DbClient } from '@dashboarduz/db';
 import { aiFocusSchema, dateRangeInput, reportRangeSchema, toTashkentDateKey } from '@dashboarduz/shared';
+import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { resolveAiProvider } from '../../lib/ai-provider';
 import { resolveDateRange } from '../../lib/dates';
+import { aiChatCompletionText, aiProviderErrorText, aiResponsesOutputText, readAiProviderBody } from '../../services/ai-helper/provider-response';
 import { AMOCRM_CALL_PROVIDER } from '../../services/calls-source';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows, resolveSaleAgreementAmount } from '../../services/income-facts';
@@ -379,27 +381,6 @@ function fallbackAnalysis(inputSummary: Awaited<ReturnType<typeof collectAnalyti
   };
 }
 
-function extractOutputText(response: any): string {
-  if (typeof response?.output_text === 'string') {
-    return response.output_text;
-  }
-  const parts: string[] = [];
-
-  for (const item of response?.output || []) {
-    for (const content of item?.content || []) {
-      if (typeof content?.text === 'string') {
-        parts.push(content.text);
-      }
-    }
-  }
-
-  return parts.join('\n').trim();
-}
-
-function extractChatCompletionText(response: any): string {
-  return String(response?.choices?.[0]?.message?.content || '').trim();
-}
-
 function parseAiJson(text: string): unknown {
   const trimmed = text.trim();
 
@@ -440,16 +421,16 @@ async function generateWithDeepSeek(inputSummary: Awaited<ReturnType<typeof coll
     }),
   });
 
-  const body = await response.json().catch(() => ({}));
+  const body = await readAiProviderBody(response);
 
   if (!response.ok) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: String(body?.error?.message || `DeepSeek request failed with status ${response.status}`),
+      message: aiProviderErrorText(body, `DeepSeek request failed with status ${response.status}`),
     });
   }
 
-  return parseAiJson(extractChatCompletionText(body));
+  return parseAiJson(aiChatCompletionText(body));
 }
 
 async function generateWithOpenAIResponses(inputSummary: Awaited<ReturnType<typeof collectAnalyticsInput>>, apiKey: string, model: string) {
@@ -503,16 +484,16 @@ async function generateWithOpenAIResponses(inputSummary: Awaited<ReturnType<type
     }),
   });
 
-  const body = await response.json().catch(() => ({}));
+  const body = await readAiProviderBody(response);
 
   if (!response.ok) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: String(body?.error?.message || `OpenAI request failed with status ${response.status}`),
+      message: aiProviderErrorText(body, `OpenAI request failed with status ${response.status}`),
     });
   }
 
-  const text = extractOutputText(body);
+  const text = aiResponsesOutputText(body);
 
   return parseAiJson(text);
 }
@@ -566,8 +547,8 @@ export const analyticsAiRouter = router({
           focus: input.focus,
           promptVersion: ANALYTICS_AI_PROMPT_VERSION,
           model: generated.model,
-          inputSummary: inputSummary as any,
-          result: generated.result as any,
+          inputSummary: inputSummary as Prisma.InputJsonObject,
+          result: generated.result as Prisma.InputJsonValue,
         },
       });
 
