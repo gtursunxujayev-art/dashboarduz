@@ -51,10 +51,7 @@ beforeEach(() => {
 });
 
 describe('finance snapshot upload', () => {
-  // Bug (services/income-problems/finance-snapshot.ts:64 and 139-145): the payment-amount alias "to'lov" is a
-  // substring of the date header "to'lov sanasi", and detectMapping takes the first header containing any alias, so a
-  // sheet with the date column before "To'lov summasi" maps the payment amount to the date column.
-  it.skip("maps \"To'lov summasi\" (not \"To'lov sanasi\") to the payment amount (bug: finance-snapshot.ts:64)", async () => {
+  it("maps \"To'lov summasi\" (not \"To'lov sanasi\") to the payment amount", async () => {
     const prepared = await admin().prepareFinanceSnapshot({ workbookName: 'finance.xlsx', sheetName: 'Tushum', rows: sheet() });
 
     expect(prepared.mapping.paymentAmount).toBe(3);
@@ -76,10 +73,7 @@ describe('finance snapshot upload', () => {
     ]);
   });
 
-  // Bug (services/income-problems/finance-snapshot.ts parseMoney, lines 77-85): commas are turned into decimal points,
-  // so an amount written with thousands separators ("2,000,000") becomes "2.000.000", which is not a number, and the
-  // payment is stored as 0 without any error.
-  it.skip('reads "2,000,000" as 2 000 000 (bug: finance-snapshot.ts parseMoney)', async () => {
+  it('reads "2,000,000" as 2 000 000', async () => {
     const rows = sheet();
 
     rows[4]![3] = '2,000,000';

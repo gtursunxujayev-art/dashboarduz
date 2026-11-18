@@ -72,17 +72,38 @@ export function normalizeHeader(value: unknown): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ')
-    .replace(/[�']/g, "'");
+    // Typographic apostrophes and the Uzbek modifier letters (to‘lov, to’lov, toʻlov) read as a plain one.
+    .replace(/[\u2018\u2019\u02BB\u02BC`]/g, "'");
 }
 
-function parseMoney(value: unknown): number {
-  const raw = String(value ?? '').trim();
+/**
+ * A spreadsheet amount: spaces are dropped; when both "," and "." occur, the last one is the decimal point; a lone
+ * kind of separator is a thousands separator when it repeats or has exactly three digits after it ("2,000,000",
+ * "1.500"), otherwise a decimal point ("1500,50"). Returns NaN for text that is not an amount, 0 for an empty cell.
+ */
+export function parseMoney(value: unknown): number {
+  if (typeof value === 'number') return value;
+  const raw = String(value ?? '').replace(/[\s\u00A0]+/g, '').replace(/(so'?m|uzs|sum)$/i, '');
 
   if (!raw) return 0;
-  const normalized = raw.replace(/\s+/g, '').replace(/,/g, '.').replace(/[^\d.-]/g, '');
-  const parsed = Number(normalized);
+  const lastComma = raw.lastIndexOf(',');
+  const lastDot = raw.lastIndexOf('.');
+  let normalized = raw;
 
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (lastComma >= 0 && lastDot >= 0) {
+    const decimal = lastComma > lastDot ? ',' : '.';
+    const thousands = decimal === ',' ? '.' : ',';
+
+    normalized = raw.split(thousands).join('').replace(decimal, '.');
+  } else if (lastComma >= 0 || lastDot >= 0) {
+    const separator = lastComma >= 0 ? ',' : '.';
+    const parts = raw.split(separator);
+    const isThousands = parts.length > 2 || parts[parts.length - 1]!.length === 3;
+
+    normalized = isThousands ? parts.join('') : parts.join('.');
+  }
+
+  return /^-?\d+(\.\d+)?$/.test(normalized) ? Number(normalized) : Number.NaN;
 }
 
 function parseDateText(value: unknown): string | null {
@@ -137,9 +158,21 @@ export function detectMapping(headers: string[]): SnapshotMapping {
     deadline: null,
   };
 
-  (Object.keys(result) as Array<keyof SnapshotMapping>).forEach((field) => {
+  const fields = Object.keys(result) as Array<keyof SnapshotMapping>;
+  // A header that is exactly some field's alias belongs to that field: "to'lov sanasi" is the payment date even
+  // though it contains the payment amount alias "to'lov".
+  const exactOwner = (header: string) => fields.find((field) => HEADER_ALIASES[field].includes(header));
+
+  fields.forEach((field) => {
     const aliases = HEADER_ALIASES[field];
-    const foundIndex = headers.findIndex((header) => aliases.some((alias) => header.includes(alias)));
+    const exactIndex = headers.findIndex((header) => aliases.includes(header));
+    const foundIndex = exactIndex >= 0
+      ? exactIndex
+      : headers.findIndex((header) => {
+        const owner = exactOwner(header);
+
+        return (!owner || owner === field) && aliases.some((alias) => header.includes(alias));
+      });
 
     if (foundIndex >= 0) result[field] = foundIndex;
   });
@@ -164,13 +197,19 @@ export function normalizeFinanceRows(rows: Array<Array<string | number | boolean
     const customerName = String(getCell(row, mapping.customerName) ?? '').trim();
     const normalizedPhone = normalizeDigits(customerPhone);
     const normalizedName = normalizeMatchText(customerName, { collapseWhitespace: true });
-    const paymentAmount = parseMoney(getCell(row, mapping.paymentAmount));
+    const rawPayment = getCell(row, mapping.paymentAmount);
+    const paymentAmount = parseMoney(rawPayment);
 
-    if (!paymentDate && !normalizedPhone && !normalizedName && paymentAmount === 0) {
+    if (!paymentDate && !normalizedPhone && !normalizedName && !paymentAmount) {
       return;
     }
     if (!normalizedPhone && !normalizedName) {
       errors.push(`Qator ${rowIndex + 1}: mijoz telefoni yoki ismi topilmadi.`);
+
+      return;
+    }
+    if (Number.isNaN(paymentAmount)) {
+      errors.push(`Qator ${rowIndex + 1}: to'lov summasi o'qilmadi (${String(rawPayment).slice(0, 40)}).`);
 
       return;
     }
@@ -186,9 +225,9 @@ export function normalizeFinanceRows(rows: Array<Array<string | number | boolean
       tariffName: String(getCell(row, mapping.tariffName) ?? '').trim(),
       subTariffName: String(getCell(row, mapping.subTariffName) ?? '').trim(),
       paymentType: String(getCell(row, mapping.paymentType) ?? '').trim(),
-      agreementAmount: parseMoney(getCell(row, mapping.agreementAmount)),
+      agreementAmount: parseMoney(getCell(row, mapping.agreementAmount)) || 0,
       paymentAmount,
-      remainingDebtAmount: parseMoney(getCell(row, mapping.remainingDebtAmount)),
+      remainingDebtAmount: parseMoney(getCell(row, mapping.remainingDebtAmount)) || 0,
       deadline: parseDateText(getCell(row, mapping.deadline)),
       normalizedPhone,
       normalizedName,

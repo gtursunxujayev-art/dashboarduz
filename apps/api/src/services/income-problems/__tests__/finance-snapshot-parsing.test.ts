@@ -1,5 +1,5 @@
 import { groupRows, parseDateRange, summarizeComparisons } from '../comparison';
-import { detectHeaderRow, detectMapping, type FinanceSnapshotRow, normalizeFinanceRows, normalizeHeader, type SnapshotMapping } from '../finance-snapshot';
+import { detectHeaderRow, detectMapping, type FinanceSnapshotRow, normalizeFinanceRows, normalizeHeader, parseMoney, type SnapshotMapping } from '../finance-snapshot';
 
 const SHEET: Array<Array<string | number | boolean | null>> = [
   ['Moliya hisoboti', null, null],
@@ -49,12 +49,12 @@ describe('finance snapshot parsing', () => {
     });
   });
 
-  it('normalizes data rows, skips blank ones and reports rows without a phone or name', () => {
+  it('normalizes data rows, skips blank ones and reports rows without a phone or name or with an unreadable amount', () => {
     const mapping = mappingFor(SHEET);
     const { normalizedRows, errors } = normalizeFinanceRows(SHEET.slice(3), mapping);
 
-    expect(errors).toEqual(['Qator 4: mijoz telefoni yoki ismi topilmadi.']);
-    expect(normalizedRows).toHaveLength(3);
+    expect(errors).toEqual(['Qator 4: mijoz telefoni yoki ismi topilmadi.', "Qator 5: to'lov summasi o'qilmadi (abc)."]);
+    expect(normalizedRows).toHaveLength(2);
     expect(normalizedRows[0]).toEqual({
       rowIndex: 1,
       paymentDate: '2026-03-05',
@@ -74,7 +74,29 @@ describe('finance snapshot parsing', () => {
       normalizedName: 'ali valiyev',
     });
     expect(normalizedRows[1]).toMatchObject({ rowIndex: 2, paymentDate: '2026-03-07', paymentAmount: 500.5, normalizedPhone: '', normalizedName: 'olim' });
-    expect(normalizedRows[2]).toMatchObject({ rowIndex: 5, paymentDate: null, paymentAmount: 0, normalizedPhone: '998901234567' });
+  });
+
+  it.each([
+    ['2,000,000', 2_000_000],
+    ['2.000.000', 2_000_000],
+    ['1 200 000', 1_200_000],
+    ["1\u00A0200\u00A0000 so'm", 1_200_000],
+    ['1,500', 1_500],
+    ['1500,50', 1500.5],
+    ['1.234.567,89', 1_234_567.89],
+    ['1,234,567.89', 1_234_567.89],
+    ['-300 000', -300_000],
+    [750_000, 750_000],
+    ['', 0],
+    ['abc', Number.NaN],
+  ])('reads the amount %p as %p', (value, expected) => {
+    expect(parseMoney(value)).toBe(expected);
+  });
+
+  it('reads typographic apostrophes in headers as a plain one and keeps the date column out of the payment amount', () => {
+    expect(normalizeHeader('To\u2018lov sanasi')).toBe("to'lov sanasi");
+    expect(normalizeHeader('To\u02BBlov summasi')).toBe("to'lov summasi");
+    expect(detectMapping(["to'lov sanasi", 'telefon', "to'lov summasi"])).toMatchObject({ paymentDate: 0, paymentAmount: 2 });
   });
 });
 
