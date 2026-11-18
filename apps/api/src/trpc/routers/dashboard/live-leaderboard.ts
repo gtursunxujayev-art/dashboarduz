@@ -5,14 +5,14 @@ import { calculateBonusRange } from '../../../services/bonus-engine';
 import { buildCacheKey, getOrSet } from '../../../services/cache';
 import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
-import { type AgentGroup, canReadLiveLeaderboard, courseScopedIncomeWhere, getAgentLabel, groupAgentRoles, incomeRowSelect, type LeaderboardAgent, loadAgreementBonusAndDebt, loadPreviousOnlineCourses, pickLeaderboardWinner, projectMonthlyKutilma, resolveAgentGroup, sumCourseBonusByAgent, summarizeLeaderboardAgents } from '../../../services/dashboard/live-leaderboard';
+import { type AgentGroup, boardIncomeWhere, canReadLiveLeaderboard, courseScopedIncomeWhere, getAgentLabel, groupAgentRoles, incomeRowSelect, type LeaderboardAgent, loadAdditionalServiceCourseIds, loadAgreementBonusAndDebt, loadPreviousOnlineCourses, mergeAgreementBonusAndDebt, pickLeaderboardWinner, projectMonthlyKutilma, resolveAgentGroup, sumCourseBonusByAgent, summarizeLeaderboardAgents } from '../../../services/dashboard/live-leaderboard';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../../../services/income-facts';
 
 import { protectedProcedure, TRPCError, z } from './helpers';
 import { loadSelectedReportCourses } from './selected-report-courses';
 
-export { resolveAgentGroup, sumBonusByAgent, sumCourseBonusByAgent, courseScopedIncomeWhere, summarizeLeaderboardAgents, compareLeaderboardAgents, pickLeaderboardWinner, type AgreementSale, summarizeAgreementBonusAndDebt, type OpenSale, projectMonthlyKutilma, pickPreviousCourseIds } from '../../../services/dashboard/live-leaderboard';
+export { boardIncomeWhere, mergeAgreementBonusAndDebt, resolveAgentGroup, sumBonusByAgent, sumCourseBonusByAgent, courseScopedIncomeWhere, summarizeLeaderboardAgents, compareLeaderboardAgents, pickLeaderboardWinner, type AgreementSale, summarizeAgreementBonusAndDebt, type OpenSale, projectMonthlyKutilma, pickPreviousCourseIds } from '../../../services/dashboard/live-leaderboard';
 
 // The boards are shown on several screens at once and polled often, and their data depends only on
 // the tenant and the board group (the role check runs before the cache). One computation is shared
@@ -108,12 +108,25 @@ export const liveLeaderboardProcedures = {
     const groupedAgents = agents.filter((agent) => resolveAgentGroup(agent.roles) === 'online');
     const agentIds = groupedAgents.map((agent) => agent.id);
 
-    const [current, previousCourses] = await Promise.all([
+    const monthStart = getRangeStart('month', now);
+    const extraCourseIds = await loadAdditionalServiceCourseIds(ctx.tenantId, ctx.db);
+    const [selectedCourse, extraCourses, previousCourses] = await Promise.all([
       courseIds.length
         ? loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: courseIds } }, now, db: ctx.db })
         : null,
+      // Qo'shimcha xizmat sales of this month count next to the selected course.
+      extraCourseIds.length
+        ? loadAgreementBonusAndDebt({
+            tenantId: ctx.tenantId,
+            agentIds,
+            saleWhere: { courseId: { in: extraCourseIds }, entryDate: { gte: monthStart, lte: now } },
+            now,
+            db: ctx.db,
+          })
+        : null,
       loadPreviousOnlineCourses(ctx.tenantId, courseIds, ctx.db),
     ]);
+    const current = mergeAgreementBonusAndDebt(selectedCourse, extraCourses);
     const previousCourseIds = previousCourses.map((course) => course.id);
 
     let winner: ReturnType<typeof pickLeaderboardWinner> = null;
@@ -267,7 +280,9 @@ export const liveLeaderboardProcedures = {
     // The online board shows the courses selected for the Telegram report instead of the month; all of them
     // together when several are selected, nothing when none is. The offline board stays monthly.
     const courseIds = requestedGroup === 'online' ? selectedReportCourses.map((course) => course.courseId) : null;
-    const courseWhere = courseIds ? courseScopedIncomeWhere(courseIds) : {};
+    // Qo'shimcha xizmat (not online/offline/intensive) sales count on the seller's own board this month.
+    const extraCourseIds = await loadAdditionalServiceCourseIds(ctx.tenantId, ctx.db);
+    const courseWhere = courseIds ? boardIncomeWhere(courseIds, extraCourseIds, monthStart) : {};
 
     if (!agentIds.length) {
       return {
@@ -284,6 +299,7 @@ export const liveLeaderboardProcedures = {
     }
 
     const offlineCourseIds = courseIds ? [] : selectedReportCourses.map((course) => course.courseId);
+    const offlineBonusCourseIds = courseIds ? [] : [...offlineCourseIds, ...extraCourseIds];
     const [rowsRaw, latestRowsRaw, offlineMonthBonus] = await Promise.all([
       ctx.db.income.findMany({
         where: {
@@ -314,13 +330,25 @@ export const liveLeaderboardProcedures = {
       // all over the selected offline course(s): Fakt is this month's real bonus from the bonus engine (sales paid
       // off in earlier months were already paid out and are left out), Kutilma is this month's bonus if every
       // still-unpaid sale of the course were paid off this month (projectMonthlyKutilma).
-      offlineCourseIds.length
+      offlineBonusCourseIds.length
         ? calculateBonusRange({ tenantId: ctx.tenantId, rangeStart: monthStart, rangeEnd: now, db: ctx.db })
         : null,
     ]);
-    const offlineCourseStats = offlineCourseIds.length
-      ? await loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: offlineCourseIds } }, now, db: ctx.db })
-      : null;
+    const [offlineSelectedStats, offlineExtraStats] = await Promise.all([
+      offlineCourseIds.length
+        ? loadAgreementBonusAndDebt({ tenantId: ctx.tenantId, agentIds, saleWhere: { courseId: { in: offlineCourseIds } }, now, db: ctx.db })
+        : null,
+      !courseIds && extraCourseIds.length
+        ? loadAgreementBonusAndDebt({
+            tenantId: ctx.tenantId,
+            agentIds,
+            saleWhere: { courseId: { in: extraCourseIds }, entryDate: { gte: monthStart, lte: now } },
+            now,
+            db: ctx.db,
+          })
+        : null,
+    ]);
+    const offlineCourseStats = mergeAgreementBonusAndDebt(offlineSelectedStats, offlineExtraStats);
 
     // Technical sales (agreement == 1) and their repayments are not real income; only look up the sales we loaded.
     const technicalSaleIds = await loadTechnicalSaleIdsForRows(ctx.tenantId, [...rowsRaw, ...latestRowsRaw], ctx.db);
@@ -335,14 +363,14 @@ export const liveLeaderboardProcedures = {
     )).length;
 
     const stats = summarizeLeaderboardAgents({ agentIds, rows: periodRows, todayStart });
-    const bonusFactByAgent = sumCourseBonusByAgent(offlineMonthBonus?.items || [], agentIds, offlineCourseIds);
+    const bonusFactByAgent = sumCourseBonusByAgent(offlineMonthBonus?.items || [], agentIds, offlineBonusCourseIds);
     const currentMonthPolicy = offlineMonthBonus?.months[offlineMonthBonus.months.length - 1]?.policy;
     const bonusByAgent = offlineMonthBonus && currentMonthPolicy
       ? projectMonthlyKutilma({
           agentIds,
           policy: currentMonthPolicy,
           monthItems: offlineMonthBonus.items,
-          courseIds: offlineCourseIds,
+          courseIds: offlineBonusCourseIds,
           openSales: offlineCourseStats?.openSales || [],
         })
       : new Map<string, number>();

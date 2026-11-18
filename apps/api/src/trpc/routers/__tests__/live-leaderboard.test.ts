@@ -2,8 +2,10 @@ import { systemPrisma as prisma } from '@dashboarduz/db';
 
 import { buildLegacyBonusPolicy, calculateBonusMonth, type BonusCalculationItem } from '../../../services/bonus-engine';
 import {
+  boardIncomeWhere,
   compareLeaderboardAgents,
   courseScopedIncomeWhere,
+  mergeAgreementBonusAndDebt,
   pickLeaderboardWinner,
   pickPreviousCourseIds,
   projectMonthlyKutilma,
@@ -162,6 +164,48 @@ describe('live leaderboard numbers', () => {
     expect(result.bonusPending.get('a')).toBe(500_000);
     expect(result.debt.get('a')).toBe(3_000_000);
     expect(result.bonus.has('x')).toBe(false);
+  });
+
+  it("pays Qo'shimcha xizmat sales the additional_service bonus rule", () => {
+    const course = { name: "O'quv quroli", category: 'additional_service' };
+    const policy = buildLegacyBonusPolicy({ salary: { bonusMode: 'on_income', bonusPercentages: { additional_service: 10 } } });
+    const result = summarizeAgreementBonusAndDebt({
+      agentIds: ['m'],
+      policy,
+      sales: [{ id: 's1', managerUserId: 'm', courseId: 'tool', coursePriceAmount: 450_000, debtAmount: null, paymentAmount: 450_000, course }],
+      paidBySaleId: new Map([['s1', 450_000]]),
+    });
+
+    expect(result.bonus.get('m')).toBe(45_000);
+    expect(result.bonusFact.get('m')).toBe(45_000);
+    expect(result.debt.get('m')).toBe(0);
+  });
+
+  it("scopes board income to the selected course plus this month's extra courses", () => {
+    const monthStart = new Date('2026-11-01T00:00:00+05:00');
+
+    expect(boardIncomeWhere(['nov'], ['tool'], monthStart)).toEqual({
+      OR: [
+        courseScopedIncomeWhere(['nov']),
+        { AND: [courseScopedIncomeWhere(['tool']), { entryDate: { gte: monthStart } }] },
+      ],
+    });
+    expect(boardIncomeWhere([], ['tool'], monthStart)).toEqual({
+      OR: [{ AND: [courseScopedIncomeWhere(['tool']), { entryDate: { gte: monthStart } }] }],
+    });
+    expect(boardIncomeWhere([], [], monthStart)).toEqual(courseScopedIncomeWhere([]));
+  });
+
+  it('adds the extra courses bonus and debt to the selected course, agent by agent', () => {
+    const empty = { bonus: new Map(), bonusFact: new Map(), bonusPending: new Map(), debt: new Map(), openSales: [] };
+    const selected = { ...empty, bonus: new Map([['a', 100]]), debt: new Map([['a', 5]]) };
+    const extra = { ...empty, bonus: new Map([['a', 45], ['b', 10]]), openSales: [{ managerUserId: 'b', courseId: 'tool', category: 'additional_service' as const, agreement: 1, remaining: 1 }] };
+    const merged = mergeAgreementBonusAndDebt(selected, extra);
+
+    expect(merged?.bonus).toEqual(new Map([['a', 145], ['b', 10]]));
+    expect(merged?.debt.get('a')).toBe(5);
+    expect(merged?.openSales).toHaveLength(1);
+    expect(mergeAgreementBonusAndDebt(null, extra)).toBe(extra);
   });
 
   it('finds the course selected before the current one', () => {
