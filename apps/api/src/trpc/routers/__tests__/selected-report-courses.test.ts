@@ -20,11 +20,12 @@ describe('selected report courses', () => {
       status: 'active',
       config: { telegramDailyReportCourseIds: ['course-online', 'course-offline', 'course-intensive'] },
     } as never);
-    jest.spyOn(prisma.course, 'findMany').mockResolvedValue([
+    const courseFindMany = jest.spyOn(prisma.course, 'findMany').mockResolvedValue([
       { id: 'course-offline', name: 'Offline-Sentyabr', category: 'offline', tariffs: [{ id: 'standard', name: 'Standart' }] },
       { id: 'course-intensive', name: 'Intensiv-2026', category: 'intensive', tariffs: [] },
       { id: 'course-online', name: 'Online-Sentyabr', category: 'online', tariffs: [{ id: 'premium', name: 'Premium' }] },
     ] as never);
+
     jest.spyOn(prisma.income, 'findMany')
       .mockResolvedValueOnce([
         {
@@ -55,7 +56,7 @@ describe('selected report courses', () => {
 
     const result = await loadSelectedReportCourses('tenant-1', prisma);
 
-    expect(prisma.course.findMany).toHaveBeenCalledWith(expect.objectContaining({
+    expect(courseFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ tenantId: 'tenant-1' }),
     }));
     expect(result.map((course) => course.courseId)).toEqual([
