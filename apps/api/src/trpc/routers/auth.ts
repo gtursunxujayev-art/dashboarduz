@@ -250,6 +250,8 @@ export const authRouter = router({
           sessionId: result.messageId,
         };
       } catch (error: unknown) {
+        // A deliberate answer (rate limit, send failure) goes out as is, not as a 500.
+        if (error instanceof TRPCError) throw error;
         logger.error({ err: error, phone: maskPhone(input?.phone) }, '[Auth] OTP request error');
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',

@@ -233,9 +233,7 @@ describe('auth.requestOtp', () => {
     expect(mockSendOtp).not.toHaveBeenCalled();
   });
 
-  // BUG (apps/api/src/trpc/routers/auth.ts:236-242): the TOO_MANY_REQUESTS error thrown inside the try is caught
-  // and re-thrown as INTERNAL_SERVER_ERROR, so clients see a 500 instead of a 429. verifyOtp re-throws TRPCErrors.
-  it.skip('answers a rate-limited OTP request with TOO_MANY_REQUESTS', async () => {
+  it('answers a rate-limited OTP request with TOO_MANY_REQUESTS', async () => {
     mockIsAllowed.mockResolvedValue({ allowed: false });
 
     expect((await rejection(publicCaller().requestOtp({ phone: '+998901112233' }))).code).toBe('TOO_MANY_REQUESTS');
