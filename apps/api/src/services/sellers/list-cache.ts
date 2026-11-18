@@ -1,3 +1,4 @@
+import type { SellerListRow } from './list-rows';
 import type { SellerRange } from './metrics';
 
 export const SELLERS_LIST_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -6,7 +7,7 @@ export const SELLERS_ACTIVITY_CACHE_TTL_MS = 10 * 60 * 1000;
 
 type SellersListCacheEntry = {
   expiresAt: number;
-  data: any[];
+  data: SellerListRow[];
 };
 
 export const sellersListCache = new Map<string, SellersListCacheEntry>();

@@ -1,15 +1,12 @@
 import { getAgentResponsibleScope } from '../../../lib/access';
 import { getRangeStart } from '../../../lib/dates';
 import { asObject } from '../../../lib/object';
+import { readDashboardSettings } from '../../../services/dashboard/dashboard-settings';
+import { classifyLeadQualification, type LeadQualificationRules } from '../../../services/dashboard/lead-qualification';
+import type { AmoCRMLead } from '../../../services/integrations/amocrm';
 import { getAmoLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
 
-import {
-  asStringArray,
-  extractLeadValue,
-  getTenantAmoCRMContext,
-  isMappedValue,
-  protectedProcedure,
-} from './helpers';
+import { getTenantAmoCRMContext, protectedProcedure } from './helpers';
 
 type LeadPeriod = {
   total: number;
@@ -39,16 +36,12 @@ function emptyPeriod(): LeadPeriod {
   return { total: 0, qualified: 0, nonQualified: 0 };
 }
 
-export function calculateLeadPeriods(params: {
-  leads: any[];
+export function calculateLeadPeriods(params: LeadQualificationRules & {
+  leads: AmoCRMLead[];
   now: Date;
   dayStart: Date;
   weekStart: Date;
   monthStart: Date;
-  reasonFieldKey: string | null;
-  qualifiedValues: string[];
-  nonQualifiedValues: string[];
-  qualifiedStageIds: string[];
 }) {
   const daily = emptyPeriod();
   const weekly = emptyPeriod();
@@ -60,13 +53,7 @@ export function calculateLeadPeriods(params: {
 
     if (!createdAt || createdAt < earliestStart || createdAt > params.now) continue;
 
-    const reasonValue = extractLeadValue(lead, params.reasonFieldKey);
-    const stageId = lead.status_id === null || lead.status_id === undefined ? null : String(lead.status_id);
-    const qualified = params.qualifiedStageIds.length > 0
-      ? Boolean(stageId && params.qualifiedStageIds.includes(stageId))
-      : isMappedValue(reasonValue, params.qualifiedValues);
-    const nonQualified = params.nonQualifiedValues.length > 0
-      && isMappedValue(reasonValue, params.nonQualifiedValues);
+    const { qualified, nonQualified } = classifyLeadQualification(lead, params);
 
     for (const [start, period] of [
       [params.monthStart, monthly],
@@ -113,14 +100,7 @@ export const leadOverviewProcedures = {
       };
     }
 
-    const tenantSettings = asObject(tenant?.settings) ?? {};
-    const dashboardSettings = asObject(tenantSettings.dashboard) ?? {};
-    const reasonFieldKey = typeof dashboardSettings.reasonFieldKey === 'string'
-      ? dashboardSettings.reasonFieldKey
-      : null;
-    const qualifiedValues = asStringArray(dashboardSettings.qualifiedValues);
-    const nonQualifiedValues = asStringArray(dashboardSettings.nonQualifiedValues);
-    const qualifiedStageIds = asStringArray(dashboardSettings.qualifiedStageIds);
+    const { reasonFieldKey, qualifiedValues, nonQualifiedValues, qualifiedStageIds } = readDashboardSettings(tenant?.settings);
     const monthStart = getRangeStart('month', now);
     const weekStart = getRangeStart('week', now);
     const dayStart = getRangeStart('today', now);
@@ -152,8 +132,8 @@ export const leadOverviewProcedures = {
       });
 
       return { available: true, reason: null, daily, weekly, monthly };
-    } catch (error: any) {
-      const message = String(error?.message || error).toLowerCase();
+    } catch (error: unknown) {
+      const message = String(asObject(error)?.message || error).toLowerCase();
 
       return {
         available: false,
