@@ -4,6 +4,7 @@ import { toTashkentDateKey } from '@dashboarduz/shared';
 import { sleep } from '../../../lib/async';
 import { logger } from '../../../lib/logger';
 import { parseTelegramDailyReportCourseIds, resolveTelegramBotToken } from '../../../lib/telegram';
+import { thrownMessageOr } from '../../../lib/thrown';
 import { telegramService } from '../../integrations/telegram';
 import { listTelegramRecipients } from '../../integrations/telegram-recipient-store';
 import { reportError } from '../../observability';
@@ -197,7 +198,7 @@ export async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promis
         schedule: window.kind,
         recipients: sent.recipientCount,
       }, 'Scheduled Telegram report sent');
-    } catch (error: any) {
+    } catch (error) {
       // Keep the lock but shorten it, so the next attempt comes after RETRY_DELAY_SECONDS rather than on the
       // next 30-second tick. After MAX_SEND_ATTEMPTS the full lock stays and this window is given up.
       const attempts = await redis.incr(attemptsKey);
@@ -216,7 +217,7 @@ export async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promis
             schedule: window.kind,
             periodStart: window.periodStart.toISOString(),
             periodEnd: window.periodEnd.toISOString(),
-            error: error?.message || 'Unknown error',
+            error: thrownMessageOr(error, 'Unknown error'),
             attempt: attempts,
             willRetry: attempts < MAX_SEND_ATTEMPTS,
           },
@@ -227,7 +228,7 @@ export async function dispatchWindow(window: ReportWindow, nowUtc: Date): Promis
         tenantId: integration.tenantId,
         schedule: window.kind,
         attempt: attempts,
-        error: error?.message || 'Unknown error',
+        error: thrownMessageOr(error, 'Unknown error'),
       });
     }
   }

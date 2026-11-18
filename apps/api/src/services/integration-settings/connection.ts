@@ -2,6 +2,9 @@ import type { DbClient } from '@dashboarduz/db';
 import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
+import { errorName } from '../../lib/errors';
+import { thrownMessageOr } from '../../lib/thrown';
+
 export function normalizeBaseUrl(url?: string): string | null {
   if (!url) {
     return null;
@@ -13,7 +16,7 @@ export function normalizeBaseUrl(url?: string): string | null {
 type AmoFailureReason = 'decrypt_failed' | 'token_invalid' | 'network_timeout' | 'amo_unavailable';
 
 export function detectAmoFailureReason(error: unknown): AmoFailureReason {
-  const message = String((error as any)?.message || '').toLowerCase();
+  const message = thrownMessageOr(error, '').toLowerCase();
 
   if (message.includes('failed to decrypt integration tokens')) {
     return 'decrypt_failed';
@@ -89,8 +92,8 @@ export async function fetchAmoCRMAccountByToken(accessToken: string, baseUrl: st
       },
       signal: controller.signal,
     });
-  } catch (error: any) {
-    if (error?.name === 'AbortError') {
+  } catch (error) {
+    if (errorName(error) === 'AbortError') {
       throw new TRPCError({
         code: 'TIMEOUT',
         message: amoFailureMessage('Failed to validate AmoCRM long-lived token', 'network_timeout'),

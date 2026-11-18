@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { logger } from '../../../lib/logger';
+import { thrownMessageOr, thrownText } from '../../../lib/thrown';
 import { amoFailureHelp, amoFailureMessage, detectAmoFailureReason, fetchAmoCRMAccountByToken, normalizeBaseUrl, upsertActiveIntegration } from '../../../services/integration-settings/connection';
 import { amocrmService } from '../../../services/integrations/amocrm';
 import { getAmoReference, refreshAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
@@ -25,7 +26,7 @@ export const amocrmIntegrationProcedures = {
 
       try {
         accountInfo = await fetchAmoCRMAccountByToken(input.longLivedToken.trim(), resolvedBaseUrl);
-      } catch (error: any) {
+      } catch (error) {
         if (error instanceof TRPCError) {
           throw error;
         }
@@ -94,7 +95,7 @@ export const amocrmIntegrationProcedures = {
         amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
         contextError = null;
         break;
-      } catch (error: any) {
+      } catch (error) {
         contextError = error;
         if (attempt < 2) {
           continue;
@@ -109,7 +110,7 @@ export const amocrmIntegrationProcedures = {
         tenantId: ctx.tenantId,
         reason,
         retried: true,
-        error: String((contextError as any)?.message || contextError),
+        error: thrownText(contextError),
       }, '[AmoCRM][Pipelines] Context load failed');
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
@@ -127,17 +128,17 @@ export const amocrmIntegrationProcedures = {
 
     try {
       pipelinesResponse = await getAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db);
-    } catch (firstError: any) {
+    } catch (firstError) {
       try {
         pipelinesResponse = await refreshAmoReference(ctx.tenantId, 'pipelines', amoContext, ctx.db);
-      } catch (secondError: any) {
+      } catch (secondError) {
         const reason = detectAmoFailureReason(secondError || firstError);
 
         logger.warn({
           tenantId: ctx.tenantId,
           reason,
           retried: true,
-          error: String((secondError)?.message || (firstError)?.message || secondError || firstError),
+          error: thrownMessageOr(secondError, '') || thrownMessageOr(firstError, '') || String(secondError || firstError),
         }, '[AmoCRM][Pipelines] Fetch failed');
         const help = amoFailureHelp(reason);
 

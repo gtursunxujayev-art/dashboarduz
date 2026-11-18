@@ -1,7 +1,9 @@
+import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
+import { thrownMessageOr, thrownText } from '../../../lib/thrown';
 import { telegramRecipientStorageErrorMessage } from '../../../services/integration-settings/connection';
 import { listTelegramRecipients, updateTelegramRecipientSelection } from '../../../services/integrations/telegram-recipient-store';
 import { applyTelegramRecipientsToConfig } from '../../../services/integrations/telegram-recipients';
@@ -135,8 +137,8 @@ export const telegramReportProcedures = {
           selectedChatIds: input.chatIds,
           db: ctx.db,
         });
-      } catch (error: any) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: String(error?.message || error) });
+      } catch (error) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: thrownText(error) });
       }
       const selectedDailyReportCourseIds = Array.from(new Set(
         (input.dailyReportCourseIds || [])
@@ -175,7 +177,7 @@ export const telegramReportProcedures = {
 
       await ctx.db.integration.update({
         where: { id: integration.id },
-        data: { config: configWithCourseSelection as any },
+        data: { config: configWithCourseSelection as Prisma.InputJsonObject },
       });
 
       await ctx.db.auditLog.create({
@@ -204,40 +206,40 @@ export const telegramReportProcedures = {
       const result = await sendImmediateTodayReportForTenant(ctx.tenantId, ctx.db);
 
       return result;
-    } catch (error: any) {
+    } catch (error) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: error?.message || 'Failed to send report',
+        message: thrownMessageOr(error, 'Failed to send report'),
       });
     }
   }),
   sendTelegramGroupSummaryNow: adminProcedure.mutation(async ({ ctx }) => {
     try {
       return await sendTelegramGroupSummariesForTenant(ctx.tenantId, ctx.db);
-    } catch (error: any) {
+    } catch (error) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: error?.message || 'Guruh hisobotini yuborishda xatolik',
+        message: thrownMessageOr(error, 'Guruh hisobotini yuborishda xatolik'),
       });
     }
   }),
   sendTelegramWeeklyReportNow: adminProcedure.mutation(async ({ ctx }) => {
     try {
       return await sendManualTelegramReportForTenant(ctx.tenantId, 'weekly', ctx.db);
-    } catch (error: any) {
+    } catch (error) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: error?.message || 'Failed to send report',
+        message: thrownMessageOr(error, 'Failed to send report'),
       });
     }
   }),
   sendTelegramMonthlyReportNow: adminProcedure.mutation(async ({ ctx }) => {
     try {
       return await sendManualTelegramReportForTenant(ctx.tenantId, 'monthly', ctx.db);
-    } catch (error: any) {
+    } catch (error) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: error?.message || 'Failed to send report',
+        message: thrownMessageOr(error, 'Failed to send report'),
       });
     }
   }),
