@@ -8,12 +8,13 @@ module.exports = {
   testMatch: ['**/__tests__/**/*.test.ts'],
   collectCoverageFrom: ['src/**/*.ts', '!src/**/__tests__/**', '!src/**/*.d.ts'],
   coverageReporters: ['text-summary', 'json-summary', 'lcov'],
-  // Floors at the measured level (Nov 2026, re-measured after the wave-1 merge) so coverage cannot silently drop. The Postgres integration tests
-  // (run when TEST_DATABASE_URL is set, as in CI) cover more, so they get their own, higher floor.
+  // Floors just under the measured level (Plan D, Nov 2026: 79.6% lines without a database, 80.2% with one) so
+  // coverage cannot silently drop. The Postgres integration tests (run when TEST_DATABASE_URL is set, as in CI) cover
+  // more, so they get their own, higher floor.
   coverageThreshold: {
     global: process.env.TEST_DATABASE_URL
-      ? { statements: 21.6, branches: 12.7, functions: 19.1, lines: 21.8 }
-      : { statements: 14.5, branches: 9.5, functions: 14.7, lines: 14.6 },
+      ? { statements: 79, branches: 64.5, functions: 74, lines: 79.8 }
+      : { statements: 78.5, branches: 63.5, functions: 73.5, lines: 79 },
   },
   moduleNameMapper: {
     '^@dashboarduz/shared$': '<rootDir>/../../packages/shared/src',
