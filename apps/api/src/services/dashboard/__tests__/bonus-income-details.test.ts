@@ -76,10 +76,7 @@ describe('loadBonusIncomeDetails', () => {
     expect(result.summaryTotals.totalBonusAmount).toBe(0);
   });
 
-  // Bug (bonus-income-details.ts:129-143): the sales query selects no `type`, and buildTechnicalSaleIdSet
-  // (technical-income.ts:20-23) only flags rows whose type is 'new_sale', so no technical sale is ever recognised here.
-  // A technical sale (agreement 1) then shows up as a row and its 1 so'm is added to the income totals.
-  it.skip('leaves technical sales out of the rows and totals (bug: bonus-income-details.ts:129-143)', async () => {
+  it('leaves technical sales out of the rows and totals', async () => {
     const technicalCustomer = seedCustomer(fixture, '998931110009', 'Technical');
 
     seedSaleChain(fixture, { customerId: technicalCustomer, agreementAmount: 1, firstPayment: 1, entryDate: tashkentMonthDay(1, 6) });

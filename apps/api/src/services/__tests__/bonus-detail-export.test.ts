@@ -23,12 +23,10 @@ describe('bonus detail export filters', () => {
       managerUserId: { in: ['agent-a'] },
       courseId: 'course-a',
       entryDate: { gte: rangeStart, lte: rangeEnd },
-      NOT: {
-        OR: [
-          { id: { in: ['technical-sale'] } },
-          { relatedDebtIncomeId: { in: ['technical-sale'] } },
-        ],
-      },
+      AND: [
+        { id: { notIn: ['technical-sale'] } },
+        { OR: [{ relatedDebtIncomeId: null }, { relatedDebtIncomeId: { notIn: ['technical-sale'] } }] },
+      ],
     });
   });
 

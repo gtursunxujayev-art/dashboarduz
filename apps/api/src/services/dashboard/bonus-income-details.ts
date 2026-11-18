@@ -128,6 +128,8 @@ export async function loadBonusIncomeDetails({
         },
         select: {
           id: true,
+          // buildTechnicalSaleIdSet only flags rows whose type is 'new_sale'; without it no technical sale is found.
+          type: true,
           courseId: true,
           managerUserId: true,
           coursePriceAmount: true,

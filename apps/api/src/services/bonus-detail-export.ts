@@ -21,14 +21,14 @@ export function buildBonusDetailIncomeWhere(params: {
       gte: params.rangeStart,
       lte: params.rangeEnd,
     },
+    // Not a technical sale and not linked to one. Spelled out per column: `NOT (id IN t OR relatedDebtIncomeId IN t)`
+    // is NULL in SQL for a sale (relatedDebtIncomeId NULL) and would drop every real sale.
     ...(technicalSaleIds.length > 0
       ? {
-          NOT: {
-            OR: [
-              { id: { in: technicalSaleIds } },
-              { relatedDebtIncomeId: { in: technicalSaleIds } },
-            ],
-          },
+          AND: [
+            { id: { notIn: technicalSaleIds } },
+            { OR: [{ relatedDebtIncomeId: null }, { relatedDebtIncomeId: { notIn: technicalSaleIds } }] },
+          ],
         }
       : {}),
   };
