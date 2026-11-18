@@ -75,15 +75,11 @@ describe('integrity report and chain repair', () => {
     setIncome(chain.repaymentIds[0]!, { debtAmount: 9_999 });
     await admin().repairAllActiveChains({ limit: 100 });
 
-    // The sale row itself is left at its first-payment debt: see the skipped test below.
     expect(income(chain.repaymentIds[0]!)).toMatchObject({ debtAmount: 2_000_000, remainingDebtAmount: 1_500_000 });
+    expect(income(chain.saleId)).toMatchObject({ debtAmount: 3_000_000, remainingDebtAmount: 1_500_000 });
   });
 
-  // Bug (services/income-debug/chain-recompute.ts:118-130): recomputeSaleChainState writes the sale's
-  // remainingDebtAmount right after its first payment and never updates it after the repayment loop (136-152), but a
-  // sale stores the debt of the whole chain. Every chain with repayments stays inconsistent after repairAllActiveChains
-  // ("failed"), repairDatesFromSnapshot and destructiveRelinkCourseChain.
-  it.skip('repair leaves the sale with the debt of the whole chain (bug: chain-recompute.ts:118-130)', async () => {
+  it('repair leaves the sale with the debt of the whole chain', async () => {
     const chain = seedSaleChain(fixture, { customerId, agreementAmount: 3_000_000, firstPayment: 1_000_000, entryDate: daysAgo(10), repayments: [{ amount: 400_000, entryDate: daysAgo(5) }] });
 
     setIncome(chain.repaymentIds[0]!, { entryDate: daysAgo(15) });
@@ -105,10 +101,7 @@ describe('integrity report and chain repair', () => {
     expect(income(chain.saleId)).toMatchObject({ type: 'repayment', relatedDebtIncomeId: chain.repaymentIds[0], coursePriceAmount: null, debtAmount: 2_600_000, remainingDebtAmount: 1_600_000 });
   });
 
-  // Bug (services/income-debug/chain-recompute.ts:108-140): with canonicalRule 'earlier-repayment-only' the sale is
-  // kept when a repayment shares its entry date but was created earlier, yet the opening payment is taken from that
-  // repayment and `chain.slice(1)` then rewrites the sale itself as a 'repayment' linked to its own id.
-  it.skip('keeps the sale when a repayment has the same entry date but an earlier createdAt (bug: chain-recompute.ts:108-140)', async () => {
+  it('keeps the sale when a repayment has the same entry date but an earlier createdAt', async () => {
     const date = daysAgo(10);
     const chain = seedSaleChain(fixture, { customerId, agreementAmount: 3_000_000, firstPayment: 1_000_000, entryDate: date, repayments: [{ amount: 400_000, entryDate: daysAgo(5) }] });
 

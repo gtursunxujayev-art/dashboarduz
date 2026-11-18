@@ -281,8 +281,7 @@ export const incomeDebugRepairProcedures = {
             return recomputeSaleChainState(tx, {
               tenantId: ctx.tenantId,
               saleId: sale.id,
-              canonicalRule: 'earlier-repayment-only',
-            });
+                });
           });
 
           const after = await getSaleChainConsistencySnapshot({

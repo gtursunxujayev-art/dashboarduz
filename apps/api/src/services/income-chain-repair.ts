@@ -1,4 +1,4 @@
-import { getSaleAgreementAmount } from './income-chain';
+import { getSaleAgreementAmount, saleChainOrder } from './income-chain';
 
 export type RepairChainRow = {
   id: string;
@@ -61,10 +61,7 @@ export function planChainRepair(params: {
   let rollingDebt = Math.max(agreementAmount - Math.max(Number(sale.paymentAmount || 0), 0), 0);
   const activeRepayments = repayments
     .filter((row) => row.lifecycleStatus === 'active')
-    .sort((left, right) => (
-      left.entryDate.getTime() - right.entryDate.getTime()
-      || left.createdAt.getTime() - right.createdAt.getTime()
-    ));
+    .sort(saleChainOrder(sale.id));
 
   for (const repayment of activeRepayments) {
     const debtAmount = rollingDebt;

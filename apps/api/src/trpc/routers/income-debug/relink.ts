@@ -97,7 +97,6 @@ export const incomeDebugRelinkProcedures = {
         await recomputeSaleChainState(tx, {
           tenantId: ctx.tenantId,
           saleId: targetSale.id,
-          canonicalRule: 'earlier-repayment-only',
         });
         const refreshedTarget = await tx.income.findUnique({
           where: { id: targetSale.id },
@@ -173,7 +172,6 @@ export const incomeDebugRelinkProcedures = {
         await recomputeSaleChainState(tx, {
           tenantId: ctx.tenantId,
           saleId: refreshedTarget.id,
-          canonicalRule: 'earlier-repayment-only',
         });
         await refreshCustomerProfileFromLatestActiveSaleForDebug(tx, {
           tenantId: ctx.tenantId,

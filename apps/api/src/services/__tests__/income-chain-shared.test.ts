@@ -1,6 +1,6 @@
 import { normalizeSubTariffName } from '@dashboarduz/shared';
 
-import { buildActiveSaleChainMetrics, extractSaleSubTariffId, INCOME_LIFECYCLE_ACTIVE } from '../income-chain';
+import { buildActiveSaleChainMetrics, extractSaleSubTariffId, INCOME_LIFECYCLE_ACTIVE, saleChainOrder } from '../income-chain';
 
 describe('extractSaleSubTariffId', () => {
   it('reads a trimmed saleSubTariffId string from meta', () => {
@@ -44,5 +44,23 @@ describe('buildActiveSaleChainMetrics', () => {
       where: expect.objectContaining({ tenantId: 't', lifecycleStatus: INCOME_LIFECYCLE_ACTIVE }),
     }));
     expect(result.get('s1')).toEqual(expect.objectContaining({ agreementAmount: 1000, paidAmount: 500, currentDebtAmount: 500 }));
+  });
+});
+
+describe('saleChainOrder', () => {
+  const day = new Date('2026-10-01T07:00:00Z');
+  const row = (id: string, entryDate: Date, createdAt: Date) => ({ id, entryDate, createdAt });
+
+  it('keeps the sale first on its entry date even when a repayment of that date was created earlier', () => {
+    const rows = [row('r1', day, new Date(day.getTime() - 60_000)), row('sale', day, day), row('r0', new Date(day.getTime() - 86_400_000), day)];
+
+    expect(rows.sort(saleChainOrder('sale')).map((item) => item.id)).toEqual(['r0', 'sale', 'r1']);
+  });
+
+  it('orders equal dates and equal creation times by id, the same way every time', () => {
+    const rows = [row('c', day, day), row('a', day, day), row('b', day, day)];
+
+    expect([...rows].sort(saleChainOrder('sale')).map((item) => item.id)).toEqual(['a', 'b', 'c']);
+    expect([...rows].reverse().sort(saleChainOrder('sale')).map((item) => item.id)).toEqual(['a', 'b', 'c']);
   });
 });

@@ -81,6 +81,20 @@ export function buildSaleChainMetricsBySaleId(params: {
   return metricsBySaleId;
 }
 
+/**
+ * The one order of a sale chain, used by every write and by the consistency check: entry date; on equal dates the
+ * sale (`saleId`) first; then creation time, then id, so equal timestamps still sort the same way every time. A
+ * repayment therefore only comes before the sale when it is dated strictly earlier.
+ */
+export function saleChainOrder(saleId: string) {
+  return (left: { id: string; entryDate: Date; createdAt?: Date | null }, right: { id: string; entryDate: Date; createdAt?: Date | null }): number => (
+    left.entryDate.getTime() - right.entryDate.getTime()
+    || Number(right.id === saleId) - Number(left.id === saleId)
+    || (left.createdAt ?? left.entryDate).getTime() - (right.createdAt ?? right.entryDate).getTime()
+    || left.id.localeCompare(right.id)
+  );
+}
+
 export function evaluateSaleChainConsistency(params: {
   saleId: string;
   agreementAmount: number;
@@ -89,17 +103,7 @@ export function evaluateSaleChainConsistency(params: {
 }): SaleChainConsistencyResult {
   const tolerance = params.tolerance ?? 0.0001;
   const issues: string[] = [];
-  const chain = [...params.chainRows].sort((left, right) => {
-    const byDate = left.entryDate.getTime() - right.entryDate.getTime();
-
-    if (byDate !== 0) {
-      return byDate;
-    }
-    const leftCreated = left.createdAt ? left.createdAt.getTime() : left.entryDate.getTime();
-    const rightCreated = right.createdAt ? right.createdAt.getTime() : right.entryDate.getTime();
-
-    return leftCreated - rightCreated;
-  });
+  const chain = [...params.chainRows].sort(saleChainOrder(params.saleId));
 
   if (chain.length === 0) {
     return {

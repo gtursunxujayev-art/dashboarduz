@@ -5,7 +5,7 @@ import { TRPCError } from '@trpc/server';
 import { thrownText } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { reconcileFinalizedBonusMonths } from '../bonus-engine';
-import { extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE, loadSaleChainConsistency, SALE_SUB_TARIFF_META_KEY } from '../income-chain';
+import { extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE, loadSaleChainConsistency, SALE_SUB_TARIFF_META_KEY, saleChainOrder } from '../income-chain';
 
 export function withSaleSubTariffMeta(
   existingMeta: Prisma.JsonValue | null | undefined,
@@ -95,6 +95,11 @@ export async function refreshCustomerProfileFromLatestActiveSale(
   });
 }
 
+/**
+ * Puts a sale chain in date order. Only a repayment dated strictly before the sale becomes the new sale; on equal
+ * dates the sale stays the sale. Rewrites the debts of the reordered chain; callers then run
+ * `assertSaleChainDebtInvariant` on the canonical sale.
+ */
 export async function normalizeSaleChainChronology(tx: Prisma.TransactionClient, params: {
   tenantId: string;
   saleId: string;
@@ -163,15 +168,7 @@ export async function normalizeSaleChainChronology(tx: Prisma.TransactionClient,
       ...repayment,
       type: 'repayment' as const,
     })),
-  ].sort((a, b) => {
-    const byDate = a.entryDate.getTime() - b.entryDate.getTime();
-
-    if (byDate !== 0) {
-      return byDate;
-    }
-
-    return a.createdAt.getTime() - b.createdAt.getTime();
-  });
+  ].sort(saleChainOrder(sourceSale.id));
 
   const earliestRow = chain[0]!;
   const shouldReorder = (
@@ -213,7 +210,10 @@ export async function normalizeSaleChainChronology(tx: Prisma.TransactionClient,
     },
   });
 
-  for (const repayment of chain.slice(1)) {
+  // The old sale is a repayment now: order the rest as the new sale's chain.
+  const repaymentsInOrder = chain.slice(1).sort(saleChainOrder(canonicalSaleId));
+
+  for (const repayment of repaymentsInOrder) {
     const debtAmount = rollingDebt;
 
     rollingDebt = Math.max(debtAmount - Math.max(Number(repayment.paymentAmount || 0), 0), 0);
@@ -232,6 +232,12 @@ export async function normalizeSaleChainChronology(tx: Prisma.TransactionClient,
       },
     });
   }
+
+  // The sale stores the debt left after the whole chain, not just after its own payment.
+  await tx.income.update({
+    where: { id: canonicalSaleId },
+    data: { remainingDebtAmount: rollingDebt, deadline: rollingDebt > 0 ? sourceSale.deadline : null },
+  });
 
   await refreshCustomerProfileFromLatestActiveSale(tx, {
     tenantId: params.tenantId,
@@ -420,7 +426,7 @@ export async function assertSaleChainDebtInvariant(tx: Prisma.TransactionClient,
         type: 'repayment',
         relatedDebtIncomeId: sourceSale.id,
       },
-      orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }],
+      orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       select: {
         id: true,
         paymentAmount: true,
