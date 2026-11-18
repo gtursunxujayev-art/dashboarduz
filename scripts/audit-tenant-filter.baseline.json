@@ -20,7 +20,7 @@
     "attendanceEvent.findMany": 1
   },
   "apps/api/src/trpc/routers/auth.ts": {
-    "user.findFirst": 2
+    "user.findFirst": 3
   },
   "apps/api/src/trpc/routers/corporate-calls.ts": {
     "corporateCallDuration.findMany": 1

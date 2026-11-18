@@ -20,6 +20,9 @@ import { hashPassword, verifyPassword } from '../../services/auth/password';
 import { rateLimiter } from '../../services/security/rate-limiter';
 import { router, publicProcedure, protectedProcedure } from '../trpc';
 
+/** The one answer for a taken login, so it does not reveal whether that account has a password. */
+const REGISTER_LOGIN_TAKEN = 'Account already exists. Please sign in.';
+
 /** The user fields an OTP login needs. */
 const otpUserSelect = { id: true, tenantId: true, roles: true, phone: true, isActive: true } as const;
 
@@ -44,32 +47,36 @@ export const authRouter = router({
 
       // Logins are unique across all tenants (users.username), so this lookup deliberately uses the unscoped
       // systemPrisma: there is no tenant yet, and once RLS is enforced a scoped client would miss other tenants.
+      // ANY existing login is refused with the same answer, with or without a password: registering never sets a
+      // password on, signs in as, or inherits the tenant and roles of an existing user (a login without a password
+      // gets one from an admin, users.access.updateCredentials).
       const existingUser = await systemPrisma.user.findFirst({
         where: { username: normalizedLogin },
-        select: {
-          id: true,
-          tenantId: true,
-          roles: true,
-          passwordHash: true,
-        },
+        select: { id: true },
       });
 
-      if (existingUser?.passwordHash) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists. Please sign in.' });
+      if (existingUser) {
+        throw new TRPCError({ code: 'CONFLICT', message: REGISTER_LOGIN_TAKEN });
       }
 
       const passwordHash = await hashPassword(input.password);
 
-      let userId: string;
-      let tenantId: string;
-      let roles: string[];
-
-      if (existingUser) {
-        const updatedUser = await systemPrisma.user.update({
-          where: { id: existingUser.id },
+      // Tenant, its first user and the audit row are created together: a failure (e.g. the login taken by a
+      // concurrent registration, users.username is unique) leaves no tenant without a user behind.
+      const createdUser = await systemPrisma.$transaction(async (tx) => {
+        const tenant = await tx.tenant.create({
           data: {
+            name: normalizedLogin,
+            plan: 'free',
+          },
+        });
+        const user = await tx.user.create({
+          data: {
+            tenantId: tenant.id,
             username: normalizedLogin,
             passwordHash,
+            roles: ['Admin'],
+            authProvider: 'email',
             lastLoginAt: new Date(),
           },
           select: {
@@ -79,64 +86,31 @@ export const authRouter = router({
           },
         });
 
-        userId = updatedUser.id;
-        tenantId = updatedUser.tenantId;
-        roles = updatedUser.roles;
-      } else {
-        // Tenant and its first user are created together: a failure (e.g. the login taken by a concurrent
-        // registration, users.username is unique) leaves no tenant without a user behind.
-        const createdUser = await systemPrisma.$transaction(async (tx) => {
-          const tenant = await tx.tenant.create({
-            data: {
-              name: normalizedLogin,
-              plan: 'free',
-            },
-          });
-
-          return tx.user.create({
-            data: {
-              tenantId: tenant.id,
-              username: normalizedLogin,
-              passwordHash,
-              roles: ['Admin'],
-              authProvider: 'email',
-              lastLoginAt: new Date(),
-            },
-            select: {
-              id: true,
-              tenantId: true,
-              roles: true,
-            },
-          });
-        }).catch((error: unknown) => {
-          if (isUniqueViolation(error)) {
-            throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists. Please sign in.' });
-          }
-          throw error;
+        await tx.auditLog.create({
+          data: {
+            tenantId: user.tenantId,
+            userId: user.id,
+            action: 'register_password',
+            resource: 'auth',
+            metadata: { login: normalizedLogin },
+          },
         });
 
-        userId = createdUser.id;
-        tenantId = createdUser.tenantId;
-        roles = createdUser.roles;
-      }
+        return user;
+      }).catch((error: unknown) => {
+        if (isUniqueViolation(error)) {
+          throw new TRPCError({ code: 'CONFLICT', message: REGISTER_LOGIN_TAKEN });
+        }
+        throw error;
+      });
 
       const jwtPayload = {
-        userId,
-        tenantId,
-        roles: roles.filter((role: string): role is UserRole => (USER_ROLES as readonly string[]).includes(role)),
+        userId: createdUser.id,
+        tenantId: createdUser.tenantId,
+        roles: createdUser.roles.filter((role: string): role is UserRole => (USER_ROLES as readonly string[]).includes(role)),
       };
 
       const token = signJWT(jwtPayload);
-
-      await systemPrisma.auditLog.create({
-        data: {
-          tenantId,
-          userId,
-          action: 'register_password',
-          resource: 'auth',
-          metadata: { login: normalizedLogin },
-        },
-      });
 
       return { success: true, token, user: jwtPayload };
     }),

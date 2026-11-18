@@ -103,27 +103,29 @@ describe('auth.registerWithPassword', () => {
     });
   });
 
-  it('sets a password on an existing user that had none instead of creating a tenant', async () => {
-    mockDb.user.findFirst.mockResolvedValue({ id: USER_ID, tenantId: TENANT_ID, roles: ['Agent'], passwordHash: null });
-    mockDb.user.update.mockResolvedValue({ id: USER_ID, tenantId: TENANT_ID, roles: ['Agent'] });
-
-    const result = await publicCaller().registerWithPassword(input);
-
-    expect(mockDb.tenant.create).not.toHaveBeenCalled();
-    expect(mockDb.user.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: USER_ID },
-      data: expect.objectContaining({ username: 'new.user', passwordHash: expect.any(String) }),
-    }));
-    expect(result).toMatchObject({ success: true, user: { userId: USER_ID, tenantId: TENANT_ID, roles: ['Agent'] } });
-  });
-
-  it('refuses a login that already has a password', async () => {
-    mockDb.user.findFirst.mockResolvedValue({ id: USER_ID, tenantId: TENANT_ID, roles: ['Admin'], passwordHash: 'a:b' });
+  it('refuses a login that exists without a password: no password set, no session, no tenant or roles taken over', async () => {
+    mockDb.user.findFirst.mockResolvedValue({ id: USER_ID, tenantId: TENANT_ID, roles: ['Admin'], passwordHash: null });
 
     const error = await rejection(publicCaller().registerWithPassword(input));
 
-    expect(error.code).toBe('CONFLICT');
-    expect(error.message).toBe('Account already exists. Please sign in.');
+    expect(error).toMatchObject({ code: 'CONFLICT', message: 'Account already exists. Please sign in.' });
+    expect(mockDb.user.update).not.toHaveBeenCalled();
+    expect(mockDb.user.create).not.toHaveBeenCalled();
+    expect(mockDb.tenant.create).not.toHaveBeenCalled();
+    expect(mockDb.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a login that already has a password with the identical error', async () => {
+    mockDb.user.findFirst.mockResolvedValueOnce({ id: USER_ID, passwordHash: null });
+    const withoutPassword = await rejection(publicCaller().registerWithPassword(input));
+
+    mockDb.user.findFirst.mockResolvedValueOnce({ id: USER_ID, passwordHash: 'a:b' });
+    const withPassword = await rejection(publicCaller().registerWithPassword(input));
+
+    expect([withPassword.code, withPassword.message]).toEqual(['CONFLICT', 'Account already exists. Please sign in.']);
+    expect([withPassword.code, withPassword.message]).toEqual([withoutPassword.code, withoutPassword.message]);
+    // The lookup only asks whether the login exists, not whether it has a password.
+    expect(mockDb.user.findFirst).toHaveBeenLastCalledWith({ where: { username: 'new.user' }, select: { id: true } });
   });
 
   it('maps a unique violation of a concurrent registration to CONFLICT', async () => {
@@ -132,7 +134,7 @@ describe('auth.registerWithPassword', () => {
 
     const error = await rejection(publicCaller().registerWithPassword(input));
 
-    expect(error.code).toBe('CONFLICT');
+    expect(error).toMatchObject({ code: 'CONFLICT', message: 'Account already exists. Please sign in.' });
     expect(mockDb.auditLog.create).not.toHaveBeenCalled();
   });
 
