@@ -435,3 +435,54 @@ export const incomeRowSelect = {
   paymentAmount: true,
   entryDate: true,
 } as const;
+
+/**
+ * "Qo'shimcha xizmat" courses (not online, offline or intensive). Their sales count on the seller's
+ * own board for the current month, earning the Qo'shimcha xizmat bonus rule from the bonus policy.
+ */
+export async function loadAdditionalServiceCourseIds(tenantId: string, db: DbClient): Promise<string[]> {
+  const courses = await db.course.findMany({ where: { tenantId }, select: { id: true, name: true, category: true } });
+
+  return courses
+    .filter((course) => classifyCourseCategoryFromField(course.category || course.name) === 'additional_service')
+    .map((course) => course.id);
+}
+
+/**
+ * The board's income: the selected course(s) all time, plus this month's sales of the extra
+ * (Qo'shimcha xizmat) courses and their repayments.
+ */
+export function boardIncomeWhere(selectedCourseIds: string[], extraCourseIds: string[], monthStart: Date) {
+  const branches: Array<Record<string, unknown>> = [];
+
+  if (selectedCourseIds.length) branches.push(courseScopedIncomeWhere(selectedCourseIds));
+  if (extraCourseIds.length) branches.push({ AND: [courseScopedIncomeWhere(extraCourseIds), { entryDate: { gte: monthStart } }] });
+
+  // No course at all: match nothing, as an empty course list did before.
+  return branches.length ? { OR: branches } : courseScopedIncomeWhere([]);
+}
+
+type AgreementBonusAndDebt = Awaited<ReturnType<typeof loadAgreementBonusAndDebt>>;
+
+/** Adds two bonus/debt results agent by agent. */
+export function mergeAgreementBonusAndDebt(
+  first: AgreementBonusAndDebt | null,
+  second: AgreementBonusAndDebt | null,
+): AgreementBonusAndDebt | null {
+  if (!first || !second) return first ?? second;
+  const sum = (a: Map<string, number>, b: Map<string, number>) => {
+    const result = new Map(a);
+
+    for (const [key, value] of b) result.set(key, (result.get(key) || 0) + value);
+
+    return result;
+  };
+
+  return {
+    bonus: sum(first.bonus, second.bonus),
+    bonusFact: sum(first.bonusFact, second.bonusFact),
+    bonusPending: sum(first.bonusPending, second.bonusPending),
+    debt: sum(first.debt, second.debt),
+    openSales: [...first.openSales, ...second.openSales],
+  };
+}
