@@ -160,3 +160,11 @@ export function tashkentMonthKey(monthsBack: number, now = new Date()): string {
 export function dayString(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
+
+/**
+ * Gives the fixture tenant an active Telegram integration. Tenant notifications use only the tenant's own token
+ * (never TELEGRAM_BOT_TOKEN), so tests that expect a send need this; mock `decryptIntegrationTokens` to read it.
+ */
+export function seedActiveTelegramIntegration(fixture: MoneyFixture, tokensEncrypted = 'encrypted-test-token'): void {
+  fixture.store.seed('Integration', [{ tenantId: fixture.tenantId, type: 'telegram', status: 'active', tokensEncrypted }]);
+}

@@ -1,6 +1,12 @@
-import { createMoneyFixture, type MoneyFixture, seedCustomer, seedSaleChain } from '../../../__tests__/helpers/money-fixtures';
+import { createMoneyFixture, type MoneyFixture, seedActiveTelegramIntegration, seedCustomer, seedSaleChain } from '../../../__tests__/helpers/money-fixtures';
 import { telegramService } from '../../integrations/telegram';
 import { formatDateGmt5, resolveRefundGroupIds, sendOfflineOrIntensivePaymentTelegram } from '../payment-notifications';
+
+// Tenant notifications only use the tenant's active Telegram integration token (owner decision, Plan D).
+jest.mock('../../security/encryption', () => ({
+  ...jest.requireActual<typeof import('../../security/encryption')>('../../security/encryption'),
+  decryptIntegrationTokens: jest.fn(() => ({ botToken: 'bot-token' })),
+}));
 
 const ENV_KEYS = ['TELEGRAM_BOT_TOKEN', 'OFLINE_GROUP_ID', 'OFFLINE_GROUP_ID', 'OFLINE_GROUP_IDS', 'OFFLINE_GROUP_IDS', 'ONLINE_GROUP_ID', 'ONLINE_GROUP_IDS', 'REFUND_GROUP_ID', 'REFUND_GROUP_IDS', 'PAYMENT_RETURN_GROUP_ID'];
 
@@ -20,6 +26,7 @@ describe('payment notifications', () => {
     process.env.OFLINE_GROUP_ID = '-1001, -1002';
     send = jest.spyOn(telegramService, 'sendMessage').mockResolvedValue({} as never);
     fixture = createMoneyFixture();
+    seedActiveTelegramIntegration(fixture);
     const customerId = seedCustomer(fixture, '998901234567', 'Ali Valiyev');
 
     fixture.store.tables.get('Customer')![0]!.telegramUsername = 'ali_v';
@@ -96,7 +103,9 @@ describe('payment notifications', () => {
   });
 
   it.each([
-    ['no bot token', () => { delete process.env.TELEGRAM_BOT_TOKEN; }, 'bot_token_missing'],
+    ['no active Telegram integration (TELEGRAM_BOT_TOKEN is not used)', () => {
+      fixture.store.tables.get('Integration')!.forEach((integration) => { integration.status = 'inactive'; });
+    }, 'bot_token_missing'],
     ['no offline group', () => { delete process.env.OFLINE_GROUP_ID; }, 'groups_missing'],
     ['an online course without an online group', () => {
       fixture.store.tables.get('Course')!.forEach((course) => { course.category = 'online'; });

@@ -1,7 +1,7 @@
 import type { JWTPayload } from '@dashboarduz/shared';
 
 import type { InMemoryPrisma } from '../../../../__tests__/helpers/in-memory-prisma';
-import { contextFor, createMoneyFixture, daysAgo, type MoneyFixture, seedCustomer, seedSaleChain } from '../../../../__tests__/helpers/money-fixtures';
+import { contextFor, createMoneyFixture, daysAgo, type MoneyFixture, seedActiveTelegramIntegration, seedCustomer, seedSaleChain } from '../../../../__tests__/helpers/money-fixtures';
 import { telegramService } from '../../../../services/integrations/telegram';
 import { customerIncomeRouter } from '../index';
 
@@ -10,6 +10,12 @@ let mockStore: InMemoryPrisma;
 jest.mock('@dashboarduz/db', () => ({
   ...jest.requireActual('@dashboarduz/db'),
   forTenant: () => mockStore.client(),
+}));
+
+// Tenant notifications only use the tenant's active Telegram integration token (owner decision, Plan D).
+jest.mock('../../../../services/security/encryption', () => ({
+  ...jest.requireActual<typeof import('../../../../services/security/encryption')>('../../../../services/security/encryption'),
+  decryptIntegrationTokens: jest.fn(() => ({ botToken: 'bot-token' })),
 }));
 
 const ENV_KEYS = ['TELEGRAM_BOT_TOKEN', 'PAYMENT_RETURN_GROUP_ID', 'REFUND_GROUP_ID', 'REFUND_GROUP_IDS', 'TARIFF_CHANGE_GROUP_ID'];
@@ -35,6 +41,7 @@ describe('refund and tariff-change Telegram delivery through the procedures', ()
     send = jest.spyOn(telegramService, 'sendMessage').mockResolvedValue({} as never);
     fixture = createMoneyFixture();
     mockStore = fixture.store;
+    seedActiveTelegramIntegration(fixture);
     fixture.store.tables.get('User')!.forEach((user) => {
       if (user.id === fixture.financeId) user.telegramId = '7001';
       if (user.id === fixture.agentId) user.telegramId = '7002';
