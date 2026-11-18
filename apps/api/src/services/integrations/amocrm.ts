@@ -3,200 +3,109 @@
 import crypto from 'crypto';
 
 import { logger } from '../../lib/logger';
+import { asObject } from '../../lib/object';
 import { encryptionService, EncryptionService } from '../security/encryption';
 
-export interface AmoCRMTokens {
-  access_token: string;
-  token_type?: string;
-  source?: 'long_lived_token';
-}
+import {
+  amoGet,
+  amoGetWithTimeout,
+  amoSendJson,
+  hasEmbeddedList,
+  rethrowAmoError,
+  thrownMessage,
+  type AmoFailure,
+} from './amocrm-http';
+import {
+  chunkCreatedByIds,
+  clampAmoPageSize,
+  collectAmoPages,
+  dedupeEventsById,
+  resolveAmoMaxPages,
+  toAmoPage,
+} from './amocrm-paging';
+import {
+  AMOCRM_MAX_PAGE_SIZE,
+  buildContactListQuery,
+  buildEventListQuery,
+  buildLeadByIdQuery,
+  buildLeadListQuery,
+  buildNoteListQuery,
+  buildTaskListQuery,
+  buildUserListQuery,
+  withQueryString,
+} from './amocrm-query';
+import type {
+  AmoCRMAccountInfo,
+  AmoCRMContactQuery,
+  AmoCRMEvent,
+  AmoCRMEventListResponse,
+  AmoCRMEventQuery,
+  AmoCRMLead,
+  AmoCRMLeadCustomFieldsResponse,
+  AmoCRMLeadListResponse,
+  AmoCRMLeadPayload,
+  AmoCRMLeadPipelinesResponse,
+  AmoCRMLeadQuery,
+  AmoCRMNote,
+  AmoCRMNoteEntityType,
+  AmoCRMNoteListResponse,
+  AmoCRMNoteQuery,
+  AmoCRMPageQuery,
+  AmoCRMStatusFilter,
+  AmoCRMTask,
+  AmoCRMTaskListResponse,
+  AmoCRMTaskQuery,
+  AmoCRMTokens,
+  AmoCRMUser,
+  AmoCRMUsersResponse,
+} from './amocrm-types';
 
-export interface AmoCRMAccountInfo {
-  id?: number | string;
-  name?: string;
-  domain?: string;
-  subdomain?: string;
-}
+export type {
+  AmoCRMAccountInfo,
+  AmoCRMContactQuery,
+  AmoCRMEvent,
+  AmoCRMEventListResponse,
+  AmoCRMEventQuery,
+  AmoCRMLead,
+  AmoCRMLeadCustomFieldsResponse,
+  AmoCRMLeadListResponse,
+  AmoCRMLeadPayload,
+  AmoCRMLeadPipeline,
+  AmoCRMLeadPipelineStatus,
+  AmoCRMLeadPipelinesResponse,
+  AmoCRMLeadQuery,
+  AmoCRMListLinks,
+  AmoCRMNote,
+  AmoCRMNoteEntityType,
+  AmoCRMNoteListResponse,
+  AmoCRMNoteQuery,
+  AmoCRMPageQuery,
+  AmoCRMStatusFilter,
+  AmoCRMTask,
+  AmoCRMTaskListResponse,
+  AmoCRMTaskQuery,
+  AmoCRMTokens,
+  AmoCRMUser,
+  AmoCRMUsersResponse,
+} from './amocrm-types';
 
-export interface AmoCRMLeadCustomFieldsResponse {
-  _embedded?: {
-    custom_fields?: Array<{
-      id?: number | string;
-      name?: string;
-      code?: string;
-    }>;
-  };
-}
+/** amoCRM docs disagree on the events page size (100 in RU docs, 250 in EN); stay within the safe bound. */
+const AMOCRM_EVENTS_MAX_PAGE_SIZE = 100;
 
-export interface AmoCRMLeadPipelineStatus {
-  id?: number | string;
-  name?: string;
-  sort?: number;
-  type?: number;
-}
+const failure = (logMessage: string, failureMessage: string, logContext?: Record<string, unknown>): AmoFailure => (
+  { logMessage, failureMessage, logContext }
+);
 
-export interface AmoCRMLeadPipeline {
-  id?: number | string;
-  name?: string;
-  sort?: number;
-  _embedded?: {
-    statuses?: AmoCRMLeadPipelineStatus[];
-  };
-}
-
-export interface AmoCRMLeadPipelinesResponse {
-  _embedded?: {
-    pipelines?: AmoCRMLeadPipeline[];
-  };
-}
-
-export interface AmoCRMUser {
-  id?: number | string;
-  name?: string;
-  email?: string;
-  login?: string;
-  is_active?: boolean;
-  rights?: {
-    is_admin?: boolean;
-  };
-}
-
-export interface AmoCRMUsersResponse {
-  _embedded?: {
-    users?: AmoCRMUser[];
-  };
-  _links?: {
-    next?: {
-      href?: string;
-    };
-  };
-}
-
-export interface AmoCRMLead {
-  id?: number | string;
-  name?: string;
-  status_id?: number | string;
-  pipeline_id?: number | string;
-  source_id?: number | string;
-  loss_reason_id?: number | string;
-  responsible_user_id?: number | string;
-  created_at?: number | string;
-  updated_at?: number | string;
-  custom_fields_values?: Array<{
-    field_id?: number | string;
-    field_name?: string;
-    field_code?: string;
-    values?: Array<{
-      value?: unknown;
-    }>;
-  }>;
-  _embedded?: {
-    contacts?: Array<Record<string, unknown>>;
-  };
-  [key: string]: unknown;
-}
-
-export interface AmoCRMLeadListResponse {
-  _embedded?: {
-    leads?: AmoCRMLead[];
-  };
-  _links?: {
-    next?: {
-      href?: string;
-    };
-  };
-}
-
-export interface AmoCRMTask {
-  id?: number | string;
-  responsible_user_id?: number | string;
-  entity_type?: string;
-  is_completed?: boolean | number;
-  complete_till?: number | string;
-  updated_at?: number | string;
-  created_at?: number | string;
-  [key: string]: unknown;
-}
-
-export interface AmoCRMTaskListResponse {
-  _embedded?: {
-    tasks?: AmoCRMTask[];
-  };
-  _links?: {
-    next?: {
-      href?: string;
-    };
-  };
-}
-
-export interface AmoCRMEvent {
-  id?: number | string;
-  type?: string;
-  created_at?: number | string;
-  created_by?: number | string;
-  entity_type?: string;
-  [key: string]: unknown;
-}
-
-export interface AmoCRMNote {
-  id?: number | string;
-  entity_id?: number | string;
-  note_type?: string;
-  created_at?: number | string;
-  updated_at?: number | string;
-  created_by?: number | string;
-  responsible_user_id?: number | string;
-  params?: {
-    duration?: number | string;
-    phone?: string;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
-export interface AmoCRMNoteListResponse {
-  _embedded?: {
-    notes?: AmoCRMNote[];
-  };
-}
-
-export interface AmoCRMEventListResponse {
-  _embedded?: {
-    events?: AmoCRMEvent[];
-  };
-  _links?: {
-    next?: {
-      href?: string;
-    };
-  };
-}
-
-/**
- * GET from the amoCRM API with the bearer token. A non-OK response is logged (`logMessage`, with `logContext`)
- * and thrown as `<failureMessage>: <status> <statusText>`.
- */
-async function amoGet(
-  url: string,
-  accessToken: string,
-  logMessage: string,
-  failureMessage: string,
-  logContext: Record<string, unknown> = {},
-): Promise<Response> {
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-
-    logger.error({ error: errorText, status: response.status, ...logContext }, logMessage);
-    throw new Error(`${failureMessage}: ${response.status} ${response.statusText}`);
+/** The signature header as bytes: hex when it is all hex digits, else base64; null when it cannot be decoded. */
+function decodeWebhookSignature(signature: string): Buffer | null {
+  if (/^[a-fA-F0-9]+$/.test(signature)) {
+    return Buffer.from(signature, 'hex');
   }
-
-  return response;
+  try {
+    return Buffer.from(signature, 'base64');
+  } catch {
+    return null;
+  }
 }
 
 export class AmoCRMService {
@@ -218,23 +127,9 @@ export class AmoCRMService {
     return (baseUrl || this.defaultBaseUrl).replace(/\/+$/, '');
   }
 
-  private async fetchWithTimeout(input: string, init: RequestInit = {}, timeoutMs = this.requestTimeoutMs): Promise<Response> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-      return await fetch(input, {
-        ...init,
-        signal: controller.signal,
-      });
-    } catch (error: any) {
-      if (error?.name === 'AbortError') {
-        throw new Error(`AmoCRM request timeout after ${timeoutMs}ms`);
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
+  /** `<base>/api/v4/<path>[?query]`. */
+  private apiUrl(baseUrl: string | undefined, path: string, query = new URLSearchParams()): string {
+    return withQueryString(`${this.resolveBaseUrl(baseUrl)}/api/v4/${path}`, query);
   }
 
   // Verify webhook signature using HMAC-SHA256.
@@ -259,231 +154,127 @@ export class AmoCRMService {
       }
 
       const payloadString = typeof payload === 'string' ? payload : payload.toString('utf8');
-      const expectedHex = EncryptionService.generateHMAC(payloadString, this.webhookSecret);
-      const normalizedSignature = signature.trim();
-      const expectedBufferHex = Buffer.from(expectedHex, 'hex');
+      const expected = Buffer.from(EncryptionService.generateHMAC(payloadString, this.webhookSecret), 'hex');
+      const provided = decodeWebhookSignature(signature.trim());
 
-      let providedBuffer: Buffer | null = null;
-
-      if (/^[a-fA-F0-9]+$/.test(normalizedSignature)) {
-        providedBuffer = Buffer.from(normalizedSignature, 'hex');
-      } else {
-        try {
-          providedBuffer = Buffer.from(normalizedSignature, 'base64');
-        } catch {
-          providedBuffer = null;
-        }
-      }
-
-      if (!providedBuffer || providedBuffer.length !== expectedBufferHex.length) {
+      if (!provided || provided.length !== expected.length) {
         logger.warn('Invalid AmoCRM webhook signature format/length');
 
         return false;
       }
 
-      const isValid = crypto.timingSafeEqual(providedBuffer, expectedBufferHex);
+      const isValid = crypto.timingSafeEqual(provided, expected);
 
       if (!isValid) {
         logger.warn('Invalid AmoCRM webhook signature');
       }
 
       return isValid;
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'AmoCRM webhook signature verification error');
+    } catch (error: unknown) {
+      logger.error({ error: thrownMessage(error) }, 'AmoCRM webhook signature verification error');
 
       return false;
     }
   }
 
   async fetchAccountInfo(accessToken: string, baseUrl?: string): Promise<AmoCRMAccountInfo> {
-    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-    const response = await this.fetchWithTimeout(`${resolvedBaseUrl}/api/v4/account`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      logger.error({ error: errorText, status: response.status }, 'AmoCRM account fetch error');
-      throw new Error(`Failed to fetch AmoCRM account: ${response.status} ${response.statusText}`);
-    }
+    const response = await amoGetWithTimeout(
+      this.apiUrl(baseUrl, 'account'),
+      accessToken,
+      failure('AmoCRM account fetch error', 'Failed to fetch AmoCRM account'),
+      this.requestTimeoutMs,
+    );
 
     return (await response.json()) as AmoCRMAccountInfo;
   }
 
-  async fetchLeads(accessToken: string, _accountId: string, params?: {
-    page?: number;
-    limit?: number;
-    with?: string;
-    query?: string;
-    pipelineIds?: string[];
-    statusFilters?: Array<{
-      pipelineId: string;
-      statusId: string;
-    }>;
-    responsibleUserIds?: string[];
-    createdAtFrom?: Date;
-    createdAtTo?: Date;
-    updatedAtFrom?: Date;
-    order?: { field: 'id' | 'created_at' | 'updated_at'; direction: 'asc' | 'desc' };
-  }, baseUrl?: string) {
+  async fetchLeads(accessToken: string, _accountId: string, params?: AmoCRMLeadQuery, baseUrl?: string): Promise<AmoCRMLeadListResponse> {
     try {
-      const queryParams = new URLSearchParams();
-
-      if (params?.page) queryParams.set('page', params.page.toString());
-      if (params?.limit) queryParams.set('limit', params.limit.toString());
-      if (params?.with) queryParams.set('with', params.with);
-      if (params?.query) queryParams.set('query', params.query);
-      if (params?.pipelineIds) {
-        params.pipelineIds.forEach((pipelineId) => {
-          queryParams.append('filter[pipeline_id][]', pipelineId);
-        });
-      }
-      if (params?.statusFilters) {
-        params.statusFilters.forEach((statusFilter, index) => {
-          queryParams.append(`filter[statuses][${index}][pipeline_id]`, statusFilter.pipelineId);
-          queryParams.append(`filter[statuses][${index}][status_id]`, statusFilter.statusId);
-        });
-      }
-      if (params?.responsibleUserIds) {
-        params.responsibleUserIds.forEach((responsibleUserId) => {
-          queryParams.append('filter[responsible_user_id][]', responsibleUserId);
-        });
-      }
-      if (params?.createdAtFrom) {
-        queryParams.set('filter[created_at][from]', Math.floor(params.createdAtFrom.getTime() / 1000).toString());
-      }
-      if (params?.createdAtTo) {
-        queryParams.set('filter[created_at][to]', Math.floor(params.createdAtTo.getTime() / 1000).toString());
-      }
-      if (params?.updatedAtFrom) {
-        queryParams.set('filter[updated_at][from]', Math.floor(params.updatedAtFrom.getTime() / 1000).toString());
-      }
-      if (params?.order) {
-        queryParams.set(`order[${params.order.field}]`, params.order.direction);
-      }
-
-      const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-      const url = `${resolvedBaseUrl}/api/v4/leads${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-
-      const response = await amoGet(url, accessToken, 'AmoCRM fetch leads error', 'Failed to fetch leads from AmoCRM');
+      const response = await amoGet(
+        this.apiUrl(baseUrl, 'leads', buildLeadListQuery(params)),
+        accessToken,
+        failure('AmoCRM fetch leads error', 'Failed to fetch leads from AmoCRM'),
+      );
 
       // amoCRM answers an empty result set (or a page past the end) with 204 No Content.
       if (response.status === 204) {
-        return { _embedded: { leads: [] } } as AmoCRMLeadListResponse;
+        return { _embedded: { leads: [] } };
       }
 
-      const data = await response.json() as AmoCRMLeadListResponse;
+      const data: unknown = await response.json();
 
-      if (!data._embedded || !data._embedded.leads) {
+      if (!hasEmbeddedList(data, 'leads')) {
         throw new Error('Invalid response structure from AmoCRM');
       }
 
-      return data;
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'AmoCRM fetch leads error');
-      throw new Error(`Failed to fetch AmoCRM leads: ${error.message}`);
+      return data as AmoCRMLeadListResponse;
+    } catch (error: unknown) {
+      return rethrowAmoError(error, 'AmoCRM fetch leads error', 'Failed to fetch AmoCRM leads');
     }
   }
 
-  async fetchContacts(accessToken: string, _accountId: string, params?: {
-    page?: number;
-    limit?: number;
-    query?: string;
-  }, baseUrl?: string) {
+  async fetchContacts(accessToken: string, _accountId: string, params?: AmoCRMContactQuery, baseUrl?: string): Promise<Record<string, unknown>> {
     try {
-      const queryParams = new URLSearchParams();
+      const response = await amoGet(
+        this.apiUrl(baseUrl, 'contacts', buildContactListQuery(params)),
+        accessToken,
+        failure('AmoCRM fetch contacts error', 'Failed to fetch contacts from AmoCRM'),
+      );
+      const body = asObject(await response.json());
 
-      if (params?.page) queryParams.set('page', params.page.toString());
-      if (params?.limit) queryParams.set('limit', params.limit.toString());
-      if (params?.query) queryParams.set('query', params.query);
-
-      const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-      const url = `${resolvedBaseUrl}/api/v4/contacts${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-
-      const response = await amoGet(url, accessToken, 'AmoCRM fetch contacts error', 'Failed to fetch contacts from AmoCRM');
-
-      const data = await response.json();
-
-      if (!data._embedded || !data._embedded.contacts) {
+      if (!body || !hasEmbeddedList(body, 'contacts')) {
         throw new Error('Invalid response structure from AmoCRM');
       }
 
-      return data;
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'AmoCRM fetch contacts error');
-      throw new Error(`Failed to fetch AmoCRM contacts: ${error.message}`);
+      return body;
+    } catch (error: unknown) {
+      return rethrowAmoError(error, 'AmoCRM fetch contacts error', 'Failed to fetch AmoCRM contacts');
     }
   }
 
   async fetchLeadCustomFields(accessToken: string, baseUrl?: string): Promise<AmoCRMLeadCustomFieldsResponse> {
-    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-    const response = await fetch(`${resolvedBaseUrl}/api/v4/leads/custom_fields`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      logger.error({ error: errorText, status: response.status }, 'AmoCRM lead custom fields fetch error');
-      throw new Error(`Failed to fetch AmoCRM lead custom fields: ${response.status} ${response.statusText}`);
-    }
+    const response = await amoGet(
+      this.apiUrl(baseUrl, 'leads/custom_fields'),
+      accessToken,
+      failure('AmoCRM lead custom fields fetch error', 'Failed to fetch AmoCRM lead custom fields'),
+    );
 
     return (await response.json()) as AmoCRMLeadCustomFieldsResponse;
   }
 
   async fetchPipelines(accessToken: string, baseUrl?: string): Promise<AmoCRMLeadPipelinesResponse> {
     try {
-      const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-      const response = await this.fetchWithTimeout(`${resolvedBaseUrl}/api/v4/leads/pipelines`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        logger.error({ error: errorText, status: response.status }, 'AmoCRM pipelines fetch error');
-        throw new Error(`Failed to fetch AmoCRM pipelines: ${response.status} ${response.statusText}`);
-      }
+      const response = await amoGetWithTimeout(
+        this.apiUrl(baseUrl, 'leads/pipelines'),
+        accessToken,
+        failure('AmoCRM pipelines fetch error', 'Failed to fetch AmoCRM pipelines'),
+        this.requestTimeoutMs,
+      );
 
       return (await response.json()) as AmoCRMLeadPipelinesResponse;
-    } catch (error: any) {
-      logger.error({ error: error?.message || String(error) }, 'AmoCRM pipelines fetch exception');
-      throw new Error(`Failed to fetch AmoCRM pipelines: ${error?.message || 'unknown_error'}`);
+    } catch (error: unknown) {
+      const message = thrownMessage(error);
+
+      logger.error({ error: message || String(error) }, 'AmoCRM pipelines fetch exception');
+      throw new Error(`Failed to fetch AmoCRM pipelines: ${String(message || 'unknown_error')}`);
     }
   }
 
   async fetchLeadById(accessToken: string, leadId: string, params?: {
     with?: string;
   }, baseUrl?: string): Promise<AmoCRMLead> {
-    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-    const queryParams = new URLSearchParams();
-
-    if (params?.with) {
-      queryParams.set('with', params.with);
-    }
-    const url = `${resolvedBaseUrl}/api/v4/leads/${leadId}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-
-    const response = await amoGet(url, accessToken, 'AmoCRM lead fetch by id error', 'Failed to fetch AmoCRM lead', { leadId });
+    const response = await amoGet(
+      this.apiUrl(baseUrl, `leads/${leadId}`, buildLeadByIdQuery(params)),
+      accessToken,
+      failure('AmoCRM lead fetch by id error', 'Failed to fetch AmoCRM lead', { leadId }),
+    );
 
     return (await response.json()) as AmoCRMLead;
   }
 
   async fetchAllLeads(accessToken: string, params?: {
     pipelineIds?: string[] | null;
-    statusFilters?: Array<{
-      pipelineId: string;
-      statusId: string;
-    }> | null;
+    statusFilters?: AmoCRMStatusFilter[] | null;
     responsibleUserIds?: string[] | null;
     query?: string;
     createdAtFrom?: Date;
@@ -492,58 +283,31 @@ export class AmoCRMService {
     limit?: number;
     maxPages?: number;
   }, baseUrl?: string): Promise<AmoCRMLead[]> {
-    const pageSize = Math.min(Math.max(params?.limit || 250, 1), 250);
-    const maxPages = Math.max(params?.maxPages || 1000, 1);
+    const pageSize = clampAmoPageSize(params?.limit, AMOCRM_MAX_PAGE_SIZE, AMOCRM_MAX_PAGE_SIZE);
 
-    const allLeads: AmoCRMLead[] = [];
-    let page = 1;
+    return collectAmoPages(pageSize, resolveAmoMaxPages(params?.maxPages, 1000), async (page) => {
+      const response = await this.fetchLeads(accessToken, '', {
+        page,
+        limit: pageSize,
+        with: params?.with,
+        query: params?.query,
+        pipelineIds: params?.pipelineIds || undefined,
+        statusFilters: params?.statusFilters || undefined,
+        responsibleUserIds: params?.responsibleUserIds || undefined,
+        createdAtFrom: params?.createdAtFrom,
+        createdAtTo: params?.createdAtTo,
+      }, baseUrl);
 
-    while (page <= maxPages) {
-      const response = await this.fetchLeads(
-        accessToken,
-        '',
-        {
-          page,
-          limit: pageSize,
-          with: params?.with,
-          query: params?.query,
-          pipelineIds: params?.pipelineIds || undefined,
-          statusFilters: params?.statusFilters || undefined,
-          responsibleUserIds: params?.responsibleUserIds || undefined,
-          createdAtFrom: params?.createdAtFrom,
-          createdAtTo: params?.createdAtTo,
-        },
-        baseUrl,
-      );
-
-      const leads = Array.isArray(response._embedded?.leads) ? response._embedded?.leads : [];
-
-      allLeads.push(...leads);
-
-      const hasNext = Boolean(response._links?.next?.href);
-
-      if (!hasNext || leads.length < pageSize) {
-        break;
-      }
-
-      page += 1;
-    }
-
-    return allLeads;
+      return toAmoPage(response._embedded?.leads, response._links);
+    });
   }
 
-  async fetchUsers(accessToken: string, params?: {
-    page?: number;
-    limit?: number;
-  }, baseUrl?: string): Promise<AmoCRMUsersResponse> {
-    const queryParams = new URLSearchParams();
-
-    if (params?.page) queryParams.set('page', params.page.toString());
-    if (params?.limit) queryParams.set('limit', params.limit.toString());
-
-    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-    const url = `${resolvedBaseUrl}/api/v4/users${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    const response = await amoGet(url, accessToken, 'AmoCRM users fetch error', 'Failed to fetch AmoCRM users');
+  async fetchUsers(accessToken: string, params?: AmoCRMPageQuery, baseUrl?: string): Promise<AmoCRMUsersResponse> {
+    const response = await amoGet(
+      this.apiUrl(baseUrl, 'users', buildUserListQuery(params)),
+      accessToken,
+      failure('AmoCRM users fetch error', 'Failed to fetch AmoCRM users'),
+    );
 
     return (await response.json()) as AmoCRMUsersResponse;
   }
@@ -552,97 +316,27 @@ export class AmoCRMService {
     limit?: number;
     maxPages?: number;
   }, baseUrl?: string): Promise<AmoCRMUser[]> {
-    const pageSize = Math.min(Math.max(params?.limit || 250, 1), 250);
-    const maxPages = Math.max(params?.maxPages || 50, 1);
-    const allUsers: AmoCRMUser[] = [];
+    const pageSize = clampAmoPageSize(params?.limit, AMOCRM_MAX_PAGE_SIZE, AMOCRM_MAX_PAGE_SIZE);
 
-    let page = 1;
-
-    while (page <= maxPages) {
+    return collectAmoPages(pageSize, resolveAmoMaxPages(params?.maxPages, 50), async (page) => {
       const response = await this.fetchUsers(accessToken, { page, limit: pageSize }, baseUrl);
-      const users = Array.isArray(response._embedded?.users) ? response._embedded.users : [];
 
-      allUsers.push(...users);
-
-      const hasNext = Boolean(response._links?.next?.href);
-
-      if (!hasNext || users.length < pageSize) {
-        break;
-      }
-      page += 1;
-    }
-
-    return allUsers;
+      return toAmoPage(response._embedded?.users, response._links);
+    });
   }
 
-  async fetchTasks(accessToken: string, params?: {
-    page?: number;
-    limit?: number;
-    responsibleUserIds?: string[];
-    completed?: boolean;
-    completedOnly?: boolean;
-    dateFrom?: Date;
-    dateTo?: Date;
-    entityType?: string;
-    /** Tasks changed in this window (used by the snapshot job). */
-    updatedAtFrom?: Date;
-    updatedAtTo?: Date;
-    /** Per-request limit; background jobs can afford to wait longer than a page. */
-    timeoutMs?: number;
-  }, baseUrl?: string): Promise<AmoCRMTaskListResponse> {
-    const queryParams = new URLSearchParams();
-
-    if (params?.updatedAtFrom) {
-      queryParams.set('filter[updated_at][from]', Math.floor(params.updatedAtFrom.getTime() / 1000).toString());
-    }
-    if (params?.updatedAtTo) {
-      queryParams.set('filter[updated_at][to]', Math.floor(params.updatedAtTo.getTime() / 1000).toString());
-    }
-
-    if (params?.page) queryParams.set('page', params.page.toString());
-    if (params?.limit) queryParams.set('limit', params.limit.toString());
-    if (params?.responsibleUserIds?.length) {
-      params.responsibleUserIds.forEach((responsibleUserId) => {
-        queryParams.append('filter[responsible_user_id][]', responsibleUserId);
-      });
-    }
-    const completedFilter = typeof params?.completed === 'boolean'
-      ? params.completed
-      : (typeof params?.completedOnly === 'boolean' ? params.completedOnly : null);
-
-    if (completedFilter !== null) {
-      queryParams.set('filter[is_completed]', completedFilter ? '1' : '0');
-    }
-    if (params?.dateFrom) {
-      queryParams.set('filter[complete_till][from]', Math.floor(params.dateFrom.getTime() / 1000).toString());
-    }
-    if (params?.dateTo) {
-      queryParams.set('filter[complete_till][to]', Math.floor(params.dateTo.getTime() / 1000).toString());
-    }
-    if (params?.entityType) {
-      queryParams.set('filter[entity_type]', params.entityType);
-    }
-
-    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-    const url = `${resolvedBaseUrl}/api/v4/tasks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+  async fetchTasks(accessToken: string, params?: AmoCRMTaskQuery, baseUrl?: string): Promise<AmoCRMTaskListResponse> {
     // A stalled page used to hang for minutes (no timeout) and hold up the whole paging loop.
-    const response = await this.fetchWithTimeout(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    }, params?.timeoutMs);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      logger.error({ error: errorText, status: response.status }, 'AmoCRM tasks fetch error');
-      throw new Error(`Failed to fetch AmoCRM tasks: ${response.status} ${response.statusText}`);
-    }
+    const response = await amoGetWithTimeout(
+      this.apiUrl(baseUrl, 'tasks', buildTaskListQuery(params)),
+      accessToken,
+      failure('AmoCRM tasks fetch error', 'Failed to fetch AmoCRM tasks'),
+      params?.timeoutMs ?? this.requestTimeoutMs,
+    );
 
     // amoCRM answers an empty result set with 204 No Content (no JSON body).
     if (response.status === 204) {
-      return {} as AmoCRMTaskListResponse;
+      return {};
     }
 
     return (await response.json()) as AmoCRMTaskListResponse;
@@ -658,82 +352,33 @@ export class AmoCRMService {
     limit?: number;
     maxPages?: number;
   }, baseUrl?: string): Promise<AmoCRMTask[]> {
-    const pageSize = Math.min(Math.max(params?.limit || 250, 1), 250);
-    const maxPages = Math.max(params?.maxPages || 100, 1);
-    const allTasks: AmoCRMTask[] = [];
+    const pageSize = clampAmoPageSize(params?.limit, AMOCRM_MAX_PAGE_SIZE, AMOCRM_MAX_PAGE_SIZE);
 
-    let page = 1;
+    return collectAmoPages(pageSize, resolveAmoMaxPages(params?.maxPages, 100), async (page) => {
+      const response = await this.fetchTasks(accessToken, {
+        page,
+        limit: pageSize,
+        responsibleUserIds: params?.responsibleUserIds || undefined,
+        completed: params?.completed,
+        completedOnly: params?.completedOnly,
+        dateFrom: params?.dateFrom,
+        dateTo: params?.dateTo,
+        entityType: params?.entityType,
+      }, baseUrl);
 
-    while (page <= maxPages) {
-      const response = await this.fetchTasks(
-        accessToken,
-        {
-          page,
-          limit: pageSize,
-          responsibleUserIds: params?.responsibleUserIds || undefined,
-          completed: params?.completed,
-          completedOnly: params?.completedOnly,
-          dateFrom: params?.dateFrom,
-          dateTo: params?.dateTo,
-          entityType: params?.entityType,
-        },
-        baseUrl,
-      );
-      const tasks = Array.isArray(response._embedded?.tasks) ? response._embedded.tasks : [];
-
-      allTasks.push(...tasks);
-
-      const hasNext = Boolean(response._links?.next?.href);
-
-      if (!hasNext || tasks.length < pageSize) {
-        break;
-      }
-      page += 1;
-    }
-
-    return allTasks;
+      return toAmoPage(response._embedded?.tasks, response._links);
+    });
   }
 
   /** One page of notes of an entity type (e.g. call notes on leads or contacts). */
-  async fetchNotes(accessToken: string, entityType: 'leads' | 'contacts' | 'companies', params?: {
-    page?: number;
-    limit?: number;
-    noteTypes?: string[];
-    entityIds?: string[];
-    updatedAtFrom?: Date;
-    updatedAtTo?: Date;
-    /** Oldest-updated first, so a capped run can resume from the last note it saw. */
-    orderByUpdatedAsc?: boolean;
-  }, baseUrl?: string): Promise<AmoCRMNote[]> {
-    const queryParams = new URLSearchParams();
+  async fetchNotes(accessToken: string, entityType: AmoCRMNoteEntityType, params?: AmoCRMNoteQuery, baseUrl?: string): Promise<AmoCRMNote[]> {
+    const response = await amoGetWithTimeout(
+      this.apiUrl(baseUrl, `${entityType}/notes`, buildNoteListQuery(params)),
+      accessToken,
+      failure('AmoCRM notes fetch error', 'Failed to fetch AmoCRM notes', { entityType }),
+      this.requestTimeoutMs,
+    );
 
-    if (params?.orderByUpdatedAsc) queryParams.set('order[updated_at]', 'asc');
-    if (params?.page) queryParams.set('page', params.page.toString());
-    if (params?.limit) queryParams.set('limit', Math.min(params.limit, 250).toString());
-    params?.noteTypes?.forEach((noteType) => queryParams.append('filter[note_type][]', noteType));
-    params?.entityIds?.forEach((entityId) => queryParams.append('filter[entity_id][]', entityId));
-    if (params?.updatedAtFrom) {
-      queryParams.set('filter[updated_at][from]', Math.floor(params.updatedAtFrom.getTime() / 1000).toString());
-    }
-    if (params?.updatedAtTo) {
-      queryParams.set('filter[updated_at][to]', Math.floor(params.updatedAtTo.getTime() / 1000).toString());
-    }
-
-    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-    const url = `${resolvedBaseUrl}/api/v4/${entityType}/notes${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    const response = await this.fetchWithTimeout(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      logger.error({ error: errorText, status: response.status, entityType }, 'AmoCRM notes fetch error');
-      throw new Error(`Failed to fetch AmoCRM notes: ${response.status} ${response.statusText}`);
-    }
     if (response.status === 204) {
       return [];
     }
@@ -743,60 +388,24 @@ export class AmoCRMService {
     return Array.isArray(data._embedded?.notes) ? data._embedded.notes : [];
   }
 
-  async fetchEvents(accessToken: string, params?: {
-    page?: number;
-    limit?: number;
-    dateFrom?: Date;
-    dateTo?: Date;
-    userIds?: string[];
-    entityType?: string;
-    /** Per-request limit; background jobs can afford to wait longer than a page. */
-    timeoutMs?: number;
-  }, baseUrl?: string): Promise<AmoCRMEventListResponse> {
-    const queryParams = new URLSearchParams();
-
-    if (params?.page) queryParams.set('page', params.page.toString());
-    if (params?.limit) queryParams.set('limit', params.limit.toString());
-    if (params?.dateFrom) {
-      queryParams.set('filter[created_at][from]', Math.floor(params.dateFrom.getTime() / 1000).toString());
-    }
-    if (params?.dateTo) {
-      queryParams.set('filter[created_at][to]', Math.floor(params.dateTo.getTime() / 1000).toString());
-    }
-    if (params?.userIds?.length) {
-      params.userIds.forEach((userId) => {
-        queryParams.append('filter[created_by][]', userId);
-      });
-    }
-    if (params?.entityType) {
-      queryParams.set('filter[entity]', params.entityType);
-    }
-
-    const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-    const url = `${resolvedBaseUrl}/api/v4/events${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+  async fetchEvents(accessToken: string, params?: AmoCRMEventQuery, baseUrl?: string): Promise<AmoCRMEventListResponse> {
     // A stalled page used to hang for minutes (no timeout) and hold up the whole paging loop.
-    const response = await this.fetchWithTimeout(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    }, params?.timeoutMs);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      logger.error({ error: errorText, status: response.status }, 'AmoCRM events fetch error');
-      throw new Error(`Failed to fetch AmoCRM events: ${response.status} ${response.statusText}`);
-    }
+    const response = await amoGetWithTimeout(
+      this.apiUrl(baseUrl, 'events', buildEventListQuery(params)),
+      accessToken,
+      failure('AmoCRM events fetch error', 'Failed to fetch AmoCRM events'),
+      params?.timeoutMs ?? this.requestTimeoutMs,
+    );
 
     // amoCRM answers an empty result set with 204 No Content (no JSON body).
     if (response.status === 204) {
-      return {} as AmoCRMEventListResponse;
+      return {};
     }
 
     return (await response.json()) as AmoCRMEventListResponse;
   }
 
+  /** Events of all pages, querying the users in chunks amoCRM accepts; an event seen twice is kept once. */
   async fetchAllEvents(accessToken: string, params?: {
     dateFrom?: Date;
     dateTo?: Date;
@@ -805,110 +414,55 @@ export class AmoCRMService {
     limit?: number;
     maxPages?: number;
   }, baseUrl?: string): Promise<AmoCRMEvent[]> {
-    // amoCRM docs disagree on the events page size (100 in RU docs, 250 in EN); stay within the safe bound.
-    const pageSize = Math.min(Math.max(params?.limit || 100, 1), 100);
-    const maxPages = Math.max(params?.maxPages || 100, 1);
+    const pageSize = clampAmoPageSize(params?.limit, AMOCRM_EVENTS_MAX_PAGE_SIZE, AMOCRM_EVENTS_MAX_PAGE_SIZE);
+    const maxPages = resolveAmoMaxPages(params?.maxPages, 100);
     const allEvents: AmoCRMEvent[] = [];
-    const seenEventIds = new Set<string>();
 
-    // amoCRM accepts at most 10 IDs in filter[created_by]; larger lists are rejected,
-    // so query users in chunks of 10.
-    const userIds = Array.from(new Set((params?.userIds || []).filter(Boolean)));
-    const userChunks: Array<string[] | undefined> = userIds.length
-      ? Array.from({ length: Math.ceil(userIds.length / 10) }, (_, i) => userIds.slice(i * 10, i * 10 + 10))
-      : [undefined];
+    for (const userIds of chunkCreatedByIds(params?.userIds)) {
+      const events = await collectAmoPages(pageSize, maxPages, async (page) => {
+        const response = await this.fetchEvents(accessToken, {
+          page,
+          limit: pageSize,
+          dateFrom: params?.dateFrom,
+          dateTo: params?.dateTo,
+          userIds,
+          entityType: params?.entityType,
+        }, baseUrl);
 
-    for (const chunk of userChunks) {
-      let page = 1;
-
-      while (page <= maxPages) {
-        const response = await this.fetchEvents(
-          accessToken,
-          {
-            page,
-            limit: pageSize,
-            dateFrom: params?.dateFrom,
-            dateTo: params?.dateTo,
-            userIds: chunk,
-            entityType: params?.entityType,
-          },
-          baseUrl,
-        );
-        const events = Array.isArray(response._embedded?.events) ? response._embedded.events : [];
-
-        for (const event of events) {
-          const eventId = (event as { id?: unknown }).id;
-
-          if (eventId !== undefined && eventId !== null) {
-            const key = String(eventId);
-
-            if (seenEventIds.has(key)) continue;
-            seenEventIds.add(key);
-          }
-          allEvents.push(event);
-        }
-
-        const hasNext = Boolean(response._links?.next?.href);
-
-        if (!hasNext || events.length < pageSize) {
-          break;
-        }
-        page += 1;
-      }
-    }
-
-    return allEvents;
-  }
-
-  async createLead(accessToken: string, leadData: any, baseUrl?: string) {
-    try {
-      const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-      const response = await fetch(`${resolvedBaseUrl}/api/v4/leads`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify([leadData]),
+        return toAmoPage(response._embedded?.events, response._links);
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
+      allEvents.push(...events);
+    }
 
-        logger.error({ error: errorText, status: response.status }, 'AmoCRM create lead error');
-        throw new Error(`Failed to create lead in AmoCRM: ${response.status} ${response.statusText}`);
-      }
+    return dedupeEventsById(allEvents);
+  }
 
-      return await response.json();
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'AmoCRM create lead error');
-      throw new Error(`Failed to create AmoCRM lead: ${error.message}`);
+  async createLead(accessToken: string, leadData: AmoCRMLeadPayload, baseUrl?: string): Promise<unknown> {
+    try {
+      return await amoSendJson(
+        this.apiUrl(baseUrl, 'leads'),
+        accessToken,
+        'POST',
+        [leadData],
+        failure('AmoCRM create lead error', 'Failed to create lead in AmoCRM'),
+      );
+    } catch (error: unknown) {
+      return rethrowAmoError(error, 'AmoCRM create lead error', 'Failed to create AmoCRM lead');
     }
   }
 
-  async updateLead(accessToken: string, leadId: number, leadData: any, baseUrl?: string) {
+  async updateLead(accessToken: string, leadId: number, leadData: AmoCRMLeadPayload, baseUrl?: string): Promise<unknown> {
     try {
-      const resolvedBaseUrl = this.resolveBaseUrl(baseUrl);
-      const response = await fetch(`${resolvedBaseUrl}/api/v4/leads/${leadId}`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(leadData),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        logger.error({ error: errorText, status: response.status }, 'AmoCRM update lead error');
-        throw new Error(`Failed to update lead in AmoCRM: ${response.status} ${response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'AmoCRM update lead error');
-      throw new Error(`Failed to update AmoCRM lead: ${error.message}`);
+      return await amoSendJson(
+        this.apiUrl(baseUrl, `leads/${leadId}`),
+        accessToken,
+        'PATCH',
+        leadData,
+        failure('AmoCRM update lead error', 'Failed to update lead in AmoCRM'),
+      );
+    } catch (error: unknown) {
+      return rethrowAmoError(error, 'AmoCRM update lead error', 'Failed to update AmoCRM lead');
     }
   }
 
@@ -921,8 +475,8 @@ export class AmoCRMService {
       }
 
       return encrypted;
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Failed to encrypt AmoCRM tokens');
+    } catch (error: unknown) {
+      logger.error({ error: thrownMessage(error) }, 'Failed to encrypt AmoCRM tokens');
 
       return null;
     }
@@ -937,8 +491,8 @@ export class AmoCRMService {
       }
 
       return tokens;
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Failed to decrypt AmoCRM tokens');
+    } catch (error: unknown) {
+      logger.error({ error: thrownMessage(error) }, 'Failed to decrypt AmoCRM tokens');
 
       return null;
     }

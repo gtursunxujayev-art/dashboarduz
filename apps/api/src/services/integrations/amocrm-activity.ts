@@ -1,20 +1,21 @@
 import type { DbClient } from '@dashboarduz/db';
-import { TASHKENT_OFFSET_MS } from '@dashboarduz/shared';
 
-import { isCompletedTask, isLeadTask, taskResponsibleUserId, toStringId } from '../../lib/amocrm';
 import { errorMessage } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 
 import { type AmoCRMEvent, type AmoCRMTask } from './amocrm';
+import {
+  activityFailureReason,
+  countCompletedFollowUps,
+  countEventActivity,
+  countOpenFollowUps,
+  createEmptyMetrics,
+  type AmoCRMActivityMetrics,
+} from './amocrm-activity-count';
+import { getPeriodFollowUpBounds, getTashkentDayBounds, type ActivityRangeKind } from './amocrm-activity-periods';
 import { getAmoEvents, getAmoTasks } from './amocrm-activity-snapshot-read';
 
-export type AmoCRMActivityMetrics = {
-  followUpCount: number;
-  noteCount: number;
-  stageChangeCount: number;
-  overdueFollowUpCount: number;
-  todayFollowUpCount: number;
-};
+export { summarizeAmoCRMActivityMetrics, type AmoCRMActivityMetrics } from './amocrm-activity-count';
 
 export type AmoCRMActivitySourceStatus = {
   ok: boolean;
@@ -34,7 +35,7 @@ type CacheEntry = {
 };
 
 const CACHE_TTL_MS = 60 * 1000;
-const metricsCache = new Map<string, CacheEntry>();
+const metricsCache = new Map<string, StoredEntry>();
 
 export function createAmoCRMActivityDiagnostics(): AmoCRMActivityDiagnostics {
   return {
@@ -44,17 +45,6 @@ export function createAmoCRMActivityDiagnostics(): AmoCRMActivityDiagnostics {
   };
 }
 
-function failureReason(error: unknown): string {
-  const message = String((error as Error | undefined)?.message || error || '').toLowerCase();
-
-  if (message.includes('timeout')) return 'timeout';
-  // Our own HTTP-status errors read "Failed to fetch AmoCRM ...: <status>" — those are API errors, not network errors.
-  if (message.startsWith('failed to fetch amocrm')) return 'fetch_failed';
-  if (message.includes('network') || message.includes('fetch failed')) return 'network_error';
-
-  return 'fetch_failed';
-}
-
 function copyDiagnostics(target: AmoCRMActivityDiagnostics | undefined, source: AmoCRMActivityDiagnostics) {
   if (!target) return;
   target.completedTasks = { ...source.completedTasks };
@@ -62,227 +52,8 @@ function copyDiagnostics(target: AmoCRMActivityDiagnostics | undefined, source: 
   target.events = { ...source.events };
 }
 
-function createEmptyMetrics(): AmoCRMActivityMetrics {
-  return {
-    followUpCount: 0,
-    noteCount: 0,
-    stageChangeCount: 0,
-    overdueFollowUpCount: 0,
-    todayFollowUpCount: 0,
-  };
-}
-
 function cloneMetricsMap(input: Map<string, AmoCRMActivityMetrics>): Map<string, AmoCRMActivityMetrics> {
-  return new Map(
-    Array.from(input.entries()).map(([key, value]) => [
-      key,
-      {
-        followUpCount: value.followUpCount,
-        noteCount: value.noteCount,
-        stageChangeCount: value.stageChangeCount,
-        overdueFollowUpCount: value.overdueFollowUpCount,
-        todayFollowUpCount: value.todayFollowUpCount,
-      },
-    ]),
-  );
-}
-
-function toDate(value: unknown): Date | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const millis = value > 1_000_000_000_000 ? value : value * 1000;
-    const parsed = new Date(millis);
-
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  if (typeof value === 'string') {
-    const asNumber = Number(value);
-
-    if (!Number.isNaN(asNumber)) {
-      return toDate(asNumber);
-    }
-    const parsed = new Date(value);
-
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value;
-  }
-
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-
-    return (
-      toDate(record.timestamp)
-      || toDate(record.ts)
-      || toDate(record.value)
-      || toDate(record.datetime)
-      || toDate(record.date)
-      || null
-    );
-  }
-
-  return null;
-}
-
-function isWithinRange(value: Date | null, start: Date, end: Date): boolean {
-  if (!value) {
-    return false;
-  }
-
-  return value >= start && value <= end;
-}
-
-function taskActionDate(task: AmoCRMTask): Date | null {
-  return toDate(task.complete_till) || toDate(task.updated_at) || toDate(task.created_at);
-}
-
-function taskDueDate(task: AmoCRMTask): Date | null {
-  return toDate(task.complete_till);
-}
-
-function getTashkentDayBounds(baseDate: Date): { start: Date; end: Date } {
-  const offsetMs = TASHKENT_OFFSET_MS;
-  const shifted = new Date(baseDate.getTime() + offsetMs);
-  const year = shifted.getUTCFullYear();
-  const month = shifted.getUTCMonth();
-  const day = shifted.getUTCDate();
-  const start = new Date(Date.UTC(year, month, day) - offsetMs);
-  const end = new Date(start.getTime() + (24 * 60 * 60 * 1000) - 1);
-
-  return { start, end };
-}
-
-function getTashkentWeekBounds(baseDate: Date): { start: Date; end: Date } {
-  const offsetMs = TASHKENT_OFFSET_MS;
-  const shifted = new Date(baseDate.getTime() + offsetMs);
-  const year = shifted.getUTCFullYear();
-  const month = shifted.getUTCMonth();
-  const day = shifted.getUTCDate();
-  const weekDay = shifted.getUTCDay();
-  const daysSinceMonday = (weekDay + 6) % 7;
-  const start = new Date(Date.UTC(year, month, day - daysSinceMonday) - offsetMs);
-  const end = new Date(start.getTime() + (7 * 24 * 60 * 60 * 1000) - 1);
-
-  return { start, end };
-}
-
-function getTashkentMonthBounds(baseDate: Date): { start: Date; end: Date } {
-  const offsetMs = TASHKENT_OFFSET_MS;
-  const shifted = new Date(baseDate.getTime() + offsetMs);
-  const year = shifted.getUTCFullYear();
-  const month = shifted.getUTCMonth();
-  const start = new Date(Date.UTC(year, month, 1) - offsetMs);
-  const end = new Date(Date.UTC(year, month + 1, 1) - offsetMs - 1);
-
-  return { start, end };
-}
-
-function getPeriodFollowUpBounds(
-  rangeKind: 'today' | 'week' | 'month' | 'custom' | undefined,
-  rangeStart: Date,
-  rangeEnd: Date,
-): { start: Date; end: Date } {
-  const now = new Date();
-
-  if (rangeKind === 'week') {
-    return getTashkentWeekBounds(now);
-  }
-  if (rangeKind === 'month') {
-    return getTashkentMonthBounds(now);
-  }
-  if (rangeKind === 'custom') {
-    return { start: rangeStart, end: rangeEnd };
-  }
-
-  return getTashkentDayBounds(now);
-}
-
-function eventActorUserId(event: AmoCRMEvent): string {
-  const objectEvent = event as Record<string, unknown>;
-
-  return toStringId(objectEvent.created_by || objectEvent.user_id || objectEvent.responsible_user_id);
-}
-
-function eventDate(event: AmoCRMEvent): Date | null {
-  const objectEvent = event as Record<string, unknown>;
-
-  return toDate(objectEvent.created_at || objectEvent.createdAt || objectEvent.date_create);
-}
-
-function hasText(value: unknown, token: string): boolean {
-  if (value === null || value === undefined) {
-    return false;
-  }
-
-  if (typeof value === 'string') {
-    return value.toLowerCase().includes(token);
-  }
-
-  if (Array.isArray(value)) {
-    return value.some((item) => hasText(item, token));
-  }
-
-  if (typeof value === 'object') {
-    return Object.values(value as Record<string, unknown>).some((item) => hasText(item, token));
-  }
-
-  return false;
-}
-
-function isNoteEvent(event: AmoCRMEvent): boolean {
-  const objectEvent = event as Record<string, unknown>;
-  const eventType = toStringId(objectEvent.type || objectEvent.event_type || objectEvent.name).toLowerCase();
-
-  if (eventType.includes('note')) {
-    return true;
-  }
-
-  if (hasText(objectEvent, 'note')) {
-    return true;
-  }
-
-  return false;
-}
-
-function isStageChangeEvent(event: AmoCRMEvent): boolean {
-  const objectEvent = event as Record<string, unknown>;
-  const eventType = toStringId(objectEvent.type || objectEvent.event_type || objectEvent.name).toLowerCase();
-
-  if (
-    eventType.includes('status')
-    || eventType.includes('stage')
-    || eventType.includes('pipeline')
-  ) {
-    return true;
-  }
-
-  const stageKeys = [
-    'status_id',
-    'status_before',
-    'status_after',
-    'pipeline_id',
-    'pipeline_before',
-    'pipeline_after',
-    'value_before',
-    'value_after',
-  ];
-
-  for (const key of stageKeys) {
-    if (key in objectEvent && objectEvent[key] !== null && objectEvent[key] !== undefined && String(objectEvent[key]).trim() !== '') {
-      if (key === 'value_before' || key === 'value_after') {
-        if (hasText(objectEvent[key], 'status') || hasText(objectEvent[key], 'pipeline') || hasText(objectEvent[key], 'stage')) {
-          return true;
-        }
-        continue;
-      }
-
-      return true;
-    }
-  }
-
-  return false;
+  return new Map(Array.from(input.entries()).map(([key, value]) => [key, { ...value }]));
 }
 
 /** A range ending within this long of "now" is open-ended (today, this week…): its key ignores the exact end. */
@@ -301,7 +72,7 @@ type ActivityParams = {
   managerIds: string[];
   rangeStart: Date;
   rangeEnd: Date;
-  rangeKind?: 'today' | 'week' | 'month' | 'custom';
+  rangeKind?: ActivityRangeKind;
   cacheTtlMs?: number;
   diagnostics?: AmoCRMActivityDiagnostics;
 };
@@ -342,21 +113,21 @@ function normalizeManagerIds(managerIds: string[]): string[] {
 async function fetchTasksWithFallback(
   params: ActivityParams,
   managerIds: string[],
-  filters: { completedOnly?: boolean; completed?: boolean; dateFrom?: Date; dateTo?: Date; maxPages: number },
+  filters: { completed: boolean; dateFrom?: Date; dateTo?: Date },
   label: string,
   onFailure: (reason: string) => void,
 ): Promise<AmoCRMTask[]> {
   try {
     return await getAmoTasks(params.tenantId, {
       responsibleUserIds: managerIds,
-      completed: filters.completed ?? filters.completedOnly,
+      completed: filters.completed,
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
       entityType: 'leads',
     }, params, params.db);
   } catch (error: unknown) {
     logger.warn({ tenantId: params.tenantId, error: errorMessage(error) }, `AmoCRM activity: failed to read ${label} from the snapshot`);
-    onFailure(failureReason(error));
+    onFailure(activityFailureReason(error));
 
     return [];
   }
@@ -376,7 +147,7 @@ async function fetchEventsWithFallback(
     }, params, params.db);
   } catch (error: unknown) {
     logger.warn({ tenantId: params.tenantId, error: errorMessage(error) }, 'AmoCRM activity: failed to read events from the snapshot');
-    onFailure(failureReason(error));
+    onFailure(activityFailureReason(error));
 
     return [];
   }
@@ -385,79 +156,33 @@ async function fetchEventsWithFallback(
 /** Reads completed tasks, open tasks and lead events from the snapshot (in parallel) and counts them per manager. */
 async function computeActivityMetrics(params: ActivityParams, managerIds: string[]): Promise<CacheEntry> {
   const startedMs = Date.now();
-  const managerIdSet = new Set(managerIds);
   const metricsByManager = initializeMetricsMap(managerIds);
   const diagnostics = createAmoCRMActivityDiagnostics();
+  const range = { start: params.rangeStart, end: params.rangeEnd };
   const { start: todayStart, end: todayEnd } = getTashkentDayBounds(new Date());
-  const { start: periodStart, end: periodEnd } = getPeriodFollowUpBounds(
-    params.rangeKind,
-    params.rangeStart,
-    params.rangeEnd,
-  );
+  const followUpPeriod = getPeriodFollowUpBounds(params.rangeKind, params.rangeStart, params.rangeEnd);
 
   const [tasks, pendingTasks, events] = await Promise.all([
     fetchTasksWithFallback(
       params,
       managerIds,
-      { completedOnly: true, dateFrom: params.rangeStart, dateTo: params.rangeEnd, maxPages: 80 },
+      { completed: true, dateFrom: params.rangeStart, dateTo: params.rangeEnd },
       'tasks',
       (reason) => { diagnostics.completedTasks = { ok: false, reason }; },
     ),
     fetchTasksWithFallback(
       params,
       managerIds,
-      { completed: false, dateTo: todayEnd, maxPages: 30 },
+      { completed: false, dateTo: todayEnd },
       'pending tasks',
       (reason) => { diagnostics.pendingTasks = { ok: false, reason }; },
     ),
     fetchEventsWithFallback(params, managerIds, (reason) => { diagnostics.events = { ok: false, reason }; }),
   ]);
 
-  for (const task of tasks) {
-    if (!isCompletedTask(task) || !isLeadTask(task)) continue;
-    const managerId = taskResponsibleUserId(task);
-
-    if (!managerIdSet.has(managerId)) continue;
-    if (!isWithinRange(taskActionDate(task), params.rangeStart, params.rangeEnd)) continue;
-    const metrics = metricsByManager.get(managerId);
-
-    if (metrics) metrics.followUpCount += 1;
-  }
-
-  for (const task of pendingTasks) {
-    if (!isLeadTask(task) || isCompletedTask(task)) continue;
-    const managerId = taskResponsibleUserId(task);
-
-    if (!managerIdSet.has(managerId)) continue;
-    const dueDate = taskDueDate(task);
-    const metrics = metricsByManager.get(managerId);
-
-    if (!dueDate || !metrics) continue;
-    if (dueDate < todayStart) {
-      metrics.overdueFollowUpCount += 1;
-      continue;
-    }
-    if (dueDate >= periodStart && dueDate <= periodEnd) {
-      metrics.todayFollowUpCount += 1;
-    }
-  }
-
-  for (const event of events) {
-    const managerId = eventActorUserId(event);
-
-    if (!managerIdSet.has(managerId)) continue;
-    if (!isWithinRange(eventDate(event), params.rangeStart, params.rangeEnd)) continue;
-    const metrics = metricsByManager.get(managerId);
-
-    if (!metrics) continue;
-    if (isNoteEvent(event)) {
-      metrics.noteCount += 1;
-      continue;
-    }
-    if (isStageChangeEvent(event)) {
-      metrics.stageChangeCount += 1;
-    }
-  }
+  countCompletedFollowUps(metricsByManager, tasks, range);
+  countOpenFollowUps(metricsByManager, pendingTasks, todayStart, followUpPeriod);
+  countEventActivity(metricsByManager, events, range);
 
   const complete = Object.values(diagnostics).every((source) => source.ok);
 
@@ -480,7 +205,7 @@ async function computeActivityMetrics(params: ActivityParams, managerIds: string
 
 function pruneCache(now: number): void {
   for (const [key, entry] of metricsCache) {
-    if (now - (entry as StoredEntry).storedAt > STALE_MAX_AGE_MS) metricsCache.delete(key);
+    if (now - entry.storedAt > STALE_MAX_AGE_MS) metricsCache.delete(key);
   }
 }
 
@@ -549,7 +274,7 @@ export async function getAmoCRMActivityMetricsWithin(params: ActivityParams, wai
   if (!managerIds.length) return { metrics: new Map(), pending: false, stale: false };
   const key = buildActivityCacheKey(params.tenantId, managerIds, params.rangeStart, params.rangeEnd);
   const now = Date.now();
-  const cached = metricsCache.get(key) as StoredEntry | undefined;
+  const cached = metricsCache.get(key);
 
   if (cached && cached.expiresAt > now) {
     return { metrics: readEntry(cached, params.diagnostics), pending: false, stale: false };
@@ -581,20 +306,4 @@ export async function getAmoCRMActivityMetricsWithin(params: ActivityParams, wai
 export function resetAmoCRMActivityCache(): void {
   metricsCache.clear();
   inFlight.clear();
-}
-
-export function summarizeAmoCRMActivityMetrics(
-  metricsByManager: Map<string, AmoCRMActivityMetrics>,
-): AmoCRMActivityMetrics {
-  const totals = createEmptyMetrics();
-
-  for (const metrics of metricsByManager.values()) {
-    totals.followUpCount += metrics.followUpCount;
-    totals.noteCount += metrics.noteCount;
-    totals.stageChangeCount += metrics.stageChangeCount;
-    totals.overdueFollowUpCount += metrics.overdueFollowUpCount;
-    totals.todayFollowUpCount += metrics.todayFollowUpCount;
-  }
-
-  return totals;
 }
