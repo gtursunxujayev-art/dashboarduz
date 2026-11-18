@@ -50,12 +50,20 @@ describe('Metrics', () => {
       'latency_bucket{op="x",le="30"} 2 1000',
       'latency_bucket{op="x",le="60"} 2 1000',
       'latency_bucket{op="x",le="300"} 2 1000',
-      // Known bug (services/observability.ts, +Inf line): replace('}', ',le="+Inf"') drops the closing brace.
-      'latency_bucket{op="x",le="+Inf" 2 1000',
+      'latency_bucket{op="x",le="+Inf"} 2 1000',
     ]);
   });
 
-  it.todo('closes the label set of the +Inf histogram bucket (currently `le="+Inf"` without `}`)');
+  it('gives a histogram without labels an le label on every bucket', () => {
+    Metrics.reset();
+    Metrics.recordHistogram('plain', 0.2);
+
+    const buckets = Metrics.export().split('\n').filter((line) => line.startsWith('plain_bucket'));
+
+    expect(buckets[0]).toMatch(/^plain_bucket\{le="0\.1"\} \d+ \d+$/);
+    expect(buckets[buckets.length - 1]).toMatch(/^plain_bucket\{le="\+Inf"\} 1 \d+$/);
+    Metrics.reset();
+  });
 });
 
 describe('logWithContext', () => {

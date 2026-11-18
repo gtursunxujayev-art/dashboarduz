@@ -5,6 +5,13 @@ import * as Sentry from '@sentry/node';
 import { logger } from '../lib/logger';
 
 // Initialize Sentry
+/** Adds the `le` label to a Prometheus label set (`{a="b"}` or empty), keeping the set closed. */
+function withLeLabel(labels: string, bucket: string): string {
+  const le = `le="${bucket}"`;
+
+  return labels.endsWith('}') ? `${labels.slice(0, -1)},${le}}` : `{${le}}`;
+}
+
 export function initSentry() {
   if (process.env.SENTRY_DSN) {
     Sentry.init({
@@ -224,11 +231,11 @@ export class Metrics {
       buckets.forEach(bucket => {
         const count = bucketCounts.get(bucket) || 0;
 
-        lines.push(`${metricName}_bucket${key.substring(metricName.length).replace('}', `,le="${bucket}"}`)} ${count} ${now}`);
+        lines.push(`${metricName}_bucket${withLeLabel(key.substring(metricName.length), String(bucket))} ${count} ${now}`);
       });
       
       // Add +Inf bucket
-      lines.push(`${metricName}_bucket${key.substring(metricName.length).replace('}', ',le="+Inf"')} ${count} ${now}`);
+      lines.push(`${metricName}_bucket${withLeLabel(key.substring(metricName.length), '+Inf')} ${count} ${now}`);
     });
 
     return lines.join('\n');

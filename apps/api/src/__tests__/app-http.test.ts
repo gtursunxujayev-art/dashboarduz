@@ -243,8 +243,7 @@ describe('Metrics', () => {
       'job_ms_bucket{queue="q",le="30"} 2',
       'job_ms_bucket{queue="q",le="60"} 2',
       'job_ms_bucket{queue="q",le="300"} 2',
-      // The +Inf line is malformed today (see the skipped test below).
-      expect.stringMatching(/^job_ms_bucket\{queue="q",le="\+Inf"\}? 2$/),
+      'job_ms_bucket{queue="q",le="+Inf"} 2',
     ]);
     expect(Metrics.toJSON()).toMatchObject({
       counters: { 'jobs_total{queue="q"}': 3 },
@@ -255,9 +254,7 @@ describe('Metrics', () => {
     expect(Metrics.export()).toBe('');
   });
 
-  // BUG (apps/api/src/services/observability.ts:224): the +Inf bucket replaces the closing `}` instead of
-  // inserting before it, so the exported line is `job_ms_bucket{queue="q",le="+Inf" 2` (invalid Prometheus text).
-  it.skip('closes the label set of the +Inf histogram bucket', () => {
+  it('closes the label set of the +Inf histogram bucket', () => {
     Metrics.reset();
     Metrics.recordHistogram('job_ms', 400, { queue: 'q' });
 
