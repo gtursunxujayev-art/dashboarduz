@@ -2,6 +2,7 @@ import type { DbClient } from '@dashboarduz/db';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
+import { messageOrStringOfError } from '../../lib/error-text';
 import { logger } from '../../lib/logger';
 import { reconcileFinalizedBonusMonths } from '../bonus-engine';
 import { extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE, loadSaleChainConsistency, SALE_SUB_TARIFF_META_KEY } from '../income-chain';
@@ -323,12 +324,12 @@ export function rowMatchesSaleChainState(
 ): boolean {
   const recorded = state.find((entry) => entry.id === row.id);
 
-  return Boolean(recorded)
-    && recorded!.paymentAmount === row.paymentAmount
-    && recorded!.coursePriceAmount === row.coursePriceAmount
-    && recorded!.debtAmount === row.debtAmount
-    && recorded!.remainingDebtAmount === row.remainingDebtAmount
-    && recorded!.lifecycleStatus === row.lifecycleStatus;
+  return recorded !== undefined
+    && recorded.paymentAmount === row.paymentAmount
+    && recorded.coursePriceAmount === row.coursePriceAmount
+    && recorded.debtAmount === row.debtAmount
+    && recorded.remainingDebtAmount === row.remainingDebtAmount
+    && recorded.lifecycleStatus === row.lifecycleStatus;
 }
 
 export async function reconcileBonusAfterIncomeChange(
@@ -343,7 +344,7 @@ export async function reconcileBonusAfterIncomeChange(
     logger.error({
       tenantId,
       ...context,
-      error: String((error as any)?.message || error),
+      error: messageOrStringOfError(error),
     }, '[Bonus] Finalized month reconciliation failed after income change');
   }
 }

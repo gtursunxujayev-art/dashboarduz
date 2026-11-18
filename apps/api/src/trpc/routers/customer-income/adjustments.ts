@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { messageOrStringOfError } from '../../../lib/error-text';
 import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE, INCOME_LIFECYCLE_PENDING_REFUND, REFUND_CARD_NUMBER_REGEX } from '../../../services/customer-income/constants';
 import { getIncomeLifecycleLabel } from '../../../services/customer-income/labels';
@@ -28,7 +29,7 @@ async function notifyNonBlocking(
     logger.error({
       tenantId: params.tenantId,
       requestId: params.requestId,
-      error: String((error as Error)?.message || error),
+      error: messageOrStringOfError(error),
     }, failureLogMessage);
   }
 }
@@ -115,9 +116,7 @@ export const adjustmentProcedures = {
         previousTariff: { select: { id: true, name: true } },
       } satisfies Prisma.IncomeAdjustmentRequestSelect;
 
-      let requests: Array<any> = [];
-
-      requests = await ctx.db.incomeAdjustmentRequest.findMany({
+      const requests = await ctx.db.incomeAdjustmentRequest.findMany({
         where,
         orderBy: [{ createdAt: 'desc' }],
         take: input?.limit ?? 80,

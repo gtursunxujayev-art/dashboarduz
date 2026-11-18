@@ -62,10 +62,10 @@ export const incomeProblemsRouter = router({
         headers: z.array(z.string()).max(50),
       })).min(1).max(50),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(({ input }) => {
       const recommendedSheet = [...input.sheets]
         .sort((a, b) => {
-          const score = (sheet: { headers: string[] }) => detectMapping(sheet.headers.map((header) => normalizeHeader(header))).paymentAmount != null ? 1 : 0;
+          const score = (sheet: { headers: string[] }) => detectMapping(sheet.headers.map((header) => normalizeHeader(header))).paymentAmount !== null ? 1 : 0;
 
           return score(b) - score(a) || b.rowCount - a.rowCount;
         })[0];
@@ -79,7 +79,7 @@ export const incomeProblemsRouter = router({
 
   prepareFinanceSnapshot: adminProcedure
     .input(z.object({ workbookName: z.string().min(1).max(240), sheetName: z.string().min(1).max(120), rows: snapshotMatrixSchema, mapping: mappingSchema.partial().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(({ input }) => {
       const headerRowIndex = detectHeaderRow(input.rows);
       const headers = (input.rows[headerRowIndex] || []).map((cell) => String(cell ?? '').trim());
       const normalizedHeaders = headers.map((header) => normalizeHeader(header));
@@ -141,7 +141,7 @@ export const incomeProblemsRouter = router({
         if (input.status && row.status !== input.status) return false;
         if (!search) return true;
 
-        return normalizeMatchText(`${row.phone} ${row.name}`, { collapseWhitespace: true }).includes(search);
+        return normalizeMatchText(`${String(row.phone)} ${String(row.name)}`, { collapseWhitespace: true }).includes(search);
       });
 
       return {

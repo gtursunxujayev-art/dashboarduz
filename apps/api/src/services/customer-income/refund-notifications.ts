@@ -1,6 +1,7 @@
 import type { DbClient } from '@dashboarduz/db';
 import { formatSomAmount } from '@dashboarduz/shared';
 
+import { messageOrStringOfError } from '../../lib/error-text';
 import { logger } from '../../lib/logger';
 import { resolveTelegramBotTokenForTenant, sendMessageToTelegramChat } from '../../lib/telegram';
 
@@ -234,7 +235,7 @@ export async function notifyFinanceUsersRefundRequested(params: {
         requestId: params.requestId,
         financeUserId: financeUser.id,
         chatId,
-        error: String((error as any)?.message || error),
+        error: messageOrStringOfError(error),
       }, '[Income][Telegram] Failed to notify finance user about refund request');
     }
   }
@@ -281,7 +282,7 @@ export async function notifyRefundRequesterReviewResult(params: {
       requesterUserId: request.requestedBy?.id || null,
       chatId: requesterChatId,
       status: params.status,
-      error: String((error as any)?.message || error),
+      error: messageOrStringOfError(error),
     }, '[Income][Telegram] Failed to notify requester about refund review result');
   }
 }

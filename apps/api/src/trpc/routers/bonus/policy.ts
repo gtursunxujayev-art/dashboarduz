@@ -1,4 +1,5 @@
 import { courseCategoryLabel } from '@dashboarduz/shared';
+import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -139,7 +140,7 @@ export const bonusPolicyProcedures = {
           data: {
             tenantId: ctx.tenantId,
             effectiveMonth: new Date('1970-01-01T00:00:00.000Z'),
-            policy: buildLegacyBonusPolicy(tenantSettings) as any,
+            policy: buildLegacyBonusPolicy(tenantSettings) as Prisma.InputJsonValue,
             createdByUserId: ctx.user.userId,
           },
         });
@@ -149,10 +150,10 @@ export const bonusPolicyProcedures = {
         create: {
           tenantId: ctx.tenantId,
           effectiveMonth,
-          policy: policy as any,
+          policy: policy as Prisma.InputJsonValue,
           createdByUserId: ctx.user.userId,
         },
-        update: { policy: policy as any, createdByUserId: ctx.user.userId },
+        update: { policy: policy as Prisma.InputJsonValue, createdByUserId: ctx.user.userId },
       });
       await tx.tenant.update({
         where: { id: ctx.tenantId },
@@ -165,7 +166,7 @@ export const bonusPolicyProcedures = {
               bonusRules: policy.bonusRules,
               courseBonusOverrides: policy.courseOverrides,
             },
-          } as any,
+          } as Prisma.InputJsonObject,
         },
       });
     });
