@@ -169,6 +169,10 @@ export const bonusPolicyProcedures = {
           } as Prisma.InputJsonObject,
         },
       });
+    }, {
+      // Same limits as income creation: the default 5 s is not enough for these writes against a slow database.
+      maxWait: 10_000,
+      timeout: 30_000,
     });
 
     return { success: true, effectiveMonth: input.effectiveMonth, policy };
