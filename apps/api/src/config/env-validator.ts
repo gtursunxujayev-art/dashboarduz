@@ -96,6 +96,11 @@ const envSchema = z.object({
   SECRETS_PROVIDER: z.enum(['aws', 'vault', 'local']).optional(),
   VAULT_ADDR: z.string().url().optional(),
   VAULT_TOKEN: z.string().optional(),
+}).superRefine((values, context) => {
+  // Integration tokens are stored encrypted; without the key the API would run but could neither store nor read them.
+  if (values.NODE_ENV === 'production' && !values.ENCRYPTION_KEY?.trim()) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY is required in production' });
+  }
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

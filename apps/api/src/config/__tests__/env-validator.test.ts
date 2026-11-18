@@ -23,7 +23,7 @@ afterEach(() => {
 
 describe('validateEnv', () => {
   it('applies defaults to a valid environment and caches the result', () => {
-    const validator = freshValidator({ JWT_SECRET: SECRET, DATABASE_URL: 'postgresql://db/app', NODE_ENV: 'production' });
+    const validator = freshValidator({ JWT_SECRET: SECRET, DATABASE_URL: 'postgresql://db/app', NODE_ENV: 'production', ENCRYPTION_KEY: 'k'.repeat(64) });
     const env = validator.validateEnv();
 
     expect(env).toMatchObject({
@@ -54,6 +54,14 @@ describe('validateEnv', () => {
 
     freshValidator({ JWT_SECRET: SECRET, DB_HOST: 'h' }).validateEnv();
     expect(process.env.DATABASE_URL).toBeUndefined();
+  });
+
+  it('requires ENCRYPTION_KEY in production only', () => {
+    expect(() => freshValidator({ JWT_SECRET: SECRET, NODE_ENV: 'production' }).validateEnv())
+      .toThrow('ENCRYPTION_KEY: ENCRYPTION_KEY is required in production');
+    expect(() => freshValidator({ JWT_SECRET: SECRET, NODE_ENV: 'production', ENCRYPTION_KEY: '  ' }).validateEnv())
+      .toThrow('ENCRYPTION_KEY is required in production');
+    expect(freshValidator({ JWT_SECRET: SECRET, NODE_ENV: 'staging' }).validateEnv().NODE_ENV).toBe('staging');
   });
 
   it('lists every invalid variable in one error', () => {
