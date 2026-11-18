@@ -1,4 +1,3 @@
-import { normalizeSubTariffName } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
 import { echoReportRange } from '../../../lib/dates';
@@ -85,7 +84,8 @@ export const courseDetailProcedures = {
         ),
       );
 
-      const [{ rangeIncomeBySaleId: incomeBySaleId, currentIncomeBySaleId }, subTariffs] = await Promise.all([
+      // The second query's result is not read (its only use was a lookup map nothing consumed); it still runs.
+      const [{ rangeIncomeBySaleId: incomeBySaleId, currentIncomeBySaleId }] = await Promise.all([
         loadSalePaymentTotals({
           db: ctx.db,
           tenantId: ctx.tenantId,
@@ -106,8 +106,6 @@ export const courseDetailProcedures = {
             })
           : Promise.resolve([]),
       ]);
-
-      const subTariffNameById = new Map(subTariffs.map((subTariff) => [subTariff.id, normalizeSubTariffName(subTariff.name)]));
 
       let rangeAgreementAmount = 0;
       let rangeSalesPaidAmount = 0;

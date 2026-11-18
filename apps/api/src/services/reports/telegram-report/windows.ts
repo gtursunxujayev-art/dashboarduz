@@ -94,25 +94,6 @@ export function buildTodayWindow(nowUtc: Date): ReportWindow {
   };
 }
 
-function buildPreviousWeekWindow(nowUtc: Date): ReportWindow {
-  const nowLocal = shiftToTashkent(nowUtc);
-  const year = nowLocal.getUTCFullYear();
-  const month = nowLocal.getUTCMonth();
-  const day = nowLocal.getUTCDate();
-  const daysSinceMonday = (nowLocal.getUTCDay() + 6) % 7;
-  const currentWeekStart = fromTashkentLocalParts(year, month, day - daysSinceMonday, 0, 0, 0, 0);
-  const periodStart = new Date(currentWeekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const periodEnd = new Date(currentWeekStart.getTime() - 1);
-
-  return {
-    kind: 'weekly',
-    title: 'Haftalik hisobot (O`tgan hafta)',
-    periodStart,
-    periodEnd,
-    periodKey: `${toTashkentDateKey(periodStart)}_${toTashkentDateKey(periodEnd)}`,
-  };
-}
-
 export function buildCurrentWeekWindow(nowUtc: Date): ReportWindow {
   const nowLocal = shiftToTashkent(nowUtc);
   const year = nowLocal.getUTCFullYear();
@@ -127,32 +108,6 @@ export function buildCurrentWeekWindow(nowUtc: Date): ReportWindow {
     periodStart,
     periodEnd: nowUtc,
     periodKey: `${toTashkentDateKey(periodStart)}_${toTashkentDateKey(nowUtc)}`,
-  };
-}
-
-function buildPreviousMonthWindow(nowUtc: Date): ReportWindow {
-  const nowLocal = shiftToTashkent(nowUtc);
-  const year = nowLocal.getUTCFullYear();
-  const month = nowLocal.getUTCMonth();
-  const currentMonthStart = fromTashkentLocalParts(year, month, 1, 0, 0, 0, 0);
-  const periodEnd = new Date(currentMonthStart.getTime() - 1);
-  const previousMonthLocal = shiftToTashkent(new Date(currentMonthStart.getTime() - 24 * 60 * 60 * 1000));
-  const periodStart = fromTashkentLocalParts(
-    previousMonthLocal.getUTCFullYear(),
-    previousMonthLocal.getUTCMonth(),
-    1,
-    0,
-    0,
-    0,
-    0,
-  );
-
-  return {
-    kind: 'monthly',
-    title: 'Oylik hisobot (O`tgan oy)',
-    periodStart,
-    periodEnd,
-    periodKey: `${toTashkentDateKey(periodStart)}_${toTashkentDateKey(periodEnd)}`,
   };
 }
 

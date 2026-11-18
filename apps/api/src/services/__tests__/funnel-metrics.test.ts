@@ -51,10 +51,10 @@ function row(partial: Partial<FunnelManagerRow>): FunnelManagerRow {
 describe('fetchPagesConcurrently', () => {
   it('fetches pages in waves and stops at the first short page', async () => {
     const requested: number[] = [];
-    const fetchPage = async (page: number) => {
+    const fetchPage = (page: number) => {
       requested.push(page);
 
-      return page < 6 ? [page, page] : page === 6 ? [page] : [];
+      return Promise.resolve(page < 6 ? [page, page] : page === 6 ? [page] : []);
     };
     const result = await fetchPagesConcurrently(fetchPage, { pageSize: 2, maxPages: 40, concurrency: 4 });
 
@@ -65,7 +65,7 @@ describe('fetchPagesConcurrently', () => {
   });
 
   it('stops after one request when the first page is short', async () => {
-    const fetchPage = jest.fn(async () => [1]);
+    const fetchPage = jest.fn(() => Promise.resolve([1]));
     const result = await fetchPagesConcurrently(fetchPage, { pageSize: 2, maxPages: 40, concurrency: 4 });
 
     expect(result.items).toEqual([1]);
@@ -73,7 +73,7 @@ describe('fetchPagesConcurrently', () => {
   });
 
   it('reports truncation at the page cap', async () => {
-    const result = await fetchPagesConcurrently(async () => [1, 1], { pageSize: 2, maxPages: 3, concurrency: 4 });
+    const result = await fetchPagesConcurrently(() => Promise.resolve([1, 1]), { pageSize: 2, maxPages: 3, concurrency: 4 });
 
     expect(result.items).toHaveLength(6);
     expect(result.truncated).toBe(true);

@@ -22,7 +22,7 @@ export const generalIntegrationProcedures = {
         },
       });
     }),
-  connectGoogleSheets: adminProcedure.mutation(async () => {
+  connectGoogleSheets: adminProcedure.mutation(() => {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
       message: 'Google Sheets integration is disabled in MVP',

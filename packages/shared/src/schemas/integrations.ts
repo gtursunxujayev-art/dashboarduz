@@ -10,9 +10,9 @@ export const amocrmWebhookSchema = z.object({
   account: z.object({
     id: z.string(),
   }),
-  leads: z.array(z.any()).optional(),
-  contacts: z.array(z.any()).optional(),
-  events: z.array(z.any()).optional(),
+  leads: z.array(z.unknown()).optional(),
+  contacts: z.array(z.unknown()).optional(),
+  events: z.array(z.unknown()).optional(),
 });
 
 // Telegram Bot integration
@@ -43,7 +43,7 @@ export const metaAdsConnectSchema = z.object({
 // Generic integration update
 export const integrationUpdateSchema = z.object({
   status: z.enum(['pending', 'active', 'error', 'disconnected']).optional(),
-  config: z.record(z.any()).optional(),
+  config: z.record(z.unknown()).optional(),
 });
 
 export type AmoCRMConnect = z.infer<typeof amocrmConnectSchema>;

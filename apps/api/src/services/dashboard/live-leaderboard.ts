@@ -18,11 +18,16 @@ export type LeaderboardAgent = {
   roles: string[];
 };
 
+/** `Array.isArray` without widening a `readonly string[]` to `any[]`. */
+function isRoleList(roles: readonly string[] | null | undefined): roles is readonly string[] {
+  return Array.isArray(roles);
+}
+
 export function canReadLiveLeaderboard(
   roles: readonly string[] | null | undefined,
   group: AgentGroup,
 ): boolean {
-  if (!Array.isArray(roles)) return false;
+  if (!isRoleList(roles)) return false;
   if (roles.some((role) => LIVE_LEADERBOARD_MANAGER_ROLES.has(role))) return true;
 
   return group === 'online'

@@ -1,6 +1,7 @@
 import { type DbClient } from '@dashboarduz/db';
 
 import { parseFloatOrZero } from '../../lib/object';
+import { valueAtPath } from '../../lib/unknown-path';
 import { decryptIntegrationTokens } from '../security/encryption';
 
 const META_API_VERSION = process.env.META_API_VERSION || 'v20.0';
@@ -11,7 +12,8 @@ type MetaTokens = {
   access_token?: string;
 };
 
-type MetaInsightRow = {
+/** One row of the Graph API `insights` edge (`level=ad`, `time_increment=1`); numbers arrive as strings. */
+export type MetaInsightRow = {
   date_start?: string;
   date_stop?: string;
   account_id?: string;
@@ -30,6 +32,9 @@ type MetaInsightRow = {
   actions?: Array<{ action_type?: string; value?: string }>;
 };
 
+/** One page of the `insights` edge. */
+type MetaInsightsPage = { data?: MetaInsightRow[]; paging?: { next?: string } };
+
 export type NormalizedMetaInsight = {
   date: Date;
   accountId: string;
@@ -46,7 +51,7 @@ export type NormalizedMetaInsight = {
   cpc: number;
   cpm: number;
   leads: number;
-  raw: unknown;
+  raw: MetaInsightRow;
 };
 
 function toInteger(value: unknown): number {
@@ -61,7 +66,7 @@ function formatDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function parseMetaDate(dateKey: string | undefined): Date {
+export function parseMetaDate(dateKey: string | undefined): Date {
   const safeKey = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || '')) ? String(dateKey) : formatDateKey(new Date());
 
   return new Date(`${safeKey}T00:00:00.000Z`);
@@ -77,7 +82,7 @@ export function normalizeMetaAdAccountId(input: string): string {
   return trimmed.startsWith('act_') ? trimmed : `act_${trimmed.replace(/^act_/, '')}`;
 }
 
-function getLeadCount(actions: MetaInsightRow['actions']): number {
+export function getLeadCount(actions: MetaInsightRow['actions']): number {
   if (!Array.isArray(actions)) {
     return 0;
   }
@@ -93,17 +98,40 @@ function getLeadCount(actions: MetaInsightRow['actions']): number {
   }, 0);
 }
 
+/** An `insights` row as stored: ids default to `''`, names to `null`, counts are non-negative integers. */
+export function normalizeMetaInsightRow(row: MetaInsightRow, accountId: string): NormalizedMetaInsight {
+  return {
+    date: parseMetaDate(row.date_start),
+    accountId,
+    campaignId: row.campaign_id || '',
+    campaignName: row.campaign_name || null,
+    adSetId: row.adset_id || '',
+    adSetName: row.adset_name || null,
+    adId: row.ad_id || '',
+    adName: row.ad_name || null,
+    impressions: toInteger(row.impressions),
+    clicks: toInteger(row.clicks),
+    spend: parseFloatOrZero(row.spend),
+    ctr: parseFloatOrZero(row.ctr),
+    cpc: parseFloatOrZero(row.cpc),
+    cpm: parseFloatOrZero(row.cpm),
+    leads: getLeadCount(row.actions),
+    raw: row,
+  };
+}
+
 async function metaGet<T>(path: string, params: Record<string, string>, accessToken: string): Promise<T> {
   const search = new URLSearchParams({
     ...params,
     access_token: accessToken,
   });
   const response = await fetch(`${META_API_BASE}/${path}?${search.toString()}`);
-  const body = await response.json().catch(() => ({}));
+  const body: unknown = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const message = typeof body?.error?.message === 'string'
-      ? body.error.message
+    const errorMessage = valueAtPath(body, 'error', 'message');
+    const message = typeof errorMessage === 'string'
+      ? errorMessage
       : `Meta API request failed with status ${response.status}`;
 
     throw new Error(message);
@@ -153,20 +181,20 @@ async function fetchMetaInsights(
   let nextUrl: string | null = null;
 
   do {
-    let payload: { data?: MetaInsightRow[]; paging?: { next?: string } };
+    let payload: MetaInsightsPage;
 
     if (nextUrl) {
       payload = await fetch(nextUrl).then(async (response) => {
-        const body = await response.json().catch(() => ({}));
+        const body: unknown = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          throw new Error(String(body?.error?.message || `Meta API request failed with status ${response.status}`));
+          throw new Error(String(valueAtPath(body, 'error', 'message') || `Meta API request failed with status ${response.status}`));
         }
 
-        return body as { data?: MetaInsightRow[]; paging?: { next?: string } };
+        return body as MetaInsightsPage;
       });
     } else {
-      payload = await metaGet<{ data?: MetaInsightRow[]; paging?: { next?: string } }>(
+      payload = await metaGet<MetaInsightsPage>(
         `${accountPath}/insights`,
         {
           fields,
@@ -183,24 +211,7 @@ async function fetchMetaInsights(
     }
 
     for (const row of payload.data || []) {
-      rows.push({
-        date: parseMetaDate(row.date_start),
-        accountId,
-        campaignId: row.campaign_id || '',
-        campaignName: row.campaign_name || null,
-        adSetId: row.adset_id || '',
-        adSetName: row.adset_name || null,
-        adId: row.ad_id || '',
-        adName: row.ad_name || null,
-        impressions: toInteger(row.impressions),
-        clicks: toInteger(row.clicks),
-        spend: parseFloatOrZero(row.spend),
-        ctr: parseFloatOrZero(row.ctr),
-        cpc: parseFloatOrZero(row.cpc),
-        cpm: parseFloatOrZero(row.cpm),
-        leads: getLeadCount(row.actions),
-        raw: row,
-      });
+      rows.push(normalizeMetaInsightRow(row, accountId));
     }
     nextUrl = payload.paging?.next || null;
   } while (nextUrl);
@@ -251,7 +262,7 @@ export async function syncMetaAdInsightsForTenant(
       cpc: insight.cpc,
       cpm: insight.cpm,
       leads: insight.leads,
-      raw: insight.raw as any,
+      raw: insight.raw,
     };
 
     const key = {

@@ -1,6 +1,7 @@
 import { systemPrisma as prisma } from '@dashboarduz/db';
 
 import {
+  type BonusIncomeRow,
   buildLegacyBonusPolicy,
   calculateBonusMonth,
   reconcileBonusMonth,
@@ -11,6 +12,21 @@ import {
   resolveFullyPaidClosure,
   resolveCourseIncomePercent,
 } from '../bonus-engine';
+
+/** A payment-chain row; only id, manager, amount and date matter to closure resolution. */
+function chainPayment(row: Pick<BonusIncomeRow, 'id' | 'managerUserId' | 'paymentAmount' | 'entryDate'>): BonusIncomeRow {
+  return {
+    type: 'sale',
+    relatedDebtIncomeId: null,
+    courseId: null,
+    coursePriceAmount: null,
+    debtAmount: null,
+    remainingDebtAmount: 0,
+    createdAt: row.entryDate,
+    course: null,
+    ...row,
+  };
+}
 
 describe('monthly course-income bonus policy', () => {
   const rule = {
@@ -72,8 +88,8 @@ describe('monthly course-income bonus policy', () => {
   });
 
   it('credits the row that closes a cross-month payment chain', () => {
-    const junePayment = { id: 'sale', managerUserId: 'agent-a', paymentAmount: 4_000_000, entryDate: new Date('2026-06-10T05:00:00Z') } as any;
-    const julyPayment = { id: 'repayment', managerUserId: 'agent-b', paymentAmount: 6_000_000, entryDate: new Date('2026-07-05T05:00:00Z') } as any;
+    const junePayment = chainPayment({ id: 'sale', managerUserId: 'agent-a', paymentAmount: 4_000_000, entryDate: new Date('2026-06-10T05:00:00Z') });
+    const julyPayment = chainPayment({ id: 'repayment', managerUserId: 'agent-b', paymentAmount: 6_000_000, entryDate: new Date('2026-07-05T05:00:00Z') });
     const closure = resolveFullyPaidClosure({ coursePriceAmount: 10_000_000, debtAmount: 10_000_000 }, [junePayment, julyPayment]);
 
     expect(closure?.closing.id).toBe('repayment');
@@ -84,9 +100,9 @@ describe('monthly course-income bonus policy', () => {
 
   it('never closes a sale whose agreement amount is unknown', () => {
     const chain = [
-      { id: 'sale', managerUserId: 'agent-a', paymentAmount: 4_000_000, entryDate: new Date('2026-06-10T05:00:00Z') },
-      { id: 'repayment', managerUserId: 'agent-b', paymentAmount: 6_000_000, entryDate: new Date('2026-07-05T05:00:00Z') },
-    ] as any;
+      chainPayment({ id: 'sale', managerUserId: 'agent-a', paymentAmount: 4_000_000, entryDate: new Date('2026-06-10T05:00:00Z') }),
+      chainPayment({ id: 'repayment', managerUserId: 'agent-b', paymentAmount: 6_000_000, entryDate: new Date('2026-07-05T05:00:00Z') }),
+    ];
 
     // Falling back to the running total closed this sale in June (4M) AND July (10M), paying bonus twice.
     expect(resolveFullyPaidClosure({ coursePriceAmount: null, debtAmount: null }, chain)).toBeNull();

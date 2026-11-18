@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { resolveTelegramBotTokenForTenant } from '../../lib/telegram';
+import { thrownText } from '../../lib/thrown';
 import { telegramService } from '../../services/integrations/telegram';
 import { listTelegramRecipients } from '../../services/integrations/telegram-recipient-store';
 import { managerProcedure, router } from '../trpc';
@@ -153,7 +154,7 @@ export const telegramBotRouter = router({
           failed.push({
             userId: target.userId,
             chatId: target.chatId,
-            error: String((error as any)?.message || error),
+            error: thrownText(error),
           });
         }
       }

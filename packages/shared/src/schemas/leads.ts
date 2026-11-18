@@ -5,7 +5,7 @@ export const createLeadSchema = z.object({
   contactId: z.string().uuid().optional(),
   status: z.string().optional(),
   pipelineId: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.unknown()).optional(),
 });
 
 export const updateLeadSchema = z.object({
@@ -13,7 +13,7 @@ export const updateLeadSchema = z.object({
   status: z.string().optional(),
   pipelineId: z.string().optional(),
   responsibleUserId: z.string().uuid().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.unknown()).optional(),
 });
 
 export const leadQuerySchema = z.object({

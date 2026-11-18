@@ -1,4 +1,5 @@
 import { AGENT_ROLES, dateRangeInput, isAgentOnly as isAgentOnlyRoles, reportRangeSchema } from '@dashboarduz/shared';
+import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -71,7 +72,7 @@ export const callsRouter = router({
       const { page, limit, search, status } = input;
       const skip = (page - 1) * limit;
 
-      const where: any = {
+      const where: Prisma.CallWhereInput = {
         tenantId: ctx.tenantId,
         provider: AMOCRM_CALL_PROVIDER,
         ...(scope.isScoped
@@ -150,7 +151,7 @@ export const callsRouter = router({
 
   clickToCall: protectedProcedure
     .input(clickToCallSchema)
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message: 'Click-to-call is disabled in webhook-only VoIP mode.',

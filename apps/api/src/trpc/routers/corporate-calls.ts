@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { formatDuration } from '../../lib/duration';
 import { logger } from '../../lib/logger';
 import { buildTelegramChatIdCandidates, resolveTelegramBotTokenForTenant, toHashtag } from '../../lib/telegram';
+import { thrownText } from '../../lib/thrown';
 import {
   isTodayOrYesterdayInReportTz,
   parseDurationToSeconds,
@@ -81,8 +82,8 @@ async function sendCorporateCallAddedTelegram(params: {
         });
         delivered = true;
         break;
-      } catch (error: any) {
-        lastError = String(error?.message || error);
+      } catch (error) {
+        lastError = thrownText(error);
       }
     }
 
@@ -243,7 +244,7 @@ export const corporateCallsRouter = router({
           managerUserId: entry.managerUserId,
           date,
           reason: telegram.reason,
-          errors: (telegram as any).errors || [],
+          errors: 'errors' in telegram ? telegram.errors : [],
         }, '[CorporateCalls][Telegram] Failed to send corporate call notification.');
       }
 

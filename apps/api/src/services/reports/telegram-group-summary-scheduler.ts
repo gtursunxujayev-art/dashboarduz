@@ -5,6 +5,7 @@ import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
 import { asObjectOrEmpty } from '../../lib/object';
 import { resolveTelegramBotToken } from '../../lib/telegram';
+import { thrownText } from '../../lib/thrown';
 import { classifyIncomeCategory, type IncomeCategory } from '../income-facts';
 import { telegramService } from '../integrations/telegram';
 import { getOfflineTelegramGroupIds, getOnlineTelegramGroupIds } from '../integrations/telegram-groups';
@@ -242,14 +243,14 @@ async function recordDeliveryAudit(
         },
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     // A logging outage must not turn a successful Telegram send into a retry and duplicate it.
     reportError('Telegram group summary audit log failed', {
       tenantId: integration.tenantId,
       schedule,
       group: result.group,
       status: result.status,
-      error: error?.message || String(error),
+      error: thrownText(error),
     });
   }
 }
@@ -284,8 +285,8 @@ async function sendOneGroup(params: {
     try {
       await telegramService.sendMessage(token, destination, message, { disable_web_page_preview: true });
       sentCount += 1;
-    } catch (error: any) {
-      errors.push(error?.message || String(error));
+    } catch (error) {
+      errors.push(thrownText(error));
     }
   }
   const result: TelegramGroupDeliveryResult = {
@@ -379,10 +380,10 @@ async function dispatchScheduled(integration: TelegramIntegration, cutoff: '18:0
         destinationCount: result.destinationCount,
         sentCount: result.sentCount,
       }, 'Telegram group summary dispatch completed');
-    } catch (error: any) {
+    } catch (error) {
       await redis.del(lockKey);
       reportError('Telegram group summary dispatch failed', {
-        tenantId: integration.tenantId, schedule: cutoff, group, error: error?.message || String(error),
+        tenantId: integration.tenantId, schedule: cutoff, group, error: thrownText(error),
       });
     }
   }

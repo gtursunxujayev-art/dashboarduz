@@ -35,13 +35,14 @@ function normalizeLooseText(value: string): string {
     .trim();
 }
 
-function levenshteinDistance(a: string, b: string): number {
+export function levenshteinDistance(a: string, b: string): number {
   if (a === b) return 0;
   if (!a.length) return b.length;
   if (!b.length) return a.length;
 
-  const v0 = new Array(b.length + 1).fill(0);
-  const v1 = new Array(b.length + 1).fill(0);
+  // Both rows have b.length + 1 cells and every index below stays in range; `?? 0` only satisfies the checker.
+  const v0 = new Array<number>(b.length + 1).fill(0);
+  const v1 = new Array<number>(b.length + 1).fill(0);
 
   for (let i = 0; i <= b.length; i += 1) v0[i] = i;
   for (let i = 0; i < a.length; i += 1) {
@@ -50,18 +51,18 @@ function levenshteinDistance(a: string, b: string): number {
       const cost = a[i] === b[j] ? 0 : 1;
 
       v1[j + 1] = Math.min(
-        v1[j] + 1,
-        v0[j + 1] + 1,
-        v0[j] + cost,
+        (v1[j] ?? 0) + 1,
+        (v0[j + 1] ?? 0) + 1,
+        (v0[j] ?? 0) + cost,
       );
     }
-    for (let j = 0; j <= b.length; j += 1) v0[j] = v1[j];
+    for (let j = 0; j <= b.length; j += 1) v0[j] = v1[j] ?? 0;
   }
 
-  return v1[b.length];
+  return v1[b.length] ?? 0;
 }
 
-function similarityScore(a: string, b: string): number {
+export function similarityScore(a: string, b: string): number {
   const maxLen = Math.max(a.length, b.length);
 
   if (maxLen === 0) return 1;

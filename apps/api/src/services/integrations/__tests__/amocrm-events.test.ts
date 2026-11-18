@@ -8,8 +8,8 @@ function jsonResponse(body: unknown, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     statusText: status === 204 ? 'No Content' : 'OK',
-    json: async () => body,
-    text: async () => (body === undefined ? '' : JSON.stringify(body)),
+    json: () => Promise.resolve(body),
+    text: () => Promise.resolve(body === undefined ? '' : JSON.stringify(body)),
   } as unknown as Response;
 }
 
@@ -24,10 +24,10 @@ describe('AmoCRM events fetching', () => {
   it('splits created_by filter into chunks of at most 10 users (amoCRM limit)', async () => {
     const urls: string[] = [];
 
-    global.fetch = jest.fn(async (url: string) => {
+    global.fetch = jest.fn((url: string) => {
       urls.push(url);
 
-      return jsonResponse({ _embedded: { events: [{ id: `e${urls.length}` }] } });
+      return Promise.resolve(jsonResponse({ _embedded: { events: [{ id: `e${urls.length}` }] } }));
     }) as unknown as typeof fetch;
 
     const userIds = Array.from({ length: 18 }, (_, i) => String(1000 + i));
@@ -43,12 +43,12 @@ describe('AmoCRM events fetching', () => {
   });
 
   it('treats 204 No Content as an empty page instead of failing', async () => {
-    global.fetch = jest.fn(async () => ({
+    global.fetch = jest.fn(() => Promise.resolve({
       ok: true,
       status: 204,
       statusText: 'No Content',
-      json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
-      text: async () => '',
+      json: () => Promise.reject(new SyntaxError('Unexpected end of JSON input')),
+      text: () => Promise.resolve(''),
     })) as unknown as typeof fetch;
 
     await expect(amocrmService.fetchAllEvents('token', { userIds: ['1'] }, 'https://example.amocrm.ru')).resolves.toEqual([]);

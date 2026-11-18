@@ -1,6 +1,7 @@
 import { systemPrisma as prisma } from '@dashboarduz/db';
-import * as engine from '../bonus-engine';
+
 import { autoFinalizePreviousBonusMonth, getPreviousTashkentMonthStart } from '../bonus-auto-finalize';
+import * as engine from '../bonus-engine';
 
 describe('bonus auto-finalize', () => {
   afterEach(() => {

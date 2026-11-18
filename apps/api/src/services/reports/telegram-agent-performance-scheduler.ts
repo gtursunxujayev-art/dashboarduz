@@ -6,6 +6,7 @@ import { formatDuration } from '../../lib/duration';
 import { createIntervalJob } from '../../lib/interval-job';
 import { logger } from '../../lib/logger';
 import { buildLooseTelegramChatIdCandidates, resolveTelegramBotToken, sendMessageToTelegramChat } from '../../lib/telegram';
+import { thrownText } from '../../lib/thrown';
 import { countedCallsWhere } from '../calls-source';
 import { getCorporateCallDurationByManager } from '../corporate-call-durations';
 import { excludeTechnicalRows, loadTechnicalSaleIdsForRows } from '../income-facts';
@@ -188,10 +189,10 @@ async function collectAgentMetricsForTenant(params: {
 
   try {
     amocrmContext = await getTenantAmoCRMContext(params.tenantId, systemPrisma);
-  } catch (error: any) {
+  } catch (error) {
     logger.warn({
       tenantId: params.tenantId,
-      error: String(error?.message || error),
+      error: thrownText(error),
     }, 'Noon agent performance: failed to load AmoCRM context');
   }
   const managerIds = normalizedAgents
@@ -226,10 +227,10 @@ async function collectAgentMetricsForTenant(params: {
       for (const entry of managerIds) {
         followUpsByAgentId.set(entry.agentId, completedByResponsible.get(entry.amoId) || 0);
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.warn({
         tenantId: params.tenantId,
-        error: String(error?.message || error),
+        error: thrownText(error),
       }, 'Noon agent performance: failed to fetch completed follow-ups from AmoCRM');
     }
   }
@@ -326,12 +327,12 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
             emptyChatIdMessage: 'Telegram chat id is empty',
           });
           sentCount += 1;
-        } catch (error: any) {
+        } catch (error) {
           logger.warn({
             tenantId: integration.tenantId,
             userId: row.userId,
             chatId: row.telegramId,
-            error: String(error?.message || error),
+            error: thrownText(error),
           }, 'Noon agent performance: failed to send message to agent');
         }
       }
@@ -358,7 +359,7 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
         sentCount,
         agentCount: rows.length,
       }, 'Noon agent performance messages sent');
-    } catch (error: any) {
+    } catch (error) {
       await redis.del(lockKey);
       await systemPrisma.auditLog.create({
         data: {
@@ -371,14 +372,14 @@ async function dispatchNoonWindow(window: NoonWindow, nowUtc: Date): Promise<voi
             timezone: TASHKENT_TIMEZONE_LABEL,
             periodStart: window.periodStart.toISOString(),
             periodEnd: window.periodEnd.toISOString(),
-            error: String(error?.message || error),
+            error: thrownText(error),
           },
         },
       });
 
       reportError('Noon agent performance scheduler failed for tenant', {
         tenantId: integration.tenantId,
-        error: String(error?.message || error),
+        error: thrownText(error),
       });
     }
   }

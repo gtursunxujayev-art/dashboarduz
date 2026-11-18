@@ -223,7 +223,7 @@ export function findAnsweredLeadIds(
 
 /** Runs async tasks with at most `limit` in flight; results keep input order. */
 export async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
-  const results: T[] = new Array(tasks.length);
+  const results = new Array<T>(tasks.length);
   let next = 0;
   const worker = async () => {
     while (next < tasks.length) {
