@@ -18,6 +18,7 @@ export const incomeDebugListProcedures = {
     .query(async ({ ctx, input }) => {
       const mode = input?.mode ?? 'suspicious';
       const query = input?.query?.trim() ?? '';
+      const queryDigits = normalizeDigits(query);
       const limit = input?.limit ?? 200;
       const now = new Date();
 
@@ -26,13 +27,16 @@ export const incomeDebugListProcedures = {
         ...(query
           ? {
               OR: [
-                {
-                  customer: {
-                    customerNumber: {
-                      contains: normalizeDigits(query),
-                    },
-                  },
-                },
+                // Only a query with digits searches numbers: `contains: ''` would match every customer.
+                ...(queryDigits
+                  ? [{
+                      customer: {
+                        customerNumber: {
+                          contains: queryDigits,
+                        },
+                      },
+                    }]
+                  : []),
                 {
                   customer: {
                     name: {

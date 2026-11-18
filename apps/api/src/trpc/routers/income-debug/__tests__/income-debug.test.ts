@@ -149,9 +149,7 @@ describe('debug list and hiding', () => {
     expect((await admin().list({ mode: 'all', query: '7777', limit: 50 })).rows.map((row) => row.id)).toEqual([mine.saleId]);
   });
 
-  // Bug (trpc/routers/income-debug/list.ts:26-33): the customer-number branch uses normalizeDigits(query), which is ''
-  // for a name query, and `contains: ''` matches every customer, so a name search returns every income.
-  it.skip('a name search returns only that customer (bug: list.ts:26-33)', async () => {
+  it('a name search returns only that customer', async () => {
     const other = seedCustomer(fixture, '998911112222', 'Other');
     const mine = seedSaleChain(fixture, { customerId, agreementAmount: 1_000_000, firstPayment: 1_000_000, entryDate: daysAgo(3) });
 
