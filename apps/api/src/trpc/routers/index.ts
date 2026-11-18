@@ -1,25 +1,26 @@
 import { router } from '../trpc';
+
+import { aiHelperRouter } from './ai-helper';
+import { analyticsAiRouter } from './analytics-ai';
+import { attendanceRouter } from './attendance';
 import { authRouter } from './auth';
+import { bonusRouter } from './bonus';
+import { callsRouter } from './calls';
+import { corporateCallsRouter } from './corporate-calls';
+import { courseSalesRouter } from './course-sales';
+import { customerIncomeRouter } from './customer-income';
+import { dashboardRouter } from './dashboard';
+import { funnelRouter } from './funnel';
+import { incomeDebugRouter } from './income-debug';
+import { incomeProblemsRouter } from './income-problems';
 import { integrationsRouter } from './integrations';
 import { leadsRouter } from './leads';
-import { sellersRouter } from './sellers';
-import { callsRouter } from './calls';
 import { notificationsRouter } from './notifications';
-import { usersRouter } from './users';
-import { tenantRouter } from './tenant';
-import { dashboardRouter } from './dashboard';
-import { customerIncomeRouter } from './customer-income';
-import { bonusRouter } from './bonus';
-import { courseSalesRouter } from './course-sales';
-import { telegramBotRouter } from './telegram-bot';
-import { incomeProblemsRouter } from './income-problems';
-import { incomeDebugRouter } from './income-debug';
-import { corporateCallsRouter } from './corporate-calls';
-import { attendanceRouter } from './attendance';
-import { analyticsAiRouter } from './analytics-ai';
-import { aiHelperRouter } from './ai-helper';
 import { reportsRouter } from './reports';
-import { funnelRouter } from './funnel';
+import { sellersRouter } from './sellers';
+import { telegramBotRouter } from './telegram-bot';
+import { tenantRouter } from './tenant';
+import { usersRouter } from './users';
 
 export const appRouter = router({
   auth: authRouter,

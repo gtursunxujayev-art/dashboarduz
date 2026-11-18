@@ -9,8 +9,9 @@ export function rolesNeedManagerMapping(roles: UserRole[]): boolean {
 }
 
 export function isTelegramMappingConflictError(error: unknown): boolean {
-  const errorCode = String((error as any)?.code || '');
-  const message = String((error as any)?.message || '').toLowerCase();
+  const fields = (error ?? {}) as { code?: unknown; message?: unknown };
+  const errorCode = String(fields.code || '');
+  const message = String(fields.message || '').toLowerCase();
 
   return (
     (errorCode === 'P2002' && message.includes('telegramid'))

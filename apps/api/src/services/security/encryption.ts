@@ -1,7 +1,15 @@
 // Encryption service for sensitive data (tokens, secrets, etc.)
 
 import crypto from 'crypto';
+
+import { messagePropertyOfError } from '../../lib/error-text';
 import { logger } from '../../lib/logger';
+import { asObjectOrEmpty } from '../../lib/object';
+
+/** A string with at least one character (the stored `iv`, `authTag` and `encrypted` fields). */
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
 
 export class EncryptionService {
   private algorithm: string = 'aes-256-gcm';
@@ -60,8 +68,8 @@ export class EncryptionService {
       };
       
       return Buffer.from(JSON.stringify(result)).toString('base64');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Encryption failed');
+    } catch (error: unknown) {
+      logger.error({ error: messagePropertyOfError(error) }, 'Encryption failed');
 
       return null;
     }
@@ -76,10 +84,10 @@ export class EncryptionService {
 
     try {
       // Parse the encrypted data
-      const data = JSON.parse(Buffer.from(encryptedData, 'base64').toString('utf8'));
+      const data = asObjectOrEmpty(JSON.parse(Buffer.from(encryptedData, 'base64').toString('utf8')) as unknown);
       
       // Validate data structure
-      if (!data.iv || !data.authTag || !data.encrypted || data.algorithm !== this.algorithm) {
+      if (!isNonEmptyString(data.iv) || !isNonEmptyString(data.authTag) || !isNonEmptyString(data.encrypted) || data.algorithm !== this.algorithm) {
         throw new Error('Invalid encrypted data structure');
       }
       
@@ -98,34 +106,34 @@ export class EncryptionService {
       decrypted += decipher.final('utf8');
       
       return decrypted;
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Decryption failed');
+    } catch (error: unknown) {
+      logger.error({ error: messagePropertyOfError(error) }, 'Decryption failed');
 
       return null;
     }
   }
 
-  encryptJSON(data: any): string | null {
+  encryptJSON(data: unknown): string | null {
     try {
       const jsonString = JSON.stringify(data);
 
       return this.encrypt(jsonString);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'JSON encryption failed');
+    } catch (error: unknown) {
+      logger.error({ error: messagePropertyOfError(error) }, 'JSON encryption failed');
 
       return null;
     }
   }
 
-  decryptJSON<T = any>(encryptedData: string): T | null {
+  decryptJSON<T = unknown>(encryptedData: string): T | null {
     try {
       const decrypted = this.decrypt(encryptedData);
 
       if (!decrypted) return null;
       
       return JSON.parse(decrypted) as T;
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'JSON decryption failed');
+    } catch (error: unknown) {
+      logger.error({ error: messagePropertyOfError(error) }, 'JSON decryption failed');
 
       return null;
     }

@@ -1,5 +1,5 @@
-import type { Request, Response } from 'express';
 import type { JWTPayload } from '@dashboarduz/shared';
+import type { Request, Response } from 'express';
 
 export interface Context {
   req: Request;

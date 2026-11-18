@@ -1,10 +1,17 @@
 // Phone OTP via Twilio Verify.
 
+import { messagePropertyOfError } from '../../lib/error-text';
 import { logger } from '../../lib/logger';
+import { asObjectOrEmpty } from '../../lib/object';
 
 export interface OTPProvider {
   sendOTP(phone: string): Promise<{ success: boolean; messageId?: string; error?: string }>;
   verifyOTP(phone: string, code: string): Promise<{ success: boolean; verified: boolean; error?: string }>;
+}
+
+/** The `sid` of a Twilio Verify response, when it is a string. */
+function twilioSid(data: Record<string, unknown>): string | undefined {
+  return typeof data.sid === 'string' ? data.sid : undefined;
 }
 
 // Twilio Verify implementation
@@ -64,20 +71,22 @@ class TwilioOTPProvider implements OTPProvider {
         throw new Error(`Twilio API error: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = asObjectOrEmpty(await response.json() as unknown);
       
       logger.info({ phone, sid: data.sid }, 'OTP sent via Twilio Verify');
       
       return { 
         success: true, 
-        messageId: data.sid 
+        messageId: twilioSid(data),
       };
-    } catch (error: any) {
-      logger.error({ error: error.message, phone }, 'Twilio OTP send error');
+    } catch (error: unknown) {
+      const message = messagePropertyOfError(error);
+
+      logger.error({ error: message, phone }, 'Twilio OTP send error');
 
       return { 
         success: false, 
-        error: error.message || 'Failed to send OTP via Twilio' 
+        error: message || 'Failed to send OTP via Twilio' 
       };
     }
   }
@@ -128,7 +137,7 @@ class TwilioOTPProvider implements OTPProvider {
         };
       }
 
-      const data = await response.json();
+      const data = asObjectOrEmpty(await response.json() as unknown);
       const verified = data.status === 'approved';
       
       if (verified) {
@@ -141,13 +150,15 @@ class TwilioOTPProvider implements OTPProvider {
         success: true, 
         verified 
       };
-    } catch (error: any) {
-      logger.error({ error: error.message, phone }, 'Twilio OTP verify error');
+    } catch (error: unknown) {
+      const message = messagePropertyOfError(error);
+
+      logger.error({ error: message, phone }, 'Twilio OTP verify error');
 
       return { 
         success: false, 
         verified: false,
-        error: error.message || 'Failed to verify OTP via Twilio' 
+        error: message || 'Failed to verify OTP via Twilio' 
       };
     }
   }
