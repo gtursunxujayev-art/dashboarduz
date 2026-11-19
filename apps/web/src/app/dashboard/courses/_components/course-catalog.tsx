@@ -1,11 +1,12 @@
 'use client';
 
-import { IconCalendar, IconChevronRight, IconSchool } from '@tabler/icons-react';
+import { useState } from 'react';
+import { IconArchive, IconCalendar, IconChevronDown, IconChevronRight, IconSchool } from '@tabler/icons-react';
 import LoadingBlock from '@/components/dashboard/loading-block';
 import { EmptyState } from '@/components/ui/empty-state';
 import { getCourseCategoryLabel } from '@/lib/course-categories';
 import { CourseEditSheet } from './course-edit-sheet';
-import { type CourseItem, toDateInputValue } from './courses-helpers';
+import { type CourseGroup, type CourseItem, splitArchivedCourses, toDateInputValue } from './courses-helpers';
 import type { CoursesPageModel } from './use-courses-page';
 
 /** The course that is open for editing (the page shows it in a right sheet). */
@@ -65,10 +66,74 @@ function CourseCard({ course, isOpen, onToggle }: { course: CourseItem; isOpen: 
   );
 }
 
-/** Courses grouped by category: a section per category with a responsive card grid. */
+type CardProps = Pick<CoursesPageModel, 'openCourseIds' | 'toggleCourseOchish'>;
+
+function CourseGroupSection({ group, emptyText, openCourseIds, toggleCourseOchish }: CardProps & { group: CourseGroup; emptyText?: string }) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-2.5 px-1">
+        <h3 className="section-title">{group.label} kurslari</h3>
+        <span className="badge badge-neutral tabular">{group.courses.length}</span>
+      </div>
+      {group.courses.length === 0 ? (
+        <p className="rounded-[20px] border border-dashed border-gray-200 px-5 py-6 text-sm text-gray-500">{emptyText}</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          {group.courses.map((course) => (
+            <CourseCard
+              key={course.id}
+              course={course}
+              isOpen={Boolean(openCourseIds[course.id])}
+              onToggle={() => toggleCourseOchish(course.id)}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Inactive courses, collapsed under the catalog so it only lists the courses in use. */
+function CourseArchive({ groups, count, ...cardProps }: CardProps & { groups: CourseGroup[]; count: number }) {
+  const [open, setOpen] = useState(false);
+
+  if (count === 0) return null;
+
+  return (
+    <section className="space-y-4" data-testid="course-archive">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="panel flex w-full items-center gap-3 px-5 py-4 text-left transition hover:shadow-md"
+      >
+        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+          <IconArchive className="h-[18px] w-[18px]" stroke={1.6} aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="section-title block">Arxiv</span>
+          <span className="block text-xs text-gray-500">Faolsiz kurslar</span>
+        </span>
+        <span className="badge badge-neutral tabular">{count}</span>
+        <IconChevronDown className={`h-4 w-4 text-gray-500 transition ${open ? 'rotate-180' : ''}`} stroke={1.8} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="space-y-8">
+          {groups.map((group) => (
+            <CourseGroupSection key={`archive-${group.value}`} group={group} {...cardProps} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Active courses grouped by category (a card grid per category), with inactive ones in a collapsed archive. */
 export function CourseCatalog({ vm }: { vm: CoursesPageModel }) {
   const { catalogQuery, courses, groupedCourses, openCourseIds, toggleCourseOchish } = vm;
   const openCourse = findOpenCourse(vm);
+  const { active, archived, archivedCount } = splitArchivedCourses(groupedCourses);
+  const cardProps = { openCourseIds, toggleCourseOchish };
 
   return (
     <section className="space-y-5">
@@ -88,30 +153,15 @@ export function CourseCatalog({ vm }: { vm: CoursesPageModel }) {
         </div>
       ) : (
         <div className="space-y-8">
-          {groupedCourses.map((group) => (
-            <section key={`group-section-${group.value}`} className="space-y-3">
-              <div className="flex items-center gap-2.5 px-1">
-                <h3 className="section-title">{group.label} kurslari</h3>
-                <span className="badge badge-neutral tabular">{group.courses.length}</span>
-              </div>
-              {group.courses.length === 0 ? (
-                <p className="rounded-[20px] border border-dashed border-gray-200 px-5 py-6 text-sm text-gray-500">
-                  Hozircha {group.label.toLowerCase()} kurslari yo'q.
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                  {group.courses.map((course) => (
-                    <CourseCard
-                      key={course.id}
-                      course={course}
-                      isOpen={Boolean(openCourseIds[course.id])}
-                      onToggle={() => toggleCourseOchish(course.id)}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
+          {active.map((group) => (
+            <CourseGroupSection
+              key={`group-section-${group.value}`}
+              group={group}
+              emptyText={`Hozircha faol ${group.label.toLowerCase()} kurslari yo'q.`}
+              {...cardProps}
+            />
           ))}
+          <CourseArchive groups={archived} count={archivedCount} {...cardProps} />
         </div>
       )}
 

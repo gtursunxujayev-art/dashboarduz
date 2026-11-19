@@ -38,3 +38,18 @@ export function toDateInputValue(value: Date | string | null | undefined): strin
   }
   return value.slice(0, 10);
 }
+
+export type CourseGroup = { value: string; label: string; courses: CourseItem[] };
+
+/**
+ * Splits the catalog into active courses (every category, as before) and the archive: inactive
+ * ("Faolsiz") courses, only in categories that have some.
+ */
+export function splitArchivedCourses<T extends CourseGroup>(groups: T[]): { active: T[]; archived: T[]; archivedCount: number } {
+  const active = groups.map((group) => ({ ...group, courses: group.courses.filter((course) => course.isActive) }));
+  const archived = groups
+    .map((group) => ({ ...group, courses: group.courses.filter((course) => !course.isActive) }))
+    .filter((group) => group.courses.length > 0);
+
+  return { active, archived, archivedCount: archived.reduce((total, group) => total + group.courses.length, 0) };
+}
