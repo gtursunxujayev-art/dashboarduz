@@ -278,6 +278,7 @@ export const summaryProcedures = {
           activityByManager: activity.activityByManager,
           talkSecondsByAgent: talk.talkSecondsByAgent,
           callCountByAgent: talk.callCountByAgent,
+          longCallCountByAgent: talk.longCallCountByAgent,
           leadsDataAvailable: amo.leadsDataAvailable,
           // While activity is still loading, show its cells as unknown rather than 0.
           activityRequestUnavailable: activity.pending

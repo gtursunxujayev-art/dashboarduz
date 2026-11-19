@@ -379,20 +379,43 @@ describeWithDatabase('money paths (Postgres integration)', () => {
     expect(pending[0]!.deltaAmount).toBe(20_000);
   });
 
-  it('never deletes a customer that has a sale, in the API or in the database', async () => {
-    const { tenant, admin, saleId } = await sale('delete-customer');
+  it('deletes a customer with its sale, repayment and request, leaves nothing orphaned, and owes the finalized month a reconcile', async () => {
+    const { tenant, admin, agent, saleId, customerNumber, saleDate, saleMonth } = await sale('delete-customer');
     const prisma = loadPrisma();
     const { customerId } = await prisma.income.findUniqueOrThrow({ where: { id: saleId }, select: { customerId: true } });
-    const empty = await prisma.customer.create({ data: { tenantId: tenant.tenantId, customerNumber: '998900001111', name: 'No sales' } });
+    const repayment = await agent.customerIncome.createIncome({ entryDate: saleDate, managerUserId: tenant.agentUserId, customerNumber, type: 'repayment', paymentAmount: 300_000 });
 
-    await expect(admin.customerIncome.deleteCustomers({ customerIds: [customerId, empty.id] })).resolves.toEqual({
-      deletedCount: 1,
-      deletedIds: [empty.id],
-      skipped: [{ id: customerId, reason: 'has_incomes' }],
-    });
-    // The database refuses it too (ON DELETE NO ACTION), so no other path can cascade money rows away.
+    await agent.customerIncome.createAdjustmentRequest({ type: 'refund', incomeId: saleId, reason: 'test', refundCardNumber: '8600123412341234' });
+    await admin.bonus.finalizeBonusMonth({ month: saleMonth });
+    const other = await sale('delete-customer-other');
+
+    // The database still refuses a direct delete (NO ACTION), so no other path can cascade money rows away.
     await expect(prisma.customer.delete({ where: { id: customerId } })).rejects.toMatchObject({ code: 'P2003' });
-    expect(await prisma.income.count({ where: { customerId } })).toBe(1);
+
+    const bonusEngine = await import('../../services/bonus-engine');
+    const reconcile = jest.spyOn(bonusEngine, 'reconcileFinalizedBonusMonths').mockRejectedValueOnce(new Error('bonus busy'));
+    const otherCustomer = await prisma.income.findUniqueOrThrow({ where: { id: other.saleId }, select: { customerId: true } });
+
+    await expect(admin.customerIncome.deleteCustomers({ customerIds: [customerId, otherCustomer.customerId] }))
+      .resolves.toEqual({ deletedCount: 1, deletedIds: [customerId], deletedIncomeCount: 2, deletedRequestCount: 1 });
+    reconcile.mockRestore();
+
+    expect(await prisma.customer.count({ where: { id: customerId } })).toBe(0);
+    expect(await prisma.income.count({ where: { OR: [{ customerId }, { id: { in: [saleId, repayment.income.id] } }, { relatedDebtIncomeId: saleId }] } })).toBe(0);
+    expect(await prisma.incomeAdjustmentRequest.count({ where: { tenantId: tenant.tenantId } })).toBe(0);
+    // Another tenant's customer in the list is untouched.
+    expect(await prisma.customer.count({ where: { id: otherCustomer.customerId } })).toBe(1);
+    expect(await prisma.income.count({ where: { id: other.saleId } })).toBe(1);
+
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { tenantId: tenant.tenantId, action: 'customer_bulk_delete' } });
+
+    expect(audit.metadata).toMatchObject({
+      deletedIds: [customerId],
+      customers: [{ id: customerId, incomeCount: 2, requestCount: 1, paymentTotal: FIRST_PAYMENT + 300_000 }],
+      finalizedMonthsAffected: [saleMonth],
+    });
+    expect(await prisma.bonusReconcileRequest.findMany({ where: { tenantId: tenant.tenantId } }))
+      .toEqual([expect.objectContaining({ reason: `deleteCustomers:${saleMonth}`, attempts: 1 })]);
   });
 
   it('keeps tenants isolated: another tenant cannot see or refund the sale', async () => {

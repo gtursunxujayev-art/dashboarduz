@@ -209,3 +209,35 @@ describe('group data scope: writes', () => {
     expect(await asOnlineAdmin().updateTariff({ tariffId: ids.onlineTariff, name: 'Online Plus' })).toMatchObject({ name: 'Online Plus' });
   });
 });
+
+describe('group data scope: deleting customers', () => {
+  it('lets OnlineAdmin delete an online-group customer together with its payments', async () => {
+    await expect(asOnlineAdmin().deleteCustomers({ customerIds: [ids.onlineCustomer] }))
+      .resolves.toEqual({ deletedCount: 1, deletedIds: [ids.onlineCustomer], deletedIncomeCount: 1, deletedRequestCount: 0 });
+    expect(fixture.store.rows('Customer', { id: ids.onlineCustomer })).toEqual([]);
+    expect(fixture.store.rows('Income').map((row) => row.id)).toEqual([ids.offlineSale]);
+  });
+
+  it('ignores a customer outside the online group, as if it did not exist', async () => {
+    await expect(asOnlineAdmin().deleteCustomers({ customerIds: [ids.offlineCustomer] }))
+      .resolves.toEqual({ deletedCount: 0, deletedIds: [], deletedIncomeCount: 0, deletedRequestCount: 0 });
+    expect(fixture.store.rows('Customer', { id: ids.offlineCustomer })).toHaveLength(1);
+    expect(fixture.store.rows('Income', { id: ids.offlineSale })).toHaveLength(1);
+  });
+
+  it('refuses the whole delete for OnlineAdmin when a selected customer also has incomes outside the group', async () => {
+    const mixed = seedSaleChain(fixture, { customerId: ids.onlineCustomer, managerUserId: ids.offlineAgent, agreementAmount: 1_000_000, firstPayment: 200_000, entryDate: daysAgo(3) });
+    const incomesBefore = fixture.store.rows('Income').length;
+
+    await expect(asOnlineAdmin().deleteCustomers({ customerIds: [ids.onlineCustomer] }))
+      .rejects.toMatchObject({ code: 'FORBIDDEN', message: "Tanlangan mijozlarning ba'zilari sizning guruhingizga tegishli emas." });
+    expect(fixture.store.rows('Customer')).toHaveLength(2);
+    expect(fixture.store.rows('Income')).toHaveLength(incomesBefore);
+    expect(fixture.store.rows('AuditLog', { action: 'customer_bulk_delete' })).toEqual([]);
+
+    // An unscoped admin is not limited by the group: the same customer goes with all its incomes.
+    await expect(caller(fixture.adminId, ['Admin']).deleteCustomers({ customerIds: [ids.onlineCustomer] }))
+      .resolves.toMatchObject({ deletedCount: 1, deletedIncomeCount: 2 });
+    expect(fixture.store.rows('Income', { id: mixed.saleId })).toEqual([]);
+  });
+});

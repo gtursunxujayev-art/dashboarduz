@@ -1,3 +1,4 @@
+import { LONG_CALL_MIN_SECONDS } from '../../calls-source';
 import { createAmoCRMActivityDiagnostics } from '../../integrations/amocrm-activity';
 import { classifyLeadQualification } from '../lead-qualification';
 import {
@@ -114,7 +115,39 @@ describe('summarizeTalkTime', () => {
 
     expect([...result.talkSecondsByAgent]).toEqual([['linked', 0], ['manual', 30]]);
     expect([...result.callCountByAgent]).toEqual([['linked', 1]]);
+    expect([...result.longCallCountByAgent]).toEqual([]);
     expect(listUnmappedSellerNames(agents)).toEqual(['manual', 'silent']);
+  });
+
+  it('counts calls of at least 240 seconds as long, per agent, from the same calls as talk time', () => {
+    const agents = [
+      { id: 'a', name: null, username: null, amocrmResponsibleUserId: '1' },
+      { id: 'b', name: null, username: null, amocrmResponsibleUserId: '2' },
+      { id: 'quiet', name: null, username: null, amocrmResponsibleUserId: '3' },
+    ];
+    const result = summarizeTalkTime({
+      calls: [
+        { managerUserId: 'a', duration: 239 },
+        { managerUserId: 'a', duration: 240 },
+        { managerUserId: 'a', duration: 600 },
+        { managerUserId: 'a', duration: null },
+        { managerUserId: 'b', duration: 241 },
+        { managerUserId: null, duration: 900 },
+      ],
+      agents,
+      corporateDurationByUserId: new Map([['quiet', 300]]),
+    });
+
+    expect(result.callCountByAgent.get('a')).toBe(4);
+    expect(result.longCallCountByAgent.get('a')).toBe(2);
+    expect(result.talkSecondsByAgent.get('a')).toBe(1079);
+    expect(result.callCountByAgent.get('b')).toBe(1);
+    expect(result.longCallCountByAgent.get('b')).toBe(1);
+    // Manually entered corporate time adds talk time but is not a call.
+    expect(result.talkSecondsByAgent.get('quiet')).toBe(300);
+    expect(result.callCountByAgent.has('quiet')).toBe(false);
+    expect(result.longCallCountByAgent.has('quiet')).toBe(false);
+    expect(LONG_CALL_MIN_SECONDS).toBe(240);
   });
 });
 
@@ -167,6 +200,7 @@ describe('seller performance rows', () => {
     activityByManager: new Map([['501', { followUpCount: 2, noteCount: 3, stageChangeCount: 4, overdueFollowUpCount: 5, todayFollowUpCount: 6 }]]),
     talkSecondsByAgent: new Map([['a', 90], ['b', 90]]),
     callCountByAgent: new Map([['a', 2]]),
+    longCallCountByAgent: new Map([['a', 1]]),
     leadsDataAvailable: true,
     activityRequestUnavailable: false,
     diagnostics: { ...createAmoCRMActivityDiagnostics(), pendingTasks: { ok: false, reason: 'timeout' } },
@@ -187,6 +221,7 @@ describe('seller performance rows', () => {
       incomeAmount: 50,
       talkedSeconds: 90,
       callsCount: 2,
+      longCallsCount: 1,
       followUpCount: 2,
       noteCount: 3,
       stageChangeCount: 4,
@@ -200,6 +235,8 @@ describe('seller performance rows', () => {
     const row = buildSellerPerformanceRow(agentB, { ...inputs, hideMoney: true });
 
     expect([row.name, row.newLeads, row.conversionPercent, row.agreementsAmount, row.followUpCount]).toEqual(['bobur', null, null, 0, null]);
+    // An agent without calls gets 0 calls and 0 long calls.
+    expect([row.callsCount, row.longCallsCount]).toEqual([0, 0]);
   });
 
   it('sorts by talk time, unknown last, then by name', () => {

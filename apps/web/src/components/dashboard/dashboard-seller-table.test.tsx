@@ -17,7 +17,7 @@ describe('DashboardSellerTable CRM availability', () => {
         isLoading={false}
         sellerPerformance={[{
           userId: '1', name: 'Agent A', sales: 2, agreementsAmount: 100, incomeAmount: 50,
-          talkedSeconds: 0, followUpCount: null, noteCount: null, stageChangeCount: null,
+          talkedSeconds: 0, callsCount: 0, longCallsCount: 0, followUpCount: null, noteCount: null, stageChangeCount: null,
           overdueFollowUpCount: null, todayFollowUpCount: null,
         }]}
         isTashkiliyOnly={false}
@@ -38,6 +38,33 @@ describe('DashboardSellerTable CRM availability', () => {
     expect(screen.getAllByText('-')).toHaveLength(5);
     fireEvent.click(screen.getByRole('button', { name: 'Qayta urinish' }));
     expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows calls and 4+ minute calls right before talk time, 0 as 0', () => {
+    render(
+      <DashboardSellerTable
+        isLoading={false}
+        sellerPerformance={[
+          { userId: '1', name: 'Agent A', sales: 1, callsCount: 12, longCallsCount: 5, talkedSeconds: 3600, followUpCount: 0, noteCount: 0, stageChangeCount: 0, overdueFollowUpCount: 0, todayFollowUpCount: 0 },
+          { userId: '2', name: 'Agent B', sales: 0, callsCount: 0, longCallsCount: 0, talkedSeconds: 0, followUpCount: 0, noteCount: 0, stageChangeCount: 0, overdueFollowUpCount: 0, todayFollowUpCount: 0 },
+        ]}
+        isTashkiliyOnly={false}
+        range="month"
+        formatAmount={(value) => String(value)}
+        formatDuration={(value) => `${value}s`}
+        renderMetricValue={(value) => value === null || value === undefined ? '-' : String(value)}
+        getPeriodFollowUpLabel={() => 'Oylik F/U'}
+        onRetry={jest.fn()}
+        isRetrying={false}
+      />,
+    );
+
+    const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
+    const [rowA, rowB] = screen.getAllByRole('row').slice(1).map((row) => Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent));
+
+    expect(headers.slice(-3)).toEqual(["Qo'ng'iroqlar", "4 daq+ qo'ng'iroqlar", 'Suhbat vaqti']);
+    expect(rowA?.slice(-3)).toEqual(['12', '5', '3600s']);
+    expect(rowB?.slice(-3)).toEqual(['0', '0', '0s']);
   });
 
   it('says activity is still loading instead of failed', () => {
