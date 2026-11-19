@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/auth-context';
+import { hasTeamLeaderRole, isAdminLike } from '@dashboarduz/shared';
 import { formatDateTime, UZ_TASHKENT_DATE_TIME } from '@/lib/format';
 import { trpc } from '@/lib/trpc';
 import { useMemo, useState } from 'react';
@@ -10,8 +11,8 @@ import { AGENT_ROLES, getNowTashkentDateTimeLocal, getTodayTashkentDate, hasInPr
 export function useAttendancePageState() {
   const { user } = useAuth();
   const roles = user?.roles || [];
-  const isAdmin = roles.includes('Admin');
-  const canReadAnomalies = roles.includes('Admin') || roles.includes('Manager') || roles.includes('TeamLeader');
+  const isAdmin = isAdminLike(roles);
+  const canReadAnomalies = isAdminLike(roles) || roles.includes('Manager') || hasTeamLeaderRole(roles);
   const today = useMemo(() => getTodayTashkentDate(), []);
   const nowDateTime = useMemo(() => getNowTashkentDateTimeLocal(), []);
   const [dateFrom, setDateFrom] = useState(today);

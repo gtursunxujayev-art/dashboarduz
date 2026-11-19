@@ -12,7 +12,7 @@ export const courseDetailProcedures = {
     .input(courseScopeInput)
     .query(async ({ ctx, input }) => {
       const now = new Date();
-      const { rangeStart, rangeEnd, scopedManagerUserId, scopedFilters } = await resolveCourseScope(ctx, input, now);
+      const { rangeStart, rangeEnd, scopedManagerUserIds, scopedFilters } = await resolveCourseScope(ctx, input, now);
 
       const [course, sales] = await Promise.all([
         ctx.db.course.findFirst({
@@ -36,7 +36,7 @@ export const courseDetailProcedures = {
           },
         }),
         ctx.db.income.findMany({
-          where: activeSalesWhere({ tenantId: ctx.tenantId, scopedManagerUserId, filters: scopedFilters }),
+          where: activeSalesWhere({ tenantId: ctx.tenantId, scopedManagerUserIds, filters: scopedFilters }),
           select: {
             id: true,
             customerId: true,

@@ -1,9 +1,9 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, dateRangeInput, funnelGroupSchema, isTashkiliyOnly, reportRangeSchema } from '@dashboarduz/shared';
+import { AGENT_ROLES, type DataScope, dateRangeInput, type FunnelGroup, funnelGroupSchema, isTashkiliyOnly, reportRangeSchema } from '@dashboarduz/shared';
 // Tahlil → Voronka: per-manager funnel (leads, calls, sales, plan) and lost-revenue analysis.
 import type { Prisma } from '@prisma/client';
 
-import { getAgentResponsibleScope } from '../../lib/access';
+import { resolveCallerDataScope } from '../../lib/access';
 import { withTimeout } from '../../lib/async';
 import { resolveDateRange } from '../../lib/dates';
 import { logger } from '../../lib/logger';
@@ -148,6 +148,11 @@ async function loadFunnelAgents(tenantId: string, group: z.infer<typeof funnelGr
   if (group === 'all') return agents;
 
   return agents.filter((agent) => resolveAgentGroup(agent.roles) === group);
+}
+
+/** The funnel group a caller gets: a team leader or OnlineAdmin always their own group, others what they ask. */
+export function resolveFunnelGroup(scope: DataScope, requested: FunnelGroup): FunnelGroup {
+  return scope.kind === 'group' ? scope.group : requested;
 }
 
 function agentLabel(agent: { name: string | null; username: string | null }): string {
@@ -440,13 +445,15 @@ export const funnelRouter = router({
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const taklifStage = input.taklifStage ?? null;
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const group = resolveFunnelGroup(scope.scope, input.group);
 
       const cacheKey = buildCacheKey('funnel', {
         t: ctx.tenantId,
         r: input.range,
         df: input.dateFrom,
         dt: input.dateTo,
-        g: input.group,
+        g: group,
         p: input.pipelineId ?? undefined,
         v: 'calls50', // Ishlangan = answered call >= 50 s (bump when the definition changes)
         ts: taklifStage ? `${taklifStage.pipelineId}:${taklifStage.statusId}` : undefined,
@@ -456,7 +463,7 @@ export const funnelRouter = router({
         tenantId: ctx.tenantId,
         rangeStart,
         rangeEnd,
-        group: input.group,
+        group,
         pipelineId: input.pipelineId ?? null,
         taklifStage,
         db: ctx.db,
@@ -471,8 +478,8 @@ export const funnelRouter = router({
       const teamRatios = computeTeamRatios(groupTotals);
       const lostRows = rows.map((row) => computeLostRevenueRow(row, teamRatios));
 
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
-      const visibleIds = scope.isScoped ? new Set([ctx.user.userId]) : null;
+      // Agents see only their own row; a group caller sees the whole (forced) group.
+      const visibleIds = scope.scope.kind === 'self' ? new Set([ctx.user.userId]) : null;
       let visibleRows = visibleIds ? rows.filter((row) => visibleIds.has(row.userId)) : rows;
       let visibleLostRows = visibleIds ? lostRows.filter((row) => visibleIds.has(row.userId)) : lostRows;
 
@@ -487,7 +494,7 @@ export const funnelRouter = router({
         range: input.range,
         dateFrom: rangeStart.toISOString(),
         dateTo: rangeEnd.toISOString(),
-        group: input.group,
+        group,
         stages: { taklif: taklifStage },
         minAnsweredCallSeconds: MIN_ANSWERED_CALL_SECONDS,
         sourceStatus: base.sourceStatus,

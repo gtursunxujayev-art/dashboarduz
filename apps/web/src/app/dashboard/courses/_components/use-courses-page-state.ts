@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/auth-context';
+import { isAdminLike } from '@dashboarduz/shared';
 import { COURSE_CATEGORY_OPTIONS } from '@/lib/course-categories';
 import { trpc } from '@/lib/trpc';
 import { type FormEvent, useMemo, useState } from 'react';
@@ -8,11 +9,8 @@ import { type CourseItem, type SubTariffItem, type TariffItem, toDateInputValue 
 
 export function useCoursesPageState() {
   const { user } = useAuth();
-  const canManageCourses = Boolean(
-    user?.roles?.includes('Admin')
-    || user?.roles?.includes('Manager')
-    || user?.roles?.includes('TeamLeader'),
-  );
+  // Team leaders only read; OnlineAdmin manages online courses (checked by the server).
+  const canManageCourses = Boolean(isAdminLike(user?.roles) || user?.roles?.includes('Manager'));
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [newCourseName, setNewCourseName] = useState('');

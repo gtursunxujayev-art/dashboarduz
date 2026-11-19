@@ -178,9 +178,7 @@ export const liveLeaderboardProcedures = {
           tenantId: ctx.tenantId,
           isActive: true,
           roles: {
-            hasSome: requestedGroup === 'online'
-              ? ['OnlineAgent']
-              : ['OfflineAgent', 'TeamLeader'],
+            hasSome: groupAgentRoles(requestedGroup),
           },
         },
         select: {

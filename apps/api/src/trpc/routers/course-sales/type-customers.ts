@@ -1,8 +1,8 @@
-import { courseTypeCategorySchema, isAgentOnly } from '@dashboarduz/shared';
+import { courseTypeCategorySchema } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { emptyCustomerPage, listCourseSaleCustomers } from '../../../services/course-sales/customer-list';
-import { buildCourseSaleFilters, findCategoryCourseIds } from '../../../services/course-sales/queries';
+import { buildCourseSaleFilters, findCategoryCourseIds, resolveCourseSalesManagerScope } from '../../../services/course-sales/queries';
 import { protectedProcedure } from '../../trpc';
 
 export const courseSalesTypeCustomerProcedures = {
@@ -37,7 +37,7 @@ export const courseSalesTypeCustomerProcedures = {
       return listCourseSaleCustomers({
         db: ctx.db,
         tenantId: ctx.tenantId,
-        scopedManagerUserId: isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined,
+        scopedManagerUserIds: await resolveCourseSalesManagerScope(ctx),
         filters,
         query: input.query?.trim(),
         page: input.page,

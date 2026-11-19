@@ -1,9 +1,9 @@
-import { AGENT_ROLES, dateRangeInput, isAgentOnly as isAgentOnlyRoles, reportRangeSchema } from '@dashboarduz/shared';
+import { AGENT_ROLES, TEAM_LEADER_ROLES, dateRangeInput, reportRangeSchema } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { getAgentResponsibleScope } from '../../lib/access';
+import { resolveCallerDataScope } from '../../lib/access';
 import { echoReportRange, resolveDateRange } from '../../lib/dates';
 import { textFromScalar } from '../../lib/object';
 import { AMOCRM_CALL_PROVIDER, countedCallsWhere } from '../../services/calls-source';
@@ -44,37 +44,35 @@ function getTashkentDayKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * `where` part limiting calls to the caller's scope. A call belongs to its manager (`managerUserId`, set by the
+ * amoCRM call import), not to the lead's owner; `null` user ids mean no filter.
+ */
+export function callScopeWhere(userIds: readonly string[] | null): Prisma.CallWhereInput {
+  return userIds === null ? {} : { managerUserId: { in: [...userIds] } };
+}
+
+/** Team totals of the rows a report returns. */
+export function summarizeCallRows(rows: ReadonlyArray<{ totalCalls: number; totalDurationSeconds: number }>) {
+  return {
+    totalAgents: rows.length,
+    totalCalls: rows.reduce((sum, row) => sum + row.totalCalls, 0),
+    totalDurationSeconds: rows.reduce((sum, row) => sum + row.totalDurationSeconds, 0),
+  };
+}
+
 export const callsRouter = router({
   list: protectedProcedure
     .input(callsListSchema)
     .query(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
-
-      if (scope.isScoped && !scope.responsibleUserId) {
-        return {
-          data: [],
-          pagination: {
-            page: input.page,
-            limit: input.limit,
-            total: 0,
-            hasMore: false,
-          },
-        };
-      }
-
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
       const { page, limit, search, status } = input;
       const skip = (page - 1) * limit;
 
       const where: Prisma.CallWhereInput = {
         tenantId: ctx.tenantId,
         provider: AMOCRM_CALL_PROVIDER,
-        ...(scope.isScoped
-          ? {
-              lead: {
-                responsibleUserId: scope.responsibleUserId,
-              },
-            }
-          : {}),
+        ...callScopeWhere(scope.userIds),
       };
 
       if (status) {
@@ -117,18 +115,12 @@ export const callsRouter = router({
   get: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
       const call = await ctx.db.call.findFirst({
         where: {
           id: input.id,
           tenantId: ctx.tenantId,
-          ...(scope.isScoped
-            ? {
-                lead: {
-                  responsibleUserId: scope.responsibleUserId || '__unmapped__',
-                },
-              }
-            : {}),
+          ...callScopeWhere(scope.userIds),
         },
         include: {
           lead: true,
@@ -153,14 +145,17 @@ export const callsRouter = router({
     const now = new Date();
     const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
 
-    const roles = ctx.user.roles || [];
-    const isAgentOnly = isAgentOnlyRoles(roles);
+    const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles || [], ctx.db);
+    const isAgentOnly = scope.scope.kind === 'self';
 
+    // An agent's own row is compared with the average of every agent; for that the whole team is read, but
+    // only the agent's row and totals are returned. Group and company scopes only ever read their own agents.
     const agentUsers = await ctx.db.user.findMany({
       where: {
         tenantId: ctx.tenantId,
         isActive: true,
-        roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
+        roles: { hasSome: [...AGENT_ROLES, ...TEAM_LEADER_ROLES] },
+        ...(scope.userIds && !isAgentOnly ? { id: { in: scope.userIds } } : {}),
       },
       orderBy: { createdAt: 'asc' },
       select: {
@@ -273,11 +268,7 @@ export const callsRouter = router({
       ? Number((rows.reduce((sum, row) => sum + row.callsToday, 0) / rows.length).toFixed(1))
       : 0;
 
-    const totals = {
-      totalAgents: rows.length,
-      totalCalls: rows.reduce((sum, row) => sum + row.totalCalls, 0),
-      totalDurationSeconds: rows.reduce((sum, row) => sum + row.totalDurationSeconds, 0),
-    };
+    const totals = summarizeCallRows(rows);
 
     if (isAgentOnly) {
       const ownRow = rows.find((row) => row.userId === ctx.user.userId);
@@ -286,7 +277,7 @@ export const callsRouter = router({
       return {
         rows: ownRow ? [ownRow] : [],
         teamAverageTodayCalls,
-        totals,
+        totals: summarizeCallRows(ownRow ? [ownRow] : []),
         ...echoReportRange(input),
         rangeStart,
         rangeEnd,

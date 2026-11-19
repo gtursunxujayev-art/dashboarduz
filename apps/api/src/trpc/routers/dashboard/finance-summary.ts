@@ -1,8 +1,9 @@
-import { AGENT_ROLES, dateRangeInput, fromTashkentLocalParts, isTashkiliyOnly, reportRangeSchema, shiftToTashkent } from '@dashboarduz/shared';
+import { AGENT_ROLES, dateRangeInput, fromTashkentLocalParts, isTashkiliyOnly, reportRangeSchema, shiftToTashkent, TEAM_LEADER_ROLES } from '@dashboarduz/shared';
 
-import { getAgentResponsibleScope } from '../../../lib/access';
+import { resolveCallerDataScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { buildCacheKey, getOrSet } from '../../../services/cache';
+import { filterRowsToScope, resolveManagerFilter } from '../../../services/dashboard/data-scope';
 import { buildSaleChainMetricsBySaleId, INCOME_LIFECYCLE_ACTIVE, INCOME_LIFECYCLE_REFUNDED } from '../../../services/income-chain';
 import { resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
@@ -37,11 +38,11 @@ export const financeSummaryProcedures = {
       return getOrSet(financeCacheKey, 120, async () => {
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
-
-      const effectiveManagerUserId = scope.isScoped
-        ? ctx.user.userId
-        : (input.managerUserId || undefined);
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const agentScoped = scope.scope.kind === 'self';
+      // A requested manager must be inside the caller's scope; agents are always limited to themselves.
+      const effectiveManagerUserId = agentScoped ? ctx.user.userId : (input.managerUserId || undefined);
+      const managerFilter = resolveManagerFilter(scope, effectiveManagerUserId);
 
       const where = {
         tenantId: ctx.tenantId,
@@ -49,11 +50,7 @@ export const financeSummaryProcedures = {
           gte: rangeStart,
           lte: rangeEnd,
         },
-        ...(effectiveManagerUserId
-          ? {
-              managerUserId: effectiveManagerUserId,
-            }
-          : {}),
+        ...managerFilter,
         ...(input.courseId
           ? {
               courseId: input.courseId,
@@ -62,11 +59,7 @@ export const financeSummaryProcedures = {
       };
       const analyticsBaseWhere = {
         tenantId: ctx.tenantId,
-        ...(effectiveManagerUserId
-          ? {
-              managerUserId: effectiveManagerUserId,
-            }
-          : {}),
+        ...managerFilter,
         ...(input.courseId
           ? {
               courseId: input.courseId,
@@ -127,11 +120,7 @@ export const financeSummaryProcedures = {
           tenantId: ctx.tenantId,
           type: 'new_sale',
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          ...(effectiveManagerUserId
-            ? {
-                managerUserId: effectiveManagerUserId,
-              }
-            : {}),
+          ...managerFilter,
           ...(input.courseId
             ? {
                 courseId: input.courseId,
@@ -209,7 +198,7 @@ export const financeSummaryProcedures = {
             tenantId: ctx.tenantId,
             isActive: true,
             roles: {
-              hasSome: ['Admin', 'Manager', 'TeamLeader', ...AGENT_ROLES],
+              hasSome: ['Admin', 'OnlineAdmin', 'Manager', ...TEAM_LEADER_ROLES, ...AGENT_ROLES],
             },
           },
           orderBy: { name: 'asc' },
@@ -474,9 +463,7 @@ export const financeSummaryProcedures = {
           label: manager.name || manager.username || manager.id,
           roles: manager.roles,
         }));
-      const visibleManagerOptions = scope.isScoped
-        ? managerOptions.filter((manager) => manager.id === ctx.user.userId)
-        : managerOptions;
+      const visibleManagerOptions = filterRowsToScope(scope, managerOptions, (manager) => manager.id);
 
       return {
         range: input.range,
@@ -485,7 +472,7 @@ export const financeSummaryProcedures = {
         filters: {
           courseId: input.courseId || null,
           managerUserId: effectiveManagerUserId || null,
-          agentScoped: scope.isScoped,
+          agentScoped,
         },
         comparisons: {
           monthToDateVsLastMonthToDate: {

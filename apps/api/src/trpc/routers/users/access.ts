@@ -5,12 +5,13 @@ import { z } from 'zod';
 
 import { hashPassword } from '../../../services/auth/password';
 import { generatePassword, withTelegramMappingConflict, rolesNeedManagerMapping } from '../../../services/users/accounts';
-import { managerProcedure } from '../../trpc';
+import { assertCanAssignRoles, assertCanManageUser } from '../../../services/users/permissions';
+import { userAdminProcedure } from '../../trpc';
 
 import { roleSchema } from './accounts';
 
 export const userAccessProcedures = {
-  updateRole: managerProcedure
+  updateRole: userAdminProcedure
     .input(
       z.object({
         userId: z.string().uuid(),
@@ -27,12 +28,15 @@ export const userAccessProcedures = {
         },
         select: {
           id: true,
+          roles: true,
         },
       });
 
       if (!user) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
       }
+      assertCanManageUser(ctx.user.roles, ctx.user.userId, user);
+      assertCanAssignRoles(ctx.user.roles, input.roles);
 
       let previousAmoResponsibleUserId: string | null = null;
 
@@ -94,7 +98,7 @@ export const userAccessProcedures = {
 
       return updated;
     }),
-  updateCredentials: managerProcedure
+  updateCredentials: userAdminProcedure
     .input(
       z.object({
         userId: z.string().uuid(),
@@ -112,12 +116,14 @@ export const userAccessProcedures = {
         select: {
           id: true,
           username: true,
+          roles: true,
         },
       });
 
       if (!user) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
       }
+      assertCanManageUser(ctx.user.roles, ctx.user.userId, user);
 
       const normalizedUsername = input.username?.trim().toLowerCase();
 

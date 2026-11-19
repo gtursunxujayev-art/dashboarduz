@@ -6,12 +6,14 @@ import { hashFaceIdWebhookToken, ingestFaceIdEvent } from '../faceid';
 import { parseBranchWhitelist, parseUnmatchedUserPolicy, resolveMatchedUserId } from '../faceid-matching';
 import { buildNormalizedFullName, parseFaceIdEvent } from '../faceid-payload';
 import {
+  attendanceUserFilter,
   canReadAllUsers,
   parseDateKey,
   parseDateKeyFilter,
   parseDateTime,
   readFaceMatchMeta,
   resolveAttendanceListScope,
+  resolveAttendanceUserIds,
   toLocalTimeValue,
 } from '../router-helpers';
 
@@ -312,10 +314,28 @@ describe('attendance router helpers', () => {
     expect(canReadAllUsers(['Admin'])).toBe(true);
     expect(canReadAllUsers(['Agent'])).toBe(false);
     expect(resolveAttendanceListScope({ userId: 'me', roles: ['Agent'] }, { page: 3, limit: 20, userId: 'other' }))
-      .toEqual({ page: 3, limit: 20, skip: 40, scopedUserId: 'me' });
+      .toEqual({ page: 3, limit: 20, skip: 40, scopedUserId: 'me', canSeeUnmatched: false });
     expect(resolveAttendanceListScope({ userId: 'me', roles: ['Admin'] }, { userId: 'other' }))
-      .toEqual({ page: 1, limit: 50, skip: 0, scopedUserId: 'other' });
-    expect(resolveAttendanceListScope({ userId: 'me', roles: ['Admin'] })).toEqual({ page: 1, limit: 50, skip: 0, scopedUserId: undefined });
+      .toEqual({ page: 1, limit: 50, skip: 0, scopedUserId: 'other', canSeeUnmatched: true });
+    expect(resolveAttendanceListScope({ userId: 'me', roles: ['Admin'] }))
+      .toEqual({ page: 1, limit: 50, skip: 0, scopedUserId: undefined, canSeeUnmatched: true });
+  });
+
+  it("limits a team leader or OnlineAdmin to their group's attendance", () => {
+    const group = ['me', 'a1', 'a2'];
+
+    expect(resolveAttendanceUserIds({ userId: 'me', roles: ['Agent'] }, null)).toEqual(['me']);
+    // A non-privileged company-wide role (e.g. Dashboard) still reads only itself.
+    expect(resolveAttendanceUserIds({ userId: 'me', roles: ['Dashboard'] }, null)).toEqual(['me']);
+    expect(resolveAttendanceUserIds({ userId: 'me', roles: ['Admin'] }, null)).toBeNull();
+    expect(resolveAttendanceUserIds({ userId: 'me', roles: ['OfflineTeamLeader'] }, group)).toEqual(group);
+
+    expect(resolveAttendanceListScope({ userId: 'me', roles: ['OfflineTeamLeader'] }, { userId: 'a1' }, group))
+      .toMatchObject({ scopedUserId: 'a1', canSeeUnmatched: false });
+    expect(resolveAttendanceListScope({ userId: 'me', roles: ['OnlineAdmin'] }, { userId: 'outsider' }, group))
+      .toMatchObject({ scopedUserId: { in: group }, canSeeUnmatched: false });
+    expect(attendanceUserFilter(null, undefined)).toBeUndefined();
+    expect(attendanceUserFilter(['me'], 'other')).toBe('me');
   });
 
   it('reads the match metadata stored with an event', () => {

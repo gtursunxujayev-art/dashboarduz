@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/auth-context';
+import { isAdminLike } from '@dashboarduz/shared';
 import { trpc } from '@/lib/trpc';
 import { useEffect, useMemo, useState } from 'react';
 import { AGENT_ROLES, type CourseTypeSalesViewProps } from './category-sales-helpers';
@@ -13,7 +14,7 @@ export function useCategorySalesState({
   const { user } = useAuth();
   const trpcUtils = trpc.useUtils();
   const roles = useMemo(() => user?.roles ?? [], [user?.roles]);
-  const isAdmin = Boolean(roles.includes('Admin'));
+  const isAdmin = isAdminLike(roles);
   const isTashkiliyOnly = Boolean(
     roles.includes('Tashkiliy')
       && !roles.includes('Admin')

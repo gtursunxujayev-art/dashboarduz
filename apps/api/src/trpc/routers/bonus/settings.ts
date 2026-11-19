@@ -1,14 +1,18 @@
-import { AGENT_ROLES } from '@dashboarduz/shared';
+import { AGENT_ROLES, TEAM_LEADER_ROLES } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
+import { resolveCallerDataScope } from '../../../lib/access';
 import { loadTenantSettings, saveTenantSettings, withSalarySettings } from '../../../lib/tenant-settings';
+import { isOnlineScopedAdmin, mergeFixedSalariesForUsers } from '../../../services/bonus-config/access';
+import { parseFixedSalaries } from '../../../services/bonus-config/rules';
 import { KPI_METRIC_KEYS, type KpiMetricKey, type KpiThreshold } from '../../../services/bonus-config/types';
-import { adminProcedure } from '../../trpc';
+import { adminProcedure, scopedAdminProcedure } from '../../trpc';
 
 import { updateAttendancePenaltySettingsInput, updateFixedSalariesInput, updateKpiSettingsInput } from './schemas';
 
 export const bonusSettingsProcedures = {
-  updateFixedSalaries: adminProcedure.input(updateFixedSalariesInput).mutation(async ({ ctx, input }) => {
+  // OnlineAdmin changes only the online group's fixed salaries; the others are kept as they are.
+  updateFixedSalaries: scopedAdminProcedure.input(updateFixedSalariesInput).mutation(async ({ ctx, input }) => {
     const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
     const requestedUserIds = Array.from(new Set(input.fixedSalaries.map((item) => item.userId)));
@@ -18,7 +22,7 @@ export const bonusSettingsProcedures = {
           tenantId: ctx.tenantId,
           id: { in: requestedUserIds },
           isActive: true,
-          roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
+          roles: { hasSome: [...AGENT_ROLES, ...TEAM_LEADER_ROLES] },
         },
         select: { id: true },
       })
@@ -31,8 +35,13 @@ export const bonusSettingsProcedures = {
       }))
       .filter((row) => allowedSet.has(row.userId) && row.amount > 0);
 
+    const scopedUserIds = isOnlineScopedAdmin(ctx.user.roles)
+      ? (await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db)).userIds
+      : null;
     const nextSettings = withSalarySettings(tenantSettings, {
-      fixedSalaries: normalizedFixedSalaries,
+      fixedSalaries: scopedUserIds
+        ? mergeFixedSalariesForUsers({ current: parseFixedSalaries(tenantSettings), requested: normalizedFixedSalaries, allowedUserIds: scopedUserIds })
+        : normalizedFixedSalaries,
     });
 
     await saveTenantSettings({
@@ -45,6 +54,7 @@ export const bonusSettingsProcedures = {
 
     return { success: true };
   }),
+  // KPI and attendance penalties are company-wide: Admin only (not OnlineAdmin).
   updateKpiSettings: adminProcedure
     .input(updateKpiSettingsInput)
     .mutation(async ({ ctx, input }) => {

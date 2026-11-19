@@ -1,6 +1,6 @@
 import { dateRangeInput, DAY_MS, fromTashkentLocalParts, reportRangeSchema, shiftToTashkent } from '@dashboarduz/shared';
 
-import { getAgentResponsibleScope } from '../../../lib/access';
+import { resolveCallerDataScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 
 import { protectedProcedure, z } from './helpers';
@@ -156,13 +156,12 @@ export const incomeDynamicsProcedures = {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
       const { start: previousStart, end: previousEnd } = previousPeriod(input.range, rangeStart, rangeEnd);
 
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
-      const managerUserId = scope.isScoped ? ctx.user.userId : null;
-      const technicalSaleIds = await loadTechnicalSaleIds(ctx.tenantId, managerUserId, ctx.db);
+      const { userIds: managerUserIds } = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const technicalSaleIds = await loadTechnicalSaleIds(ctx.tenantId, managerUserIds, ctx.db);
 
       const [currentRows, previousRows] = await Promise.all([
-        loadCountedIncomeRows({ tenantId: ctx.tenantId, rangeStart, rangeEnd, managerUserId, technicalSaleIds, db: ctx.db }),
-        loadCountedIncomeRows({ tenantId: ctx.tenantId, rangeStart: previousStart, rangeEnd: previousEnd, managerUserId, technicalSaleIds, db: ctx.db }),
+        loadCountedIncomeRows({ tenantId: ctx.tenantId, rangeStart, rangeEnd, managerUserIds, technicalSaleIds, db: ctx.db }),
+        loadCountedIncomeRows({ tenantId: ctx.tenantId, rangeStart: previousStart, rangeEnd: previousEnd, managerUserIds, technicalSaleIds, db: ctx.db }),
       ]);
 
       const granularity = pickGranularity(rangeStart, rangeEnd);

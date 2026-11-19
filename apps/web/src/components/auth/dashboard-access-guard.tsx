@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
-import { hasAgentRole, isAgentOnly, isFinanceOnly, isTashkiliyOnly } from '@dashboarduz/shared';
+import { hasAgentRole, hasTeamLeaderRole, isAgentOnly, isFinanceOnly, isTashkiliyOnly } from '@dashboarduz/shared';
 
 const LIVE_LEADERBOARD_PATH = '/dashboard/live-leaderboard';
 const OFFLINE_LEADERBOARD_PATH = '/dashboard/offline-leaderboard';
@@ -44,8 +44,9 @@ const ADMIN_ONLY_PATHS = [
   '/dashboard/income-debug',
 ];
 
+/** Manager, team leaders and OnlineAdmin: every page except the company-wide admin tools. */
 function isManagerOnly(roles: string[]): boolean {
-  return (roles.includes('Manager') || roles.includes('TeamLeader')) && !roles.includes('Admin');
+  return (roles.includes('Manager') || hasTeamLeaderRole(roles) || roles.includes('OnlineAdmin')) && !roles.includes('Admin');
 }
 
 function isPathAllowed(pathname: string, allowedPaths: string[]): boolean {
@@ -73,7 +74,8 @@ export default function DashboardAccessGuard({ children }: { children: React.Rea
   const canAccessLeads = Boolean(
     user?.roles?.includes('Admin')
     || user?.roles?.includes('Manager')
-    || user?.roles?.includes('TeamLeader')
+    || user?.roles?.includes('OnlineAdmin')
+    || hasTeamLeaderRole(user?.roles)
     || hasAgentRole(user?.roles),
   );
 

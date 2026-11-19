@@ -9,8 +9,9 @@ import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, INCOME_LIFECYCLE_PENDING_REFUND } from '../../../services/customer-income/constants';
 import { notifyFinanceUsersRefundRequested, sendRefundRequestedTelegram } from '../../../services/customer-income/refund-notifications';
 import { assertSaleChainDebtInvariant, lockSaleChainUnchanged, normalizeSaleChainChronology, readSaleChainState, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, requestBonusReconcile, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
+import { incomeManagerWhere, resolveIncomeScope } from '../../../services/customer-income/scope';
 import { getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
-import { adminProcedure } from '../../trpc';
+import { scopedAdminProcedure } from '../../trpc';
 
 /** The sale chain as read before a change; CONFLICT when the sale is no longer active. */
 async function readActiveSaleChainState(db: DbClient, tenantId: string, saleId: string) {
@@ -24,7 +25,7 @@ async function readActiveSaleChainState(db: DbClient, tenantId: string, saleId: 
 }
 
 export const customerCourseProcedures = {
-  deleteCustomerCourse: adminProcedure
+  deleteCustomerCourse: scopedAdminProcedure
     .input(
       z.object({
         saleIncomeId: z.string().uuid(),
@@ -34,12 +35,15 @@ export const customerCourseProcedures = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // OnlineAdmin: only sales of online-group managers (the relink target too).
+      const { userIds: scopedManagerUserIds } = await resolveIncomeScope(ctx);
       const saleIncome = await ctx.db.income.findFirst({
         where: {
           id: input.saleIncomeId,
           tenantId: ctx.tenantId,
           type: 'new_sale',
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          ...incomeManagerWhere(scopedManagerUserIds),
         },
         select: {
           id: true,
@@ -194,6 +198,7 @@ export const customerCourseProcedures = {
               customerId: saleIncome.customerId,
               type: 'new_sale',
               lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              ...incomeManagerWhere(scopedManagerUserIds),
             },
             select: {
               id: true,
@@ -384,7 +389,7 @@ export const customerCourseProcedures = {
         refundRequestId: createdRefundRequestId,
       };
     }),
-  updateCustomerCourseSale: adminProcedure
+  updateCustomerCourseSale: scopedAdminProcedure
     .input(
       z.object({
         saleIncomeId: z.string().uuid(),
@@ -401,12 +406,15 @@ export const customerCourseProcedures = {
         });
       }
 
+      // OnlineAdmin: only sales of online-group managers.
+      const { userIds: scopedManagerUserIds } = await resolveIncomeScope(ctx);
       const saleIncome = await ctx.db.income.findFirst({
         where: {
           id: input.saleIncomeId,
           tenantId: ctx.tenantId,
           type: 'new_sale',
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+          ...incomeManagerWhere(scopedManagerUserIds),
         },
         select: {
           id: true,

@@ -3,7 +3,7 @@ import { createLeadSchema, updateLeadSchema, leadQuerySchema } from '@dashboardu
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { getAgentResponsibleScope } from '../../lib/access';
+import { resolveCallerDataScope } from '../../lib/access';
 import { parseAmoTimestamp } from '../../lib/amocrm';
 import { asObject } from '../../lib/object';
 import { amocrmService, type AmoCRMLead } from '../../services/integrations/amocrm';
@@ -15,6 +15,13 @@ import {
 } from '../../services/integrations/amocrm-live';
 import { SNAPSHOT_WINDOW_DAYS } from '../../services/integrations/amocrm-snapshot-window';
 import { router, protectedProcedure } from '../trpc';
+
+/** Whether a lead with this amoCRM responsible user is visible in the caller's scope (`null` ids = everyone). */
+export function isLeadResponsibleInScope(amoResponsibleIds: readonly string[] | null, responsibleUserId: string | null): boolean {
+  if (amoResponsibleIds === null) return true;
+
+  return Boolean(responsibleUserId) && amoResponsibleIds.includes(responsibleUserId as string);
+}
 
 function getPrimaryContact(lead: AmoCRMLead): { name: string | null; phone: string | null; email: string | null } | null {
   const contacts = Array.isArray(lead._embedded?.contacts) ? lead._embedded?.contacts : [];
@@ -85,9 +92,9 @@ export const leadsRouter = router({
   list: protectedProcedure
     .input(leadQuerySchema)
     .query(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
 
-      if (scope.isScoped && !scope.responsibleUserId) {
+      if (scope.amoResponsibleIds && scope.amoResponsibleIds.length === 0) {
         return {
           data: [],
           pagination: {
@@ -133,7 +140,7 @@ export const leadsRouter = router({
             pipelineIds: input.pipelineIds && input.pipelineIds.length > 0
               ? input.pipelineIds
               : (amoContext.selectedPipelineIds || undefined),
-            responsibleUserIds: scope.isScoped && scope.responsibleUserId ? [scope.responsibleUserId] : undefined,
+            responsibleUserIds: scope.amoResponsibleIds ?? undefined,
           },
           amoContext,
           ctx.db,
@@ -162,9 +169,9 @@ export const leadsRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
 
-      if (scope.isScoped && !scope.responsibleUserId) {
+      if (scope.amoResponsibleIds && scope.amoResponsibleIds.length === 0) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Lead not found' });
       }
 
@@ -189,14 +196,12 @@ export const leadsRouter = router({
         amoContext.baseUrl,
       );
 
-      if (scope.isScoped) {
-        const responsibleUserId = lead.responsible_user_id !== null && lead.responsible_user_id !== undefined
-          ? String(lead.responsible_user_id)
-          : null;
+      const responsibleUserId = lead.responsible_user_id !== null && lead.responsible_user_id !== undefined
+        ? String(lead.responsible_user_id)
+        : null;
 
-        if (!responsibleUserId || responsibleUserId !== scope.responsibleUserId) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Lead not found' });
-        }
+      if (!isLeadResponsibleInScope(scope.amoResponsibleIds, responsibleUserId)) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Lead not found' });
       }
 
       const pipelineId = lead.pipeline_id !== null && lead.pipeline_id !== undefined ? String(lead.pipeline_id) : null;

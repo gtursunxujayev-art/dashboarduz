@@ -6,8 +6,9 @@ import { ADJUSTMENT_STATUS_PENDING } from '../../../services/customer-income/con
 import { parseDateInput } from '../../../services/customer-income/labels';
 import { assertManagerBelongsToTenantWithOptions } from '../../../services/customer-income/roles';
 import { assertSaleChainDebtInvariant, lockSaleChainUnchanged, normalizeSaleChainChronology, readSaleChainState, reconcileBonusAfterIncomeChange, refreshCustomerProfileFromLatestActiveSale, requestBonusReconcile, rowMatchesSaleChainState, withSaleSubTariffMeta } from '../../../services/customer-income/sale-chain';
+import { assertManagerInScope, incomeManagerWhere, resolveIncomeScope } from '../../../services/customer-income/scope';
 import { extractSaleSubTariffId, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
-import { adminProcedure } from '../../trpc';
+import { scopedAdminProcedure } from '../../trpc';
 
 const updateIncomeSchema = z.object({
   incomeId: z.string().uuid(),
@@ -40,13 +41,21 @@ async function normalizeChainOrder(tx: Prisma.TransactionClient, tenantId: strin
 }
 
 export const incomeUpdateProcedures = {
-  updateIncome: adminProcedure
+  updateIncome: scopedAdminProcedure
     .input(updateIncomeSchema)
     .mutation(async ({ ctx, input }) => {
+      // OnlineAdmin: only incomes of online-group managers, and only moved to another online-group manager.
+      const { userIds } = await resolveIncomeScope(ctx);
+
+      if (input.managerUserId !== undefined) {
+        assertManagerInScope(userIds, input.managerUserId);
+      }
+
       const income = await ctx.db.income.findFirst({
         where: {
           id: input.incomeId,
           tenantId: ctx.tenantId,
+          ...incomeManagerWhere(userIds),
         },
         select: {
           id: true,

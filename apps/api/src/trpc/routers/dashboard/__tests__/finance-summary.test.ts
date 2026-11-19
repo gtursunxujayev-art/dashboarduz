@@ -106,6 +106,20 @@ describe('financeSummary', () => {
     expect(summary.managerOptions.map((option) => option.id)).toEqual([fixture.agentId]);
   });
 
+  it('scopes a team leader to their group and rejects a manager outside it', async () => {
+    const [leader] = fixture.store.seed('User', [{ tenantId: fixture.tenantId, name: 'Lola', username: 'lola', roles: ['OfflineTeamLeader'], authProvider: 'email' }]);
+    const leaderId = String(leader!.id);
+
+    await fixture.store.client().user.update({ where: { id: fixture.otherAgentId }, data: { roles: ['OfflineAgent'] } });
+
+    const summary = await caller(leaderId, ['OfflineTeamLeader']).financeSummary(range());
+
+    expect(summary.filters.agentScoped).toBe(false);
+    expect(summary.totals.totalIncomeAmount).toBe(2_000_000);
+    expect(summary.managerOptions.map((option) => option.id).sort()).toEqual([fixture.otherAgentId, leaderId].sort());
+    await expect(caller(leaderId, ['OfflineTeamLeader']).financeSummary({ ...range(), managerUserId: fixture.agentId })).rejects.toThrow('outside your access scope');
+  });
+
   it('filters by course and by manager for an admin', async () => {
     const byCourse = await caller(fixture.adminId, ['Admin']).financeSummary({ ...range(), courseId: fixture.otherCourseId });
     const byManager = await caller(fixture.financeId, ['Finance']).financeSummary({ ...range(), managerUserId: fixture.otherAgentId });

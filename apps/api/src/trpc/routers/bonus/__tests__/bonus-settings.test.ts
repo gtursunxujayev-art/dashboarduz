@@ -220,3 +220,50 @@ describe('salary settings', () => {
     expect((await admin().getSalaryConfig()).attendancePenaltySettings).toMatchObject({ absenceDayPenaltyUZS: 100_000, absenceDayPenaltyTarget: 'fixed' });
   });
 });
+
+describe('OnlineAdmin and team leaders', () => {
+  let onlineAdminId: string;
+  const onlineAdmin = () => caller(onlineAdminId, ['OnlineAdmin']);
+
+  beforeEach(async () => {
+    const [user] = fixture.store.seed('User', [{ tenantId: fixture.tenantId, name: 'Olim', username: 'olim', roles: ['OnlineAdmin'], authProvider: 'email' }]);
+
+    onlineAdminId = String(user!.id);
+    // Bobur sells online, Aziz offline.
+    await fixture.store.client().user.update({ where: { id: fixture.otherAgentId }, data: { roles: ['OnlineAgent'] } });
+    await fixture.store.client().user.update({ where: { id: fixture.agentId }, data: { roles: ['OfflineAgent'] } });
+  });
+
+  it('changes only the online bonus rule and keeps the mode and other categories', async () => {
+    await onlineAdmin().updateBonusRules({
+      bonusMode: 'on_debt_closed',
+      bonusRules: { online: simple(9), offline: simple(1), intensive: simple(1), additional_service: simple(1) },
+    });
+
+    expect(salary().bonusMode).toBe('on_income');
+    expect((salary().bonusRules as Record<string, unknown>).online).toEqual(simple(9));
+    expect((salary().bonusRules as Record<string, unknown>).offline).toEqual(simple(7));
+  });
+
+  it('changes only fixed salaries of the online group and sees only those', async () => {
+    await admin().updateFixedSalaries({ fixedSalaries: [{ userId: fixture.agentId, amount: 4_000_000 }, { userId: fixture.otherAgentId, amount: 3_000_000 }] });
+    await onlineAdmin().updateFixedSalaries({ fixedSalaries: [{ userId: fixture.otherAgentId, amount: 5_000_000 }, { userId: fixture.agentId, amount: 1 }] });
+
+    expect(salary().fixedSalaries).toEqual([{ userId: fixture.agentId, amount: 4_000_000 }, { userId: fixture.otherAgentId, amount: 5_000_000 }]);
+    expect((await onlineAdmin().getSalaryConfig()).fixedSalaries).toEqual([{ userId: fixture.otherAgentId, amount: 5_000_000 }]);
+
+    const [leader] = fixture.store.seed('User', [{ tenantId: fixture.tenantId, name: 'Lola', username: 'lola', roles: ['OfflineTeamLeader'], authProvider: 'email' }]);
+
+    expect((await caller(String(leader!.id), ['OfflineTeamLeader']).getSalaryConfig()).fixedSalaries).toEqual([{ userId: fixture.agentId, amount: 4_000_000 }]);
+  });
+
+  it('manages online plans only and cannot change company-wide settings', async () => {
+    await expect(onlineAdmin().createPlan({ name: 'Offline', periodMode: 'monthly', courseCategory: 'offline', targetClosedSales: 3, bonusAmount: 1 })).rejects.toThrow('online category');
+    const created = await onlineAdmin().createPlan({ name: 'Online', periodMode: 'monthly', courseCategory: 'online', targetClosedSales: 3, bonusAmount: 1 });
+
+    await expect(onlineAdmin().updatePlan({ id: created.plan.id, courseCategory: 'offline' })).rejects.toThrow('online category');
+    await expect(onlineAdmin().deletePlan({ id: created.plan.id })).resolves.toEqual({ success: true });
+    await expect(onlineAdmin().updateKpiSettings({ monthlyKpiAmount: 1, selectedMetrics: ['conversion'], thresholds: { conversion: { full: 2, half: 1 } } })).rejects.toThrow('Admin access required');
+    await expect(onlineAdmin().finalizeBonusMonth({ month: '2026-01' })).rejects.toThrow('Admin access required');
+  });
+});

@@ -1,9 +1,10 @@
 import type { DbClient } from '@dashboarduz/db';
-import { adjustmentStatusSchema, adjustmentTypeSchema, dateRangeInput, isAgentOnly } from '@dashboarduz/shared';
+import { adjustmentStatusSchema, adjustmentTypeSchema, dateRangeInput } from '@dashboarduz/shared';
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { resolveCallerDataScope } from '../../lib/access';
 import { parseCustomDate } from '../../lib/dates';
 import { buildTechnicalSaleIdSetByAgreement } from '../../services/course-sales/helpers';
 import { getAdjustmentRoleScope } from '../../services/customer-income/roles';
@@ -56,6 +57,30 @@ async function loadChainMetrics(tenantId: string, sales: SaleChainSaleRow[], lif
 
 const courseSelect = { select: { id: true, name: true } } as const;
 
+/**
+ * `managerUserId` filter of a report for the caller's scope (`null` = everyone): the asked manager when in
+ * scope, otherwise every manager of the scope (an agent: themself).
+ */
+export function reportManagerFilter(
+  scopeUserIds: readonly string[] | null,
+  requestedManagerUserId: string | undefined,
+): string | { in: string[] } | undefined {
+  if (scopeUserIds === null) return requestedManagerUserId || undefined;
+  if (requestedManagerUserId && scopeUserIds.includes(requestedManagerUserId)) return requestedManagerUserId;
+
+  return scopeUserIds.length === 1 ? scopeUserIds[0] : { in: [...scopeUserIds] };
+}
+
+/**
+ * Users whose adjustment requests a caller who may not see all of them sees (their own, or the requests on
+ * their sales): their data scope, so a team leader or OnlineAdmin also sees the group's. `null` = everything.
+ */
+export function adjustmentViewerUserIds(canSeeAll: boolean, scopeUserIds: readonly string[] | null, callerId: string): string[] | null {
+  if (canSeeAll) return null;
+
+  return scopeUserIds === null ? [callerId] : [...scopeUserIds];
+}
+
 export const reportsRouter = router({
   access: protectedProcedure.query(({ ctx }) => {
     const scope = getAdjustmentRoleScope(ctx.user.roles);
@@ -67,14 +92,17 @@ export const reportsRouter = router({
   }),
 
   filterOptions: protectedProcedure.query(async ({ ctx }) => {
-    const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+    const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
     const [managers, courses] = await Promise.all([
       ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
-          ...(scopedManagerUserId
-            ? { id: scopedManagerUserId }
-            : { managedIncomes: { some: { type: 'new_sale' } } }),
+          ...(scope.scope.kind === 'self'
+            ? { id: ctx.user.userId }
+            : {
+                managedIncomes: { some: { type: 'new_sale' } },
+                ...(scope.userIds ? { id: { in: scope.userIds } } : {}),
+              }),
         },
         orderBy: { name: 'asc' },
         select: { id: true, name: true, username: true },
@@ -101,16 +129,15 @@ export const reportsRouter = router({
     .query(async ({ ctx, input }) => {
       const filters = input ?? {};
       const entryDate = buildDateRange(filters);
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const managerUserId = reportManagerFilter(scope.userIds, filters.managerUserId);
 
       const sales = await ctx.db.income.findMany({
         where: {
           tenantId: ctx.tenantId,
           type: 'new_sale',
           lifecycleStatus: 'active',
-          ...(scopedManagerUserId
-            ? { managerUserId: scopedManagerUserId }
-            : (filters.managerUserId ? { managerUserId: filters.managerUserId } : {})),
+          ...(managerUserId ? { managerUserId } : {}),
           ...(filters.courseId ? { courseId: filters.courseId } : {}),
           ...(filters.tariffId ? { tariffId: filters.tariffId } : {}),
           ...(entryDate ? { entryDate } : {}),
@@ -165,11 +192,15 @@ export const reportsRouter = router({
       const createdAt = buildDateRange(input);
       const and: Prisma.IncomeAdjustmentRequestWhereInput[] = [];
 
-      if (!scope.canSeeAll) {
+      const viewerUserIds = scope.canSeeAll
+        ? null
+        : adjustmentViewerUserIds(false, (await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db)).userIds, ctx.user.userId);
+
+      if (viewerUserIds) {
         and.push({
           OR: [
-            { requestedByUserId: ctx.user.userId },
-            { income: { managerUserId: ctx.user.userId } },
+            { requestedByUserId: { in: viewerUserIds } },
+            { income: { managerUserId: { in: viewerUserIds } } },
           ],
         });
       }

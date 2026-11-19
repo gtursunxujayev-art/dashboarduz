@@ -43,7 +43,8 @@ export function parseDateInput(input: string): Date {
 export async function fetchLatestResponsibleManagerByCustomer(params: {
   tenantId: string;
   customerIds: string[];
-  scopedManagerUserId?: string | null;
+  /** Only incomes of these managers count (`null`/omitted = everyone). */
+  scopedManagerUserIds?: readonly string[] | null;
   db: DbClient;
 }): Promise<Map<string, { managerUserId: string | null; managerLabel: string | null }>> {
   const { db } = params;
@@ -57,9 +58,9 @@ export async function fetchLatestResponsibleManagerByCustomer(params: {
       tenantId: params.tenantId,
       customerId: { in: params.customerIds },
       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-      ...(params.scopedManagerUserId
+      ...(params.scopedManagerUserIds
         ? {
-            managerUserId: params.scopedManagerUserId,
+            managerUserId: { in: [...params.scopedManagerUserIds] },
           }
         : {}),
     },

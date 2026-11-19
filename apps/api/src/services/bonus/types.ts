@@ -1,6 +1,6 @@
 import type { SalaryBonusMode, SalaryBonusRules, SalaryCategory } from '../../trpc/routers/dashboard/helpers';
 
-export const ELIGIBLE_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent', 'TeamLeader']);
+export const ELIGIBLE_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent', 'TeamLeader', 'OnlineTeamLeader', 'OfflineTeamLeader']);
 
 export type CourseIncomeTier = {
   minAmount: number;

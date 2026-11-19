@@ -1,8 +1,9 @@
-import { debtFilterSchema, isAgentOnly } from '@dashboarduz/shared';
+import { debtFilterSchema } from '@dashboarduz/shared';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 import { fetchCourseOptionsSafe, fetchCoursesWithTariffsSafe, toCourseOptions } from '../../../services/customer-income/catalog';
+import { resolveIncomeScope } from '../../../services/customer-income/scope';
 import { buildActiveSaleChainMetrics, extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE, type SaleChainSaleRow } from '../../../services/income-chain';
 import { protectedProcedure } from '../../trpc';
 
@@ -22,15 +23,16 @@ export const customerListProcedures = {
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : null;
+      // Agents see their own rows, team leaders / OnlineAdmin their group, everyone else all rows.
+      const scopedManagerUserIds = (await resolveIncomeScope(ctx)).userIds;
       const trimmedQuery = input?.query?.trim();
       const andConditions: Prisma.CustomerWhereInput[] = [];
 
-      if (scopedManagerUserId) {
+      if (scopedManagerUserIds) {
         andConditions.push({
           incomes: {
             some: {
-              managerUserId: scopedManagerUserId,
+              managerUserId: { in: scopedManagerUserIds },
             },
           },
         });
@@ -52,9 +54,9 @@ export const customerListProcedures = {
             some: {
               type: 'new_sale',
               lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-              ...(scopedManagerUserId
+              ...(scopedManagerUserIds
                 ? {
-                    managerUserId: scopedManagerUserId,
+                    managerUserId: { in: scopedManagerUserIds },
                   }
                 : {}),
               ...(input?.courseId
@@ -152,9 +154,9 @@ export const customerListProcedures = {
             tenantId: ctx.tenantId,
             customerId: { in: customerIds },
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            ...(scopedManagerUserId
+            ...(scopedManagerUserIds
               ? {
-                  managerUserId: scopedManagerUserId,
+                  managerUserId: { in: scopedManagerUserIds },
                 }
               : {}),
           },
@@ -186,9 +188,9 @@ export const customerListProcedures = {
             customerId: { in: customerIds },
             type: 'new_sale',
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            ...(scopedManagerUserId
+            ...(scopedManagerUserIds
               ? {
-                  managerUserId: scopedManagerUserId,
+                  managerUserId: { in: scopedManagerUserIds },
                 }
               : {}),
           },

@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/auth-context';
+import { isAdminLike } from '@dashboarduz/shared';
 import { trpc } from '@/lib/trpc';
 import type { DebtFilter } from '@dashboarduz/shared';
 import { useEffect, useMemo, useState } from 'react';
@@ -9,7 +10,7 @@ import { AGENT_ROLES } from './customer-helpers';
 export function useCustomersState() {
   const { user } = useAuth();
   const roles = user?.roles || [];
-  const isAdmin = Boolean(user?.roles?.includes('Admin'));
+  const isAdmin = isAdminLike(user?.roles);
   const isTashkiliyOnly = Boolean(
     roles.includes('Tashkiliy')
       && !roles.includes('Admin')

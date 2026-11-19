@@ -1,7 +1,7 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, dateRangeInput, isTashkiliyOnly, type ReportRangePreset, reportRangeSchema } from '@dashboarduz/shared';
+import { AGENT_ROLES, dateRangeInput, isTashkiliyOnly, type ReportRangePreset, reportRangeSchema, TEAM_LEADER_ROLES } from '@dashboarduz/shared';
 
-import { getAgentResponsibleScope } from '../../../lib/access';
+import { type ResolvedDataScope, resolveCallerDataScope } from '../../../lib/access';
 import { withTimeout } from '../../../lib/async';
 import { resolveDateRange } from '../../../lib/dates';
 import { logger } from '../../../lib/logger';
@@ -10,6 +10,7 @@ import { buildCacheKey, getOrSet, invalidateCache } from '../../../services/cach
 import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
 import { readDashboardSettings } from '../../../services/dashboard/dashboard-settings';
+import { canQueryScopedLeads, scopedManagerWhere, scopedResponsibleIds, scopedUserIdWhere } from '../../../services/dashboard/data-scope';
 import { buildSellerPerformance, buildSummaryPieChart, countLeadsByResponsibleUser, countSummaryLeads, listUnmappedSellerNames, markSummarySourceUnavailable, resolveSummaryActivityStatus, summarizeIncomeByManager, summarizeNewSalesByCategory, summarizeTalkTime } from '../../../services/dashboard/summary-metrics';
 import { createSummarySourceStatus, runSummarySourceWithRetry } from '../../../services/dashboard/summary-sources';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
@@ -25,8 +26,7 @@ const SUMMARY_ACTIVITY_WAIT_MS = 3_000;
 
 type SummarySourceStatus = ReturnType<typeof createSummarySourceStatus>;
 type AmoContext = NonNullable<Awaited<ReturnType<typeof getTenantAmoCRMContext>>>;
-type AgentScope = Awaited<ReturnType<typeof getAgentResponsibleScope>>;
-type SummaryPeriod = { tenantId: string; userId: string; scope: AgentScope; rangeStart: Date; rangeEnd: Date };
+type SummaryPeriod = { tenantId: string; userId: string; scope: ResolvedDataScope; rangeStart: Date; rangeEnd: Date };
 type SourceRun = { status: SummarySourceStatus; logContext: { tenantId: string; userId: string } };
 
 const COURSE_SELECT = { select: { name: true, category: true } } as const;
@@ -64,7 +64,7 @@ async function loadSummaryAmoSources(db: DbClient, period: SummaryPeriod, run: S
   const { scope } = period;
   let leads: AmoCRMLead[] = [];
 
-  if (amoContext && (!scope.isScoped || scope.responsibleUserId)) {
+  if (amoContext && canQueryScopedLeads(scope)) {
     leads = await runSummarySourceWithRetry({
       ...run,
       key: 'leads',
@@ -76,7 +76,7 @@ async function loadSummaryAmoSources(db: DbClient, period: SummaryPeriod, run: S
           period.tenantId,
           {
             pipelineIds: selectedPipelineIds,
-            responsibleUserIds: scope.isScoped && scope.responsibleUserId ? [scope.responsibleUserId] : undefined,
+            responsibleUserIds: scopedResponsibleIds(scope),
             createdAtFrom: period.rangeStart,
             createdAtTo: period.rangeEnd,
           },
@@ -96,16 +96,18 @@ async function loadSummaryAmoSources(db: DbClient, period: SummaryPeriod, run: S
 
 /** Notifications, integrations, the period's incomes (technical sales removed), calls and the agents to list. */
 async function loadDashboardSummaryRows(db: DbClient, period: SummaryPeriod) {
-  const { tenantId, userId, scope, rangeStart, rangeEnd } = period;
-  const managerFilter = scope.isScoped ? { managerUserId: userId } : {};
+  const { tenantId, scope, rangeStart, rangeEnd } = period;
+  // Agents see their own rows, team leaders / OnlineAdmin their group, everyone else the company.
+  const isScoped = scope.userIds !== null;
+  const managerFilter = scopedManagerWhere(scope);
   const periodWhere = { lifecycleStatus: INCOME_LIFECYCLE_ACTIVE, entryDate: { gte: rangeStart, lte: rangeEnd } };
   const [pendingNotifications, activeIntegrations, newSalesIncomesRaw, incomesForSellersRaw, callsForSellers, agentUsers] = await Promise.all([
-    scope.isScoped
+    isScoped
       ? Promise.resolve(0)
       : db.notification.count({
           where: { tenantId, status: { in: ['pending', 'retrying'] }, createdAt: { gte: rangeStart, lte: rangeEnd } },
         }),
-    scope.isScoped ? Promise.resolve(0) : db.integration.count({ where: { tenantId, status: 'active' } }),
+    isScoped ? Promise.resolve(0) : db.integration.count({ where: { tenantId, status: 'active' } }),
     db.income.findMany({
       where: { tenantId, type: 'new_sale', ...periodWhere, ...managerFilter },
       select: { id: true, type: true, relatedDebtIncomeId: true, paymentAmount: true, coursePriceAmount: true, debtAmount: true, managerUserId: true, course: COURSE_SELECT },
@@ -115,15 +117,15 @@ async function loadDashboardSummaryRows(db: DbClient, period: SummaryPeriod) {
       select: { id: true, relatedDebtIncomeId: true, managerUserId: true, type: true, paymentAmount: true, coursePriceAmount: true, debtAmount: true, course: COURSE_SELECT },
     }),
     db.call.findMany({
-      where: { ...countedCallsWhere(tenantId), startedAt: { gte: rangeStart, lte: rangeEnd } },
+      where: { ...countedCallsWhere(tenantId), ...managerFilter, startedAt: { gte: rangeStart, lte: rangeEnd } },
       select: { managerUserId: true, duration: true },
     }),
     db.user.findMany({
       where: {
         tenantId,
         isActive: true,
-        roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
-        ...(scope.isScoped ? { id: userId } : {}),
+        roles: { hasSome: [...AGENT_ROLES, ...TEAM_LEADER_ROLES] },
+        ...scopedUserIdWhere(scope),
       },
       orderBy: [{ name: 'asc' }, { username: 'asc' }],
       select: { id: true, name: true, username: true, amocrmResponsibleUserId: true },
@@ -215,7 +217,7 @@ export const summaryProcedures = {
         const now = new Date();
         const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
         const tashkiliyOnly = isTashkiliyOnly(ctx.user.roles);
-        const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+        const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
         const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
         const leadRules = readDashboardSettings(tenantSettings);
         const period: SummaryPeriod = { tenantId: ctx.tenantId, userId: ctx.user.userId, scope, rangeStart, rangeEnd };
@@ -307,7 +309,9 @@ export const summaryProcedures = {
             totalLeads,
             qualifiedLeads: leadCounts.qualifiedLeads,
             nonQualifiedLeads: leadCounts.nonQualifiedLeads,
-            totalCalls: scope.isScoped ? (talk.callCountByAgent.get(ctx.user.userId) ?? 0) : rows.callsForSellers.length,
+            totalCalls: scope.userIds
+              ? scope.userIds.reduce((sum, id) => sum + (talk.callCountByAgent.get(id) ?? 0), 0)
+              : rows.callsForSellers.length,
             pendingNotifications: rows.pendingNotifications,
             activeIntegrations: rows.activeIntegrations,
             totalIncomeAmount: money(income.totalIncomeAmount),

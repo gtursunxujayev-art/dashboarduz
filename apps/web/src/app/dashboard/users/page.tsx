@@ -11,12 +11,16 @@ import { roleNeedsManagerMapping } from '@dashboarduz/shared';
 import { IconPencil, IconRefresh, IconSearch, IconUserCheck, IconUserOff, IconUserPlus, IconUsers } from '@tabler/icons-react';
 import { UserCreateSheet } from './_components/user-create-sheet';
 import { UserEditSheet } from './_components/user-edit-sheet';
-import { availableRoles, roleLabels } from './_components/user-roles';
+import { assignableRoles, availableRoles, roleLabels } from './_components/user-roles';
 import type { UserRole } from './_components/user-roles';
 
 export default function UsersPage() {
   const { user: currentUser } = useAuth();
-  const isAdmin = Boolean(currentUser?.roles?.includes('Admin'));
+  const callerRoles: string[] = currentUser?.roles ?? [];
+  // Deactivating: Admin, or OnlineAdmin for online staff (the server checks which accounts).
+  const isAdmin = callerRoles.includes('Admin') || callerRoles.includes('OnlineAdmin');
+  // Creating and editing accounts: Admin, Manager, OnlineAdmin. Team leaders only read.
+  const canManageUsers = isAdmin || callerRoles.includes('Manager');
   const usersQuery = trpc.users.list.useQuery();
   const amocrmManagersQuery = trpc.users.amocrmManagers.useQuery(undefined, {
     retry: false,
@@ -38,7 +42,9 @@ export default function UsersPage() {
 
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
-  const [newRole, setNewRole] = useState<UserRole>('Agent');
+  // An OnlineAdmin may only create online staff, so start from a role they can give.
+  const defaultNewRole: UserRole = assignableRoles(callerRoles)[0] === 'OnlineAgent' ? 'OnlineAgent' : 'Agent';
+  const [newRole, setNewRole] = useState<UserRole>(defaultNewRole);
   const [newAmoManagerId, setNewAmoManagerId] = useState('');
   const [newTelegramChatId, setNewTelegramChatId] = useState('');
 
@@ -103,7 +109,7 @@ export default function UsersPage() {
       setCreatedCredentials(created.credentials);
       setNewName('');
       setNewPhone('');
-      setNewRole('Agent');
+      setNewRole(defaultNewRole);
       setNewAmoManagerId('');
       setNewTelegramChatId('');
       setSuccess("Foydalanuvchi muvaffaqiyatli yaratildi.");
@@ -245,10 +251,12 @@ export default function UsersPage() {
               <IconRefresh className={`h-4 w-4 ${telegramRecipientsQuery.isFetching ? 'animate-spin' : ''}`} stroke={1.8} />
               {telegramRecipientsQuery.isFetching ? 'Yangilanmoqda...' : "Telegram ro'yxatini yangilash"}
             </button>
-            <button type="button" onClick={() => setCreateOpen(true)} className="btn btn-primary">
-              <IconUserPlus className="h-4 w-4" stroke={1.8} />
-              Foydalanuvchi qo&apos;shish
-            </button>
+            {canManageUsers && (
+              <button type="button" onClick={() => setCreateOpen(true)} className="btn btn-primary">
+                <IconUserPlus className="h-4 w-4" stroke={1.8} />
+                Foydalanuvchi qo&apos;shish
+              </button>
+            )}
           </>
         }
       >
@@ -371,14 +379,16 @@ export default function UsersPage() {
                       </td>
                       <td className="pr-5 sm:pr-6">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setEditingUserId(user.id)}
-                            className="btn btn-soft btn-sm"
-                          >
-                            <IconPencil className="h-4 w-4" stroke={1.8} />
-                            Tahrirlash
-                          </button>
+                          {canManageUsers && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingUserId(user.id)}
+                              className="btn btn-soft btn-sm"
+                            >
+                              <IconPencil className="h-4 w-4" stroke={1.8} />
+                              Tahrirlash
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleToggleActive(user.id, !user.isActive)}

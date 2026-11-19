@@ -4,7 +4,7 @@ import { buildActiveSaleChainMetrics, extractSaleSubTariffId, INCOME_LIFECYCLE_A
 import { resolveSaleAgreementAmount } from '../income-facts';
 
 import { buildCustomerCoursesByCustomer } from './helpers';
-import { activeSalesWhere, type SaleFilter } from './queries';
+import { activeSalesWhere, managerScopeWhere, type SaleFilter } from './queries';
 
 function uniqueIds(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
@@ -13,14 +13,14 @@ function uniqueIds(values: Array<string | null | undefined>): string[] {
 /** `where` of the customer list: the scoped active sales, an optional entry-date window, and a name/number search. */
 export function buildCustomerListWhere(params: {
   tenantId: string;
-  scopedManagerUserId?: string;
+  scopedManagerUserIds?: readonly string[] | null;
   filters: SaleFilter[];
   entryDate?: { gte: Date; lte: Date };
   query?: string;
 }) {
   return activeSalesWhere({
     tenantId: params.tenantId,
-    scopedManagerUserId: params.scopedManagerUserId,
+    scopedManagerUserIds: params.scopedManagerUserIds,
     filters: params.filters,
     extra: {
       ...(params.entryDate ? { entryDate: params.entryDate } : {}),
@@ -44,14 +44,14 @@ export function buildCustomerListWhere(params: {
 export async function listCourseSaleCustomers(params: {
   db: DbClient;
   tenantId: string;
-  scopedManagerUserId?: string;
+  scopedManagerUserIds?: readonly string[] | null;
   filters: SaleFilter[];
   entryDate?: { gte: Date; lte: Date };
   query?: string;
   page: number;
   limit: number;
 }) {
-  const { db, tenantId, scopedManagerUserId } = params;
+  const { db, tenantId, scopedManagerUserIds } = params;
   const where = buildCustomerListWhere(params);
 
   const [total, sales] = await Promise.all([
@@ -129,7 +129,7 @@ export async function listCourseSaleCustomers(params: {
             customerId: { in: customerIds },
             type: 'new_sale',
             lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-            ...(scopedManagerUserId ? { managerUserId: scopedManagerUserId } : {}),
+            ...managerScopeWhere(scopedManagerUserIds),
           },
           select: {
             id: true,

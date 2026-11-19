@@ -1,9 +1,9 @@
-import { dateRangeInput, isAgentOnly, reportRangeSchema } from '@dashboarduz/shared';
+import { dateRangeInput, reportRangeSchema } from '@dashboarduz/shared';
 import { z } from 'zod';
 
 import { resolveDateRange } from '../../../lib/dates';
 import { listCourseSaleCustomers } from '../../../services/course-sales/customer-list';
-import { buildCourseSaleFilters } from '../../../services/course-sales/queries';
+import { buildCourseSaleFilters, resolveCourseSalesManagerScope } from '../../../services/course-sales/queries';
 import { protectedProcedure } from '../../trpc';
 
 export const courseSalesCustomerProcedures = {
@@ -33,7 +33,7 @@ export const courseSalesCustomerProcedures = {
       return listCourseSaleCustomers({
         db: ctx.db,
         tenantId: ctx.tenantId,
-        scopedManagerUserId: isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined,
+        scopedManagerUserIds: await resolveCourseSalesManagerScope(ctx),
         filters,
         entryDate: { gte: rangeStart, lte: rangeEnd },
         query: input.query?.trim(),

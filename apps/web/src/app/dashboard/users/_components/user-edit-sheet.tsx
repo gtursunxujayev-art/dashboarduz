@@ -3,7 +3,8 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { roleNeedsManagerMapping } from '@dashboarduz/shared';
 import { IconDeviceFloppy, IconKey, IconUserCog } from '@tabler/icons-react';
-import { availableRoles, roleLabels } from './user-roles';
+import { useAuth } from '@/contexts/auth-context';
+import { assignableRoles, roleLabels } from './user-roles';
 import type { UserRole } from './user-roles';
 import { SheetGroup, UsersSheet } from './users-sheet';
 
@@ -40,6 +41,8 @@ type Props = {
 };
 
 export function UserEditSheet(props: Props) {
+  // Only the roles this user may give (the server enforces the same rule).
+  const currentRoles: string[] = useAuth().user?.roles ?? [];
   const {
     user,
     onClose,
@@ -155,7 +158,7 @@ export function UserEditSheet(props: Props) {
           onChange={(event) => setRoleDrafts((prev) => ({ ...prev, [user.id]: event.target.value as UserRole }))}
           className="field min-w-0"
         >
-          {availableRoles.map((role) => (
+          {assignableRoles(currentRoles).map((role) => (
             <option key={role} value={role}>
               {roleLabels[role]}
             </option>

@@ -9,8 +9,9 @@ import { logger } from '../../../lib/logger';
 import { ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_TYPE_REFUND, ADJUSTMENT_TYPE_TARIFF_CHANGE, INCOME_LIFECYCLE_PENDING_REFUND, REFUND_CARD_NUMBER_REGEX } from '../../../services/customer-income/constants';
 import { getIncomeLifecycleLabel } from '../../../services/customer-income/labels';
 import { notifyFinanceUsersRefundRequested, sendRefundRequestedTelegram } from '../../../services/customer-income/refund-notifications';
-import { canViewRefundCardNumber, getAdjustmentRoleScope, shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
+import { canViewRefundCardNumber, getAdjustmentRoleScope } from '../../../services/customer-income/roles';
 import { lockSaleChain } from '../../../services/customer-income/sale-chain';
+import { resolveIncomeScope, resolveIncomeWriterIds } from '../../../services/customer-income/scope';
 import { sendTariffChangeRequestedTelegram } from '../../../services/customer-income/tariff-change-notifications';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { protectedProcedure } from '../../trpc';
@@ -34,6 +35,25 @@ async function notifyNonBlocking(
   }
 }
 
+/**
+ * For callers outside the approver queue: the requests they made or that are on incomes in their data scope
+ * (their own incomes for agents, their group's for team leaders and OnlineAdmin).
+ */
+async function buildVisibleRequestOwnerWhere(ctx: {
+  tenantId: string;
+  user: { userId: string; roles: string[] };
+  db: DbClient;
+}): Promise<Prisma.IncomeAdjustmentRequestWhereInput> {
+  const { userIds } = await resolveIncomeScope(ctx);
+
+  return {
+    OR: [
+      { requestedByUserId: ctx.user.userId },
+      { income: { managerUserId: userIds ? { in: userIds } : ctx.user.userId } },
+    ],
+  };
+}
+
 export const adjustmentProcedures = {
   listAdjustmentRequests: protectedProcedure
     .input(
@@ -48,6 +68,7 @@ export const adjustmentProcedures = {
     .query(async ({ ctx, input }) => {
       const scope = getAdjustmentRoleScope(ctx.user.roles);
       const roleTypeGuard = scope.typeGuard;
+      const visibleOwnerWhere = scope.canSeeAll ? null : await buildVisibleRequestOwnerWhere(ctx);
 
       if (input?.type && roleTypeGuard && input.type !== roleTypeGuard) {
         throw new TRPCError({
@@ -62,14 +83,7 @@ export const adjustmentProcedures = {
         ...(input?.type
           ? { type: input.type }
           : (roleTypeGuard ? { type: roleTypeGuard } : {})),
-        ...(!scope.canSeeAll
-          ? {
-              OR: [
-                { requestedByUserId: ctx.user.userId },
-                { income: { managerUserId: ctx.user.userId } },
-              ],
-            }
-          : {}),
+        ...(visibleOwnerWhere ?? {}),
       };
 
       const requestSelectBase = {
@@ -214,18 +228,12 @@ export const adjustmentProcedures = {
     }),
   adjustmentBadgeCount: protectedProcedure.query(async ({ ctx }) => {
     const scope = getAdjustmentRoleScope(ctx.user.roles);
+    const visibleOwnerWhere = scope.canSeeAll ? null : await buildVisibleRequestOwnerWhere(ctx);
     const pendingWhereBase: Prisma.IncomeAdjustmentRequestWhereInput = {
       tenantId: ctx.tenantId,
       status: ADJUSTMENT_STATUS_PENDING,
       ...(scope.typeGuard ? { type: scope.typeGuard } : {}),
-      ...(!scope.canSeeAll
-        ? {
-            OR: [
-              { requestedByUserId: ctx.user.userId },
-              { income: { managerUserId: ctx.user.userId } },
-            ],
-          }
-        : {}),
+      ...(visibleOwnerWhere ?? {}),
     };
 
     const [pendingTotal, pendingRefund, pendingTariffChange] = await Promise.all([
@@ -268,15 +276,16 @@ export const adjustmentProcedures = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
+      // Agents and team leaders: only their own incomes; OnlineAdmin: incomes of the online group.
+      const writerIds = resolveIncomeWriterIds(await resolveIncomeScope(ctx), ctx.user.userId);
       const sourceIncomeRaw = await ctx.db.income.findFirst({
         where: {
           id: input.incomeId,
           tenantId: ctx.tenantId,
           paymentAmount: { gt: 0 },
-          ...(scopedManagerUserId
+          ...(writerIds
             ? {
-                managerUserId: scopedManagerUserId,
+                managerUserId: { in: writerIds },
               }
             : {}),
         },
@@ -314,9 +323,9 @@ export const adjustmentProcedures = {
             tenantId: ctx.tenantId,
             customerId: sourceIncomeRaw.customerId,
             type: 'new_sale',
-            ...(scopedManagerUserId
+            ...(writerIds
               ? {
-                  managerUserId: scopedManagerUserId,
+                  managerUserId: { in: writerIds },
                 }
               : {}),
           },

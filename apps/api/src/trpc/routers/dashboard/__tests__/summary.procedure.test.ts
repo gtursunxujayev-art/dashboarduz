@@ -341,6 +341,41 @@ describe('dashboard.summary (characterization)', () => {
     expect(summary.totalCalls).toBe(0);
   });
 
+  it('limits a team leader to the group leads, incomes and agents', async () => {
+    const groupMembers = [
+      { id: 'agent-a', roles: ['OnlineAgent'], amocrmResponsibleUserId: '501' },
+      { id: 'agent-b', roles: ['OnlineAgent'], amocrmResponsibleUserId: '502' },
+    ];
+
+    mockDb.user.findMany.mockImplementation((args: FindManyArgs) => (
+      Promise.resolve((args.where?.roles as { hasSome?: string[] } | undefined)?.hasSome?.includes('OnlineTeamLeader') && !args.where?.isActive
+        ? groupMembers
+        : agentRows.slice(0, 2))
+    ));
+
+    const result = await callSummary(['OnlineTeamLeader']);
+    const summary = result.summary as Record<string, unknown>;
+    const incomeWhere = (mockDb.income.findMany.mock.calls[0] as [FindManyArgs])[0].where;
+    const agentsWhere = (mockDb.user.findMany.mock.calls.at(-1) as [FindManyArgs])[0].where;
+
+    expect(mockGetAmoLeads).toHaveBeenCalledWith(TENANT_ID, expect.objectContaining({ responsibleUserIds: ['501', '502'] }), amoContext, mockDb);
+    expect(incomeWhere?.managerUserId).toEqual({ in: [ADMIN_ID, 'agent-a', 'agent-b'] });
+    expect(agentsWhere?.id).toEqual({ in: [ADMIN_ID, 'agent-a', 'agent-b'] });
+    expect(mockDb.notification.count).not.toHaveBeenCalled();
+    // agent-a has 3 calls and agent-b 1; the unassigned call is not counted.
+    expect(summary.totalCalls).toBe(4);
+  });
+
+  it('skips amoCRM leads for an agent without an amoCRM link', async () => {
+    mockDb.user.findFirst.mockResolvedValue({ id: ADMIN_ID, amocrmResponsibleUserId: null });
+    mockDb.user.findMany.mockResolvedValue([]);
+
+    const result = await callSummary(['OfflineAgent']);
+
+    expect(mockGetAmoLeads).not.toHaveBeenCalled();
+    expect((result.sourceStatus as { leads: { reason: string } }).leads.reason).toBe('scope_unavailable');
+  });
+
   it('hides money amounts from Tashkiliy-only users', async () => {
     const result = await callSummary(['Tashkiliy']);
     const summary = result.summary as Record<string, unknown>;

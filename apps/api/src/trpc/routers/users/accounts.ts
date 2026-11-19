@@ -5,12 +5,13 @@ import { z } from 'zod';
 
 import { hashPassword } from '../../../services/auth/password';
 import { generatePassword, generateUniqueLogin, withTelegramMappingConflict, validateNormalizedPhoneOrThrow } from '../../../services/users/accounts';
-import { adminProcedure, managerProcedure } from '../../trpc';
+import { assertCanAssignRoles, assertCanManageUser } from '../../../services/users/permissions';
+import { scopedAdminProcedure, userAdminProcedure } from '../../trpc';
 
 export const roleSchema = z.enum(USER_ROLES);
 
 export const userAccountProcedures = {
-  create: managerProcedure
+  create: userAdminProcedure
     .input(
       z.object({
         name: z.string().max(120).optional(),
@@ -27,6 +28,8 @@ export const userAccountProcedures = {
       const passwordHash = await hashPassword(plainPassword);
 
       const role = input.role as UserRole;
+
+      assertCanAssignRoles(ctx.user.roles, [role]);
 
       if (roleNeedsManagerMapping(role) && !input.amocrmResponsibleUserId) {
         throw new TRPCError({
@@ -101,7 +104,7 @@ export const userAccountProcedures = {
         },
       };
     }),
-  updateName: managerProcedure
+  updateName: userAdminProcedure
     .input(
       z.object({
         userId: z.string().uuid(),
@@ -119,9 +122,11 @@ export const userAccountProcedures = {
           id: true,
           name: true,
           phone: true,
+          roles: true,
         },
       });
 
+      if (user) assertCanManageUser(ctx.user.roles, ctx.user.userId, user);
       if (!user) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
       }
@@ -187,7 +192,8 @@ export const userAccountProcedures = {
 
       return updated;
     }),
-  setActive: adminProcedure
+  // Deactivating stays with admins (OnlineAdmin: online staff only).
+  setActive: scopedAdminProcedure
     .input(
       z.object({
         userId: z.string().uuid(),
@@ -212,9 +218,11 @@ export const userAccountProcedures = {
           isActive: true,
           name: true,
           username: true,
+          roles: true,
         },
       });
 
+      if (target) assertCanManageUser(ctx.user.roles, ctx.user.userId, target);
       if (!target) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
       }

@@ -24,14 +24,14 @@ describe('course-sales query builders', () => {
     });
     expect(activeSalesWhere({
       tenantId: 't1',
-      scopedManagerUserId: 'u1',
+      scopedManagerUserIds: ['u1', 'u2'],
       filters: [{ courseId: 'c1' }],
       extra: { entryDate: { gte: new Date(0), lte: new Date(1) } },
     })).toEqual({
       tenantId: 't1',
       type: 'new_sale',
       lifecycleStatus: 'active',
-      managerUserId: 'u1',
+      managerUserId: { in: ['u1', 'u2'] },
       AND: [{ courseId: 'c1' }],
       entryDate: { gte: new Date(0), lte: new Date(1) },
     });

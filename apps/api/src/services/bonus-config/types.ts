@@ -21,7 +21,7 @@ export const KPI_METRIC_KEYS = [
   'stageChangeCount',
 ] as const;
 
-const BONUS_READ_ROLES = new Set(['Admin', 'Manager', 'TeamLeader']);
+const BONUS_READ_ROLES = new Set(['Admin', 'OnlineAdmin', 'Manager', 'TeamLeader', 'OnlineTeamLeader', 'OfflineTeamLeader']);
 
 export type BonusPlanCategory = (typeof BONUS_PLAN_CATEGORIES)[number];
 

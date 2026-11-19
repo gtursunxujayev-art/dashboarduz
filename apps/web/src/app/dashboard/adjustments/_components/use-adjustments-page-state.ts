@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/auth-context';
+import { isAdminLike } from '@dashboarduz/shared';
 import { parseAmountInput } from '@/lib/format';
 import { trpc } from '@/lib/trpc';
 import { normalizeDigits, type ReviewAction } from '@dashboarduz/shared';
@@ -13,9 +14,9 @@ export function useAdjustmentsPageState() {
   const roles = (user?.roles || []).map((role) => String(role));
   const canApproveRefund = roles.includes('Admin') || roles.includes('Finance');
   const canApproveTariffChange =
-    roles.includes('Admin')
+    // Team leaders are read-only; OnlineAdmin approves for online sellers (checked by the server).
+    isAdminLike(roles)
     || roles.includes('Manager')
-    || roles.includes('TeamLeader')
     || roles.includes('Tashkiliy')
     || roles.includes('Organizator')
     || roles.includes('Organizer');

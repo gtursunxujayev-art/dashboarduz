@@ -514,12 +514,30 @@ async function generateWithAiProvider(inputSummary: Awaited<ReturnType<typeof co
   return { result, model: provider.model, provider: provider.provider, usedAi: true };
 }
 
+/**
+ * Who may read the AI analytics. Its input (Meta spend, every sale, every call) is company-wide and cannot be
+ * limited to one sales group, so only company-wide readers get it (not OnlineAdmin, team leaders or agents).
+ */
+export const ANALYTICS_AI_ROLES = ['Admin', 'Manager', 'Finance'] as const;
+
+export function canUseAnalyticsAi(roles: readonly string[]): boolean {
+  return roles.some((role) => (ANALYTICS_AI_ROLES as readonly string[]).includes(role));
+}
+
+const analyticsAiProcedure = protectedProcedure.use(async (opts) => {
+  if (!canUseAnalyticsAi(opts.ctx.user.roles || [])) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin, Manager or Finance access required' });
+  }
+
+  return opts.next();
+});
+
 export const analyticsAiRouter = router({
   // Tahlil source map:
   // - dashboard.summary => main KPI/team cards
   // - analyticsAi.metaInsights => Meta Ads section
   // - analyticsAi.generateSuggestions => AI helper section
-  metaInsights: protectedProcedure
+  metaInsights: analyticsAiProcedure
     .input(analyticsAiInputSchema.omit({ focus: true }))
     .query(async ({ input, ctx }) => {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, new Date(), input.dateFrom, input.dateTo);
@@ -528,7 +546,7 @@ export const analyticsAiRouter = router({
       return inputSummary.meta;
     }),
 
-  generateSuggestions: protectedProcedure
+  generateSuggestions: analyticsAiProcedure
     .input(analyticsAiInputSchema)
     .mutation(async ({ input, ctx }) => {
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, new Date(), input.dateFrom, input.dateTo);

@@ -1,7 +1,7 @@
-import { courseCategoryLabel, courseTypeCategorySchema, isAgentOnly } from '@dashboarduz/shared';
+import { courseCategoryLabel, courseTypeCategorySchema } from '@dashboarduz/shared';
 import { z } from 'zod';
 
-import { activeSalesWhere, buildCourseSaleFilters, findCategoryCourseIds, splitTechnicalSales } from '../../../services/course-sales/queries';
+import { activeSalesWhere, buildCourseSaleFilters, findCategoryCourseIds, resolveCourseSalesManagerScope, splitTechnicalSales } from '../../../services/course-sales/queries';
 import { resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 import { buildTariffBreakdown, type TariffBreakdownRow } from '../../../services/tariff-breakdown';
 import { protectedProcedure } from '../../trpc';
@@ -17,7 +17,7 @@ export const courseSalesTypeSummaryProcedures = {
       }),
     )
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
+      const scopedManagerUserIds = await resolveCourseSalesManagerScope(ctx);
       const categoryCourseIds = await findCategoryCourseIds(ctx.db, ctx.tenantId, input.category);
 
       if (categoryCourseIds.length === 0) {
@@ -56,7 +56,7 @@ export const courseSalesTypeSummaryProcedures = {
       });
 
       const matchedSales = await ctx.db.income.findMany({
-        where: activeSalesWhere({ tenantId: ctx.tenantId, scopedManagerUserId, filters: scopedFilters }),
+        where: activeSalesWhere({ tenantId: ctx.tenantId, scopedManagerUserIds, filters: scopedFilters }),
         select: {
           id: true,
           entryDate: true,

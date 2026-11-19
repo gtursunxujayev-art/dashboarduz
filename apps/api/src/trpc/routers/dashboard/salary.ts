@@ -1,11 +1,13 @@
 import type { DbClient } from '@dashboarduz/db';
-import { dateRangeInput, isAgentOnly, normalizeSubTariffName, reportRangeSchema, toTashkentDateKey } from '@dashboarduz/shared';
+import { dateRangeInput, normalizeSubTariffName, reportRangeSchema, toTashkentDateKey } from '@dashboarduz/shared';
 import { z } from 'zod';
 
+import { resolveCallerDataScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { calculateBonusRange, getApprovedAdjustmentsForMonth, getTashkentMonthStart, loadSaleClosures, resolveEffectiveBonusPolicy } from '../../../services/bonus-engine';
 import { buildCacheKey, getOrSet } from '../../../services/cache';
 import { countedCallsWhere } from '../../../services/calls-source';
+import { pickScopedUsers } from '../../../services/dashboard/data-scope';
 import { buildRequiredWorkdaysByMonth, calculateProratedFixedSalary } from '../../../services/dashboard/salary-helpers';
 import { loadSalarySettingsAndAgents } from '../../../services/dashboard/salary-settings';
 import { addApprovedAdjustments, addBonusItems, applyKpiScores, applyPlanProgress, computeAbsencePenalty, countNewLeadsByAgent, createSalaryAgentRow, describeKpiSettings, emptySalaryTotals, finalizeSalaryRows, mapAgentsToAmoUsers, type SalaryAgentResult, type SalaryRows, splitAttendancePenalty, summarizeAttendanceDays, summarizeKpiCalls, summarizeKpiIncomes, sumSalaryTotals } from '../../../services/dashboard/salary-summary';
@@ -163,15 +165,12 @@ const salarySummary = protectedProcedure
         : getCurrentMonthRange(now);
       const rangeStart = 'rangeStart' in resolvedRange ? resolvedRange.rangeStart : resolvedRange.monthStart;
       const rangeEnd = 'rangeEnd' in resolvedRange ? resolvedRange.rangeEnd : resolvedRange.monthEnd;
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
-      const selectedManagerUserId = scopedManagerUserId || input?.managerUserId;
-
+      // Agents see their own row, team leaders / OnlineAdmin their group, everyone else every agent.
+      const dataScope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
       const { salarySettings, allAgents } = await loadSalarySettingsAndAgents(ctx.db, ctx.tenantId);
       // Label with the bonus policy that applies to the viewed period, not whatever was saved last.
       const viewedBonusMode = (await resolveEffectiveBonusPolicy(ctx.tenantId, rangeEnd, ctx.db)).policy.bonusMode;
-      const agents = selectedManagerUserId
-        ? allAgents.filter((agent) => agent.id === selectedManagerUserId)
-        : allAgents;
+      const { users: agents, agentScoped } = pickScopedUsers(dataScope, allAgents, { callerId: ctx.user.userId, requestedUserId: input?.managerUserId });
       const period: SalaryPeriod = { db: ctx.db, tenantId: ctx.tenantId, rangeStart, rangeEnd, agentIds: agents.map((agent) => agent.id) };
       const kpi = salarySettings.kpiSettings;
 
@@ -179,7 +178,7 @@ const salarySummary = protectedProcedure
         return {
           monthStart: rangeStart.toISOString(),
           monthEnd: rangeEnd.toISOString(),
-          scopedToCurrentAgent: Boolean(scopedManagerUserId),
+          scopedToCurrentAgent: agentScoped,
           bonusMode: viewedBonusMode,
           bonusPercentages: salarySettings.bonusPercentages,
           kpiSettings: describeKpiSettings(kpi),
@@ -223,7 +222,7 @@ const salarySummary = protectedProcedure
       return {
         monthStart: rangeStart.toISOString(),
         monthEnd: rangeEnd.toISOString(),
-        scopedToCurrentAgent: Boolean(scopedManagerUserId),
+        scopedToCurrentAgent: agentScoped,
         bonusMode: viewedBonusMode,
         bonusPercentages: salarySettings.bonusPercentages,
         attendancePenaltySettings: salarySettings.attendancePenaltySettings,

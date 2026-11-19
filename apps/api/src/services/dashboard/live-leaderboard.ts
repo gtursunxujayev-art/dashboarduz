@@ -1,4 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
+import { resolveRoleGroup } from '@dashboarduz/shared';
 
 import { parseTelegramDailyReportCourseIds } from '../../lib/telegram';
 import { classifyCourseCategoryFromField, resolveBonusPercent, type SalaryCategory } from '../../trpc/routers/dashboard/helpers';
@@ -8,6 +9,18 @@ import { resolveSaleAgreementAmount } from '../income-facts';
 import { buildTechnicalSaleIdSet } from '../technical-income';
 
 const LIVE_LEADERBOARD_MANAGER_ROLES = new Set(['Admin', 'Manager']);
+/** Roles that lead one sales group and may watch that group's board. */
+const GROUP_LEAD_ROLES: Record<string, AgentGroup> = {
+  OnlineAdmin: 'online',
+  OnlineTeamLeader: 'online',
+  OfflineTeamLeader: 'offline',
+  TeamLeader: 'offline',
+};
+
+/** The boards a user's group-lead roles (OnlineAdmin, team leaders) give access to. */
+export function leaderGroupsOf(roles: readonly string[]): AgentGroup[] {
+  return Array.from(new Set(roles.flatMap((role) => (GROUP_LEAD_ROLES[role] ? [GROUP_LEAD_ROLES[role]] : []))));
+}
 
 export type AgentGroup = 'online' | 'offline';
 
@@ -23,12 +36,18 @@ function isRoleList(roles: readonly string[] | null | undefined): roles is reado
   return Array.isArray(roles);
 }
 
+/**
+ * Who may read a board: Admin and Manager both boards; OnlineAdmin and team leaders only the board of
+ * their own group (online roles the online board, offline roles the offline one); the Dashboard /
+ * OfflineDashboard screen accounts their board.
+ */
 export function canReadLiveLeaderboard(
   roles: readonly string[] | null | undefined,
   group: AgentGroup,
 ): boolean {
   if (!isRoleList(roles)) return false;
   if (roles.some((role) => LIVE_LEADERBOARD_MANAGER_ROLES.has(role))) return true;
+  if (leaderGroupsOf(roles).includes(group)) return true;
 
   return group === 'online'
     ? roles.length === 1 && roles[0] === 'Dashboard'
@@ -36,10 +55,7 @@ export function canReadLiveLeaderboard(
 }
 
 export function resolveAgentGroup(roles: readonly string[]): AgentGroup | null {
-  if (roles.includes('OnlineAgent')) return 'online';
-  if (roles.includes('OfflineAgent') || roles.includes('TeamLeader')) return 'offline';
-
-  return null;
+  return resolveRoleGroup(roles);
 }
 
 export function getAgentLabel(agent: LeaderboardAgent): string {
@@ -47,7 +63,7 @@ export function getAgentLabel(agent: LeaderboardAgent): string {
 }
 
 export function groupAgentRoles(group: AgentGroup): string[] {
-  return group === 'online' ? ['OnlineAgent'] : ['OfflineAgent', 'TeamLeader'];
+  return group === 'online' ? ['OnlineAgent', 'OnlineTeamLeader'] : ['OfflineAgent', 'TeamLeader', 'OfflineTeamLeader'];
 }
 
 /** Bonus per agent from the central bonus engine, the same numbers the salary page shows. */

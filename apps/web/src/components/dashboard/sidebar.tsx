@@ -33,9 +33,8 @@ import type { Icon as NavIcon } from '@tabler/icons-react';
 import { useAuth } from '@/contexts/auth-context';
 import { BrandMark } from '@/components/ui/brand-mark';
 import { getInitials } from '@/components/ui/user-avatar';
+import { isAgentOnly as sharedIsAgentOnly, isFinanceOnly as sharedIsFinanceOnly, isTashkiliyOnly as sharedIsTashkiliyOnly } from '@dashboarduz/shared';
 
-const PRIVILEGED_ROLES = new Set(['Admin', 'Manager', 'TeamLeader', 'Finance']);
-const AGENT_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent']);
 const AGENT_ALLOWED_HREFS = new Set([
   '/dashboard',
   '/dashboard/income',
@@ -81,8 +80,11 @@ const ADMIN_ONLY_HREFS = new Set([
 
 const ROLE_LABELS: Record<string, string> = {
   Admin: 'Admin',
+  OnlineAdmin: 'Online admin',
   Manager: 'Menejer',
   TeamLeader: 'Team lider',
+  OnlineTeamLeader: 'Online team lider',
+  OfflineTeamLeader: 'Oflayn team lider',
   Agent: 'Agent',
   OnlineAgent: 'Online agent',
   OfflineAgent: 'Offline agent',
@@ -255,23 +257,13 @@ export default function Sidebar({
     logout();
   };
 
-  const isAdmin = user?.roles.includes('Admin');
-  const isAgentOnly = Boolean(user?.roles.some((role: string) => AGENT_ROLES.has(role)) && !user?.roles.some((role: string) => PRIVILEGED_ROLES.has(role)));
-  const isFinanceOnly = Boolean(
-    user?.roles.includes('Finance')
-      && !user?.roles.includes('Admin')
-      && !user?.roles.includes('Manager')
-      && !user?.roles.includes('TeamLeader')
-      && !user?.roles.some((role: string) => AGENT_ROLES.has(role)),
-  );
-  const isTashkiliyOnly = Boolean(
-    user?.roles.includes('Tashkiliy')
-      && !user?.roles.includes('Admin')
-      && !user?.roles.includes('Manager')
-      && !user?.roles.includes('TeamLeader')
-      && !user?.roles.some((role: string) => AGENT_ROLES.has(role))
-      && !user?.roles.includes('Finance'),
-  );
+  // The same role rules as the route guard (shared helpers), so the menu never offers a blocked page.
+  const roles: string[] = user?.roles ?? [];
+  // Only a full Admin gets the company-wide tools (integrations, notifications, debug); OnlineAdmin does not.
+  const isAdmin = roles.includes('Admin');
+  const isAgentOnly = sharedIsAgentOnly(roles);
+  const isFinanceOnly = sharedIsFinanceOnly(roles);
+  const isTashkiliyOnly = sharedIsTashkiliyOnly(roles);
   const itemVisible = (item: NavigationItem) => (
     isAgentOnly
       ? AGENT_ALLOWED_HREFS.has(item.href)

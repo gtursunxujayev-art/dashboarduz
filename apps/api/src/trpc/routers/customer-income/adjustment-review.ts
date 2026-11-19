@@ -8,6 +8,7 @@ import { ADJUSTMENT_STATUS_APPROVED, ADJUSTMENT_STATUS_PENDING, ADJUSTMENT_STATU
 import { notifyRefundRequesterReviewResult, sendRefundApprovedTelegram } from '../../../services/customer-income/refund-notifications';
 import { canApproveRefundRequest, canApproveTariffChangeRequest } from '../../../services/customer-income/roles';
 import { assertSaleChainDebtInvariant, lockSaleChain, reconcileBonusAfterIncomeChange, requestBonusReconcile } from '../../../services/customer-income/sale-chain';
+import { assertManagerInScope, resolveIncomeScope } from '../../../services/customer-income/scope';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { protectedProcedure } from '../../trpc';
 
@@ -89,6 +90,9 @@ export const adjustmentReviewProcedures = {
           message: "Admin, Manager, Tashkiliy, or Organizator role is required to approve tariff changes.",
         });
       }
+
+      // OnlineAdmin reviews only requests on incomes of online-group managers.
+      assertManagerInScope((await resolveIncomeScope(ctx)).userIds, request.income.managerUserId);
 
       await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         await claimPendingRequest(tx, {
@@ -308,6 +312,9 @@ export const adjustmentReviewProcedures = {
           message: "Admin, Manager, Tashkiliy, or Organizator role is required to reject tariff changes.",
         });
       }
+
+      // OnlineAdmin reviews only requests on incomes of online-group managers.
+      assertManagerInScope((await resolveIncomeScope(ctx)).userIds, request.income.managerUserId);
 
       await ctx.db.$transaction(async (tx: Prisma.TransactionClient) => {
         await claimPendingRequest(tx, {
