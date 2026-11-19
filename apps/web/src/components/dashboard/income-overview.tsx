@@ -12,11 +12,20 @@ type IncomeCardProps = {
   title: string;
   online: number;
   offline: number;
+  /** Intensive, Qo'shimcha xizmat and uncategorized income, so the total is all income. */
+  other?: number;
 };
 
+const OTHER_LABEL = 'Intensiv va boshqa';
+
 /** The month at a glance: dark in both themes, carried by the brand artwork. */
-function IncomeHero({ title, online, offline }: IncomeCardProps) {
-  const total = online + offline;
+function IncomeHero({ title, online, offline, other = 0 }: IncomeCardProps) {
+  const total = online + offline + other;
+  const parts = [
+    { label: 'Online', value: online, dot: 'bg-blue-500' },
+    { label: OTHER_LABEL, value: other, dot: 'bg-sky-300/70' },
+    { label: 'Ofline', value: offline, dot: 'bg-white/30' },
+  ].filter((part) => part.label !== OTHER_LABEL || part.value > 0);
 
   return (
     <article className="relative isolate flex min-h-[236px] flex-col justify-between overflow-hidden rounded-[24px] bg-slate-950 p-6 text-white shadow-lg ring-1 ring-inset ring-white/10 sm:p-8">
@@ -38,28 +47,26 @@ function IncomeHero({ title, online, offline }: IncomeCardProps) {
       </div>
 
       <div className="mt-8 max-w-md">
-        <div className="flex items-center justify-between text-sm">
-          <p className="flex items-baseline gap-2">
-            <span className="font-medium">Online</span>
-            <span className="tabular text-white/60">{sharePercent(online, total)}</span>
-          </p>
-          <p className="flex items-baseline gap-2">
-            <span className="tabular text-white/60">{sharePercent(offline, total)}</span>
-            <span className="font-medium">Ofline</span>
-          </p>
-        </div>
-        <SplitBar first={online} second={offline} tone="ink" className="mt-2.5" />
-        <div className="tabular mt-2.5 flex items-center justify-between text-sm text-white/80">
-          <span>{formatSom(online)}</span>
-          <span>{formatSom(offline)}</span>
-        </div>
+        <SplitBar first={online} second={offline} third={other} tone="ink" />
+        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+          {parts.map((part) => (
+            <div key={part.label} className="min-w-0">
+              <dt className="flex items-center gap-2">
+                <span className={`h-2 w-2 flex-shrink-0 rounded-full ${part.dot}`} aria-hidden="true" />
+                <span className="font-medium">{part.label}</span>
+                <span className="tabular text-white/60">{sharePercent(part.value, total)}</span>
+              </dt>
+              <dd className="tabular mt-0.5 text-white/80">{formatSom(part.value)}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </article>
   );
 }
 
-function IncomeStat({ title, online, offline, icon: StatIcon }: IncomeCardProps & { icon: Icon }) {
-  const total = online + offline;
+function IncomeStat({ title, online, offline, other = 0, icon: StatIcon }: IncomeCardProps & { icon: Icon }) {
+  const total = online + offline + other;
 
   return (
     <article className="panel flex flex-col justify-between p-5">
@@ -76,12 +83,18 @@ function IncomeStat({ title, online, offline, icon: StatIcon }: IncomeCardProps 
       </div>
 
       <div className="mt-4">
-        <SplitBar first={online} second={offline} />
-        <div className="mt-2.5 grid grid-cols-2 gap-3 text-[13px]">
+        <SplitBar first={online} second={offline} third={other} />
+        <div className={`mt-2.5 grid gap-3 text-[13px] ${other > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
           <p className="min-w-0">
             <span className="text-gray-500">Online</span>
             <span className="tabular block truncate font-medium text-gray-900">{formatSom(online)}</span>
           </p>
+          {other > 0 && (
+            <p className="min-w-0 text-center">
+              <span className="block truncate text-gray-500">{OTHER_LABEL}</span>
+              <span className="tabular block truncate font-medium text-gray-900">{formatSom(other)}</span>
+            </p>
+          )}
           <p className="min-w-0 text-right">
             <span className="text-gray-500">Ofline</span>
             <span className="tabular block truncate font-medium text-gray-900">{formatSom(offline)}</span>
@@ -107,18 +120,19 @@ export default function DashboardIncomeOverview() {
     );
   }
 
-  const daily = query.data?.daily ?? { online: 0, offline: 0 };
-  const weekly = query.data?.weekly ?? { online: 0, offline: 0 };
-  const monthly = query.data?.monthly ?? { online: 0, offline: 0 };
+  const empty = { online: 0, offline: 0, other: 0 };
+  const daily = query.data?.daily ?? empty;
+  const weekly = query.data?.weekly ?? empty;
+  const monthly = query.data?.monthly ?? empty;
 
   return (
     <section aria-labelledby="income-overview-title">
       <h2 id="income-overview-title" className="sr-only">Tushum ko&apos;rinishi</h2>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]">
-        <IncomeHero title="Oylik tushum" online={monthly.online} offline={monthly.offline} />
+        <IncomeHero title="Oylik tushum" online={monthly.online} offline={monthly.offline} other={monthly.other} />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">
-          <IncomeStat title="Kunlik tushum" online={daily.online} offline={daily.offline} icon={IconSun} />
-          <IncomeStat title="Haftalik tushum" online={weekly.online} offline={weekly.offline} icon={IconCalendarWeek} />
+          <IncomeStat title="Kunlik tushum" online={daily.online} offline={daily.offline} other={daily.other} icon={IconSun} />
+          <IncomeStat title="Haftalik tushum" online={weekly.online} offline={weekly.offline} other={weekly.other} icon={IconCalendarWeek} />
         </div>
       </div>
     </section>

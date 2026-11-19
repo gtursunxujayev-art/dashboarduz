@@ -1,12 +1,14 @@
+import { resolveDataScope } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 
+import { isUserInScope } from '../../../lib/access';
 import { getAmoReference } from '../../../services/integrations/amocrm-activity-snapshot-read';
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { listTelegramRecipients } from '../../../services/integrations/telegram-recipient-store';
-import { managerProcedure } from '../../trpc';
+import { staffReadProcedure } from '../../trpc';
 
 export const userDirectoryProcedures = {
-  amocrmManagers: managerProcedure.query(async ({ ctx }) => {
+  amocrmManagers: staffReadProcedure.query(async ({ ctx }) => {
     const amoContext = await getTenantAmoCRMContext(ctx.tenantId, ctx.db);
 
     if (!amoContext) {
@@ -28,7 +30,7 @@ export const userDirectoryProcedures = {
       .filter((user) => user.id.length > 0)
       .sort((a, b) => a.name.localeCompare(b.name));
   }),
-  telegramRecipients: managerProcedure.query(async ({ ctx }) => {
+  telegramRecipients: staffReadProcedure.query(async ({ ctx }) => {
     const integration = await ctx.db.integration.findUnique({
       where: {
         tenantId_type: {
@@ -59,8 +61,9 @@ export const userDirectoryProcedures = {
         lastSeenAt: recipient.lastSeenAt,
       }));
   }),
-  list: managerProcedure.query(async ({ ctx }) => {
-    return await ctx.db.user.findMany({
+  list: staffReadProcedure.query(async ({ ctx }) => {
+    const scope = resolveDataScope(ctx.user.roles);
+    const users = await ctx.db.user.findMany({
       where: { tenantId: ctx.tenantId },
       orderBy: { createdAt: 'asc' },
       select: {
@@ -77,5 +80,8 @@ export const userDirectoryProcedures = {
         createdAt: true,
       },
     });
+
+    // OnlineAdmin and team leaders see their own group's people only.
+    return users.filter((user) => isUserInScope(scope, ctx.user.userId, user));
   }),
 };

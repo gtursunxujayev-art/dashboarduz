@@ -8,8 +8,9 @@ import { fetchCoursesWithTariffsSafe, toCourseOptions } from '../../../services/
 import { CUSTOMER_NUMBER_REGEX, TELEGRAM_USERNAME_REGEX } from '../../../services/customer-income/constants';
 import { deleteCustomersWithMoneyRows } from '../../../services/customer-income/delete-customers';
 import { reconcileBonusAfterIncomeChange } from '../../../services/customer-income/sale-chain';
+import { incomeManagerWhere, resolveIncomeScope, writableCustomerWhere } from '../../../services/customer-income/scope';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
-import { adminProcedure } from '../../trpc';
+import { scopedAdminProcedure } from '../../trpc';
 
 /** A typed customer number (digits only, after normalising) and name (non-empty), trimmed; BAD_REQUEST otherwise. */
 function normalizeCustomerIdentity(rawCustomerNumber: string, rawName: string): { customerNumber: string; name: string } {
@@ -35,7 +36,7 @@ function normalizeCustomerIdentity(rawCustomerNumber: string, rawName: string): 
 }
 
 export const customerProcedures = {
-  customerEditorOptions: adminProcedure.query(async ({ ctx }) => {
+  customerEditorOptions: scopedAdminProcedure.query(async ({ ctx }) => {
     const courses = await fetchCoursesWithTariffsSafe({
       tenantId: ctx.tenantId,
       onlyActive: true,
@@ -44,7 +45,7 @@ export const customerProcedures = {
 
     return toCourseOptions(courses, { activeSubTariffsOnly: true });
   }),
-  createCustomerOnly: adminProcedure
+  createCustomerOnly: scopedAdminProcedure
     .input(
       z.object({
         customerNumber: z.string().min(1).max(64),
@@ -167,7 +168,7 @@ export const customerProcedures = {
 
       return created;
     }),
-  updateCustomerIdentity: adminProcedure
+  updateCustomerIdentity: scopedAdminProcedure
     .input(
       z.object({
         customerId: z.string().uuid(),
@@ -177,11 +178,14 @@ export const customerProcedures = {
     )
     .mutation(async ({ ctx, input }) => {
       const { customerNumber, name } = normalizeCustomerIdentity(input.customerNumber, input.name);
+      // OnlineAdmin: only customers with an online-group income, or none yet.
+      const { userIds: scopedManagerUserIds } = await resolveIncomeScope(ctx);
 
       const current = await ctx.db.customer.findFirst({
         where: {
           tenantId: ctx.tenantId,
           id: input.customerId,
+          ...writableCustomerWhere(scopedManagerUserIds),
         },
         select: {
           id: true,
@@ -244,7 +248,7 @@ export const customerProcedures = {
 
       return updated;
     }),
-  updateCustomersCourseAssignment: adminProcedure
+  updateCustomersCourseAssignment: scopedAdminProcedure
     .input(
       z.object({
         customerIds: z.array(z.string().uuid()).min(1).max(500),
@@ -256,6 +260,18 @@ export const customerProcedures = {
     .mutation(async ({ ctx, input }) => {
       const customerIds = Array.from(new Set(input.customerIds));
       const courseId = input.courseId || null;
+      // OnlineAdmin: every customer must be in the online group (or have no income yet); only online-group sales move.
+      const { userIds: scopedManagerUserIds } = await resolveIncomeScope(ctx);
+
+      if (scopedManagerUserIds) {
+        const writableCount = await ctx.db.customer.count({
+          where: { tenantId: ctx.tenantId, id: { in: customerIds }, ...writableCustomerWhere(scopedManagerUserIds) },
+        });
+
+        if (writableCount !== customerIds.length) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: "Tanlangan mijozlarning ba'zilari sizning guruhingizga tegishli emas." });
+        }
+      }
       const tariffId = input.tariffId || null;
       const subTariffId = input.subTariffId || null;
 
@@ -328,6 +344,7 @@ export const customerProcedures = {
               customerId: { in: customerIds },
               type: 'new_sale',
               lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
+              ...incomeManagerWhere(scopedManagerUserIds),
             },
             select: { id: true },
           });
@@ -400,19 +417,25 @@ export const customerProcedures = {
    * Deletes customers together with their incomes and adjustment requests (owner decision), atomically with the
    * audit row and the bonus reconcile markers; see deleteCustomersWithMoneyRows. A sale created for one of these
    * customers between the read and the delete makes the database refuse it (NO ACTION key): reported as a conflict.
+   * A scoped caller (OnlineAdmin) only reaches customers of their group, and is refused when one of them also has
+   * incomes of managers outside it.
    */
-  deleteCustomers: adminProcedure
+  deleteCustomers: scopedAdminProcedure
     .input(
       z.object({
         customerIds: z.array(z.string().uuid()).min(1).max(500),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // OnlineAdmin: customers outside the online group are treated as not found.
+      const { userIds: scopedManagerUserIds } = await resolveIncomeScope(ctx);
+
       try {
         const { bonusReconcileRequested, ...result } = await deleteCustomersWithMoneyRows({
           tenantId: ctx.tenantId,
           actorUserId: ctx.user.userId,
           customerIds: Array.from(new Set(input.customerIds)),
+          scopedManagerUserIds,
           db: ctx.db,
         });
 

@@ -4,21 +4,26 @@ import { z } from 'zod';
 import { logger } from '../../../lib/logger';
 import { fetchCoursesWithTariffsSafe, toCourseOptions } from '../../../services/customer-income/catalog';
 import { fetchLatestResponsibleManagerByCustomer } from '../../../services/customer-income/labels';
-import { canSelectInactiveManagerForIncome, hasSalesManagerRole, shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
+import { canSelectInactiveManagerForIncome, hasSalesManagerRole } from '../../../services/customer-income/roles';
+import { resolveIncomeScope, resolveIncomeWriterIds } from '../../../services/customer-income/scope';
 import { buildActiveSaleChainMetrics, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE, type SaleChainSaleRow } from '../../../services/income-chain';
 import { NON_TECHNICAL_SALE_WHERE } from '../../../services/income-facts';
 import { protectedProcedure } from '../../trpc';
 
 export const formOptionsProcedures = {
   formOptions: protectedProcedure.query(async ({ ctx }) => {
-    const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
+    // Customers and debts: the caller's read scope (self / group / all). The manager picker: only the users the
+    // caller may create income for (self for agents and team leaders, the online group for OnlineAdmin).
+    const resolvedScope = await resolveIncomeScope(ctx);
+    const scopedManagerUserIds = resolvedScope.userIds;
+    const pickableManagerUserIds = resolveIncomeWriterIds(resolvedScope, ctx.user.userId);
     const includeInactiveManagers = canSelectInactiveManagerForIncome(ctx.user.roles);
 
     const findManagers = () => ctx.db.user.findMany({
       where: {
         tenantId: ctx.tenantId,
         ...(includeInactiveManagers ? {} : { isActive: true }),
-        ...(scopedManagerUserId ? { id: scopedManagerUserId } : {}),
+        ...(pickableManagerUserIds ? { id: { in: pickableManagerUserIds } } : {}),
       },
       orderBy: { name: 'asc' },
       select: {
@@ -35,11 +40,11 @@ export const formOptionsProcedures = {
       ctx.db.customer.findMany({
         where: {
           tenantId: ctx.tenantId,
-          ...(scopedManagerUserId
+          ...(scopedManagerUserIds
               ? {
                   incomes: {
                     some: {
-                      managerUserId: scopedManagerUserId,
+                      managerUserId: { in: scopedManagerUserIds },
                       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
                     },
                   },
@@ -60,9 +65,9 @@ export const formOptionsProcedures = {
           tenantId: ctx.tenantId,
           type: 'new_sale',
           lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-          ...(scopedManagerUserId
+          ...(scopedManagerUserIds
             ? {
-                managerUserId: scopedManagerUserId,
+                managerUserId: { in: scopedManagerUserIds },
               }
             : {}),
         },
@@ -128,7 +133,7 @@ export const formOptionsProcedures = {
     const responsibleManagerMap = await fetchLatestResponsibleManagerByCustomer({
       tenantId: ctx.tenantId,
       customerIds: (customers as Array<{ id: string }>).map((customer) => customer.id),
-      scopedManagerUserId,
+      scopedManagerUserIds,
       db: ctx.db,
     });
 
@@ -201,16 +206,16 @@ export const formOptionsProcedures = {
   searchCustomers: protectedProcedure
     .input(customerSearchSchema)
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
+      const scopedManagerUserIds = (await resolveIncomeScope(ctx)).userIds;
       const query = input.query?.trim();
       const customers = await ctx.db.customer.findMany({
         where: {
           tenantId: ctx.tenantId,
-          ...(scopedManagerUserId
+          ...(scopedManagerUserIds
               ? {
                   incomes: {
                     some: {
-                      managerUserId: scopedManagerUserId,
+                      managerUserId: { in: scopedManagerUserIds },
                       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
                     },
                   },
@@ -242,7 +247,7 @@ export const formOptionsProcedures = {
       const responsibleManagerMap = await fetchLatestResponsibleManagerByCustomer({
         tenantId: ctx.tenantId,
         customerIds: customers.map((customer) => customer.id),
-        scopedManagerUserId,
+        scopedManagerUserIds,
         db: ctx.db,
       });
 
@@ -263,7 +268,7 @@ export const formOptionsProcedures = {
       }),
     )
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
+      const scopedManagerUserIds = (await resolveIncomeScope(ctx)).userIds;
       const normalizedCustomerNumber = input.customerNumber.replace(/\D/g, '').trim();
 
       if (!normalizedCustomerNumber) {
@@ -278,9 +283,9 @@ export const formOptionsProcedures = {
           customer: {
             customerNumber: normalizedCustomerNumber,
           },
-          ...(scopedManagerUserId
+          ...(scopedManagerUserIds
             ? {
-                managerUserId: scopedManagerUserId,
+                managerUserId: { in: scopedManagerUserIds },
               }
             : {}),
           // Technical sales (agreement == 1) are not real debts; never offer them for a repayment.

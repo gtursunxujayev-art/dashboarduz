@@ -3,7 +3,7 @@ import { dateRangeInput, sellerRangeSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { getAgentResponsibleScope } from '../../../lib/access';
+import { resolveCallerDataScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { logger } from '../../../lib/logger';
 import { countedCallsWhere } from '../../../services/calls-source';
@@ -16,6 +16,7 @@ import { computeLeadResponseTimes, getSelectedPipelines } from '../../../service
 import { buildSellersListCacheKey, SELLERS_ACTIVITY_CACHE_TTL_MS, SELLERS_LIST_CACHE_TTL_MS, sellersListCache } from '../../../services/sellers/list-cache';
 import { buildSellerListRow, compareSellerListRows, countByManager, countDeadlineAdherence, countNewAndRepeatCustomers, groupCallsByManager, groupLeadsByManager, groupSellerIncomesByManager, managerIdByMappedUserId, sumByManager } from '../../../services/sellers/list-rows';
 import { asString, excludeTechnicalSellerIncomes, getManagerUserIdsMap, LOST_STATUS_ID, WON_STATUS_ID } from '../../../services/sellers/metrics';
+import { isSellerInScope, sellerScopeCacheKey } from '../../../services/sellers/scope';
 import { protectedProcedure } from '../../trpc';
 
 type SellerPeriod = { db: DbClient; tenantId: string; rangeStart: Date; rangeEnd: Date };
@@ -99,7 +100,7 @@ export const sellerListProcedures = {
       const range = input?.range || 'last30days';
       const { rangeStart, rangeEnd } = resolveDateRange(range, now, input?.dateFrom, input?.dateTo);
       const period: SellerPeriod = { db: ctx.db, tenantId: ctx.tenantId, rangeStart, rangeEnd };
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
       const timed = async <T>(key: string, work: Promise<T>): Promise<T> => {
         const stepStartedMs = Date.now();
         const result = await work;
@@ -130,7 +131,7 @@ export const sellerListProcedures = {
       const managerPreparationStartedMs = Date.now();
       const managers = amocrmUsers
         .filter((user) => user.is_active !== false)
-        .filter((user) => !scope.isScoped || asString(user.id) === scope.responsibleUserId);
+        .filter((user) => isSellerInScope(scope.amoResponsibleIds, asString(user.id)));
       const managerIds = new Set(managers.map((manager) => asString(manager.id)).filter((id): id is string => Boolean(id)));
 
       timings.managerPreparationMs = Date.now() - managerPreparationStartedMs;
@@ -142,7 +143,7 @@ export const sellerListProcedures = {
       });
       const listCacheKey = buildSellersListCacheKey(
         ctx.tenantId,
-        scope.isScoped ? (scope.responsibleUserId || '__unmapped__') : null,
+        sellerScopeCacheKey(scope.amoResponsibleIds),
         selectedPipelineIds,
         range,
         corporateRevision._max.updatedAt ? corporateRevision._max.updatedAt.toISOString() : '',

@@ -1,5 +1,5 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, COURSE_CATEGORIES, PLAN_BONUS_PERIOD_MODES, type PlanBonusPeriodMode, SALARY_RULE_MODES, SALARY_TIER_BASES, type SalaryBonusMode, type SalaryRuleMode, type SalaryTierBasis } from '@dashboarduz/shared';
+import { AGENT_ROLES, COURSE_CATEGORIES, PLAN_BONUS_PERIOD_MODES, type PlanBonusPeriodMode, SALARY_RULE_MODES, SALARY_TIER_BASES, type SalaryBonusMode, type SalaryRuleMode, type SalaryTierBasis, TEAM_LEADER_ROLES } from '@dashboarduz/shared';
 
 import { normalizePercentage } from '../../lib/number';
 import { asObject, toFiniteNumber } from '../../lib/object';
@@ -432,7 +432,7 @@ export async function loadSalarySettingsAndAgents(db: DbClient, tenantId: string
         tenantId,
         isActive: true,
         roles: {
-          hasSome: [...AGENT_ROLES, 'TeamLeader'],
+          hasSome: [...AGENT_ROLES, ...TEAM_LEADER_ROLES],
         },
       },
       orderBy: [{ name: 'asc' }, { username: 'asc' }],

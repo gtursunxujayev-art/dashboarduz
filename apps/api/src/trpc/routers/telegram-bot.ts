@@ -2,14 +2,39 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { resolveCallerDataScope } from '../../lib/access';
 import { thrownText } from '../../lib/errors';
 import { resolveTelegramBotTokenForTenant } from '../../lib/telegram';
 import { telegramService } from '../../services/integrations/telegram';
 import { listTelegramRecipients } from '../../services/integrations/telegram-recipient-store';
-import { managerProcedure, router } from '../trpc';
+import { protectedProcedure, router } from '../trpc';
+
+/** Who may message users through the bot. Team leaders only read data, so they are not among them. */
+export const TELEGRAM_BOT_SENDER_ROLES = ['Admin', 'Manager', 'OnlineAdmin'] as const;
+
+export function canSendTelegramBotMessages(roles: readonly string[]): boolean {
+  return roles.some((role) => (TELEGRAM_BOT_SENDER_ROLES as readonly string[]).includes(role));
+}
+
+/** The asked users an OnlineAdmin (scoped to the online group) may message; everyone for `null`. */
+export function filterTelegramTargetsToScope(userIds: readonly string[], scopeUserIds: readonly string[] | null): string[] {
+  if (scopeUserIds === null) return [...userIds];
+  const allowed = new Set(scopeUserIds);
+
+  return userIds.filter((id) => allowed.has(id));
+}
+
+const telegramSenderProcedure = protectedProcedure.use(async (opts) => {
+  if (!canSendTelegramBotMessages(opts.ctx.user.roles || [])) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin, Manager or OnlineAdmin access required' });
+  }
+
+  return opts.next();
+});
 
 export const telegramBotRouter = router({
-  recipients: managerProcedure.query(async ({ ctx }) => {
+  recipients: telegramSenderProcedure.query(async ({ ctx }) => {
+    const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles || [], ctx.db);
     const [integration, users] = await Promise.all([
       ctx.db.integration.findUnique({
         where: {
@@ -27,6 +52,7 @@ export const telegramBotRouter = router({
       ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
+          ...(scope.userIds ? { id: { in: scope.userIds } } : {}),
         },
         orderBy: {
           createdAt: 'asc',
@@ -53,10 +79,17 @@ export const telegramBotRouter = router({
         })
       : [];
     const recipientsByChatId = new Map(recipients.map((recipient) => [recipient.chatId, recipient]));
+    // A scoped sender (OnlineAdmin) only sees the bot chats of their own users.
+    const scopedChatIds = scope.userIds
+      ? new Set(users.map((user) => String(user.telegramId || '').trim()).filter(Boolean))
+      : null;
+    const visibleRecipients = scopedChatIds
+      ? recipients.filter((recipient) => scopedChatIds.has(recipient.chatId))
+      : recipients;
 
     return {
       connected: Boolean(integration && integration.status === 'active'),
-      availableRecipients: recipients.map((recipient) => ({
+      availableRecipients: visibleRecipients.map((recipient) => ({
         chatId: recipient.chatId,
         displayName: recipient.displayName,
         username: recipient.username,
@@ -85,7 +118,7 @@ export const telegramBotRouter = router({
     };
   }),
 
-  sendMessage: managerProcedure
+  sendMessage: telegramSenderProcedure
     .input(
       z.object({
         userIds: z.array(z.string().uuid()).min(1).max(200),
@@ -111,11 +144,12 @@ export const telegramBotRouter = router({
         });
       }
 
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles || [], ctx.db);
       const users = await ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           id: {
-            in: input.userIds,
+            in: filterTelegramTargetsToScope(input.userIds, scope.userIds),
           },
         },
         select: {

@@ -1,8 +1,9 @@
 import type { DbClient } from '@dashboarduz/db';
-import { AGENT_ROLES, dateRangeInput, hasAgentRole, toTashkentDateKey } from '@dashboarduz/shared';
+import { AGENT_ROLES, TEAM_LEADER_ROLES, type DataScope, dateRangeInput, hasAgentRole, hasTeamLeaderRole, toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { isUserInScope, resolveCallerDataScope } from '../../lib/access';
 import { formatDuration } from '../../lib/duration';
 import { thrownText } from '../../lib/errors';
 import { logger } from '../../lib/logger';
@@ -16,7 +17,7 @@ import { telegramService } from '../../services/integrations/telegram';
 import { parseTelegramGroupIdsFromEnvKeys } from '../../services/integrations/telegram-groups';
 import { protectedProcedure, router } from '../trpc';
 
-const MANAGER_LIKE_ROLES = [...AGENT_ROLES, 'Manager', 'TeamLeader'] as const;
+const MANAGER_LIKE_ROLES = [...AGENT_ROLES, 'Manager', ...TEAM_LEADER_ROLES] as const;
 const CORPORATE_GROUP_ENV_KEYS = [
   'KORPORATIV_GROUP_ID',
   'KORPORATIV_GROUP_IDS',
@@ -32,9 +33,41 @@ function isAdmin(roles: string[]): boolean {
 
 function canUseCorporateCalls(roles: string[]): boolean {
   return isAdmin(roles)
+    || roles.includes('OnlineAdmin')
     || roles.includes('Manager')
-    || roles.includes('TeamLeader')
+    || hasTeamLeaderRole(roles)
     || hasAgentRole(roles);
+}
+
+/**
+ * Whose corporate call time the caller may enter: an Admin anyone, an OnlineAdmin the online group,
+ * everyone else (team leaders included, who only read their group) only themself.
+ */
+export function canWriteCorporateCallFor(
+  roles: readonly string[],
+  scope: DataScope,
+  callerId: string,
+  target: { id: string; roles: readonly string[] },
+): boolean {
+  if (target.id === callerId) return true;
+  if (roles.includes('Admin')) return true;
+  if (roles.includes('OnlineAdmin')) return isUserInScope(scope, callerId, target);
+
+  return false;
+}
+
+/**
+ * `managerUserId` filter of the list: the asked manager when in scope; otherwise (none asked, or one outside
+ * the scope) the whole scope, which for an agent is just themself.
+ */
+export function corporateCallManagerFilter(
+  userIds: readonly string[] | null,
+  requestedManagerUserId: string | undefined,
+): string | { in: string[] } | undefined {
+  if (userIds === null) return requestedManagerUserId || undefined;
+  if (requestedManagerUserId && userIds.includes(requestedManagerUserId)) return requestedManagerUserId;
+
+  return userIds.length === 1 ? userIds[0] : { in: [...userIds] };
 }
 
 async function sendCorporateCallAddedTelegram(params: {
@@ -112,14 +145,18 @@ export const corporateCallsRouter = router({
       throw new TRPCError({ code: 'FORBIDDEN', message: "Sizda bu bo'lim uchun ruxsat yo'q." });
     }
 
-    const admin = isAdmin(ctx.user.roles || []);
+    const roles = ctx.user.roles || [];
+    const admin = isAdmin(roles);
+    const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, roles, ctx.db);
+    const seesOthers = scope.scope.kind !== 'self';
 
-    const users = admin
+    const users = seesOthers
       ? await ctx.db.user.findMany({
           where: {
             tenantId: ctx.tenantId,
             isActive: true,
             roles: { hasSome: [...MANAGER_LIKE_ROLES] },
+            ...(scope.userIds ? { id: { in: scope.userIds } } : {}),
           },
           orderBy: [{ name: 'asc' }, { username: 'asc' }],
           select: {
@@ -143,6 +180,10 @@ export const corporateCallsRouter = router({
 
     return {
       canChooseCustomDate: admin,
+      /** Whether the form may enter time for another manager (Admin: anyone, OnlineAdmin: online group). */
+      canChooseManager: admin || roles.includes('OnlineAdmin'),
+      /** Whether the list may be filtered by another manager (anyone who reads more than their own rows). */
+      canFilterManagers: seesOthers,
       managers: users.map((user) => ({
         id: user.id,
         name: String(user.name || user.username || user.id),
@@ -161,7 +202,8 @@ export const corporateCallsRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: "Sizda bu bo'lim uchun ruxsat yo'q." });
       }
 
-      const admin = isAdmin(ctx.user.roles || []);
+      const roles = ctx.user.roles || [];
+      const admin = isAdmin(roles);
       const callDate = parseReportDateInput(input.date);
 
       if (!admin && !isTodayOrYesterdayInReportTz(callDate)) {
@@ -171,7 +213,9 @@ export const corporateCallsRouter = router({
         });
       }
 
-      const targetManagerUserId = admin
+      const canChooseManager = admin || roles.includes('OnlineAdmin');
+      // Anyone else always enters their own time (a chosen manager is ignored, as before).
+      const targetManagerUserId = canChooseManager
         ? (input.managerUserId || ctx.user.userId)
         : ctx.user.userId;
 
@@ -185,11 +229,20 @@ export const corporateCallsRouter = router({
           id: true,
           name: true,
           username: true,
+          roles: true,
         },
       });
 
       if (!manager) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Menejer topilmadi.' });
+      }
+
+      if (targetManagerUserId !== ctx.user.userId && !admin) {
+        const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, roles, ctx.db);
+
+        if (!canWriteCorporateCallFor(roles, scope.scope, ctx.user.userId, { id: manager.id, roles: manager.roles ?? [] })) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: "Bu menejer uchun kiritishga ruxsat yo'q." });
+        }
       }
 
       const durationSeconds = parseDurationToSeconds(input.duration);
@@ -272,7 +325,7 @@ export const corporateCallsRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: "Sizda bu bo'lim uchun ruxsat yo'q." });
       }
 
-      const admin = isAdmin(ctx.user.roles || []);
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles || [], ctx.db);
       const now = new Date();
       const defaultDateTo = toTashkentDateKey(now);
       const defaultDateFrom = toTashkentDateKey(new Date(now.getTime() - 24 * 60 * 60 * 1000));
@@ -286,7 +339,7 @@ export const corporateCallsRouter = router({
 
       const where = {
         tenantId: ctx.tenantId,
-        managerUserId: admin ? (input?.managerUserId || undefined) : ctx.user.userId,
+        managerUserId: corporateCallManagerFilter(scope.userIds, input?.managerUserId),
         callDate: {
           gte: dateFrom,
           lte: dateTo,

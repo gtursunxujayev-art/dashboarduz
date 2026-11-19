@@ -155,3 +155,27 @@ export const managerProcedure = protectedProcedure.use(async (opts) => {
 
   return opts.next();
 });
+
+function requireAnyRole(allowed: readonly string[], message: string) {
+  return protectedProcedure.use(async (opts) => {
+    const roles = opts.ctx.user?.roles || [];
+
+    if (!roles.some((role) => allowed.includes(role))) {
+      throw new TRPCError({ code: 'FORBIDDEN', message });
+    }
+
+    return opts.next();
+  });
+}
+
+/** Admin or OnlineAdmin. Each procedure must still limit an OnlineAdmin to online data. */
+export const scopedAdminProcedure = requireAnyRole(['Admin', 'OnlineAdmin'], 'Admin access required');
+
+/** Who may create and change user accounts; the per-user rules are in services/users/permissions.ts. */
+export const userAdminProcedure = requireAnyRole(['Admin', 'Manager', 'OnlineAdmin'], 'Admin or Manager access required');
+
+/** Supervisors who may read staff data (team leaders read their own group only). */
+export const staffReadProcedure = requireAnyRole(
+  ['Admin', 'OnlineAdmin', 'Manager', 'TeamLeader', 'OnlineTeamLeader', 'OfflineTeamLeader'],
+  'Manager, TeamLeader or Admin access required',
+);

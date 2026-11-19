@@ -5,6 +5,7 @@ import { TRPCError } from '@trpc/server';
 import { getTashkentMonthKey, getTashkentMonthStart } from '../bonus/policy';
 
 import { lockSaleChain, requestBonusReconcile } from './sale-chain';
+import { incomeManagerWhere, writableCustomerWhere } from './scope';
 
 export type DeletedCustomerSummary = { id: string; incomeCount: number; requestCount: number; paymentTotal: number };
 
@@ -18,6 +19,25 @@ export type DeleteCustomersResult = {
 };
 
 /**
+ * Refuses (FORBIDDEN) when one of `customerIds` has an income whose manager is not in `scopedManagerUserIds`:
+ * deleting the customer would delete that income too.
+ */
+async function assertNoIncomesOutsideScope(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  customerIds: string[],
+  scopedManagerUserIds: readonly string[],
+): Promise<void> {
+  const outsideScope = await tx.income.count({
+    where: { tenantId, customerId: { in: customerIds }, NOT: incomeManagerWhere(scopedManagerUserIds) },
+  });
+
+  if (outsideScope > 0) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: "Tanlangan mijozlarning ba'zilari sizning guruhingizga tegishli emas." });
+  }
+}
+
+/**
  * Deletes customers of the tenant together with their money rows, in one transaction:
  *   1. locks every sale chain of these customers (as money writes do), so no repayment or request lands meanwhile;
  *   2. refuses (CONFLICT) if a payment of ANOTHER customer is linked to one of these sales;
@@ -26,18 +46,26 @@ export type DeleteCustomersResult = {
  *   5. writes the audit row (ids, and per customer the incomes, requests and paid total deleted).
  * The foreign keys from incomes and requests to customers stay NO ACTION, so no other code path can cascade money
  * rows away. Frozen bonus history (snapshot items' sourceIncomeId/sourceSaleId) and audit rows are kept as history.
- * Ids of other tenants or unknown ids are ignored.
+ * Ids of other tenants or unknown ids are ignored. With `scopedManagerUserIds` (a scoped caller such as OnlineAdmin)
+ * only customers writable in that scope are selected (others are ignored like unknown ids), and the whole delete is
+ * refused (FORBIDDEN, nothing deleted) when one of them also has an income of a manager outside the scope.
  */
 export async function deleteCustomersWithMoneyRows(params: {
   tenantId: string;
   actorUserId: string;
   customerIds: string[];
+  /** The caller's managers when scoped; null or omitted for an unscoped admin. */
+  scopedManagerUserIds?: readonly string[] | null;
   db: TenantPrismaClient;
 }): Promise<DeleteCustomersResult> {
   const { tenantId } = params;
 
   return params.db.$transaction(async (tx: Prisma.TransactionClient) => {
-    const customers = await tx.customer.findMany({ where: { tenantId, id: { in: params.customerIds } }, select: { id: true } });
+    const scopedManagerUserIds = params.scopedManagerUserIds ?? null;
+    const customers = await tx.customer.findMany({
+      where: { tenantId, id: { in: params.customerIds }, ...writableCustomerWhere(scopedManagerUserIds) },
+      select: { id: true },
+    });
     const customerIds = customers.map((customer) => customer.id);
 
     if (!customerIds.length) {
@@ -49,6 +77,10 @@ export async function deleteCustomersWithMoneyRows(params: {
 
     for (const saleId of saleIds) {
       await lockSaleChain(tx, { tenantId, saleId });
+    }
+
+    if (scopedManagerUserIds) {
+      await assertNoIncomesOutsideScope(tx, tenantId, customerIds, scopedManagerUserIds);
     }
 
     const foreignRepayments = saleIds.length

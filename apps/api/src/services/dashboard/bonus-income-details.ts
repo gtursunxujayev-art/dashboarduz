@@ -1,7 +1,8 @@
 import type { DbClient } from '@dashboarduz/db';
-import { dateRangeInput, isAgentOnly, isTashkiliyOnly, reportRangeSchema, type UserRole } from '@dashboarduz/shared';
+import { dateRangeInput, isTashkiliyOnly, reportRangeSchema, type UserRole } from '@dashboarduz/shared';
 import { z } from 'zod';
 
+import { resolveCallerDataScope } from '../../lib/access';
 import { resolveDateRange } from '../../lib/dates';
 import { classifyCourseCategoryFromField, createZeroBreakdown, type SalaryBreakdown, type SalaryCategory, TRPCError } from '../../trpc/routers/dashboard/helpers';
 import { buildBonusDetailIncomeWhere, isBonusDetailExportOverLimit } from '../bonus-detail-export';
@@ -10,6 +11,7 @@ import { buildSaleChainMetricsBySaleId, INCOME_LIFECYCLE_ACTIVE } from '../incom
 import { resolveSaleAgreementAmount } from '../income-facts';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../technical-income';
 
+import { pickScopedUsers } from './data-scope';
 import { extractBonusDetailSubTariffId } from './salary-helpers';
 import { loadSalarySettingsAndAgents } from './salary-settings';
 
@@ -51,22 +53,20 @@ export async function loadBonusIncomeDetails({
 
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
-      const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
-      const selectedManagerUserId = scopedManagerUserId || input.managerUserId;
+      // Agents see their own rows, team leaders / OnlineAdmin their group; a requested manager must be inside it.
+      const dataScope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
 
       const { allAgents } = await loadSalarySettingsAndAgents(ctx.db, ctx.tenantId);
       // Label with the bonus policy that applies to the viewed period, not whatever was saved last.
       const viewedBonusMode = (await resolveEffectiveBonusPolicy(ctx.tenantId, rangeEnd, ctx.db)).policy.bonusMode;
-      const visibleAgents = selectedManagerUserId
-        ? allAgents.filter((agent) => agent.id === selectedManagerUserId)
-        : allAgents;
+      const { users: visibleAgents, agentScoped } = pickScopedUsers(dataScope, allAgents, { callerId: ctx.user.userId, requestedUserId: input.managerUserId });
       const visibleAgentIds = visibleAgents.map((agent) => agent.id);
 
       if (!visibleAgentIds.length) {
         return {
           rangeStart: rangeStart.toISOString(),
           rangeEnd: rangeEnd.toISOString(),
-          scopedToCurrentAgent: Boolean(scopedManagerUserId),
+          scopedToCurrentAgent: agentScoped,
           bonusMode: viewedBonusMode,
           agentOptions: [],
           totals: {
@@ -487,7 +487,7 @@ export async function loadBonusIncomeDetails({
       return {
         rangeStart: rangeStart.toISOString(),
         rangeEnd: rangeEnd.toISOString(),
-        scopedToCurrentAgent: Boolean(scopedManagerUserId),
+        scopedToCurrentAgent: agentScoped,
         bonusMode: viewedBonusMode,
         agentOptions: visibleAgents.map((agent) => ({
           id: agent.id,

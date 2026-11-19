@@ -3,10 +3,11 @@
  * Each procedure differs only in the filter it passes in; the queries and the arithmetic live here.
  */
 import type { DbClient } from '@dashboarduz/db';
-import { dateRangeInput, isAgentOnly, reportRangeSchema } from '@dashboarduz/shared';
+import { dateRangeInput, reportRangeSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { resolveCallerDataScope } from '../../lib/access';
 import { resolveDateRange } from '../../lib/dates';
 import { buildActiveSaleChainMetrics, INCOME_LIFECYCLE_ACTIVE, type SaleChainSaleRow } from '../income-chain';
 
@@ -59,10 +60,18 @@ export async function findCategoryCourseIds(db: DbClient, tenantId: string, cate
   return courses.map((course) => course.id);
 }
 
-/** `where` for active new sales, scoped to one agent when `scopedManagerUserId` is set. */
+/**
+ * `managerUserId` filter for the caller's data scope (`resolveCallerDataScope().userIds`): nothing for
+ * everyone (`null` / `undefined`), otherwise only those managers' sales.
+ */
+export function managerScopeWhere(scopedManagerUserIds?: readonly string[] | null): { managerUserId?: { in: string[] } } {
+  return scopedManagerUserIds ? { managerUserId: { in: [...scopedManagerUserIds] } } : {};
+}
+
+/** `where` for active new sales, limited to the scope's managers when `scopedManagerUserIds` is set. */
 export function activeSalesWhere(params: {
   tenantId: string;
-  scopedManagerUserId?: string;
+  scopedManagerUserIds?: readonly string[] | null;
   filters?: SaleFilter[];
   extra?: SaleFilter;
 }) {
@@ -72,7 +81,7 @@ export function activeSalesWhere(params: {
     tenantId: params.tenantId,
     type: 'new_sale',
     lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-    ...(params.scopedManagerUserId ? { managerUserId: params.scopedManagerUserId } : {}),
+    ...managerScopeWhere(params.scopedManagerUserIds),
     ...(filters.length ? { AND: filters } : {}),
     ...(params.extra ?? {}),
   };
@@ -172,13 +181,18 @@ export const courseScopeInput = z.object({
 
 type CourseScopeContext = { db: DbClient; tenantId: string; user: { userId: string; roles: string[] } };
 
+/** The managers whose sales the caller may see (`null` = everyone): self for agents, the group for team leaders. */
+export async function resolveCourseSalesManagerScope(ctx: CourseScopeContext): Promise<string[] | null> {
+  return (await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db)).userIds;
+}
+
 /**
- * What every by-course procedure starts with: the resolved range, the agent the data is limited to (agents
- * see only their own sales) and the sale filters for the course, tariff and sub-tariff.
+ * What every by-course procedure starts with: the resolved range, the managers the data is limited to (agents
+ * their own sales, team leaders and OnlineAdmin their group) and the sale filters for the course, tariff and sub-tariff.
  */
 export async function resolveCourseScope(ctx: CourseScopeContext, input: z.infer<typeof courseScopeInput>, now: Date) {
   const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
-  const scopedManagerUserId = isAgentOnly(ctx.user.roles) ? ctx.user.userId : undefined;
+  const scopedManagerUserIds = await resolveCourseSalesManagerScope(ctx);
   const scopedFilters = await buildCourseSaleFilters({
     db: ctx.db,
     tenantId: ctx.tenantId,
@@ -187,5 +201,5 @@ export async function resolveCourseScope(ctx: CourseScopeContext, input: z.infer
     subTariffId: input.subTariffId,
   });
 
-  return { rangeStart, rangeEnd, scopedManagerUserId, scopedFilters };
+  return { rangeStart, rangeEnd, scopedManagerUserIds, scopedFilters };
 }

@@ -1,20 +1,23 @@
 import type { DbClient } from '@dashboarduz/db';
 
-import { getAgentResponsibleScope } from '../../../lib/access';
+import { resolveCallerDataScope } from '../../../lib/access';
 import { getRangeStart } from '../../../lib/dates';
+import { scopedManagerWhere } from '../../../services/dashboard/data-scope';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
 
 import { classifyCourseCategoryFromField, protectedProcedure } from './helpers';
 import { loadSelectedReportCourses, type SelectedCourseCategory } from './selected-report-courses';
 
-type IncomeSplit = { online: number; offline: number };
+/** Month/week/day income: online, offline, and everything else (intensive, Qo'shimcha xizmat, uncategorized). */
+type IncomeSplit = { online: number; offline: number; other: number };
 
 type IncomeRowQuery = {
   tenantId: string;
   rangeStart: Date;
   rangeEnd: Date;
-  managerUserId: string | null;
+  /** Managers whose rows count (`null` = everyone). */
+  managerUserIds: string[] | null;
   technicalSaleIds: Set<string>;
   db: DbClient;
 };
@@ -28,13 +31,13 @@ export type CountedIncomeRow = {
 };
 
 /** Ids of technical sales, whose payments the dashboard income figures leave out. */
-export async function loadTechnicalSaleIds(tenantId: string, managerUserId: string | null, db: DbClient): Promise<Set<string>> {
+export async function loadTechnicalSaleIds(tenantId: string, managerUserIds: string[] | null, db: DbClient): Promise<Set<string>> {
   const technicalSales = await db.income.findMany({
     where: {
       tenantId,
       type: 'new_sale',
       lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
-      ...(managerUserId ? { managerUserId } : {}),
+      ...scopedManagerWhere({ userIds: managerUserIds }),
     },
     select: {
       id: true,
@@ -60,7 +63,7 @@ export async function loadCountedIncomeRows(params: IncomeRowQuery): Promise<Cou
         gte: params.rangeStart,
         lte: params.rangeEnd,
       },
-      ...(params.managerUserId ? { managerUserId: params.managerUserId } : {}),
+      ...scopedManagerWhere({ userIds: params.managerUserIds }),
     },
     select: {
       id: true,
@@ -110,18 +113,28 @@ export async function loadCountedIncomeRows(params: IncomeRowQuery): Promise<Cou
   return counted;
 }
 
-async function sumIncomeSplit(params: IncomeRowQuery): Promise<IncomeSplit> {
-  const split: IncomeSplit = { online: 0, offline: 0 };
+/**
+ * Splits income rows so the parts add up to all income, matching the income dynamics chart (which
+ * sums every row). Before, rows outside online/offline were dropped and the card read lower.
+ */
+export function splitIncomeRows(rows: Array<{ amount: number; category: CountedIncomeRow['category'] }>): IncomeSplit {
+  const split: IncomeSplit = { online: 0, offline: 0, other: 0 };
 
-  for (const row of await loadCountedIncomeRows(params)) {
+  for (const row of rows) {
     if (row.category === 'online') {
       split.online += row.amount;
     } else if (row.category === 'offline') {
       split.offline += row.amount;
+    } else {
+      split.other += row.amount;
     }
   }
 
   return split;
+}
+
+async function sumIncomeSplit(params: IncomeRowQuery): Promise<IncomeSplit> {
+  return splitIncomeRows(await loadCountedIncomeRows(params));
 }
 
 type SelectedCourseGroup = 'online' | 'offline' | 'intensive';
@@ -137,28 +150,30 @@ type SelectedCourse = {
 export const incomeOverviewProcedures = {
   incomeOverview: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();
-    const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
-    const managerUserId = scope.isScoped ? ctx.user.userId : null;
+    // Agents: their own income; team leaders / OnlineAdmin: their group; everyone else: the company.
+    const { userIds: managerUserIds } = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
 
-    const technicalSaleIds = await loadTechnicalSaleIds(ctx.tenantId, managerUserId, ctx.db);
+    const technicalSaleIds = await loadTechnicalSaleIds(ctx.tenantId, managerUserIds, ctx.db);
 
     const [daily, weekly, monthly] = await Promise.all([
-      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('today', now), rangeEnd: now, managerUserId, technicalSaleIds, db: ctx.db }),
-      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('week', now), rangeEnd: now, managerUserId, technicalSaleIds, db: ctx.db }),
-      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('month', now), rangeEnd: now, managerUserId, technicalSaleIds, db: ctx.db }),
+      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('today', now), rangeEnd: now, managerUserIds, technicalSaleIds, db: ctx.db }),
+      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('week', now), rangeEnd: now, managerUserIds, technicalSaleIds, db: ctx.db }),
+      sumIncomeSplit({ tenantId: ctx.tenantId, rangeStart: getRangeStart('month', now), rangeEnd: now, managerUserIds, technicalSaleIds, db: ctx.db }),
     ]);
 
     return { daily, weekly, monthly };
   }),
 
   selectedCourseOverview: protectedProcedure.query(async ({ ctx }) => {
+    // Sales counted for the caller's scope: own (agents), group (team leaders / OnlineAdmin) or all.
+    const { userIds } = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
     const result: Record<SelectedCourseGroup, SelectedCourse | null> = {
       online: null,
       offline: null,
       intensive: null,
     };
 
-    const selectedCourses = await loadSelectedReportCourses(ctx.tenantId, ctx.db);
+    const selectedCourses = await loadSelectedReportCourses(ctx.tenantId, ctx.db, userIds);
 
     for (const course of selectedCourses) {
       const category: SelectedCourseCategory = course.dashboardCategory;

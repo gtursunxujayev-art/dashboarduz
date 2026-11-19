@@ -1,4 +1,14 @@
-const SALES_MANAGER_ROLES = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent'] as const;
+const SALES_MANAGER_ROLES = [
+  'Admin',
+  'OnlineAdmin',
+  'Manager',
+  'TeamLeader',
+  'OnlineTeamLeader',
+  'OfflineTeamLeader',
+  'Agent',
+  'OnlineAgent',
+  'OfflineAgent',
+] as const;
 
 export const SALES_MANAGER_ROLE_TOKENS = new Set(
   SALES_MANAGER_ROLES.map((role) => String(role).trim().toLowerCase()),
@@ -6,9 +16,11 @@ export const SALES_MANAGER_ROLE_TOKENS = new Set(
 
 export const COURSE_CATEGORY_VALUES = ['online', 'offline', 'intensive', 'additional_service'] as const;
 
-export const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'Manager', 'TeamLeader', 'Organizator', 'Organizer', 'Tashkiliy']);
+/** Team leaders only read their group, so they do not approve. OnlineAdmin approves for the online group only. */
+export const APPROVER_ROLES_TARIFF_CHANGE = new Set(['Admin', 'OnlineAdmin', 'Manager', 'Organizator', 'Organizer', 'Tashkiliy']);
 
-export const APPROVER_ROLES_REFUND = new Set(['Admin', 'Finance']);
+/** OnlineAdmin approves refunds for the online group only. */
+export const APPROVER_ROLES_REFUND = new Set(['Admin', 'OnlineAdmin', 'Finance']);
 
 export const INCOME_LIFECYCLE_PENDING_REFUND = 'pending_refund';
 

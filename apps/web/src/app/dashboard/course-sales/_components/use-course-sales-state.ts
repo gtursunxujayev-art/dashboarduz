@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/auth-context';
+import { isAdminLike } from '@dashboarduz/shared';
 import { useDashboardAiPageContext } from '@/contexts/dashboard-ai-context';
 import { getTashkentToday } from '@/lib/date-range';
 import { trpc } from '@/lib/trpc';
@@ -12,7 +13,7 @@ export function useCourseSalesState() {
   const { user } = useAuth();
   const trpcUtils = trpc.useUtils();
   const roles = useMemo(() => user?.roles ?? [], [user?.roles]);
-  const isAdmin = Boolean(roles.includes('Admin'));
+  const isAdmin = isAdminLike(roles);
   const isTashkiliyOnly = Boolean(
     roles.includes('Tashkiliy')
       && !roles.includes('Admin')

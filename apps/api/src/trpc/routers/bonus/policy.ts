@@ -3,13 +3,17 @@ import type { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { resolveCallerDataScope } from '../../../lib/access';
 import { normalizePercentage } from '../../../lib/number';
 import { asObjectOrEmpty } from '../../../lib/object';
 import { loadTenantSettings, saveTenantSettings, withSalarySettings } from '../../../lib/tenant-settings';
+import { isOnlineScopedAdmin, restrictBonusRulesToOnline, restrictCourseOverridesToOnline } from '../../../services/bonus-config/access';
 import { parseAttendancePenaltySettings, parseBonusRules, parseFixedSalaries, parseKpiSettings, sanitizeCategoryRule, validateTierRules } from '../../../services/bonus-config/rules';
 import { BONUS_RULE_CATEGORIES, type BonusRuleCategory, canReadBonusPlans, type SalaryBonusRules } from '../../../services/bonus-config/types';
 import { buildLegacyBonusPolicy, getTashkentMonthKey, getTashkentMonthStart, normalizeBonusPolicy, resolveEffectiveBonusPolicy } from '../../../services/bonus-engine';
-import { adminProcedure, protectedProcedure } from '../../trpc';
+import { classifyCourseCategoryFromField } from '../../../services/dashboard/catalog-fields';
+import { filterRowsToScope } from '../../../services/dashboard/data-scope';
+import { protectedProcedure, scopedAdminProcedure } from '../../trpc';
 
 import { saveBonusPolicyInput, updateBonusRulesInput } from './schemas';
 
@@ -29,14 +33,18 @@ export const bonusPolicyProcedures = {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Bonus settings are available for Admin/Manager/TeamLeader only.' });
     }
 
-    const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
+    const [tenantSettings, dataScope] = await Promise.all([
+      loadTenantSettings(ctx.db, ctx.tenantId),
+      resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db),
+    ]);
 
     const parsed = parseBonusRules(tenantSettings);
 
     return {
       bonusMode: parsed.bonusMode,
       bonusRules: parsed.bonusRules,
-      fixedSalaries: parseFixedSalaries(tenantSettings),
+      // Team leaders and OnlineAdmin see the fixed salaries of their own group only.
+      fixedSalaries: filterRowsToScope(dataScope, parseFixedSalaries(tenantSettings), (row) => row.userId),
       attendancePenaltySettings: parseAttendancePenaltySettings(tenantSettings),
       kpiSettings: parseKpiSettings(tenantSettings),
     };
@@ -75,7 +83,7 @@ export const bonusPolicyProcedures = {
       courses,
     };
   }),
-  savePolicyVersion: adminProcedure.input(saveBonusPolicyInput).mutation(async ({ ctx, input }) => {
+  savePolicyVersion: scopedAdminProcedure.input(saveBonusPolicyInput).mutation(async ({ ctx, input }) => {
     const effectiveMonth = getTashkentMonthStart(input.effectiveMonth);
     const currentMonth = getTashkentMonthStart(new Date());
 
@@ -122,12 +130,29 @@ export const bonusPolicyProcedures = {
       }
     }
     const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
-    const normalizedRules = sanitizeBonusRules(input.bonusRules);
+    let requested = { bonusMode: input.bonusMode, bonusRules: sanitizeBonusRules(input.bonusRules), courseOverrides: input.courseOverrides };
+
+    // OnlineAdmin: only the online rule and online courses' overrides change; the rest stays as in effect.
+    if (isOnlineScopedAdmin(ctx.user.roles)) {
+      const [current, courses] = await Promise.all([
+        resolveEffectiveBonusPolicy(ctx.tenantId, effectiveMonth, ctx.db),
+        ctx.db.course.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true, name: true, category: true } }),
+      ]);
+      const onlineCourseIds = new Set(courses
+        .filter((course) => classifyCourseCategoryFromField(course.category || course.name) === 'online')
+        .map((course) => course.id));
+
+      requested = {
+        ...restrictBonusRulesToOnline({ current: current.policy, requested }),
+        courseOverrides: restrictCourseOverridesToOnline({ current: current.policy.courseOverrides, requested: requested.courseOverrides, onlineCourseIds }),
+      };
+    }
+    const normalizedRules = requested.bonusRules;
     const policy = normalizeBonusPolicy({
       schemaVersion: 2,
-      bonusMode: input.bonusMode,
+      bonusMode: requested.bonusMode,
       bonusRules: normalizedRules,
-      courseOverrides: input.courseOverrides,
+      courseOverrides: requested.courseOverrides,
     }, tenantSettings);
     const settingsObject = asObjectOrEmpty(tenantSettings);
     const salarySettings = asObjectOrEmpty(settingsObject.salary);
@@ -177,7 +202,7 @@ export const bonusPolicyProcedures = {
 
     return { success: true, effectiveMonth: input.effectiveMonth, policy };
   }),
-  updateBonusRules: adminProcedure.input(updateBonusRulesInput).mutation(async ({ ctx, input }) => {
+  updateBonusRules: scopedAdminProcedure.input(updateBonusRulesInput).mutation(async ({ ctx, input }) => {
     const categories = BONUS_RULE_CATEGORIES as readonly BonusRuleCategory[];
 
     for (const category of categories) {
@@ -207,7 +232,10 @@ export const bonusPolicyProcedures = {
 
     const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
-    const normalizedRules = sanitizeBonusRules(input.bonusRules);
+    // OnlineAdmin: only the online rule changes; the bonus mode and other categories stay as saved.
+    const { bonusMode, bonusRules: normalizedRules } = isOnlineScopedAdmin(ctx.user.roles)
+      ? restrictBonusRulesToOnline({ current: parseBonusRules(tenantSettings), requested: { bonusMode: input.bonusMode, bonusRules: sanitizeBonusRules(input.bonusRules) } })
+      : { bonusMode: input.bonusMode, bonusRules: sanitizeBonusRules(input.bonusRules) };
     const compatibilityPercentages = {
       online: normalizedRules.online.mode === 'simple' ? normalizedRules.online.simplePercent : 0,
       offline: normalizedRules.offline.mode === 'simple' ? normalizedRules.offline.simplePercent : 0,
@@ -219,7 +247,7 @@ export const bonusPolicyProcedures = {
     };
 
     const nextSettings = withSalarySettings(tenantSettings, {
-      bonusMode: input.bonusMode,
+      bonusMode,
       bonusRules: normalizedRules,
       bonusPercentages: compatibilityPercentages,
     });

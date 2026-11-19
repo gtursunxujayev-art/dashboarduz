@@ -5,7 +5,17 @@ import { z } from 'zod';
 import { fetchCoursesWithTariffsSafe } from '../../../services/customer-income/catalog';
 import { COURSE_CATEGORY_VALUES } from '../../../services/customer-income/constants';
 import { parseDateInput } from '../../../services/customer-income/labels';
-import { managerProcedure, protectedProcedure } from '../../trpc';
+import { assertCourseCategoryInScope, canEditCourseCatalog, catalogScope } from '../../../services/customer-income/scope';
+import { protectedProcedure } from '../../trpc';
+
+/** Admin, Manager and OnlineAdmin (online courses only); team leaders only read the catalog. */
+const catalogEditorProcedure = protectedProcedure.use(async (opts) => {
+  if (!canEditCourseCatalog(opts.ctx.user?.roles || [])) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin or Manager access required' });
+  }
+
+  return opts.next();
+});
 
 /** `{ name, isActive }` to update from a rename/activate input (`isFaol` is the older name of `isActive`). */
 function buildNameActiveUpdate(input: { name?: string; isActive?: boolean; isFaol?: boolean }): { name?: string; isActive?: boolean } {
@@ -28,13 +38,24 @@ function buildNameActiveUpdate(input: { name?: string; isActive?: boolean; isFao
 }
 
 export const catalogProcedures = {
-  createCourse: managerProcedure
+  createCourse: catalogEditorProcedure
     .input(createCourseSchema)
     .mutation(async ({ ctx, input }) => {
       const name = input.name.trim();
 
       if (!name) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course name is required.' });
+      }
+      const scope = catalogScope(ctx.user.roles);
+
+      assertCourseCategoryInScope(scope, input.category);
+      if (scope.kind === 'group') {
+        // Re-creating by name updates the existing course; OnlineAdmin must not take over a non-online one.
+        const existing = await ctx.db.course.findFirst({ where: { tenantId: ctx.tenantId, name }, select: { category: true } });
+
+        if (existing) {
+          assertCourseCategoryInScope(scope, existing.category);
+        }
       }
       const startDate = input.startDate ? parseDateInput(input.startDate) : null;
       const endDate = input.endDate ? parseDateInput(input.endDate) : null;
@@ -69,7 +90,7 @@ export const catalogProcedures = {
         },
       });
     }),
-  createTariff: managerProcedure
+  createTariff: catalogEditorProcedure
     .input(createTariffSchema)
     .mutation(async ({ ctx, input }) => {
       const course = await ctx.db.course.findFirst({
@@ -78,12 +99,13 @@ export const catalogProcedures = {
           tenantId: ctx.tenantId,
           isActive: true,
         },
-        select: { id: true },
+        select: { id: true, category: true },
       });
 
       if (!course) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Course not found.' });
       }
+      assertCourseCategoryInScope(catalogScope(ctx.user.roles), course.category);
 
       const name = input.name.trim();
 
@@ -110,7 +132,7 @@ export const catalogProcedures = {
         },
       });
     }),
-  createSubTariff: managerProcedure
+  createSubTariff: catalogEditorProcedure
     .input(
       z.object({
         tariffId: z.string().uuid(),
@@ -124,12 +146,13 @@ export const catalogProcedures = {
           tenantId: ctx.tenantId,
           isActive: true,
         },
-        select: { id: true },
+        select: { id: true, course: { select: { category: true } } },
       });
 
       if (!tariff) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Tariff not found.' });
       }
+      assertCourseCategoryInScope(catalogScope(ctx.user.roles), tariff.course?.category);
 
       const name = input.name.trim();
 
@@ -163,7 +186,7 @@ export const catalogProcedures = {
       db: ctx.db,
     });
   }),
-  updateCourse: managerProcedure
+  updateCourse: catalogEditorProcedure
     .input(
       z.object({
         courseId: z.string().uuid(),
@@ -182,11 +205,18 @@ export const catalogProcedures = {
           id: input.courseId,
           tenantId: ctx.tenantId,
         },
-        select: { id: true },
+        select: { id: true, category: true },
       });
 
       if (!course) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Course not found.' });
+      }
+      const scope = catalogScope(ctx.user.roles);
+
+      // OnlineAdmin: only online courses, and they stay online.
+      assertCourseCategoryInScope(scope, course.category);
+      if (typeof input.category === 'string') {
+        assertCourseCategoryInScope(scope, input.category);
       }
 
       const data: {
@@ -240,7 +270,7 @@ export const catalogProcedures = {
         data,
       });
     }),
-  updateTariff: managerProcedure
+  updateTariff: catalogEditorProcedure
     .input(
       z.object({
         tariffId: z.string().uuid(),
@@ -255,12 +285,13 @@ export const catalogProcedures = {
           id: input.tariffId,
           tenantId: ctx.tenantId,
         },
-        select: { id: true },
+        select: { id: true, course: { select: { category: true } } },
       });
 
       if (!tariff) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Tariff not found.' });
       }
+      assertCourseCategoryInScope(catalogScope(ctx.user.roles), tariff.course?.category);
 
       const data = buildNameActiveUpdate(input);
 
@@ -269,7 +300,7 @@ export const catalogProcedures = {
         data,
       });
     }),
-  updateSubTariff: managerProcedure
+  updateSubTariff: catalogEditorProcedure
     .input(
       z.object({
         subTariffId: z.string().uuid(),
@@ -284,12 +315,13 @@ export const catalogProcedures = {
           id: input.subTariffId,
           tenantId: ctx.tenantId,
         },
-        select: { id: true },
+        select: { id: true, tariff: { select: { course: { select: { category: true } } } } },
       });
 
       if (!subTariff) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Sub-tariff not found.' });
       }
+      assertCourseCategoryInScope(catalogScope(ctx.user.roles), subTariff.tariff?.course?.category);
 
       const data = buildNameActiveUpdate(input);
 

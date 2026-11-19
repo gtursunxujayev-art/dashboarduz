@@ -88,8 +88,11 @@ export function getAdjustmentRoleScope(rolesInput: string[]) {
   };
 }
 
+const INACTIVE_MANAGER_SELECTOR_ROLES = new Set(['Admin', 'OnlineAdmin', 'Finance', 'TeamLeader', 'OnlineTeamLeader', 'OfflineTeamLeader']);
+
+/** Who may pick a deactivated sales manager on an income (the pick is still limited to their scope). */
 export function canSelectInactiveManagerForIncome(roles: string[]): boolean {
-  return roles.some((role) => role === 'Admin' || role === 'Finance' || role === 'TeamLeader');
+  return roles.some((role) => INACTIVE_MANAGER_SELECTOR_ROLES.has(role));
 }
 
 export async function assertManagerBelongsToTenantWithOptions(params: {

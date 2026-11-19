@@ -2,7 +2,7 @@ import { dateRangeInput, sellerRangeSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { getAgentResponsibleScope } from '../../../lib/access';
+import { resolveCallerDataScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { resolveTelegramBotTokenForTenant } from '../../../lib/telegram';
 import { countedCallsWhere } from '../../../services/calls-source';
@@ -13,6 +13,7 @@ import { telegramService } from '../../../services/integrations/telegram';
 import { fetchLeadsByStatusFilters, loadSellerPipelineContext } from '../../../services/sellers/leads';
 import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerUserIdsMap, summarizeSellerIncomeMetrics, toManagerRole } from '../../../services/sellers/metrics';
 import { buildSellerReportPdf, type SellerReportPayload } from '../../../services/sellers/report-pdf';
+import { isSellerInScope } from '../../../services/sellers/scope';
 import { protectedProcedure } from '../../trpc';
 
 export const sellerReportProcedures = {
@@ -25,9 +26,9 @@ export const sellerReportProcedures = {
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
 
-      if (scope.isScoped && input.id !== scope.responsibleUserId) {
+      if (!isSellerInScope(scope.amoResponsibleIds, input.id)) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 

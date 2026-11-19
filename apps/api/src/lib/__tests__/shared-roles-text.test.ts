@@ -12,7 +12,7 @@ import {
 
 describe('shared role checks (were copied in the API and the web access guard)', () => {
   it('PRIVILEGED_ROLES / hasPrivilegedRole', () => {
-    expect(PRIVILEGED_ROLES).toEqual(['Admin', 'Manager', 'TeamLeader', 'Finance']);
+    expect(PRIVILEGED_ROLES).toEqual(['Admin', 'OnlineAdmin', 'Manager', 'TeamLeader', 'OnlineTeamLeader', 'OfflineTeamLeader', 'Finance']);
     expect(hasPrivilegedRole(['Agent', 'Finance'])).toBe(true);
     expect(hasPrivilegedRole(['Agent', 'Dashboard'])).toBe(false);
     expect(hasPrivilegedRole(null)).toBe(false);

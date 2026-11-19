@@ -2,7 +2,7 @@ import { dateRangeInput, sellerRangeSchema } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { getAgentResponsibleScope } from '../../../lib/access';
+import { resolveCallerDataScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { countedCallsWhere } from '../../../services/calls-source';
 import { getCorporateCallDurationByManager } from '../../../services/corporate-call-durations';
@@ -11,6 +11,7 @@ import { getAmoLeads } from '../../../services/integrations/amocrm-lead-snapshot
 import { getTenantAmoCRMContext } from '../../../services/integrations/amocrm-live';
 import { buildStatusFilters, computeLeadResponseTimes, fetchLeadsByStatusFilters, loadSellerPipelineContext } from '../../../services/sellers/leads';
 import { asString, buildMetrics, excludeTechnicalSellerIncomes, getManagerUserIdsMap, LOST_STATUS_ID, parseAmoDate, summarizeSellerIncomeMetrics, toManagerRole, WON_STATUS_ID } from '../../../services/sellers/metrics';
+import { isSellerInScope } from '../../../services/sellers/scope';
 import { protectedProcedure } from '../../trpc';
 
 export const sellerDetailProcedures = {
@@ -23,9 +24,9 @@ export const sellerDetailProcedures = {
       }),
     )
     .query(async ({ input, ctx }) => {
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
 
-      if (scope.isScoped && input.id !== scope.responsibleUserId) {
+      if (!isSellerInScope(scope.amoResponsibleIds, input.id)) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Seller not found' });
       }
 

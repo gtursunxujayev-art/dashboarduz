@@ -1,10 +1,12 @@
-import { AGENT_ROLES, dateKeyRangeInput, dateRangeInput } from '@dashboarduz/shared';
+import type { DbClient } from '@dashboarduz/db';
+import { AGENT_ROLES, TEAM_LEADER_ROLES, dateKeyRangeInput, dateRangeInput } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { ATTENDANCE_REPORT_MAX_CALENDAR_DAYS, buildAttendancePeriodReport, countAttendanceReportCalendarDays, enumerateAttendanceReportWorkdays, isAttendanceReportCalendarRangeOverLimit, isAttendanceReportDetailRowLimitExceeded, parseAttendanceReportDateKey, resolveAttendanceReportScopedUserId } from '../../../services/attendance/report';
-import { parseDateKeyFilter, readFaceMatchMeta, resolveAttendanceListScope } from '../../../services/attendance/router-helpers';
-import { managerProcedure, protectedProcedure } from '../../trpc';
+import { resolveCallerDataScope } from '../../../lib/access';
+import { ATTENDANCE_REPORT_MAX_CALENDAR_DAYS, buildAttendancePeriodReport, countAttendanceReportCalendarDays, enumerateAttendanceReportWorkdays, isAttendanceReportCalendarRangeOverLimit, isAttendanceReportDetailRowLimitExceeded, parseAttendanceReportDateKey } from '../../../services/attendance/report';
+import { attendanceUserFilter, parseDateKeyFilter, readFaceMatchMeta, resolveAttendanceListScope, resolveAttendanceUserIds } from '../../../services/attendance/router-helpers';
+import { protectedProcedure, staffReadProcedure } from '../../trpc';
 
 /** Paging, date range and user filter shared by the attendance event and summary lists. */
 const attendanceListInputShape = {
@@ -13,6 +15,13 @@ const attendanceListInputShape = {
   ...dateRangeInput.shape,
   userId: z.string().uuid().optional(),
 };
+
+/** The users whose attendance the caller may read (`null` = everyone). */
+async function loadAttendanceUserIds(ctx: { db: DbClient; tenantId: string; user: { userId: string; roles: string[] } }) {
+  const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+
+  return resolveAttendanceUserIds(ctx.user, scope.userIds);
+}
 
 export const attendanceRecordProcedures = {
   listEvents: protectedProcedure
@@ -25,7 +34,7 @@ export const attendanceRecordProcedures = {
       }).optional(),
     )
     .query(async ({ ctx, input }) => {
-      const { page, limit, skip, scopedUserId } = resolveAttendanceListScope(ctx.user, input);
+      const { page, limit, skip, scopedUserId, canSeeUnmatched } = resolveAttendanceListScope(ctx.user, input, await loadAttendanceUserIds(ctx));
 
       const dateFilter = parseDateKeyFilter(input);
 
@@ -35,7 +44,7 @@ export const attendanceRecordProcedures = {
         ...(scopedUserId ? { userId: scopedUserId } : {}),
         ...(input?.action ? { action: input.action } : {}),
         ...(dateFilter ? { localDate: dateFilter } : {}),
-        ...(input?.unmatchedOnly ? { userId: null as string | null } : {}),
+        ...(input?.unmatchedOnly && canSeeUnmatched ? { userId: null as string | null } : {}),
         ...(query
           ? {
               OR: [
@@ -104,7 +113,7 @@ export const attendanceRecordProcedures = {
       }).optional(),
     )
     .query(async ({ ctx, input }) => {
-      const { page, limit, skip, scopedUserId } = resolveAttendanceListScope(ctx.user, input);
+      const { page, limit, skip, scopedUserId } = resolveAttendanceListScope(ctx.user, input, await loadAttendanceUserIds(ctx));
 
       const dateFilter = parseDateKeyFilter(input);
 
@@ -209,13 +218,13 @@ export const attendanceRecordProcedures = {
         });
       }
 
-      const scopedUserId = resolveAttendanceReportScopedUserId(ctx.user.roles, ctx.user.userId);
+      const scopedUserIds = await loadAttendanceUserIds(ctx);
       const users = await ctx.db.user.findMany({
         where: {
           tenantId: ctx.tenantId,
           isActive: true,
-          roles: { hasSome: [...AGENT_ROLES, 'TeamLeader'] },
-          ...(scopedUserId ? { id: scopedUserId } : {}),
+          roles: { hasSome: [...AGENT_ROLES, ...TEAM_LEADER_ROLES] },
+          ...(scopedUserIds ? { id: { in: scopedUserIds } } : {}),
         },
         orderBy: [{ name: 'asc' }, { username: 'asc' }, { id: 'asc' }],
         select: {
@@ -277,7 +286,8 @@ export const attendanceRecordProcedures = {
         dailyRows: report.dailyRows,
       };
     }),
-  listAnomalies: managerProcedure
+  // Admin, OnlineAdmin, Manager and team leaders; a group reader sees only the group's anomalies.
+  listAnomalies: staffReadProcedure
     .input(
       z.object({
         ...dateRangeInput.shape,
@@ -287,11 +297,14 @@ export const attendanceRecordProcedures = {
     .query(async ({ ctx, input }) => {
       const limit = input?.limit || 100;
       const dateFilter = parseDateKeyFilter(input);
+      const allowedUserIds = await loadAttendanceUserIds(ctx);
+      const userFilter = attendanceUserFilter(allowedUserIds, undefined);
 
       const [summaryAnomalies, unmatchedEvents] = await Promise.all([
         ctx.db.attendanceDaySummary.findMany({
           where: {
             tenantId: ctx.tenantId,
+            ...(userFilter ? { userId: userFilter } : {}),
             ...(dateFilter ? { summaryDate: dateFilter } : {}),
             OR: [{ anomalyCount: { gt: 0 } }, { absence: true }],
           },
@@ -316,7 +329,8 @@ export const attendanceRecordProcedures = {
             },
           },
         }),
-        ctx.db.attendanceEvent.findMany({
+        // Unmatched events belong to no group, so only a company-wide reader gets them.
+        allowedUserIds !== null ? Promise.resolve([]) : ctx.db.attendanceEvent.findMany({
           where: {
             tenantId: ctx.tenantId,
             userId: null,

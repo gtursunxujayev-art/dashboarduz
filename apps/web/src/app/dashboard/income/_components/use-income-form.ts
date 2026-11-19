@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/auth-context';
+import { isAdminLike } from '@dashboarduz/shared';
 import { getTashkentToday } from '@/lib/date-range';
 import { parseAmountInput } from '@/lib/format';
 import { trpc } from '@/lib/trpc';
@@ -11,9 +12,8 @@ import { type CustomerOption, type EditIncomeForm, type FieldErrors, type Income
 export function useIncomeForm() {
   const utils = trpc.useUtils();
   const { user } = useAuth();
-  const isAdmin = Boolean(
-    (user?.roles || []).some((role) => String(role).trim().toLowerCase() === 'admin'),
-  );
+  // OnlineAdmin edits income too; the server limits it to online sellers.
+  const isAdmin = isAdminLike(user?.roles);
   const isTeamLeader = Boolean(
     (user?.roles || []).some((role) => String(role).trim().toLowerCase() === 'teamleader'),
   );

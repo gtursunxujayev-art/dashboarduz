@@ -30,19 +30,53 @@ export function parseDateKeyFilter(input?: { dateFrom?: string; dateTo?: string 
   };
 }
 
-/** Paging and the user a list is limited to: privileged roles may pick one (or all), others see only themselves. */
+/**
+ * The users whose attendance the caller may read, from `resolveCallerDataScope().userIds` (`null` = everyone):
+ * privileged roles get their data scope (Admin/Manager/Finance all, team leaders and OnlineAdmin their group),
+ * anyone else only themself.
+ */
+export function resolveAttendanceUserIds(
+  user: { userId: string; roles: string[] },
+  scopeUserIds: readonly string[] | null,
+): string[] | null {
+  if (!canReadAllUsers(user.roles)) return [user.userId];
+
+  return scopeUserIds === null ? null : [...scopeUserIds];
+}
+
+/** `userId` filter: the asked user when allowed, otherwise every allowed user (`undefined` = no filter). */
+export function attendanceUserFilter(
+  allowedUserIds: readonly string[] | null,
+  requestedUserId: string | undefined,
+): string | { in: string[] } | undefined {
+  if (allowedUserIds === null) return requestedUserId || undefined;
+  if (requestedUserId && allowedUserIds.includes(requestedUserId)) return requestedUserId;
+
+  return allowedUserIds.length === 1 ? allowedUserIds[0] : { in: [...allowedUserIds] };
+}
+
+/**
+ * Paging and the user a list is limited to: privileged roles may pick one (or all), others see only themselves.
+ * With `allowedUserIds` (see {@link resolveAttendanceUserIds}) the pick is limited to those users.
+ */
 export function resolveAttendanceListScope(
   user: { userId: string; roles: string[] },
   input?: { page?: number; limit?: number; userId?: string },
+  allowedUserIds?: readonly string[] | null,
 ) {
   const page = input?.page || 1;
   const limit = input?.limit || 50;
+  const allowed = allowedUserIds === undefined
+    ? (canReadAllUsers(user.roles) ? null : [user.userId])
+    : allowedUserIds;
 
   return {
     page,
     limit,
     skip: (page - 1) * limit,
-    scopedUserId: canReadAllUsers(user.roles) ? (input?.userId || undefined) : user.userId,
+    scopedUserId: attendanceUserFilter(allowed, input?.userId),
+    /** Unmatched (no user) rows belong to no group, so only a company-wide reader sees them. */
+    canSeeUnmatched: allowed === null,
   };
 }
 

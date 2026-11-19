@@ -2,7 +2,8 @@
 
 import { roleNeedsManagerMapping } from '@dashboarduz/shared';
 import { IconUserPlus } from '@tabler/icons-react';
-import { availableRoles, roleLabels } from './user-roles';
+import { useAuth } from '@/contexts/auth-context';
+import { assignableRoles, roleLabels } from './user-roles';
 import type { UserRole } from './user-roles';
 import { SheetGroup, UsersSheet } from './users-sheet';
 
@@ -27,6 +28,8 @@ type Props = {
 };
 
 export function UserCreateSheet(props: Props) {
+  // Only the roles this user may give (the server enforces the same rule).
+  const currentRoles: string[] = useAuth().user?.roles ?? [];
   const {
     onClose,
     onSubmit,
@@ -97,7 +100,7 @@ export function UserCreateSheet(props: Props) {
           onChange={(event) => setNewRole(event.target.value as UserRole)}
           className="field min-w-0"
         >
-          {availableRoles.map((role) => (
+          {assignableRoles(currentRoles).map((role) => (
             <option key={role} value={role}>
               {roleLabels[role]}
             </option>

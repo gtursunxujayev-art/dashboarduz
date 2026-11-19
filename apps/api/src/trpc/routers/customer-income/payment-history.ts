@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { CUSTOMER_NUMBER_REGEX } from '../../../services/customer-income/constants';
 import { getIncomeLifecycleLabel, resolveManagerLabel } from '../../../services/customer-income/labels';
-import { shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
+import { resolveIncomeScope } from '../../../services/customer-income/scope';
 import { extractSaleSubTariffId, getSaleAgreementAmount } from '../../../services/income-chain';
 import { protectedProcedure } from '../../trpc';
 
@@ -12,7 +12,8 @@ export const paymentHistoryProcedures = {
   customerPaymentHistory: protectedProcedure
     .input(z.object({ customerId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
+      // Agents see their own rows, team leaders / OnlineAdmin their group, everyone else all rows.
+      const scopedManagerUserIds = (await resolveIncomeScope(ctx)).userIds;
       const customerLookupValue = input.customerId.trim();
 
       if (!customerLookupValue) {
@@ -21,11 +22,11 @@ export const paymentHistoryProcedures = {
 
       const customerWhereBase: Prisma.CustomerWhereInput = {
         tenantId: ctx.tenantId,
-        ...(scopedManagerUserId
+        ...(scopedManagerUserIds
           ? {
               incomes: {
                 some: {
-                  managerUserId: scopedManagerUserId,
+                  managerUserId: { in: scopedManagerUserIds },
                 },
               },
             }
@@ -76,9 +77,9 @@ export const paymentHistoryProcedures = {
             tenantId: ctx.tenantId,
             customerId: customer.id,
             type: 'new_sale',
-            ...(scopedManagerUserId
+            ...(scopedManagerUserIds
               ? {
-                  managerUserId: scopedManagerUserId,
+                  managerUserId: { in: scopedManagerUserIds },
                 }
               : {}),
           },
@@ -103,9 +104,9 @@ export const paymentHistoryProcedures = {
             tenantId: ctx.tenantId,
             customerId: customer.id,
             paymentAmount: { gt: 0 },
-            ...(scopedManagerUserId
+            ...(scopedManagerUserIds
               ? {
-                  managerUserId: scopedManagerUserId,
+                  managerUserId: { in: scopedManagerUserIds },
                 }
               : {}),
           },

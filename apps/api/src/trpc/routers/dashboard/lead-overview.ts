@@ -1,7 +1,8 @@
-import { getAgentResponsibleScope } from '../../../lib/access';
+import { resolveCallerDataScope } from '../../../lib/access';
 import { getRangeStart } from '../../../lib/dates';
 import { asObject } from '../../../lib/object';
 import { readDashboardSettings } from '../../../services/dashboard/dashboard-settings';
+import { canQueryScopedLeads, scopedResponsibleIds } from '../../../services/dashboard/data-scope';
 import { classifyLeadQualification, type LeadQualificationRules } from '../../../services/dashboard/lead-qualification';
 import type { AmoCRMLead } from '../../../services/integrations/amocrm';
 import { getAmoLeads } from '../../../services/integrations/amocrm-lead-snapshot-read';
@@ -73,9 +74,10 @@ export function calculateLeadPeriods(params: LeadQualificationRules & {
 export const leadOverviewProcedures = {
   leadOverview: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();
-    const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+    // Agents count their own leads, team leaders / OnlineAdmin their group's; nobody linked to amoCRM = nothing to show.
+    const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
 
-    if (scope.isScoped && !scope.responsibleUserId) {
+    if (!canQueryScopedLeads(scope)) {
       return {
         available: false,
         reason: 'mapping_missing' as const,
@@ -111,7 +113,7 @@ export const leadOverviewProcedures = {
       const leads = await getAmoLeads(
         ctx.tenantId,
         {
-          responsibleUserIds: scope.isScoped ? [scope.responsibleUserId as string] : undefined,
+          responsibleUserIds: scopedResponsibleIds(scope),
           createdAtFrom: fetchStart,
           createdAtTo: now,
         },

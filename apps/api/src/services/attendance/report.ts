@@ -4,7 +4,7 @@ export const ATTENDANCE_REPORT_REQUIRED_SECONDS = 9 * 60 * 60;
 export const ATTENDANCE_REPORT_MAX_CALENDAR_DAYS = 366;
 export const ATTENDANCE_REPORT_MAX_DETAIL_ROWS = 50_000;
 
-const ELIGIBLE_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent', 'TeamLeader']);
+const ELIGIBLE_ROLES = new Set(['Agent', 'OnlineAgent', 'OfflineAgent', 'TeamLeader', 'OnlineTeamLeader', 'OfflineTeamLeader']);
 
 export type AttendanceReportUser = {
   id: string;

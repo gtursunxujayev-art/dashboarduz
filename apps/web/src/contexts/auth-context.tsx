@@ -4,9 +4,9 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc';
 
-type UserRole = 'Admin' | 'Manager' | 'TeamLeader' | 'Agent' | 'OnlineAgent' | 'OfflineAgent' | 'Dashboard' | 'OfflineDashboard' | 'Finance' | 'Tashkiliy';
+type UserRole = 'Admin' | 'OnlineAdmin' | 'Manager' | 'TeamLeader' | 'OnlineTeamLeader' | 'OfflineTeamLeader' | 'Agent' | 'OnlineAgent' | 'OfflineAgent' | 'Dashboard' | 'OfflineDashboard' | 'Finance' | 'Tashkiliy';
 
-const KNOWN_USER_ROLES: readonly UserRole[] = ['Admin', 'Manager', 'TeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'OfflineDashboard', 'Finance', 'Tashkiliy'];
+const KNOWN_USER_ROLES: readonly UserRole[] = ['Admin', 'OnlineAdmin', 'Manager', 'TeamLeader', 'OnlineTeamLeader', 'OfflineTeamLeader', 'Agent', 'OnlineAgent', 'OfflineAgent', 'Dashboard', 'OfflineDashboard', 'Finance', 'Tashkiliy'];
 
 export function getPostLoginPath(roles: readonly string[] | null | undefined): string {
   if (roles?.length === 1 && roles[0] === 'Dashboard') {

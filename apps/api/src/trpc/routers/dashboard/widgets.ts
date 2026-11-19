@@ -1,8 +1,9 @@
 import { dateRangeInput, reportRangeSchema } from '@dashboarduz/shared';
 
-import { getAgentResponsibleScope } from '../../../lib/access';
+import { resolveCallerDataScope } from '../../../lib/access';
 import { resolveDateRange } from '../../../lib/dates';
 import { loadActiveCourseCatalog } from '../../../services/course-sales/catalog';
+import { scopedManagerWhere } from '../../../services/dashboard/data-scope';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { buildTechnicalSaleIdSet, resolveSaleAgreementAmount, resolveSaleSubTariffId } from '../../../services/income-facts';
 
@@ -37,7 +38,7 @@ export const widgetProcedures = {
 
       const now = new Date();
       const { rangeStart, rangeEnd } = resolveDateRange(input.range, now, input.dateFrom, input.dateTo);
-      const scope = await getAgentResponsibleScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
+      const scope = await resolveCallerDataScope(ctx.tenantId, ctx.user.userId, ctx.user.roles, ctx.db);
 
       const widgetCourseIds = Array.from(new Set(input.widgets.map((widget) => widget.courseId)));
       const salesRaw = await ctx.db.income.findMany({
@@ -50,11 +51,7 @@ export const widgetProcedures = {
             lte: rangeEnd,
           },
           courseId: { in: widgetCourseIds },
-          ...(scope.isScoped
-            ? {
-                managerUserId: ctx.user.userId,
-              }
-            : {}),
+          ...scopedManagerWhere(scope),
         },
         select: {
           id: true,

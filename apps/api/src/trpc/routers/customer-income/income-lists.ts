@@ -4,9 +4,9 @@ import { z } from 'zod';
 
 import { parseCustomDate } from '../../../lib/dates';
 import { getIncomeLifecycleLabel, resolveManagerLabel } from '../../../services/customer-income/labels';
-import { shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
+import { resolveIncomeScope } from '../../../services/customer-income/scope';
 import { extractSaleSubTariffId, getSaleAgreementAmount, INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
-import { adminProcedure, protectedProcedure } from '../../trpc';
+import { protectedProcedure, scopedAdminProcedure } from '../../trpc';
 
 export const incomeListProcedures = {
   listIncomes: protectedProcedure
@@ -19,14 +19,15 @@ export const incomeListProcedures = {
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
+      // Agents see their own rows, team leaders / OnlineAdmin their group, everyone else all rows.
+      const scopedManagerUserIds = (await resolveIncomeScope(ctx)).userIds;
       const searchQuery = (input?.query || '').trim();
         const incomes = await ctx.db.income.findMany({
           where: {
             tenantId: ctx.tenantId,
-          ...(scopedManagerUserId
+          ...(scopedManagerUserIds
             ? {
-                managerUserId: scopedManagerUserId,
+                managerUserId: { in: scopedManagerUserIds },
               }
             : {}),
           ...(searchQuery
@@ -144,7 +145,7 @@ export const incomeListProcedures = {
           };
         });
       }),
-  exportIncomesByDateRange: adminProcedure
+  exportIncomesByDateRange: scopedAdminProcedure
     .input(
       z.object({
         ...dateKeyRangeInput.shape,
@@ -161,6 +162,9 @@ export const incomeListProcedures = {
         });
       }
 
+      // OnlineAdmin exports only incomes of online-group managers.
+      const scopedManagerUserIds = (await resolveIncomeScope(ctx)).userIds;
+      const managerWhere = scopedManagerUserIds ? { managerUserId: { in: scopedManagerUserIds } } : {};
       const totalCount = await ctx.db.income.count({
         where: {
           tenantId: ctx.tenantId,
@@ -168,6 +172,7 @@ export const incomeListProcedures = {
             gte: rangeStart,
             lte: rangeEnd,
           },
+          ...managerWhere,
         },
       });
 
@@ -185,6 +190,7 @@ export const incomeListProcedures = {
             gte: rangeStart,
             lte: rangeEnd,
           },
+          ...managerWhere,
         },
         orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
         include: {
@@ -273,17 +279,18 @@ export const incomeListProcedures = {
   listAdjustableIncomes: protectedProcedure
     .input(z.object({ customerId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const scopedManagerUserId = shouldSelfScopeManagerActions(ctx.user.roles) ? ctx.user.userId : null;
+      // Agents see their own rows, team leaders / OnlineAdmin their group, everyone else all rows.
+      const scopedManagerUserIds = (await resolveIncomeScope(ctx)).userIds;
 
       const customer = await ctx.db.customer.findFirst({
         where: {
           id: input.customerId,
           tenantId: ctx.tenantId,
-          ...(scopedManagerUserId
+          ...(scopedManagerUserIds
             ? {
                 incomes: {
                   some: {
-                    managerUserId: scopedManagerUserId,
+                    managerUserId: { in: scopedManagerUserIds },
                   },
                 },
               }
@@ -309,9 +316,9 @@ export const incomeListProcedures = {
           tenantId: ctx.tenantId,
           customerId: customer.id,
           type: 'new_sale',
-          ...(scopedManagerUserId
+          ...(scopedManagerUserIds
             ? {
-                managerUserId: scopedManagerUserId,
+                managerUserId: { in: scopedManagerUserIds },
               }
             : {}),
         },
@@ -343,9 +350,9 @@ export const incomeListProcedures = {
                 { id: { in: saleIds } },
                 { relatedDebtIncomeId: { in: saleIds } },
               ],
-              ...(scopedManagerUserId
+              ...(scopedManagerUserIds
                 ? {
-                    managerUserId: scopedManagerUserId,
+                    managerUserId: { in: scopedManagerUserIds },
                   }
                 : {}),
             },

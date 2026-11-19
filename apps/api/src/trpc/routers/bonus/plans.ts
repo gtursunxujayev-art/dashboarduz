@@ -3,10 +3,11 @@ import { z } from 'zod';
 
 import { loadTenantSettings, saveTenantSettings } from '../../../lib/tenant-settings';
 import { normalizeMatchText } from '../../../lib/text';
+import { assertOnlinePlanCategory, isOnlineScopedAdmin } from '../../../services/bonus-config/access';
 import { mergeSalarySettings, parsePlanBonuses, validatePlanScope } from '../../../services/bonus-config/plans';
 import { type BonusPlan, canReadBonusPlans } from '../../../services/bonus-config/types';
 import { loadActiveCourseCatalog } from '../../../services/course-sales/catalog';
-import { adminProcedure, protectedProcedure } from '../../trpc';
+import { protectedProcedure, scopedAdminProcedure } from '../../trpc';
 
 import { createPlanInput, updatePlanInput } from './schemas';
 
@@ -31,7 +32,9 @@ export const bonusPlanProcedures = {
       courses: await loadActiveCourseCatalog({ db: ctx.db, tenantId: ctx.tenantId }),
     };
   }),
-  createPlan: adminProcedure.input(createPlanInput).mutation(async ({ ctx, input }) => {
+  createPlan: scopedAdminProcedure.input(createPlanInput).mutation(async ({ ctx, input }) => {
+    // OnlineAdmin: online plans only.
+    if (isOnlineScopedAdmin(ctx.user.roles)) assertOnlinePlanCategory(input.courseCategory);
     const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
     await validatePlanScope({
@@ -81,7 +84,7 @@ export const bonusPlanProcedures = {
 
     return { success: true, plan: newPlan };
   }),
-  updatePlan: adminProcedure.input(updatePlanInput).mutation(async ({ ctx, input }) => {
+  updatePlan: scopedAdminProcedure.input(updatePlanInput).mutation(async ({ ctx, input }) => {
     const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
 
     const currentPlans = parsePlanBonuses(tenantSettings);
@@ -92,6 +95,13 @@ export const bonusPlanProcedures = {
     }
 
     const currentPlan = currentPlans[targetIndex] as BonusPlan;
+
+    // OnlineAdmin: only an online plan, and it stays online.
+    if (isOnlineScopedAdmin(ctx.user.roles)) {
+      assertOnlinePlanCategory(currentPlan.courseCategory);
+      assertOnlinePlanCategory(input.courseCategory ?? currentPlan.courseCategory);
+    }
+
     const nextPlan: BonusPlan = {
       ...currentPlan,
       ...(typeof input.name === 'string' ? { name: input.name.trim() } : {}),
@@ -148,7 +158,7 @@ export const bonusPlanProcedures = {
 
     return { success: true, plan: normalizedNextPlan };
   }),
-  deletePlan: adminProcedure
+  deletePlan: scopedAdminProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const tenantSettings = await loadTenantSettings(ctx.db, ctx.tenantId);
@@ -159,6 +169,7 @@ export const bonusPlanProcedures = {
       if (!deletedPlan) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Bonus plan not found.' });
       }
+      if (isOnlineScopedAdmin(ctx.user.roles)) assertOnlinePlanCategory(deletedPlan.courseCategory);
 
       const nextPlans = currentPlans.filter((plan) => plan.id !== input.id);
       const settingsPayload = mergeSalarySettings({

@@ -41,7 +41,7 @@ const ACTOR_ID = '22222222-2222-4222-8222-222222222222';
 const OTHER_ID = '33333333-3333-4333-8333-333333333333';
 const CALL_ID = '44444444-4444-4444-8444-444444444444';
 
-type Role = 'Admin' | 'Manager' | 'Agent' | 'Finance';
+type Role = 'Admin' | 'Manager' | 'Agent' | 'Finance' | 'OfflineTeamLeader' | 'OnlineAdmin' | 'OfflineAgent' | 'OnlineAgent';
 
 function ctxFor(roles: Role[]): Context {
   return { req: request, res: response, user: { userId: ACTOR_ID, tenantId: TENANT_ID, roles }, tenantId: TENANT_ID };
@@ -134,6 +134,30 @@ describe('calls.analytics', () => {
     });
   });
 
+  it("limits a team leader's rows and team totals to their group", async () => {
+    // resolveCallerDataScope reads the group first, then the procedure reads the group's agents.
+    mockDb.user.findMany
+      .mockResolvedValueOnce([
+        { id: OTHER_ID, roles: ['OfflineAgent'], amocrmResponsibleUserId: '502' },
+        { id: 'online-agent', roles: ['OnlineAgent'], amocrmResponsibleUserId: '503' },
+      ])
+      .mockResolvedValueOnce([{ id: OTHER_ID, name: 'Bobur', username: 'bobur' }]);
+
+    const result = await callsRouter.createCaller(ctxFor(['OfflineTeamLeader'])).analytics({ range: 'month' });
+
+    expect(mockDb.user.findMany.mock.calls[1][0].where.id).toEqual({ in: [ACTOR_ID, OTHER_ID] });
+    expect(mockDb.call.findMany.mock.calls[0][0].where.managerUserId).toEqual({ in: [OTHER_ID] });
+    expect(result.rows.map((row) => row.userId)).toEqual([OTHER_ID]);
+    expect(result.totals).toEqual({ totalAgents: 1, totalCalls: 2, totalDurationSeconds: 630 });
+    expect(result.agentInsight).toBeNull();
+  });
+
+  it("gives an agent totals of their own row only", async () => {
+    const result = await callsRouter.createCaller(ctxFor(['Agent'])).analytics({ range: 'month' });
+
+    expect(result.totals).toEqual({ totalAgents: 1, totalCalls: 2, totalDurationSeconds: 180 });
+  });
+
   it('returns empty analytics when the tenant has no agents', async () => {
     mockDb.user.findMany.mockResolvedValue([]);
 
@@ -168,17 +192,27 @@ describe('calls.list / get', () => {
     });
   });
 
-  it("scopes an agent to their amoCRM leads, and shows nothing to an unmapped agent", async () => {
-    mockScopeUser.mockResolvedValueOnce({ amocrmResponsibleUserId: '501' });
+  it("scopes an agent to the calls they made (managerUserId), even without an amoCRM mapping", async () => {
+    mockScopeUser.mockResolvedValue({ amocrmResponsibleUserId: null });
     mockDb.call.findMany.mockResolvedValue([]);
     mockDb.call.count.mockResolvedValue(0);
 
     await callsRouter.createCaller(ctxFor(['Agent'])).list({ page: 1, limit: 20 });
-    expect(mockDb.call.findMany.mock.calls[0][0].where).toEqual({ tenantId: TENANT_ID, provider: 'amocrm', lead: { responsibleUserId: '501' } });
+    expect(mockDb.call.findMany.mock.calls[0][0].where).toEqual({ tenantId: TENANT_ID, provider: 'amocrm', managerUserId: { in: [ACTOR_ID] } });
+  });
 
-    mockScopeUser.mockResolvedValueOnce({ amocrmResponsibleUserId: null });
-    expect(await callsRouter.createCaller(ctxFor(['Agent'])).list({ page: 1, limit: 20 }))
-      .toEqual({ data: [], pagination: { page: 1, limit: 20, total: 0, hasMore: false } });
+  it("scopes a team leader to their group's calls", async () => {
+    mockDb.user.findMany.mockResolvedValue([
+      { id: OTHER_ID, roles: ['OfflineAgent'], amocrmResponsibleUserId: null },
+      { id: 'online-agent', roles: ['OnlineAgent'], amocrmResponsibleUserId: null },
+    ]);
+    mockDb.call.findMany.mockResolvedValue([]);
+    mockDb.call.count.mockResolvedValue(0);
+
+    await callsRouter.createCaller(ctxFor(['OfflineTeamLeader'])).list({ page: 1, limit: 20 });
+    expect(mockDb.call.findMany.mock.calls[0][0].where).toEqual({
+      tenantId: TENANT_ID, provider: 'amocrm', managerUserId: { in: [ACTOR_ID, OTHER_ID] },
+    });
   });
 
   it('gets one call within the scope and refuses click-to-call', async () => {
@@ -186,7 +220,7 @@ describe('calls.list / get', () => {
     mockDb.call.findFirst.mockResolvedValueOnce({ id: CALL_ID }).mockResolvedValueOnce(null);
 
     expect(await callsRouter.createCaller(ctxFor(['Agent'])).get({ id: CALL_ID })).toEqual({ id: CALL_ID });
-    expect(mockDb.call.findFirst.mock.calls[0][0].where).toEqual({ id: CALL_ID, tenantId: TENANT_ID, lead: { responsibleUserId: '__unmapped__' } });
+    expect(mockDb.call.findFirst.mock.calls[0][0].where).toEqual({ id: CALL_ID, tenantId: TENANT_ID, managerUserId: { in: [ACTOR_ID] } });
     expect(await rejection(callsRouter.createCaller(ctxFor(['Admin'])).get({ id: CALL_ID })))
       .toMatchObject({ code: 'NOT_FOUND', message: 'Call not found' });
   });
@@ -211,10 +245,44 @@ describe('corporateCalls', () => {
     mockDb.user.findMany.mockResolvedValue([{ id: OTHER_ID, name: null, username: 'bobur' }]);
 
     expect(await corporateCallsRouter.createCaller(ctxFor(['Admin'])).getFormOptions())
-      .toEqual({ canChooseCustomDate: true, managers: [{ id: OTHER_ID, name: 'bobur' }] });
+      .toEqual({ canChooseCustomDate: true, canChooseManager: true, canFilterManagers: true, managers: [{ id: OTHER_ID, name: 'bobur' }] });
     expect(mockDb.user.findMany.mock.calls[0][0].where.roles).toBeDefined();
     expect(await rejection(corporateCallsRouter.createCaller(ctxFor(['Finance'])).getFormOptions()))
       .toMatchObject({ code: 'FORBIDDEN', message: "Sizda bu bo'lim uchun ruxsat yo'q." });
+  });
+
+  it("lets a team leader read their group's managers but only enter their own time", async () => {
+    mockDb.user.findMany
+      .mockResolvedValueOnce([{ id: OTHER_ID, roles: ['OfflineAgent'], amocrmResponsibleUserId: null }])
+      .mockResolvedValueOnce([{ id: OTHER_ID, name: 'Bobur', username: 'bobur' }]);
+
+    expect(await corporateCallsRouter.createCaller(ctxFor(['OfflineTeamLeader'])).getFormOptions())
+      .toEqual({ canChooseCustomDate: false, canChooseManager: false, canFilterManagers: true, managers: [{ id: OTHER_ID, name: 'Bobur' }] });
+    expect(mockDb.user.findMany.mock.calls[1][0].where.id).toEqual({ in: [ACTOR_ID, OTHER_ID] });
+
+    mockManagerLookup.mockResolvedValue({ id: ACTOR_ID, name: 'Ali', username: 'ali', roles: ['OfflineTeamLeader'] });
+    mockDb.corporateCallDuration.upsert.mockResolvedValue({ ...entry, managerUserId: ACTOR_ID });
+    const saved = await corporateCallsRouter.createCaller(ctxFor(['OfflineTeamLeader']))
+      .upsert({ managerUserId: OTHER_ID, date: new Date().toISOString().slice(0, 10), duration: '00:01:00' });
+
+    expect(mockManagerLookup.mock.calls[0][0].where.id).toBe(ACTOR_ID);
+    expect(saved.managerUserId).toBe(ACTOR_ID);
+  });
+
+  it('lets an OnlineAdmin enter time for online users only', async () => {
+    mockDb.user.findMany.mockResolvedValue([{ id: OTHER_ID, roles: ['OnlineAgent'], amocrmResponsibleUserId: null }]);
+    mockManagerLookup.mockResolvedValueOnce({ id: 'offline-agent', name: 'Vali', username: 'vali', roles: ['OfflineAgent'] });
+
+    expect(await rejection(corporateCallsRouter.createCaller(ctxFor(['OnlineAdmin'])).upsert({ managerUserId: '55555555-5555-4555-8555-555555555555', date: '2026-11-19', duration: '00:01:00' })))
+      .toMatchObject({ code: 'FORBIDDEN' });
+
+    mockManagerLookup.mockResolvedValueOnce({ id: OTHER_ID, name: 'Bobur', username: 'bobur', roles: ['OnlineAgent'] });
+    mockDb.corporateCallDuration.upsert.mockResolvedValue(entry);
+    const saved = await corporateCallsRouter.createCaller(ctxFor(['OnlineAdmin']))
+      .upsert({ managerUserId: OTHER_ID, date: new Date().toISOString().slice(0, 10), duration: '00:01:00' });
+
+    expect(saved.managerUserId).toBe(OTHER_ID);
+    expect(mockDb.corporateCallDuration.upsert.mock.calls[0][0].create.managerUserId).toBe(OTHER_ID);
   });
 
   it('adds call time for a manager, increments an existing day and announces it to the corporate group', async () => {
@@ -281,6 +349,21 @@ describe('corporateCalls', () => {
     mockManagerLookup.mockResolvedValue(null);
     expect(await rejection(corporateCallsRouter.createCaller(ctxFor(['Admin'])).upsert({ date: '2026-11-18', duration: '00:10:00' })))
       .toMatchObject({ code: 'NOT_FOUND', message: 'Menejer topilmadi.' });
+  });
+
+  it("lists a team leader's group entries, ignoring a manager outside the group", async () => {
+    mockDb.user.findMany.mockResolvedValue([{ id: OTHER_ID, roles: ['OfflineAgent'], amocrmResponsibleUserId: null }]);
+    mockDb.corporateCallDuration.findMany.mockResolvedValue([]);
+
+    await corporateCallsRouter.createCaller(ctxFor(['OfflineTeamLeader'])).list({ dateFrom: '2026-11-01', dateTo: '2026-11-18' });
+    await corporateCallsRouter.createCaller(ctxFor(['OfflineTeamLeader'])).list({ managerUserId: OTHER_ID, dateFrom: '2026-11-01', dateTo: '2026-11-18' });
+    await corporateCallsRouter.createCaller(ctxFor(['OfflineTeamLeader'])).list({ managerUserId: CALL_ID, dateFrom: '2026-11-01', dateTo: '2026-11-18' });
+
+    expect(mockDb.corporateCallDuration.findMany.mock.calls.map((call) => call[0].where.managerUserId)).toEqual([
+      { in: [ACTOR_ID, OTHER_ID] },
+      OTHER_ID,
+      { in: [ACTOR_ID, OTHER_ID] },
+    ]);
   });
 
   it("lists an agent's own entries and lets only admins delete", async () => {

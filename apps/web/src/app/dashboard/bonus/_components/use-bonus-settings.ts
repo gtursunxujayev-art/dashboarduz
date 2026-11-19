@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/auth-context';
+import { isAdminLike } from '@dashboarduz/shared';
 import { trpc } from '@/lib/trpc';
 import { type SalaryBonusMode as BonusMode, normalizeSubTariffName, type PenaltyTarget, type CourseCategory as PlanCategory, type PlanBonusPeriodMode as PlanPeriodMode } from '@dashboarduz/shared';
 import { useEffect, useMemo, useState } from 'react';
@@ -9,7 +10,7 @@ import { AGENT_ROLES, type AgentUserOption, type BonusPlan, type BonusRulesState
 export function useBonusSettings() {
   const { user } = useAuth();
   const roles = user?.roles || [];
-  const isAdmin = Boolean(roles.includes('Admin'));
+  const isAdmin = isAdminLike(roles);
   const isManagerLike = Boolean((roles.includes('Manager') || roles.includes('TeamLeader')) && !isAdmin);
   const canView = isAdmin || isManagerLike;
   const [salaryBonusMode, setSalaryBonusMode] = useState<BonusMode>('on_income');

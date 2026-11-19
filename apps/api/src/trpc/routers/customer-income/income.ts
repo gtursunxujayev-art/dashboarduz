@@ -5,18 +5,24 @@ import { z } from 'zod';
 
 import { ADJUSTMENT_STATUS_PENDING } from '../../../services/customer-income/constants';
 import { createIncomeEntry } from '../../../services/customer-income/create-income';
-import { isAdminUser, shouldSelfScopeManagerActions } from '../../../services/customer-income/roles';
+import { isAdminUser } from '../../../services/customer-income/roles';
 import { assertSaleChainDebtInvariant, lockSaleChain, reconcileBonusAfterIncomeChange, requestBonusReconcile } from '../../../services/customer-income/sale-chain';
-import { adminProcedure, protectedProcedure } from '../../trpc';
+import { canActForManager, incomeManagerWhere, resolveIncomeScope, resolveIncomeWriterIds } from '../../../services/customer-income/scope';
+import { protectedProcedure, scopedAdminProcedure } from '../../trpc';
 
 export const incomeProcedures = {
   createIncome: protectedProcedure
     .input(createIncomeSchema)
     .mutation(async ({ ctx, input }) => {
-      if (shouldSelfScopeManagerActions(ctx.user.roles) && input.managerUserId !== ctx.user.userId) {
+      // Agents and team leaders sell only for themselves; OnlineAdmin for anyone in the online group.
+      const writerIds = resolveIncomeWriterIds(await resolveIncomeScope(ctx), ctx.user.userId);
+
+      if (!canActForManager(writerIds, input.managerUserId)) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'You can create income records only for yourself.',
+          message: writerIds && writerIds.length > 1
+            ? 'You can create income records only for users in your group.'
+            : 'You can create income records only for yourself.',
         });
       }
 
@@ -40,17 +46,20 @@ export const incomeProcedures = {
         debug: result.chronologyDebug,
       };
     }),
-  deleteIncome: adminProcedure
+  deleteIncome: scopedAdminProcedure
     .input(
       z.object({
         incomeId: z.string().uuid(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // OnlineAdmin: only incomes of online-group managers.
+      const { userIds } = await resolveIncomeScope(ctx);
       const income = await ctx.db.income.findFirst({
         where: {
           id: input.incomeId,
           tenantId: ctx.tenantId,
+          ...incomeManagerWhere(userIds),
         },
         select: {
           id: true,

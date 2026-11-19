@@ -1,6 +1,7 @@
 import type { DbClient } from '@dashboarduz/db';
 
 import { parseTelegramDailyReportCourseIds } from '../../../lib/telegram';
+import { scopedManagerWhere } from '../../../services/dashboard/data-scope';
 import { INCOME_LIFECYCLE_ACTIVE } from '../../../services/income-chain';
 import { resolveSaleAgreementAmount } from '../../../services/income-facts';
 import { buildTechnicalSaleIdSet, isRowLinkedToTechnicalSale } from '../../../services/technical-income';
@@ -33,7 +34,11 @@ function resolveSelectedCourseCategory(
     : null;
 }
 
-export async function loadSelectedReportCourses(tenantId: string, db: DbClient): Promise<SelectedReportCourse[]> {
+/**
+ * The courses picked for the Telegram daily report with their sales. `managerUserIds` limits the counted
+ * sales to those managers (a caller's data scope); `null` counts every sale.
+ */
+export async function loadSelectedReportCourses(tenantId: string, db: DbClient, managerUserIds: string[] | null = null): Promise<SelectedReportCourse[]> {
   const telegramIntegration = await db.integration.findUnique({
     where: {
       tenantId_type: {
@@ -76,6 +81,7 @@ export async function loadSelectedReportCourses(tenantId: string, db: DbClient):
         type: 'new_sale',
         lifecycleStatus: INCOME_LIFECYCLE_ACTIVE,
         courseId: { in: selectedCourseIds },
+        ...scopedManagerWhere({ userIds: managerUserIds }),
       },
       select: {
         id: true,
