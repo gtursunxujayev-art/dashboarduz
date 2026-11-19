@@ -156,25 +156,25 @@ const okStatus = { ok: true, retried: false, reason: null, state: 'ok' };
 const expectedSellerRows = [
   {
     userId: 'agent-c', name: 'Zarina', newLeads: null, qualifiedLeads: null, sales: 1, conversionPercent: null,
-    agreementsAmount: 500000, incomeAmount: 500000, talkedSeconds: 600, callsCount: 0,
+    agreementsAmount: 500000, incomeAmount: 500000, talkedSeconds: 600, callsCount: 0, longCallsCount: 0,
     followUpCount: null, noteCount: null, stageChangeCount: null, overdueFollowUpCount: null, todayFollowUpCount: null,
     crmAvailability: { mapped: false, completedTasks: false, pendingTasks: false, events: false },
   },
   {
     userId: 'agent-b', name: 'bobur', newLeads: 1, qualifiedLeads: 1, sales: 1, conversionPercent: 100,
-    agreementsAmount: 6000000, incomeAmount: 6000000, talkedSeconds: 360, callsCount: 1,
+    agreementsAmount: 6000000, incomeAmount: 6000000, talkedSeconds: 360, callsCount: 1, longCallsCount: 1,
     followUpCount: 0, noteCount: 0, stageChangeCount: 0, overdueFollowUpCount: 0, todayFollowUpCount: 0,
     crmAvailability: { mapped: true, completedTasks: true, pendingTasks: true, events: true },
   },
   {
     userId: 'agent-a', name: 'Aziz', newLeads: 2, qualifiedLeads: 1, sales: 2, conversionPercent: 100,
-    agreementsAmount: 13000000, incomeAmount: 7500000, talkedSeconds: 120, callsCount: 3,
+    agreementsAmount: 13000000, incomeAmount: 7500000, talkedSeconds: 120, callsCount: 3, longCallsCount: 0,
     followUpCount: 4, noteCount: 2, stageChangeCount: 5, overdueFollowUpCount: 1, todayFollowUpCount: 3,
     crmAvailability: { mapped: true, completedTasks: true, pendingTasks: true, events: true },
   },
   {
     userId: 'agent-d', name: 'Dilnoza', newLeads: 0, qualifiedLeads: 0, sales: 0, conversionPercent: 0,
-    agreementsAmount: 0, incomeAmount: 0, talkedSeconds: 0, callsCount: 0,
+    agreementsAmount: 0, incomeAmount: 0, talkedSeconds: 0, callsCount: 0, longCallsCount: 0,
     followUpCount: 1, noteCount: 0, stageChangeCount: 0, overdueFollowUpCount: 2, todayFollowUpCount: 0,
     crmAvailability: { mapped: true, completedTasks: true, pendingTasks: true, events: true },
   },
@@ -261,6 +261,15 @@ describe('dashboard.summary (characterization)', () => {
       amoContext,
       mockDb,
     );
+    // Calls, long calls and talk time all come from this one query: the tenant's amoCRM calls started in the
+    // period (every direction and status); other tenants, providers and periods are filtered out here.
+    const periodEntryDate = (mockDb.income.findMany.mock.calls[0]?.[0] as { where: { entryDate: unknown } }).where.entryDate;
+
+    expect(mockDb.call.findMany).toHaveBeenCalledTimes(1);
+    expect(mockDb.call.findMany).toHaveBeenCalledWith({
+      where: { tenantId: TENANT_ID, provider: 'amocrm', startedAt: periodEntryDate },
+      select: { managerUserId: true, duration: true },
+    });
   });
 
   it('shows lead and activity cells as unknown when amoCRM leads fail and activity is still loading', async () => {

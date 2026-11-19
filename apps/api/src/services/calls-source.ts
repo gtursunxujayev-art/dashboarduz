@@ -6,6 +6,9 @@
 /** The `Call.provider` value every call count filters on. */
 export const AMOCRM_CALL_PROVIDER = 'amocrm';
 
+/** A counted call lasting at least this many seconds is a long call ("4 daq+" on the dashboard seller table). */
+export const LONG_CALL_MIN_SECONDS = 240;
+
 /** `where` for the counted calls of a tenant, optionally limited to some managers. */
 export function countedCallsWhere(tenantId: string, managerUserIds?: readonly string[]): {
   tenantId: string;

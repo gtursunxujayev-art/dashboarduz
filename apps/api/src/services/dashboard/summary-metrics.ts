@@ -3,6 +3,7 @@
  * sales by course category, income and sales per manager, talk time, and the seller performance table.
  * Pure functions over rows the procedure has already loaded.
  */
+import { LONG_CALL_MIN_SECONDS } from '../calls-source';
 import { classifyIncomeCategory, resolveSaleAgreementAmount } from '../income-facts';
 import type { AmoCRMLead } from '../integrations/amocrm';
 import type { AmoCRMActivityDiagnostics, AmoCRMActivityMetrics } from '../integrations/amocrm-activity';
@@ -175,7 +176,8 @@ export function summarizeIncomeByManager(incomes: SummaryIncomeRow[]) {
 }
 
 /**
- * Calls and talk seconds per agent. Negative durations count as 0. Manually entered corporate call time is added
+ * Calls, long calls (at least {@link LONG_CALL_MIN_SECONDS}) and talk seconds per agent, all from the same calls.
+ * Negative durations count as 0. Manually entered corporate call time is added
  * for agents linked to amoCRM, agents with manual time, and agents who already have calls; other agents get no
  * talk-time entry at all (shown as unknown).
  */
@@ -186,11 +188,17 @@ export function summarizeTalkTime(params: {
 }) {
   const talkSecondsByAgent = new Map<string, number>();
   const callCountByAgent = new Map<string, number>();
+  const longCallCountByAgent = new Map<string, number>();
 
   for (const call of params.calls) {
     if (!call.managerUserId) continue;
-    talkSecondsByAgent.set(call.managerUserId, (talkSecondsByAgent.get(call.managerUserId) || 0) + Math.max(0, call.duration ?? 0));
+    const seconds = Math.max(0, call.duration ?? 0);
+
+    talkSecondsByAgent.set(call.managerUserId, (talkSecondsByAgent.get(call.managerUserId) || 0) + seconds);
     callCountByAgent.set(call.managerUserId, (callCountByAgent.get(call.managerUserId) || 0) + 1);
+    if (seconds >= LONG_CALL_MIN_SECONDS) {
+      longCallCountByAgent.set(call.managerUserId, (longCallCountByAgent.get(call.managerUserId) || 0) + 1);
+    }
   }
   for (const agent of params.agents) {
     const manualDurationSeconds = params.corporateDurationByUserId.get(agent.id) || 0;
@@ -202,7 +210,7 @@ export function summarizeTalkTime(params: {
     }
   }
 
-  return { talkSecondsByAgent, callCountByAgent };
+  return { talkSecondsByAgent, callCountByAgent, longCallCountByAgent };
 }
 
 /** Names of the agents not linked to an amoCRM user. */
@@ -272,6 +280,7 @@ export type SellerPerformanceInputs = {
   activityByManager: Map<string, AmoCRMActivityMetrics>;
   talkSecondsByAgent: Map<string, number>;
   callCountByAgent: Map<string, number>;
+  longCallCountByAgent: Map<string, number>;
   /** Leads were fetched from amoCRM; otherwise lead cells are unknown (`null`). */
   leadsDataAvailable: boolean;
   /** The activity lookup is loading, timed out or failed; activity cells are unknown. */
@@ -312,6 +321,7 @@ export function buildSellerPerformanceRow(agent: SummaryAgent, inputs: SellerPer
     incomeAmount: inputs.hideMoney ? 0 : salesStats.incomeAmount,
     talkedSeconds: inputs.talkSecondsByAgent.has(agent.id) ? (inputs.talkSecondsByAgent.get(agent.id) ?? 0) : null,
     callsCount: inputs.callCountByAgent.get(agent.id) ?? 0,
+    longCallsCount: inputs.longCallCountByAgent.get(agent.id) ?? 0,
     followUpCount: crmAvailability.completedTasks ? activityStats.followUpCount : null,
     noteCount: crmAvailability.events ? activityStats.noteCount : null,
     stageChangeCount: crmAvailability.events ? activityStats.stageChangeCount : null,

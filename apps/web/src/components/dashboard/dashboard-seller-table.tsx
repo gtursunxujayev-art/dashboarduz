@@ -130,6 +130,8 @@ export default function DashboardSellerTable({
                 {!isTashkiliyOnly && (
                   <th className="text-right">Tushum summasi</th>
                 )}
+                <th className="text-right">Qo&apos;ng&apos;iroqlar</th>
+                <th className="text-right">4 daq+ qo&apos;ng&apos;iroqlar</th>
                 <th className="text-right">Suhbat vaqti</th>
               </tr>
             }
@@ -179,6 +181,12 @@ export default function DashboardSellerTable({
                       : formatAmount(seller.incomeAmount)}
                   </td>
                 )}
+                <td className="tabular whitespace-nowrap text-right">
+                  {renderMetricValue(seller.callsCount)}
+                </td>
+                <td className="tabular whitespace-nowrap text-right">
+                  {renderMetricValue(seller.longCallsCount)}
+                </td>
                 <td className="tabular whitespace-nowrap text-right">
                   {formatDuration(seller.talkedSeconds)}
                 </td>
