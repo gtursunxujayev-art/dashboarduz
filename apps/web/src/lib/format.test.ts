@@ -94,7 +94,7 @@ describe('duration formatters', () => {
   it('words: short (calls), long (dashboard, missing -> -), compact (sellers)', () => {
     expect(formatDurationShortWords(3725)).toBe('1 soat 2 daq 5 son');
     expect(formatDurationShortWords(null)).toBe('0 soat 0 daq 0 son');
-    expect(formatDurationLongWords(3725)).toBe('1 soat 2 daqiqa 5 soniya');
+    expect(formatDurationLongWords(3725)).toBe('1 s 2 d 5 s');
     expect(formatDurationLongWords(undefined)).toBe('-');
     expect(formatDurationCompact(3725)).toBe('1 soat 2 daqiqa');
     expect(formatDurationCompact(125)).toBe('2 daqiqa 5 soniya');

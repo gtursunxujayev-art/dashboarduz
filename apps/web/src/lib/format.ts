@@ -100,11 +100,11 @@ export function formatDurationShortWords(seconds: number | null | undefined): st
   return `${parts.hours} soat ${parts.minutes} daq ${parts.seconds} son`;
 }
 
-/** `1 soat 2 daqiqa 3 soniya` (dashboard home); missing prints `'-'`. */
+/** `1 s 2 d 3 s` — soat / daqiqa / soniya abbreviated (dashboard home); missing prints `'-'`. */
 export function formatDurationLongWords(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return '-';
   const parts = splitDuration(seconds);
-  return `${parts.hours} soat ${parts.minutes} daqiqa ${parts.seconds} soniya`;
+  return `${parts.hours} s ${parts.minutes} d ${parts.seconds} s`;
 }
 
 /** The two largest non-zero units: `1 soat 2 daqiqa`, `2 daqiqa 3 soniya` or `3 soniya` (sellers list). */
