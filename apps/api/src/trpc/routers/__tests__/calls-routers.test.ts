@@ -1,3 +1,4 @@
+import { toTashkentDateKey } from '@dashboarduz/shared';
 import { TRPCError } from '@trpc/server';
 import { request, response } from 'express';
 
@@ -263,7 +264,7 @@ describe('corporateCalls', () => {
     mockManagerLookup.mockResolvedValue({ id: ACTOR_ID, name: 'Ali', username: 'ali', roles: ['OfflineTeamLeader'] });
     mockDb.corporateCallDuration.upsert.mockResolvedValue({ ...entry, managerUserId: ACTOR_ID });
     const saved = await corporateCallsRouter.createCaller(ctxFor(['OfflineTeamLeader']))
-      .upsert({ managerUserId: OTHER_ID, date: new Date().toISOString().slice(0, 10), duration: '00:01:00' });
+      .upsert({ managerUserId: OTHER_ID, date: toTashkentDateKey(new Date()), duration: '00:01:00' });
 
     expect(mockManagerLookup.mock.calls[0][0].where.id).toBe(ACTOR_ID);
     expect(saved.managerUserId).toBe(ACTOR_ID);
@@ -273,13 +274,13 @@ describe('corporateCalls', () => {
     mockDb.user.findMany.mockResolvedValue([{ id: OTHER_ID, roles: ['OnlineAgent'], amocrmResponsibleUserId: null }]);
     mockManagerLookup.mockResolvedValueOnce({ id: 'offline-agent', name: 'Vali', username: 'vali', roles: ['OfflineAgent'] });
 
-    expect(await rejection(corporateCallsRouter.createCaller(ctxFor(['OnlineAdmin'])).upsert({ managerUserId: '55555555-5555-4555-8555-555555555555', date: '2026-11-19', duration: '00:01:00' })))
+    expect(await rejection(corporateCallsRouter.createCaller(ctxFor(['OnlineAdmin'])).upsert({ managerUserId: '55555555-5555-4555-8555-555555555555', date: toTashkentDateKey(new Date()), duration: '00:01:00' })))
       .toMatchObject({ code: 'FORBIDDEN' });
 
     mockManagerLookup.mockResolvedValueOnce({ id: OTHER_ID, name: 'Bobur', username: 'bobur', roles: ['OnlineAgent'] });
     mockDb.corporateCallDuration.upsert.mockResolvedValue(entry);
     const saved = await corporateCallsRouter.createCaller(ctxFor(['OnlineAdmin']))
-      .upsert({ managerUserId: OTHER_ID, date: new Date().toISOString().slice(0, 10), duration: '00:01:00' });
+      .upsert({ managerUserId: OTHER_ID, date: toTashkentDateKey(new Date()), duration: '00:01:00' });
 
     expect(saved.managerUserId).toBe(OTHER_ID);
     expect(mockDb.corporateCallDuration.upsert.mock.calls[0][0].create.managerUserId).toBe(OTHER_ID);
